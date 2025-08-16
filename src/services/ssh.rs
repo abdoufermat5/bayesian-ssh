@@ -177,6 +177,15 @@ impl SshService {
             bastion_user.or_else(|| self.config.default_bastion_user.clone())
         };
         
+        // Determine Kerberos setting: disable by default for direct connections
+        let final_kerberos = if let Some(k) = kerberos {
+            k // Use explicitly provided value
+        } else if final_bastion.is_some() {
+            self.config.use_kerberos_by_default // Use default for bastion connections
+        } else {
+            false // Disable for direct connections
+        };
+        
         let connection = Connection::new(
             name.clone(),
             host,
@@ -184,7 +193,7 @@ impl SshService {
             port.unwrap_or(self.config.default_port),
             final_bastion,
             final_bastion_user,
-            kerberos.unwrap_or(self.config.use_kerberos_by_default),
+            final_kerberos,
             key,
         );
         

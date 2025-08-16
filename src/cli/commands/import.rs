@@ -28,6 +28,7 @@ pub async fn execute(
     
     let mut imported_count = 0;
     let mut current_host: Option<String> = None;
+    let mut current_hostname: Option<String> = None;
     let mut current_user: Option<String> = None;
     let mut current_port: Option<u16> = None;
     let mut current_identity_file: Option<String> = None;
@@ -47,6 +48,7 @@ pub async fn execute(
                             if let Err(e) = self::import_host(
                 &ssh_service,
                 &host,
+                current_hostname.take(),
                 current_user.take(),
                 current_port.take(),
                 current_identity_file.take(),
@@ -60,6 +62,7 @@ pub async fn execute(
             
             // Start new host
             current_host = Some(line[5..].trim().to_string());
+            current_hostname = None;
             current_user = None;
             current_port = None;
             current_identity_file = None;
@@ -70,6 +73,8 @@ pub async fn execute(
             if let Ok(port) = line[5..].trim().parse::<u16>() {
                 current_port = Some(port);
             }
+        } else if line.starts_with("HostName ") {
+            current_hostname = Some(line[9..].trim().to_string());
         } else if line.starts_with("IdentityFile ") {
             current_identity_file = Some(line[13..].trim().to_string());
         }
@@ -80,6 +85,7 @@ pub async fn execute(
         if let Err(e) = self::import_host(
             &ssh_service,
             &host,
+            current_hostname,
             current_user,
             current_port,
             current_identity_file,
@@ -99,6 +105,7 @@ pub async fn execute(
 async fn import_host(
     ssh_service: &SshService,
     host: &str,
+    hostname: Option<String>,
     user: Option<String>,
     port: Option<u16>,
     identity_file: Option<String>,
@@ -114,9 +121,12 @@ async fn import_host(
         return Ok(());
     }
     
+    // Use HostName if available, otherwise fall back to Host
+    let actual_host = hostname.unwrap_or_else(|| host.to_string());
+    
     ssh_service.add_connection(
-        host.to_string(),
-        host.to_string(),
+        host.to_string(), // Use Host as the connection name
+        actual_host,      // Use HostName as the actual host
         user,
         port,
         None, // kerberos
