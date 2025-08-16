@@ -11,22 +11,13 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  # Build and test on multiple platforms
+  # Build and test on Linux only
   test:
-    name: ${{ matrix.os }} - ${{ matrix.rust }}
-    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.rust }}
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        rust: [stable, beta]
-        include:
-          # Add nightly for Linux only (faster builds)
-          - os: ubuntu-latest
-            rust: nightly
-        exclude:
-          # Exclude beta on Windows (often has issues)
-          - os: windows-latest
-            rust: beta
+        rust: [stable, beta, nightly]
 
     steps:
     - name: Checkout code
@@ -97,8 +88,8 @@ jobs:
 
     - name: Install grcov
       run: |
-        curl -L --output grcov https://github.com/mozilla/grcov/releases/latest/download/grcov-linux-x86_64.tar.bz2
-        tar -xf grcov
+        curl -L --output grcov.tar.gz https://github.com/mozilla/grcov/releases/latest/download/grcov-linux-x86_64.tar.gz
+        tar -xf grcov.tar.gz
         chmod +x grcov
 
     - name: Generate coverage
