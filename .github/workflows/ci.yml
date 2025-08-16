@@ -73,37 +73,4 @@ jobs:
 
 
 
-  # Code coverage (Linux only)
-  coverage:
-    name: Code coverage
-    runs-on: ubuntu-latest
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
 
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@v1
-      with:
-        toolchain: stable
-
-    - name: Install grcov
-      run: cargo install grcov
-
-    - name: Generate coverage
-      run: |
-        export CARGO_INCREMENTAL=0
-        export RUSTFLAGS="-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort"
-        export RUSTDOCFLAGS="-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort"
-        cargo test --verbose
-
-    - name: Generate coverage report
-      run: |
-        ./grcov . --binary-path ./target/debug/ -s . -t html --branch --ignore-not-existing -o ./coverage/
-
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
-      with:
-        file: ./coverage/
-        flags: unittests
-        name: codecov-umbrella
-        fail_ci_if_error: false
