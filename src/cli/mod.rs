@@ -123,6 +123,9 @@ pub enum Commands {
         /// New bastion
         #[arg(long)]
         bastion: Option<String>,
+        /// Disable bastion (force direct connection)
+        #[arg(long)]
+        no_bastion: bool,
         /// New bastion user
         #[arg(long)]
         bastion_user: Option<String>,
@@ -167,6 +170,9 @@ pub enum Commands {
         /// SSH config file path
         #[arg(short, long)]
         file: Option<String>,
+        /// Force direct connections (no bastion) for imported hosts
+        #[arg(long)]
+        no_bastion: bool,
     },
     
     /// Generate shell completion script
@@ -195,8 +201,8 @@ impl Cli {
             Commands::Show { target } => {
                 commands::show::execute(target, config).await
             }
-            Commands::Edit { target, name, host, user, port, kerberos, bastion, bastion_user, key, add_tags, remove_tags } => {
-                commands::edit::execute(target, name, host, user, port, kerberos, bastion, bastion_user, key, add_tags, remove_tags, config).await
+            Commands::Edit { target, name, host, user, port, kerberos, bastion, no_bastion, bastion_user, key, add_tags, remove_tags } => {
+                commands::edit::execute(target, name, host, user, port, kerberos, bastion, no_bastion, bastion_user, key, add_tags, remove_tags, config).await
             }
             Commands::Config { default_user, default_bastion, default_bastion_user, default_port, use_kerberos, log_level } => {
                 commands::config::execute(default_user, default_bastion, default_bastion_user, default_port, use_kerberos, log_level, config).await
@@ -204,8 +210,8 @@ impl Cli {
             Commands::Stats => {
                 commands::stats::execute(config).await
             }
-            Commands::Import { file } => {
-                commands::import::execute(file, config).await
+            Commands::Import { file, no_bastion } => {
+                commands::import::execute(file, no_bastion, config).await
             }
             Commands::Completions { shell } => {
                 commands::completions::execute(shell, config).await

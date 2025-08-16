@@ -11,6 +11,7 @@ pub async fn execute(
     port: Option<u16>,
     kerberos: Option<bool>,
     bastion: Option<String>,
+    no_bastion: bool,
     bastion_user: Option<String>,
     key: Option<String>,
     add_tags: Vec<String>,
@@ -40,6 +41,10 @@ pub async fn execute(
         }
         if let Some(bastion) = bastion {
             connection.bastion = Some(bastion);
+        }
+        if no_bastion {
+            connection.bastion = None;
+            connection.bastion_user = None;
         }
         if let Some(bastion_user) = bastion_user {
             connection.bastion_user = Some(bastion_user);

@@ -6,6 +6,7 @@ use std::path::Path;
 
 pub async fn execute(
     file: Option<String>,
+    no_bastion: bool,
     config: AppConfig,
 ) -> Result<()> {
     let ssh_config_path = if let Some(file) = file {
@@ -43,13 +44,14 @@ pub async fn execute(
         if line.starts_with("Host ") {
             // Save previous host if exists
             if let Some(host) = current_host.take() {
-                if let Err(e) = self::import_host(
-                    &ssh_service,
-                    &host,
-                    current_user.take(),
-                    current_port.take(),
-                    current_identity_file.take(),
-                ).await {
+                            if let Err(e) = self::import_host(
+                &ssh_service,
+                &host,
+                current_user.take(),
+                current_port.take(),
+                current_identity_file.take(),
+                no_bastion,
+            ).await {
                     eprintln!("Warning: Failed to import host '{}': {}", host, e);
                 } else {
                     imported_count += 1;
@@ -81,6 +83,7 @@ pub async fn execute(
             current_user,
             current_port,
             current_identity_file,
+            no_bastion,
         ).await {
             eprintln!("Warning: Failed to import host '{}': {}", host, e);
         } else {
@@ -99,6 +102,7 @@ async fn import_host(
     user: Option<String>,
     port: Option<u16>,
     identity_file: Option<String>,
+    no_bastion: bool,
 ) -> Result<()> {
     // Skip wildcard hosts
     if host.contains('*') || host.contains('?') {
@@ -117,7 +121,7 @@ async fn import_host(
         port,
         None, // kerberos
         None, // bastion
-        false, // no_bastion (use default behavior)
+        no_bastion, // use the parameter passed from command line
         None, // bastion_user
         identity_file,
         vec!["imported".to_string()],
