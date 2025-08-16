@@ -1,6 +1,6 @@
 [package]
 name = "bayesian-ssh"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 authors = ["Your Name <your.email@example.com>"]
 description = "A fast and lightweight SSH session manager with Kerberos support"
