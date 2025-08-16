@@ -1,0 +1,121 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # Build and test on multiple platforms
+  test:
+    name: ${{ matrix.os }} - ${{ matrix.rust }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        rust: [stable, beta]
+        include:
+          # Add nightly for Linux only (faster builds)
+          - os: ubuntu-latest
+            rust: nightly
+        exclude:
+          # Exclude beta on Windows (often has issues)
+          - os: windows-latest
+            rust: beta
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@v1
+      with:
+        toolchain: ${{ matrix.rust }}
+        components: clippy, rustfmt
+
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
+
+    - name: Build
+      run: cargo build --verbose
+
+    - name: Run tests
+      run: cargo test --verbose
+
+    - name: Run clippy
+      run: cargo clippy -- -D warnings
+
+    - name: Check formatting
+      run: cargo fmt --all -- --check
+
+  # Security audit
+  audit:
+    name: Security audit
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@v1
+      with:
+        toolchain: stable
+
+    - name: Install cargo-audit
+      run: cargo install cargo-audit
+
+    - name: Run security audit
+      run: cargo audit
+
+
+
+  # Code coverage (Linux only)
+  coverage:
+    name: Code coverage
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@v1
+      with:
+        toolchain: stable
+
+    - name: Install grcov
+      run: |
+        curl -L --output grcov https://github.com/mozilla/grcov/releases/latest/download/grcov-linux-x86_64.tar.bz2
+        tar -xf grcov
+        chmod +x grcov
+
+    - name: Generate coverage
+      run: |
+        export CARGO_INCREMENTAL=0
+        export RUSTFLAGS="-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort"
+        export RUSTDOCFLAGS="-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort"
+        cargo test --verbose
+
+    - name: Generate coverage report
+      run: |
+        ./grcov . --binary-path ./target/debug/ -s . -t html --branch --ignore-not-existing -o ./coverage/
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage/
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false

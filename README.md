@@ -3,6 +3,9 @@
 [![Rust](https://img.shields.io/badge/Rust-1.70+-blue.svg)](https://rustup.rs/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/Version-0.1.0-orange.svg)](Cargo.toml)
+[![CI](https://github.com/asadiakhou/bayesian-ssh/workflows/CI/badge.svg)](https://github.com/asadiakhou/bayesian-ssh/actions/workflows/ci.yml)
+[![Security](https://github.com/asadiakhou/bayesian-ssh/workflows/Security/badge.svg)](https://github.com/asadiakhou/bayesian-ssh/actions/workflows/security.yml)
+[![Release](https://github.com/asadiakhou/bayesian-ssh/workflows/Release/badge.svg)](https://github.com/asadiakhou/bayesian-ssh/actions/workflows/release.yml)
 
 > **An ultra-fast and intelligent SSH session manager with Kerberos support, bastion hosts, and advanced history management.**
 

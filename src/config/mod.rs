@@ -1,7 +1,6 @@
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use anyhow::Result;
-use dirs;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
@@ -22,7 +21,7 @@ impl Default for AppConfig {
         let config_dir = dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("~/.config"))
             .join("bayesian-ssh");
-        
+
         Self {
             database_path: config_dir.join("history.db"),
             default_user: "admin".to_string(),
@@ -43,21 +42,21 @@ impl AppConfig {
         let config_dir = dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("~/.config"))
             .join("bayesian-ssh");
-        
+
         // Create config directory if it doesn't exist
         std::fs::create_dir_all(&config_dir)?;
-        
+
         let config_file = config_dir.join("config.json");
-        
+
         if config_file.exists() {
             let content = std::fs::read_to_string(&config_file)?;
             let mut config: AppConfig = serde_json::from_str(&content)?;
-            
+
             // Ensure database path is absolute
             if config.database_path.is_relative() {
                 config.database_path = config_dir.join(&config.database_path);
             }
-            
+
             Ok(config)
         } else {
             let config = AppConfig::default();
@@ -65,21 +64,21 @@ impl AppConfig {
             Ok(config)
         }
     }
-    
+
     pub fn save(&self) -> Result<()> {
         let config_dir = dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("~/.config"))
             .join("bayesian-ssh");
-        
+
         std::fs::create_dir_all(&config_dir)?;
-        
+
         let config_file = config_dir.join("config.json");
         let content = serde_json::to_string_pretty(self)?;
         std::fs::write(config_file, content)?;
-        
+
         Ok(())
     }
-    
+
     pub fn update(&mut self, updates: AppConfigUpdates) -> Result<()> {
         if let Some(user) = updates.default_user {
             self.default_user = user;
@@ -105,7 +104,7 @@ impl AppConfig {
         if let Some(max_size) = updates.max_history_size {
             self.max_history_size = max_size;
         }
-        
+
         self.save()
     }
 }

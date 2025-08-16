@@ -1,9 +1,10 @@
-use clap::{Parser, Subcommand};
-use anyhow::Result;
 use crate::config::AppConfig;
+use anyhow::Result;
+use clap::{Parser, Subcommand};
 
 mod commands;
 
+#[allow(unused_imports)]
 use commands::*;
 
 #[derive(Parser)]
@@ -43,7 +44,7 @@ pub enum Commands {
         #[arg(short, long)]
         key: Option<String>,
     },
-    
+
     /// Add a new connection to history
     Add {
         /// Connection name
@@ -75,7 +76,7 @@ pub enum Commands {
         #[arg(short, long)]
         tags: Vec<String>,
     },
-    
+
     /// List all connections
     List {
         /// Filter by tag
@@ -88,19 +89,19 @@ pub enum Commands {
         #[arg(short, long)]
         detailed: bool,
     },
-    
+
     /// Remove a connection
     Remove {
         /// Connection name or ID
         target: String,
     },
-    
+
     /// Show connection details
     Show {
         /// Connection name or ID
         target: String,
     },
-    
+
     /// Edit connection settings
     Edit {
         /// Connection name or ID
@@ -139,7 +140,7 @@ pub enum Commands {
         #[arg(long)]
         remove_tags: Vec<String>,
     },
-    
+
     /// Configure application settings
     Config {
         /// Default user
@@ -161,10 +162,10 @@ pub enum Commands {
         #[arg(long)]
         log_level: Option<String>,
     },
-    
+
     /// Show application statistics
     Stats,
-    
+
     /// Import connections from SSH config
     Import {
         /// SSH config file path
@@ -174,7 +175,7 @@ pub enum Commands {
         #[arg(long)]
         no_bastion: bool,
     },
-    
+
     /// Generate shell completion script
     Completions {
         /// Shell type
@@ -186,36 +187,118 @@ pub enum Commands {
 impl Cli {
     pub async fn execute(self, config: AppConfig) -> Result<()> {
         match self.command {
-            Commands::Connect { target, user, port, kerberos, bastion, no_bastion, bastion_user, key } => {
-                commands::connect::execute(target, user, port, kerberos, bastion, no_bastion, bastion_user, key, config).await
+            Commands::Connect {
+                target,
+                user,
+                port,
+                kerberos,
+                bastion,
+                no_bastion,
+                bastion_user,
+                key,
+            } => {
+                commands::connect::execute(
+                    target,
+                    user,
+                    port,
+                    kerberos,
+                    bastion,
+                    no_bastion,
+                    bastion_user,
+                    key,
+                    config,
+                )
+                .await
             }
-            Commands::Add { name, host, user, port, kerberos, bastion, no_bastion, bastion_user, key, tags } => {
-                commands::add::execute(name, host, user, port, kerberos, bastion, no_bastion, bastion_user, key, tags, config).await
+            Commands::Add {
+                name,
+                host,
+                user,
+                port,
+                kerberos,
+                bastion,
+                no_bastion,
+                bastion_user,
+                key,
+                tags,
+            } => {
+                commands::add::execute(
+                    name,
+                    host,
+                    user,
+                    port,
+                    kerberos,
+                    bastion,
+                    no_bastion,
+                    bastion_user,
+                    key,
+                    tags,
+                    config,
+                )
+                .await
             }
-            Commands::List { tag, recent, detailed } => {
-                commands::list::execute(tag, recent, detailed, config).await
+            Commands::List {
+                tag,
+                recent,
+                detailed,
+            } => commands::list::execute(tag, recent, detailed, config).await,
+            Commands::Remove { target } => commands::remove::execute(target, config).await,
+            Commands::Show { target } => commands::show::execute(target, config).await,
+            Commands::Edit {
+                target,
+                name,
+                host,
+                user,
+                port,
+                kerberos,
+                bastion,
+                no_bastion,
+                bastion_user,
+                key,
+                add_tags,
+                remove_tags,
+            } => {
+                commands::edit::execute(
+                    target,
+                    name,
+                    host,
+                    user,
+                    port,
+                    kerberos,
+                    bastion,
+                    no_bastion,
+                    bastion_user,
+                    key,
+                    add_tags,
+                    remove_tags,
+                    config,
+                )
+                .await
             }
-            Commands::Remove { target } => {
-                commands::remove::execute(target, config).await
+            Commands::Config {
+                default_user,
+                default_bastion,
+                default_bastion_user,
+                default_port,
+                use_kerberos,
+                log_level,
+            } => {
+                commands::config::execute(
+                    default_user,
+                    default_bastion,
+                    default_bastion_user,
+                    default_port,
+                    use_kerberos,
+                    log_level,
+                    config,
+                )
+                .await
             }
-            Commands::Show { target } => {
-                commands::show::execute(target, config).await
-            }
-            Commands::Edit { target, name, host, user, port, kerberos, bastion, no_bastion, bastion_user, key, add_tags, remove_tags } => {
-                commands::edit::execute(target, name, host, user, port, kerberos, bastion, no_bastion, bastion_user, key, add_tags, remove_tags, config).await
-            }
-            Commands::Config { default_user, default_bastion, default_bastion_user, default_port, use_kerberos, log_level } => {
-                commands::config::execute(default_user, default_bastion, default_bastion_user, default_port, use_kerberos, log_level, config).await
-            }
-            Commands::Stats => {
-                commands::stats::execute(config).await
-            }
+            Commands::Stats => commands::stats::execute(config).await,
             Commands::Import { file, no_bastion } => {
                 commands::import::execute(file, no_bastion, config).await
             }
-            Commands::Completions { shell } => {
-                commands::completions::execute(shell, config).await
-            }
+            Commands::Completions { shell } => commands::completions::execute(shell, config).await,
         }
     }
 }

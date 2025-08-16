@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -19,6 +19,7 @@ pub struct Connection {
 }
 
 impl Connection {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         name: String,
         host: String,
@@ -61,17 +62,17 @@ impl Connection {
 
     pub fn to_ssh_command(&self) -> String {
         let mut cmd = String::new();
-        
+
         if self.use_kerberos {
             cmd.push_str("ssh -t -A -K ");
         } else {
             cmd.push_str("ssh ");
         }
-        
+
         if let Some(key) = &self.key_path {
             cmd.push_str(&format!("-i {} ", key));
         }
-        
+
         if let Some(bastion) = &self.bastion {
             let bastion_user = self.bastion_user.as_deref().unwrap_or(&self.user);
             cmd.push_str(&format!("-p 22 {}@{}", bastion_user, bastion));
@@ -79,7 +80,7 @@ impl Connection {
         } else {
             cmd.push_str(&format!("-p {} {}@{}", self.port, self.user, self.host));
         }
-        
+
         cmd
     }
 }

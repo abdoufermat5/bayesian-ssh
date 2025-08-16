@@ -1,8 +1,9 @@
-use anyhow::Result;
 use crate::config::AppConfig;
 use crate::services::SshService;
+use anyhow::Result;
 use tracing::info;
 
+#[allow(clippy::too_many_arguments)]
 pub async fn execute(
     name: String,
     host: String,
@@ -17,23 +18,25 @@ pub async fn execute(
     config: AppConfig,
 ) -> Result<()> {
     info!("Adding new connection: {} -> {}", name, host);
-    
+
     let ssh_service = SshService::new(config)?;
-    
-    ssh_service.add_connection(
-        name.clone(),
-        host,
-        user,
-        port,
-        kerberos,
-        bastion,
-        no_bastion,
-        bastion_user,
-        key,
-        tags,
-    ).await?;
-    
+
+    ssh_service
+        .add_connection(
+            name.clone(),
+            host,
+            user,
+            port,
+            kerberos,
+            bastion,
+            no_bastion,
+            bastion_user,
+            key,
+            tags,
+        )
+        .await?;
+
     println!("✅ Connection '{}' added successfully!", name);
-    
+
     Ok(())
 }

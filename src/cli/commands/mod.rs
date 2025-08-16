@@ -1,21 +1,10 @@
 pub mod add;
-pub mod connect;
-pub mod config;
-pub mod edit;
 pub mod completions;
+pub mod config;
+pub mod connect;
+pub mod edit;
 pub mod import;
 pub mod list;
 pub mod remove;
 pub mod show;
 pub mod stats;
-
-pub use add::*;
-pub use connect::*;
-pub use config::*;
-pub use edit::*;
-pub use completions::*;
-pub use import::*;
-pub use list::*;
-pub use remove::*;
-pub use show::*;
-pub use stats::*;

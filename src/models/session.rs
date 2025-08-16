@@ -1,7 +1,7 @@
-use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc};
-use uuid::Uuid;
 use crate::models::Connection;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
@@ -41,6 +41,7 @@ impl Session {
         self.pid = Some(pid);
     }
 
+    #[allow(dead_code)]
     pub fn mark_disconnected(&mut self) {
         self.status = SessionStatus::Disconnected;
         self.ended_at = Some(Utc::now());
@@ -57,10 +58,12 @@ impl Session {
         self.ended_at = Some(Utc::now());
     }
 
+    #[allow(dead_code)]
     pub fn is_active(&self) -> bool {
         matches!(self.status, SessionStatus::Active)
     }
 
+    #[allow(dead_code)]
     pub fn duration(&self) -> Option<chrono::Duration> {
         self.ended_at
             .or_else(|| Some(Utc::now()))
