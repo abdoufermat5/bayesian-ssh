@@ -78,6 +78,12 @@ jobs:
       with:
         path: artifacts
 
+    - name: List artifacts for debugging
+      run: |
+        echo "Artifacts directory structure:"
+        find artifacts -type f -exec ls -la {} \;
+        echo "Current working directory: $(pwd)"
+
     - name: Create Release
       id: create_release
       uses: softprops/action-gh-release@v1
@@ -89,8 +95,8 @@ jobs:
         draft: false
         prerelease: false
         files: |
-          artifacts/bayesian-ssh-linux-x86_64
-          artifacts/bayesian-ssh-linux-x86_64.sha256
+          artifacts/bayesian-ssh-linux-x86_64/bayesian-ssh-linux-x86_64
+          artifacts/bayesian-ssh-linux-x86_64/bayesian-ssh-linux-x86_64.sha256
 
 
 
