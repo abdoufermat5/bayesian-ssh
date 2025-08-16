@@ -311,10 +311,7 @@ impl Database {
                     }
                 }
             );
-            match result {
-                Ok(conn) => Some(conn),
-                Err(_) => None,
-            }
+            result.ok()
         };
 
         let mut recent_connections = self.list_connections(None, true)?;

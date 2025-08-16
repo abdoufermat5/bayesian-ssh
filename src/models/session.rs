@@ -72,6 +72,7 @@ impl Session {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct SessionStats {
     pub total_sessions: usize,
     pub active_sessions: usize,
