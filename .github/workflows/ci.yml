@@ -113,7 +113,7 @@ jobs:
         ./grcov . --binary-path ./target/debug/ -s . -t html --branch --ignore-not-existing -o ./coverage/
 
     - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
+      uses: codecov/codecov-action@v5
       with:
         file: ./coverage/
         flags: unittests
