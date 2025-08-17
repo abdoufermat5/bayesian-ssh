@@ -2,10 +2,7 @@
 
 [![Rust](https://img.shields.io/badge/Rust-1.70+-blue.svg)](https://rustup.rs/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.1.1-orange.svg)](Cargo.toml)
 [![CI](https://github.com/abdoufermat5/bayesian-ssh/workflows/CI/badge.svg)](https://github.com/abdoufermat5/bayesian-ssh/actions/workflows/ci.yml)
-[![Security](https://github.com/abdoufermat5/bayesian-ssh/workflows/Security/badge.svg)](https://github.com/abdoufermat5/bayesian-ssh/actions/workflows/security.yml)
-[![Release](https://github.com/abdoufermat5/bayesian-ssh/workflows/Release/badge.svg)](https://github.com/abdoufermat5/bayesian-ssh/actions/workflows/release.yml)
 
 > **An ultra-fast and intelligent SSH session manager with Kerberos support, bastion hosts, and advanced history management.**
 
@@ -27,9 +24,9 @@
 # Clone and build
 git clone https://github.com/abdoufermat5/bayesian-ssh.git
 cd bayesian-ssh
-cargo build --release
 
-# Install globally (optional)
+# Build and install
+./scripts/build_and_push.sh --release
 sudo cp target/release/bayesian-ssh /usr/local/bin/
 ```
 
@@ -74,7 +71,30 @@ bayesian-ssh add "Server" host.com --no-bastion
 bayesian-ssh add "Server" host.com --bastion custom-bastion.com
 ```
 
-## 🔧 Configuration
+## 🔧 Development & Release
+
+### Build Scripts
+```bash
+# Build and test
+./scripts/build_and_push.sh
+
+# Build release version
+./scripts/build_and_push.sh --release
+
+# Update version and build
+./scripts/build_and_push.sh --version X.Y.Z
+
+# Create release (build, tag, and push tag)
+./scripts/build_and_push.sh --release --create-release
+
+# Full release workflow with version update
+./scripts/build_and_push.sh --version X.Y.Z --release --create-release
+
+# Clean all tags and releases
+./scripts/clean_releases.sh
+```
+
+### Configuration
 
 The app automatically creates configuration in `~/.config/bayesian-ssh/`:
 
@@ -103,7 +123,7 @@ For comprehensive guides and advanced topics, see the [docs/](docs/) folder:
 - ✅ **Bastion host support** with smart routing
 - ✅ **SSH config import** for easy migration
 - ✅ **Tag-based organization** for efficient management
-- ✅ **CI/CD pipeline** with automated testing and releases
+- ✅ **CI pipeline** with automated testing
 - ✅ **Comprehensive documentation** with examples
 
 ### Coming Soon

@@ -1,11 +1,11 @@
 [package]
 name = "bayesian-ssh"
-version = "0.2.2"
-edition = "2021"
-authors = ["Your Name <your.email@example.com>"]
+version = "1.0.0"
+edition = "2025"
+authors = ["Abdoufermat5"]
 description = "A fast and lightweight SSH session manager with Kerberos support"
 license = "MIT"
-repository = "https://github.com/yourusername/bayesian-ssh"
+repository = "https://github.com/abdoufermat5/bayesian-ssh"
 
 [dependencies]
 # Async runtime
