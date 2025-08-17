@@ -1,4 +1,4 @@
-# 🚀 Bayesian SSH - Intelligent SSH Session Manager
+# 🚀 Bayesian SSH - Fast and Easy SSH Session Manager
 
 [![Rust](https://img.shields.io/badge/Rust-1.70+-blue.svg)](https://rustup.rs/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
