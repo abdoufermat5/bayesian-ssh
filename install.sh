@@ -3,6 +3,7 @@
 # Bayesian SSH Installer
 # Automatically downloads and installs the latest release
 # Usage: curl -fsSL https://raw.githubusercontent.com/abdoufermat5/bayesian-ssh/main/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/abdoufermat5/bayesian-ssh/main/install.sh | bash -s -- --interactive
 
 set -e
 
@@ -18,6 +19,33 @@ REPO="abdoufermat5/bayesian-ssh"
 BINARY_NAME="bayesian-ssh"
 INSTALL_DIR="/usr/local/bin"
 TEMP_DIR="/tmp/bayesian-ssh-install"
+INTERACTIVE=false
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --interactive)
+            INTERACTIVE=true
+            shift
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: $0 [--interactive]"
+            exit 1
+            ;;
+    esac
+done
+
+# Check if script is being piped (non-interactive)
+check_interactive() {
+    if [ "$INTERACTIVE" = true ]; then
+        echo -e "${BLUE}📋 Interactive mode enabled${NC}"
+    elif [ -t 0 ]; then
+        echo -e "${BLUE}📋 Interactive mode available (use --interactive flag)${NC}"
+    else
+        echo -e "${BLUE}📋 Non-interactive mode (piped from curl)${NC}"
+    fi
+}
 
 # Detect system architecture and OS
 detect_system() {
@@ -61,11 +89,15 @@ detect_system() {
 check_permissions() {
     if [ "$EUID" -eq 0 ]; then
         echo -e "${YELLOW}⚠️  Running as root - this is not recommended${NC}"
-        read -p "Continue anyway? (y/N): " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            echo -e "${RED}❌ Installation cancelled${NC}"
-            exit 1
+        if [ "$INTERACTIVE" = true ]; then
+            read -p "Continue anyway? (y/N): " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                echo -e "${RED}❌ Installation cancelled${NC}"
+                exit 1
+            fi
+        else
+            echo -e "${YELLOW}⚠️  Continuing as root in non-interactive mode${NC}"
         fi
     fi
 }
@@ -179,11 +211,15 @@ install_binary() {
     # Check if binary already exists
     if [ -f "${INSTALL_DIR}/${BINARY_NAME}" ]; then
         echo -e "${YELLOW}⚠️  Binary already exists at ${INSTALL_DIR}/${BINARY_NAME}${NC}"
-        read -p "Overwrite? (y/N): " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            echo -e "${YELLOW}Installation cancelled${NC}"
-            exit 1
+        if [ "$INTERACTIVE" = true ]; then
+            read -p "Overwrite? (y/N): " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                echo -e "${YELLOW}Installation cancelled${NC}"
+                exit 1
+            fi
+        else
+            echo -e "${YELLOW}⚠️  Overwriting existing binary in non-interactive mode${NC}"
         fi
     fi
     
@@ -302,25 +338,40 @@ main() {
     echo -e "${BLUE}========================${NC}"
     echo ""
     
+    # Check if interactive first
+    check_interactive
+    
     detect_system
     check_permissions
     check_dependencies
     
-    # Ask user preference
-    echo -e "${BLUE}📋 Installation Options:${NC}"
-    echo -e "  1. Download pre-built binary (recommended)"
-    echo -e "  2. Build from source"
-    echo ""
-    read -p "Choose option (1 or 2): " -n 1 -r
-    echo
-    
-    if [[ $REPLY =~ ^[2]$ ]]; then
-        # Build from source
-        build_from_source
-        cleanup
-        show_build_success
+    # Choose installation method
+    if [ "$INTERACTIVE" = true ]; then
+        # Ask user preference
+        echo -e "${BLUE}📋 Installation Options:${NC}"
+        echo -e "  1. Download pre-built binary (recommended)"
+        echo -e "  2. Build from source"
+        echo ""
+        read -p "Choose option (1 or 2): " -n 1 -r
+        echo
+        
+        if [[ $REPLY =~ ^[2]$ ]]; then
+            # Build from source
+            build_from_source
+            cleanup
+            show_build_success
+        else
+            # Download pre-built binary
+            get_latest_release
+            download_binary
+            verify_binary
+            install_binary
+            cleanup
+            show_success
+        fi
     else
-        # Download pre-built binary
+        # Non-interactive mode - use default option
+        echo -e "${BLUE}📋 Using default option: Download pre-built binary${NC}"
         get_latest_release
         download_binary
         verify_binary

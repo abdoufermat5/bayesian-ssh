@@ -23,8 +23,13 @@
 
 #### Option 1: One-liner Install (Recommended)
 ```bash
-# Install latest release automatically
+# Install latest release automatically (non-interactive)
 curl -fsSL https://raw.githubusercontent.com/abdoufermat5/bayesian-ssh/main/install.sh | bash
+```
+
+```
+# Interactive installation (choose options)
+curl -fsSL https://raw.githubusercontent.com/abdoufermat5/bayesian-ssh/main/install.sh | bash -s -- --interactive
 ```
 
 #### Option 2: Manual Build
