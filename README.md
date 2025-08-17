@@ -20,12 +20,24 @@
 ## 🚀 Quick Start
 
 ### Installation
+
+#### Option 1: One-liner Install (Recommended)
+```bash
+# Install latest release automatically
+curl -fsSL https://raw.githubusercontent.com/abdoufermat5/bayesian-ssh/main/install.sh | bash
+```
+
+#### Option 2: Manual Build
 ```bash
 # Clone and build
 git clone https://github.com/abdoufermat5/bayesian-ssh.git
 cd bayesian-ssh
 
-# Build and install
+# Build and install using Makefile
+make release
+make install
+
+# Or use the script
 ./scripts/build_and_push.sh --release
 sudo cp target/release/bayesian-ssh /usr/local/bin/
 ```
@@ -73,25 +85,30 @@ bayesian-ssh add "Server" host.com --bastion custom-bastion.com
 
 ## 🔧 Development & Release
 
-### Build Scripts
+### Makefile Commands
 ```bash
+# Show all available commands
+make help
+
 # Build and test
-./scripts/build_and_push.sh
+make build          # Debug build
+make release        # Release build
+make test           # Run tests
+make install        # Install to system
 
-# Build release version
-./scripts/build_and_push.sh --release
+# Code quality
+make format         # Format code
+make lint           # Run clippy
+make check          # Cargo check
 
-# Update version and build
-./scripts/build_and_push.sh --version X.Y.Z
+# Development workflow
+make dev            # Full dev workflow
+make pre-commit     # Pre-commit checks
 
-# Create release (build, tag, and push tag)
-./scripts/build_and_push.sh --release --create-release
-
-# Full release workflow with version update
-./scripts/build_and_push.sh --version X.Y.Z --release --create-release
-
-# Clean all tags and releases
-./scripts/clean_releases.sh
+# Version management
+make bump-patch     # Bump patch version
+make bump-minor     # Bump minor version
+make bump-major     # Bump major version
 ```
 
 ### Configuration
