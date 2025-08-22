@@ -88,33 +88,6 @@ bayesian-ssh add "Server" host.com --no-bastion
 bayesian-ssh add "Server" host.com --bastion custom-bastion.com
 ```
 
-## 🔧 Development & Release
-
-### Makefile Commands
-```bash
-# Show all available commands
-make help
-
-# Build and test
-make build          # Debug build
-make release        # Release build
-make test           # Run tests
-make install        # Install to system
-
-# Code quality
-make format         # Format code
-make lint           # Run clippy
-make check          # Cargo check
-
-# Development workflow
-make dev            # Full dev workflow
-make pre-commit     # Pre-commit checks
-
-# Version management
-make bump-patch     # Bump patch version
-make bump-minor     # Bump minor version
-make bump-major     # Bump major version
-```
 
 ### Configuration
 
@@ -137,16 +110,6 @@ For comprehensive guides and advanced topics, see the [docs/](docs/) folder:
 - **[Troubleshooting](docs/troubleshooting.md)** - Common issues and solutions
 - **[Documentation Index](docs/README.md)** - Complete documentation overview
 
-## 🆕 Recent Updates
-
-### v0.1.0 (Current)
-- ✅ **Core CLI functionality** with connection management
-- ✅ **Kerberos integration** with automatic ticket handling
-- ✅ **Bastion host support** with smart routing
-- ✅ **SSH config import** for easy migration
-- ✅ **Tag-based organization** for efficient management
-- ✅ **CI pipeline** with automated testing
-- ✅ **Comprehensive documentation** with examples
 
 ### Coming Soon
 - 🎨 **Tauri GUI Interface** - Modern React-based interface
@@ -165,14 +128,7 @@ For comprehensive guides and advanced topics, see the [docs/](docs/) folder:
 
 This project is licensed under **MIT**. See the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
-
-- **Rust** : For performance and security
-- **SQLite** : For data persistence
-- **The open source community** : For inspiration
-
 ---
 
-**Transform your SSH experience today!** 🎯
 
 *Developed with ❤️ by Abdoufermat*
