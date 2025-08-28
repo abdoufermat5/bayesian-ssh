@@ -1,4 +1,4 @@
-# 📊 Advanced Usage Examples
+# Advanced Usage Examples
 
 ## Enterprise Environment with Bastion
 
@@ -21,14 +21,14 @@ bayesian-ssh connect "Web Prod"
 
 ### Bastion Management Strategies
 
-#### **1. Default Bastion for Internal Servers**
+#### 1. Default Bastion for Internal Servers
 ```bash
 # These will automatically use your default bastion
 bayesian-ssh add "Internal Web" internal-web.company.com --tags internal,production
 bayesian-ssh add "Internal DB" internal-db.company.com --tags internal,production
 ```
 
-#### **2. Direct Connections for Cloud Instances**
+#### 2. Direct Connections for Cloud Instances
 ```bash
 # Force direct connection, bypassing default bastion
 bayesian-ssh add "EC2 Web" ec2-web.company.com \
@@ -39,7 +39,7 @@ bayesian-ssh add "EC2 Web" ec2-web.company.com \
   --tags ec2,production,web
 ```
 
-#### **3. Custom Bastion for Specific Networks**
+#### 3. Custom Bastion for Specific Networks
 ```bash
 # Override default bastion with specific one
 bayesian-ssh add "DMZ Server" dmz.company.com \
@@ -47,7 +47,7 @@ bayesian-ssh add "DMZ Server" dmz.company.com \
   --tags dmz,production
 ```
 
-#### **4. Mixed Environment Setup**
+#### 4. Mixed Environment Setup
 ```bash
 # Internal servers (use default bastion)
 bayesian-ssh add "App Server" app.company.com --tags internal,production

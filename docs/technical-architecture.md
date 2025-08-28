@@ -1,34 +1,34 @@
-# 🏗️ Technical Architecture
+# Technical Architecture
 
 ## Overview
 Bayesian SSH is built with a modular architecture that separates concerns and provides a clean, maintainable codebase.
 
 ## Core Components
 
-### 1. **CLI Layer** (`src/cli/`)
-- **Command parsing**: Uses `clap` for robust command-line argument handling
-- **Command modules**: Each command is implemented in its own module
-- **Shell completions**: Automatic generation for bash, zsh, fish, and more
+### 1. CLI Layer (`src/cli/`)
+- Command parsing: Uses `clap` for robust command-line argument handling
+- Command modules: Each command is implemented in its own module
+- Shell completions: Automatic generation for bash, zsh, fish, and more
 
-### 2. **Configuration Management** (`src/config/`)
-- **AppConfig**: Central configuration structure
-- **File-based config**: JSON configuration stored in `~/.config/bayesian-ssh/`
-- **Environment overrides**: Support for environment variable configuration
+### 2. Configuration Management (`src/config/`)
+- AppConfig: Central configuration structure
+- File-based config: JSON configuration stored in `~/.config/bayesian-ssh/`
+- Environment overrides: Support for environment variable configuration
 
-### 3. **Data Models** (`src/models/`)
-- **Connection**: Represents SSH connection configuration
-- **Session**: Tracks active SSH sessions
-- **Serialization**: Full serde support for JSON operations
+### 3. Data Models (`src/models/`)
+- Connection: Represents SSH connection configuration
+- Session: Tracks active SSH sessions
+- Serialization: Full serde support for JSON operations
 
-### 4. **Database Layer** (`src/database/`)
-- **SQLite integration**: Using `rusqlite` for data persistence
-- **Connection management**: Efficient connection pooling
-- **Migration support**: Schema versioning and updates
+### 4. Database Layer (`src/database/`)
+- SQLite integration: Using `rusqlite` for data persistence
+- Connection management: Efficient connection pooling
+- Migration support: Schema versioning and updates
 
-### 5. **Services** (`src/services/`)
-- **SSH Service**: Core SSH connection logic
-- **Kerberos integration**: Automatic ticket management
-- **Process management**: Safe process spawning and monitoring
+### 5. Services (`src/services/`)
+- SSH Service: Core SSH connection logic
+- Kerberos integration: Automatic ticket management
+- Process management: Safe process spawning and monitoring
 
 ## Database Schema
 
@@ -81,65 +81,65 @@ CREATE TABLE sessions (
 ## Error Handling
 
 ### Error Types
-- **Configuration errors**: Invalid settings or missing files
-- **Database errors**: Connection issues or schema problems
-- **SSH errors**: Connection failures or authentication issues
-- **Kerberos errors**: Ticket creation or renewal failures
+- Configuration errors: Invalid settings or missing files
+- Database errors: Connection issues or schema problems
+- SSH errors: Connection failures or authentication issues
+- Kerberos errors: Ticket creation or renewal failures
 
 ### Error Recovery
-- **Graceful degradation**: Fallback to basic SSH if features fail
-- **Automatic retry**: Retry failed operations with exponential backoff
-- **User feedback**: Clear error messages with suggested solutions
+- Graceful degradation: Fallback to basic SSH if features fail
+- Automatic retry: Retry failed operations with exponential backoff
+- User feedback: Clear error messages with suggested solutions
 
 ## Performance Considerations
 
 ### Database Optimization
-- **Indexed queries**: Fast lookups by name and tags
-- **Connection pooling**: Efficient database connection reuse
-- **Batch operations**: Group multiple database operations
+- Indexed queries: Fast lookups by name and tags
+- Connection pooling: Efficient database connection reuse
+- Batch operations: Group multiple database operations
 
 ### Memory Management
-- **Zero-copy operations**: Minimize memory allocations
-- **Efficient serialization**: Use serde for fast JSON operations
-- **Resource cleanup**: Proper cleanup of file descriptors and processes
+- Zero-copy operations: Minimize memory allocations
+- Efficient serialization: Use serde for fast JSON operations
+- Resource cleanup: Proper cleanup of file descriptors and processes
 
 ## Security Features
 
 ### Kerberos Integration
-- **Ticket verification**: Check existing tickets before use
-- **Automatic renewal**: Create new tickets when needed
-- **Forwardable tickets**: Support for ticket forwarding
+- Ticket verification: Check existing tickets before use
+- Automatic renewal: Create new tickets when needed
+- Forwardable tickets: Support for ticket forwarding
 
 ### SSH Security
-- **Key management**: Secure handling of SSH keys
-- **Bastion support**: Secure jump host connections
-- **Process isolation**: Safe process spawning and monitoring
+- Key management: Secure handling of SSH keys
+- Bastion support: Secure jump host connections
+- Process isolation: Safe process spawning and monitoring
 
 ## Testing Strategy
 
 ### Unit Tests
-- **Model validation**: Test data structure integrity
-- **Service logic**: Test business logic in isolation
-- **Error handling**: Test error conditions and recovery
+- Model validation: Test data structure integrity
+- Service logic: Test business logic in isolation
+- Error handling: Test error conditions and recovery
 
 ### Integration Tests
-- **Database operations**: Test full database workflows
-- **SSH connections**: Test actual SSH operations
-- **Configuration loading**: Test configuration file handling
+- Database operations: Test full database workflows
+- SSH connections: Test actual SSH operations
+- Configuration loading: Test configuration file handling
 
 ## Future Architecture
 
 ### Plugin System
-- **Extension points**: Hook system for custom functionality
-- **Plugin API**: Stable interface for third-party extensions
-- **Dynamic loading**: Runtime plugin loading and management
+- Extension points: Hook system for custom functionality
+- Plugin API: Stable interface for third-party extensions
+- Dynamic loading: Runtime plugin loading and management
 
 ### API Layer
-- **REST API**: HTTP interface for remote management
-- **WebSocket support**: Real-time session monitoring
-- **Authentication**: Secure API access control
+- REST API: HTTP interface for remote management
+- WebSocket support: Real-time session monitoring
+- Authentication: Secure API access control
 
 ### Microservices
-- **Service separation**: Split into focused microservices
-- **Message queues**: Async communication between services
-- **Load balancing**: Distribute load across multiple instances
+- Service separation: Split into focused microservices
+- Message queues: Async communication between services
+- Load balancing: Distribute load across multiple instances

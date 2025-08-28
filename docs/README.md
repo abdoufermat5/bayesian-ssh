@@ -1,28 +1,28 @@
-# 📚 Bayesian SSH Documentation
+# Bayesian SSH Documentation
 
 Welcome to the comprehensive documentation for Bayesian SSH, the intelligent SSH session manager built with Rust.
 
-## 📖 Documentation Structure
+## Documentation Structure
 
-### **Getting Started**
+### Getting Started
 - **[Main README](../README.md)** - Quick start guide and basic usage
 - **[Installation Guide](#installation)** - Setup and configuration
 - **[Basic Usage](#basic-usage)** - Essential commands and examples
 
-### **Core Documentation**
+### Core Documentation
 - **[Technical Architecture](technical-architecture.md)** - System design and architecture
 - **[Advanced Usage](advanced-usage.md)** - Complex scenarios and enterprise use cases
 - **[Troubleshooting](troubleshooting.md)** - Common issues and solutions
 - **[Roadmap](roadmap.md)** - Future features and development plans
 
-### **Reference**
+### Reference
 - **[Command Reference](#command-reference)** - Complete CLI command documentation
 - **[Configuration Reference](#configuration)** - All configuration options
 - **[API Reference](#api-reference)** - Programmatic interface documentation
 
-## 🚀 Quick Start
+## Quick Start
 
-### **Installation**
+### Installation
 ```bash
 # Clone and build
 git clone https://github.com/yourusername/bayesian-ssh.git
@@ -33,7 +33,7 @@ cargo build --release
 sudo cp target/release/bayesian-ssh /usr/local/bin/
 ```
 
-### **First Connection**
+### First Connection
 ```bash
 # Add a server
 bayesian-ssh add "My Server" server.company.com
@@ -42,7 +42,7 @@ bayesian-ssh add "My Server" server.company.com
 bayesian-ssh connect "My Server"
 ```
 
-### **Enable Tab Completion**
+### Enable Tab Completion
 ```bash
 # Generate completion script
 ./target/release/bayesian-ssh completions bash > bayesian-ssh-completion.bash
@@ -51,9 +51,9 @@ bayesian-ssh connect "My Server"
 source bayesian-ssh-completion.bash
 ```
 
-## 📋 Basic Commands
+## Basic Commands
 
-### **Connection Management**
+### Connection Management
 ```bash
 # Add a new connection
 bayesian-ssh add "Server Name" hostname.com
@@ -83,7 +83,7 @@ bayesian-ssh edit "Server Name"
 bayesian-ssh remove "Server Name"
 ```
 
-### **Configuration**
+### Configuration
 ```bash
 # View current configuration
 bayesian-ssh config
@@ -98,7 +98,7 @@ bayesian-ssh config --default-bastion bastion.company.com
 bayesian-ssh stats
 ```
 
-### **Import/Export**
+### Import/Export
 ```bash
 # Import from SSH config
 bayesian-ssh import
@@ -107,16 +107,16 @@ bayesian-ssh import
 bayesian-ssh import --file /path/to/ssh/config
 ```
 
-## 🔧 Configuration
+## Configuration
 
-### **Configuration File Location**
+### Configuration File Location
 ```
 ~/.config/bayesian-ssh/
 ├── config.json          # Application configuration
 └── history.db           # SQLite database
 ```
 
-### **Key Configuration Options**
+### Key Configuration Options
 ```json
 {
   "default_user": "admin",
@@ -129,77 +129,77 @@ bayesian-ssh import --file /path/to/ssh/config
 }
 ```
 
-## 🎯 Use Cases
+## Use Cases
 
-### **Enterprise Environment**
-- **Bastion host management** - Secure jump host connections
-- **Kerberos authentication** - Automatic ticket management
-- **Tag-based organization** - Production, staging, development
-- **Centralized management** - Single source of truth for connections
+### Enterprise Environment
+- Bastion host management - Secure jump host connections
+- Kerberos authentication - Automatic ticket management
+- Tag-based organization - Production, staging, development
+- Centralized management - Single source of truth for connections
 
-### **Cloud Infrastructure**
-- **AWS EC2 instances** - Direct and bastion connections
-- **Multi-cloud setup** - AWS, Azure, GCP support
-- **Kubernetes access** - Pod and service connections
-- **Container management** - Docker and container access
+### Cloud Infrastructure
+- AWS EC2 instances - Direct and bastion connections
+- Multi-cloud setup - AWS, Azure, GCP support
+- Kubernetes access - Pod and service connections
+- Container management - Docker and container access
 
-### **Development Workflow**
-- **Environment management** - Dev, staging, production
-- **CI/CD integration** - Automated deployment access
-- **Feature development** - Isolated development environments
-- **Testing and QA** - Dedicated testing infrastructure
+### Development Workflow
+- Environment management - Dev, staging, production
+- CI/CD integration - Automated deployment access
+- Feature development - Isolated development environments
+- Testing and QA - Dedicated testing infrastructure
 
-## 🔐 Security Features
+## Security Features
 
-### **Authentication**
-- **Kerberos integration** - Enterprise authentication
-- **SSH key management** - Secure key handling
-- **Bastion support** - Secure jump host connections
-- **Credential encryption** - Secure storage of sensitive data
+### Authentication
+- Kerberos integration - Enterprise authentication
+- SSH key management - Secure key handling
+- Bastion support - Secure jump host connections
+- Credential encryption - Secure storage of sensitive data
 
-### **Access Control**
-- **User permissions** - Role-based access control
-- **Audit logging** - Complete connection history
-- **Policy enforcement** - Security policy management
-- **Compliance support** - SOX, PCI, HIPAA compliance
+### Access Control
+- User permissions - Role-based access control
+- Audit logging - Complete connection history
+- Policy enforcement - Security policy management
+- Compliance support - SOX, PCI, HIPAA compliance
 
-## 📊 Performance and Monitoring
+## Performance and Monitoring
 
-### **Connection Metrics**
-- **Response times** - Connection establishment speed
-- **Success rates** - Connection reliability metrics
-- **Usage patterns** - Peak usage and frequency analysis
-- **Health monitoring** - Server availability tracking
+### Connection Metrics
+- Response times - Connection establishment speed
+- Success rates - Connection reliability metrics
+- Usage patterns - Peak usage and frequency analysis
+- Health monitoring - Server availability tracking
 
-### **Optimization**
-- **Connection pooling** - Efficient connection reuse
-- **Load balancing** - Intelligent server selection
-- **Caching** - Fast connection lookup
-- **Async operations** - Non-blocking I/O operations
+### Optimization
+- Connection pooling - Efficient connection reuse
+- Load balancing - Intelligent server selection
+- Caching - Fast connection lookup
+- Async operations - Non-blocking I/O operations
 
-## 🆘 Getting Help
+## Getting Help
 
-### **Documentation**
-- **This guide** - Comprehensive documentation
-- **Examples** - Real-world usage examples
-- **Troubleshooting** - Common issues and solutions
-- **API reference** - Programmatic interface
+### Documentation
+- This guide - Comprehensive documentation
+- Examples - Real-world usage examples
+- Troubleshooting - Common issues and solutions
+- API reference - Programmatic interface
 
-### **Community Support**
-- **GitHub Issues** - Bug reports and feature requests
-- **Discussions** - Community Q&A and support
-- **Contributing** - How to contribute to the project
-- **Code of Conduct** - Community guidelines
+### Community Support
+- GitHub Issues - Bug reports and feature requests
+- Discussions - Community Q&A and support
+- Contributing - How to contribute to the project
+- Code of Conduct - Community guidelines
 
-### **Professional Support**
-- **Enterprise support** - Commercial support options
-- **Training** - User and administrator training
-- **Consulting** - Implementation and optimization services
-- **Custom development** - Tailored feature development
+### Professional Support
+- Enterprise support - Commercial support options
+- Training - User and administrator training
+- Consulting - Implementation and optimization services
+- Custom development - Tailored feature development
 
-## 🔄 Development
+## Development
 
-### **Building from Source**
+### Building from Source
 ```bash
 # Prerequisites
 rustup install stable
@@ -215,29 +215,29 @@ cargo test
 RUST_LOG=debug cargo run
 ```
 
-### **Contributing**
-1. **Fork the repository**
-2. **Create a feature branch**
-3. **Make your changes**
-4. **Add tests and documentation**
-5. **Submit a pull request**
+### Contributing
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests and documentation
+5. Submit a pull request
 
-### **Development Guidelines**
-- **Rust best practices** - Follow Rust coding standards
-- **Testing** - Maintain high test coverage
-- **Documentation** - Document all public APIs
-- **Performance** - Optimize for speed and efficiency
+### Development Guidelines
+- Rust best practices - Follow Rust coding standards
+- Testing - Maintain high test coverage
+- Documentation - Document all public APIs
+- Performance - Optimize for speed and efficiency
 
-## 📄 License
+## License
 
 Bayesian SSH is licensed under the MIT License. See the [LICENSE](../LICENSE) file for details.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
-- **Rust community** - For the amazing language and ecosystem
-- **Open source contributors** - For their valuable contributions
-- **Users and testers** - For feedback and bug reports
-- **Enterprise users** - For real-world testing and validation
+- Rust community - For the amazing language and ecosystem
+- Open source contributors - For their valuable contributions
+- Users and testers - For feedback and bug reports
+- Enterprise users - For real-world testing and validation
 
 ---
 
