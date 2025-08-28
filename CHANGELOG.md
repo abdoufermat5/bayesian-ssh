@@ -36,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved error handling and user feedback
 - Better code organization and maintainability
 
-## [1.0.0] - 2024-12-XX
+## [1.0.0] - 2024-08-23
 
 ### Added
 - Initial release of Bayesian SSH
