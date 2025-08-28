@@ -1,10 +1,10 @@
-# 🐛 Troubleshooting Guide
+# Troubleshooting Guide
 
 ## Common Issues and Solutions
 
 ### Kerberos Authentication Problems
 
-#### **No Valid Kerberos Ticket Found**
+#### No Valid Kerberos Ticket Found
 ```bash
 # Check current ticket status
 klist
@@ -22,12 +22,12 @@ klist -s
 - `klist` shows no tickets or expired tickets
 
 **Solutions:**
-1. **Check ticket status**: `klist -s`
-2. **Create new ticket**: `kinit -f -A`
-3. **Verify realm configuration**: Check `/etc/krb5.conf`
-4. **Check DNS resolution**: Ensure realm DNS is working
+1. Check ticket status: `klist -s`
+2. Create new ticket: `kinit -f -A`
+3. Verify realm configuration: Check `/etc/krb5.conf`
+4. Check DNS resolution: Ensure realm DNS is working
 
-#### **Ticket Expired or Invalid**
+#### Ticket Expired or Invalid
 ```bash
 # Check ticket expiration
 klist
@@ -45,14 +45,14 @@ kinit -f -A
 - `klist` shows expired tickets
 
 **Solutions:**
-1. **Automatic renewal**: `kinit -R`
-2. **Manual renewal**: `kinit -f -A`
-3. **Check clock sync**: Ensure system time is correct
-4. **Verify KDC**: Check KDC server availability
+1. Automatic renewal: `kinit -R`
+2. Manual renewal: `kinit -f -A`
+3. Check clock sync: Ensure system time is correct
+4. Verify KDC: Check KDC server availability
 
 ### SSH Connection Issues
 
-#### **Connection Refused**
+#### Connection Refused
 ```bash
 # Test basic connectivity
 telnet server.company.com 22
@@ -70,12 +70,12 @@ sudo iptables -L
 - Port 22 unreachable
 
 **Solutions:**
-1. **Check SSH service**: `systemctl status sshd`
-2. **Verify port**: Ensure SSH is listening on correct port
-3. **Check firewall**: Verify firewall allows SSH traffic
-4. **Network connectivity**: Test basic network reachability
+1. Check SSH service: `systemctl status sshd`
+2. Verify port: Ensure SSH is listening on correct port
+3. Check firewall: Verify firewall allows SSH traffic
+4. Network connectivity: Test basic network reachability
 
-#### **Authentication Failed**
+#### Authentication Failed
 ```bash
 # Test with verbose output
 ssh -v user@server.company.com
@@ -94,14 +94,14 @@ ssh -i ~/.ssh/id_rsa user@server.company.com
 - Key-based authentication fails
 
 **Solutions:**
-1. **Check key permissions**: `chmod 600 ~/.ssh/id_rsa`
-2. **Verify key format**: Ensure key is in correct format
-3. **Check server configuration**: Verify `authorized_keys` setup
-4. **Test manually**: Use standard SSH command to test
+1. Check key permissions: `chmod 600 ~/.ssh/id_rsa`
+2. Verify key format: Ensure key is in correct format
+3. Check server configuration: Verify `authorized_keys` setup
+4. Test manually: Use standard SSH command to test
 
 ### Bastion Host Problems
 
-#### **Bastion Connection Fails**
+#### Bastion Connection Fails
 ```bash
 # Test bastion connectivity
 ssh -t -A -K user@bastion.company.com
@@ -125,12 +125,12 @@ bayesian-ssh show "Target Server"
 - Bastion authentication fails
 
 **Solutions:**
-1. **Test bastion directly**: `ssh user@bastion.company.com`
-2. **Check bastion port**: Verify correct port (default: 22)
-3. **Verify user permissions**: Ensure bastion user has access
-4. **Check network path**: Verify bastion is reachable
+1. Test bastion directly: `ssh user@bastion.company.com`
+2. Check bastion port: Verify correct port (default: 22)
+3. Verify user permissions: Ensure bastion user has access
+4. Check network path: Verify bastion is reachable
 
-#### **Target Host Unreachable via Bastion**
+#### Target Host Unreachable via Bastion
 ```bash
 # Test from bastion to target
 ssh -t -A -K user@bastion.company.com "ssh user@target.company.com"
@@ -148,12 +148,12 @@ ssh user@bastion.company.com "ping target.company.com"
 - Connection times out to target
 
 **Solutions:**
-1. **Check bastion routing**: Verify bastion can reach target
-2. **Verify target firewall**: Ensure target allows bastion traffic
-3. **Check network segmentation**: Verify network policies
-4. **Test manually**: Connect to bastion and test target manually
+1. Check bastion routing: Verify bastion can reach target
+2. Verify target firewall: Ensure target allows bastion traffic
+3. Check network segmentation: Verify network policies
+4. Test manually: Connect to bastion and test target manually
 
-#### **Unexpected Bastion Usage**
+#### Unexpected Bastion Usage
 ```bash
 # Check if connection is using default bastion
 bayesian-ssh show "Server Name"
@@ -172,14 +172,14 @@ bayesian-ssh add "Server Name" hostname.com --no-bastion --tags production
 - Default bastion being used when not intended
 
 **Solutions:**
-1. **Use --no-bastion flag**: Explicitly disable bastion for specific connections
-2. **Check connection details**: Use `bayesian-ssh show` to see bastion configuration
-3. **Re-add connection**: Remove and re-add with correct bastion settings
-4. **Verify configuration**: Check if default bastion is set in config
+1. Use --no-bastion flag: Explicitly disable bastion for specific connections
+2. Check connection details: Use `bayesian-ssh show` to see bastion configuration
+3. Re-add connection: Remove and re-add with correct bastion settings
+4. Verify configuration: Check if default bastion is set in config
 
 ### Database Issues
 
-#### **Database Connection Failed**
+#### Database Connection Failed
 ```bash
 # Check database file
 ls -la ~/.config/bayesian-ssh/
@@ -199,12 +199,12 @@ bayesian-ssh stats
 - Application crashes on database operations
 
 **Solutions:**
-1. **Check file permissions**: Ensure proper ownership and permissions
-2. **Verify disk space**: Check available disk space
-3. **Recreate database**: Remove corrupted database file
-4. **Check SQLite version**: Ensure compatible SQLite version
+1. Check file permissions: Ensure proper ownership and permissions
+2. Verify disk space: Check available disk space
+3. Recreate database: Remove corrupted database file
+4. Check SQLite version: Ensure compatible SQLite version
 
-#### **Database Schema Issues**
+#### Database Schema Issues
 ```bash
 # Check database schema
 sqlite3 ~/.config/bayesian-ssh/history.db ".schema"
@@ -219,14 +219,14 @@ sqlite3 ~/.config/bayesian-ssh/history.db "SELECT * FROM connections LIMIT 1;"
 - Missing tables or columns
 
 **Solutions:**
-1. **Check schema**: Verify table structure
-2. **Recreate database**: Remove and recreate database
-3. **Check migrations**: Ensure schema is up to date
-4. **Verify SQLite**: Check SQLite version compatibility
+1. Check schema: Verify table structure
+2. Recreate database: Remove and recreate database
+3. Check migrations: Ensure schema is up to date
+4. Verify SQLite: Check SQLite version compatibility
 
 ### Configuration Problems
 
-#### **Configuration File Not Found**
+#### Configuration File Not Found
 ```bash
 # Check configuration directory
 ls -la ~/.config/bayesian-ssh/
@@ -244,12 +244,12 @@ cat ~/.config/bayesian-ssh/config.json
 - Configuration changes not saved
 
 **Solutions:**
-1. **Create directory**: `mkdir -p ~/.config/bayesian-ssh/`
-2. **Generate config**: Run `bayesian-ssh config` to create default
-3. **Check permissions**: Ensure directory is writable
-4. **Verify path**: Check configuration file path
+1. Create directory: `mkdir -p ~/.config/bayesian-ssh/`
+2. Generate config: Run `bayesian-ssh config` to create default
+3. Check permissions: Ensure directory is writable
+4. Verify path: Check configuration file path
 
-#### **Invalid Configuration Values**
+#### Invalid Configuration Values
 ```bash
 # View current configuration
 bayesian-ssh config
@@ -268,14 +268,14 @@ cat ~/.config/bayesian-ssh/config.json | jq .
 - Configuration values ignored
 
 **Solutions:**
-1. **Validate JSON**: Check JSON syntax
-2. **Reset configuration**: Remove and recreate config file
-3. **Check values**: Verify configuration parameter values
-4. **Use defaults**: Start with minimal configuration
+1. Validate JSON: Check JSON syntax
+2. Reset configuration: Remove and recreate config file
+3. Check values: Verify configuration parameter values
+4. Use defaults: Start with minimal configuration
 
 ### Performance Issues
 
-#### **Slow Connection Establishment**
+#### Slow Connection Establishment
 ```bash
 # Check DNS resolution time
 time nslookup server.company.com
@@ -293,12 +293,12 @@ bayesian-ssh --log-level debug connect "Server Name"
 - High latency
 
 **Solutions:**
-1. **Check DNS**: Verify DNS resolution speed
-2. **Network latency**: Test network performance
-3. **Server load**: Check target server performance
-4. **Optimize configuration**: Use connection pooling
+1. Check DNS: Verify DNS resolution speed
+2. Network latency: Test network performance
+3. Server load: Check target server performance
+4. Optimize configuration: Use connection pooling
 
-#### **High Memory Usage**
+#### High Memory Usage
 ```bash
 # Check memory usage
 ps aux | grep bayesian-ssh
@@ -316,14 +316,14 @@ valgrind --tool=memcheck ./target/debug/bayesian-ssh
 - System memory pressure
 
 **Solutions:**
-1. **Check for leaks**: Monitor memory usage over time
-2. **Optimize queries**: Review database query efficiency
-3. **Limit connections**: Reduce concurrent connections
-4. **Update dependencies**: Ensure latest library versions
+1. Check for leaks: Monitor memory usage over time
+2. Optimize queries: Review database query efficiency
+3. Limit connections: Reduce concurrent connections
+4. Update dependencies: Ensure latest library versions
 
 ### Network and Firewall Issues
 
-#### **Firewall Blocking Connections**
+#### Firewall Blocking Connections
 ```bash
 # Check local firewall
 sudo ufw status
@@ -343,12 +343,12 @@ nmap -p 22 server.company.com
 - Network policy violations
 
 **Solutions:**
-1. **Check local firewall**: Verify local firewall settings
-2. **Corporate policies**: Contact network administrator
-3. **Alternative ports**: Use non-standard SSH ports
-4. **VPN access**: Connect through corporate VPN
+1. Check local firewall: Verify local firewall settings
+2. Corporate policies: Contact network administrator
+3. Alternative ports: Use non-standard SSH ports
+4. VPN access: Connect through corporate VPN
 
-#### **DNS Resolution Issues**
+#### DNS Resolution Issues
 ```bash
 # Check DNS resolution
 nslookup server.company.com
@@ -367,14 +367,14 @@ cat /etc/hosts
 - Connection timeouts
 
 **Solutions:**
-1. **Check DNS servers**: Verify DNS configuration
-2. **Use IP addresses**: Connect directly with IP
-3. **Check /etc/hosts**: Verify local host entries
-4. **Network configuration**: Check network settings
+1. Check DNS servers: Verify DNS configuration
+2. Use IP addresses: Connect directly with IP
+3. Check /etc/hosts: Verify local host entries
+4. Network configuration: Check network settings
 
 ### Application Crashes
 
-#### **Segmentation Faults**
+#### Segmentation Faults
 ```bash
 # Run with debugger
 gdb ./target/debug/bayesian-ssh
@@ -393,12 +393,12 @@ valgrind --tool=memcheck ./target/debug/bayesian-ssh
 - Unpredictable behavior
 
 **Solutions:**
-1. **Debug build**: Use debug version for better error reporting
-2. **Check dependencies**: Verify library compatibility
-3. **Memory issues**: Look for memory corruption
-4. **Update Rust**: Ensure latest Rust version
+1. Debug build: Use debug version for better error reporting
+2. Check dependencies: Verify library compatibility
+3. Memory issues: Look for memory corruption
+4. Update Rust: Ensure latest Rust version
 
-#### **Panic Errors**
+#### Panic Errors
 ```bash
 # Enable backtrace
 RUST_BACKTRACE=1 ./target/release/bayesian-ssh
@@ -416,22 +416,22 @@ tail -f ~/.config/bayesian-ssh/bayesian-ssh.log
 - Error messages with backtraces
 
 **Solutions:**
-1. **Enable backtraces**: Set `RUST_BACKTRACE=1`
-2. **Check logs**: Review application logs
-3. **Update code**: Fix panic conditions
-4. **Error handling**: Improve error handling
+1. Enable backtraces: Set `RUST_BACKTRACE=1`
+2. Check logs: Review application logs
+3. Update code: Fix panic conditions
+4. Error handling: Improve error handling
 
 ## Getting Help
 
-### **Debug Information**
+### Debug Information
 When reporting issues, include:
-- **Error messages**: Complete error output
-- **Environment**: OS version, Rust version, dependencies
-- **Configuration**: Relevant configuration files
-- **Steps to reproduce**: Detailed reproduction steps
-- **Logs**: Application and system logs
+- Error messages: Complete error output
+- Environment: OS version, Rust version, dependencies
+- Configuration: Relevant configuration files
+- Steps to reproduce: Detailed reproduction steps
+- Logs: Application and system logs
 
-### **Useful Commands**
+### Useful Commands
 ```bash
 # Enable debug logging
 bayesian-ssh --log-level debug
@@ -449,8 +449,8 @@ ls -la ~/.config/bayesian-ssh/
 ls -la ~/.ssh/
 ```
 
-### **Community Support**
-- **GitHub Issues**: Report bugs and request features
-- **Discussions**: Ask questions and share solutions
-- **Documentation**: Check existing documentation
-- **Code examples**: Review example configurations
+### Community Support
+- GitHub Issues: Report bugs and request features
+- Discussions: Ask questions and share solutions
+- Documentation: Check existing documentation
+- Code examples: Review example configurations

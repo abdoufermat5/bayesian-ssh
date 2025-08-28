@@ -298,9 +298,9 @@ impl Database {
         let most_used = {
             let result = self.conn.query_row(
                 "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used, tags
-                 FROM connections 
-                 WHERE last_used IS NOT NULL 
-                 ORDER BY last_used DESC 
+                 FROM connections
+                 WHERE last_used IS NOT NULL
+                 ORDER BY last_used DESC
                  LIMIT 1",
                 [],
                 |row| {
@@ -331,5 +331,240 @@ impl Database {
             recently_used: recent_connections,
             by_tag: tag_counts,
         })
+    }
+
+    // Fuzzy search methods for enhanced connection discovery
+    pub fn fuzzy_search_connections(&self, query: &str, limit: usize) -> Result<Vec<Connection>> {
+        let mut all_matches = Vec::new();
+        let normalized_query = query.to_lowercase();
+
+        // Search in names with multiple strategies
+        if let Ok(mut name_matches) = self.search_by_field(&normalized_query, "name", limit) {
+            all_matches.append(&mut name_matches);
+        }
+
+        // Enhanced fuzzy matching for names
+        if let Ok(mut fuzzy_matches) = self.enhanced_fuzzy_search(&normalized_query, limit) {
+            all_matches.append(&mut fuzzy_matches);
+        }
+
+        // Search in hosts
+        if let Ok(mut host_matches) = self.search_by_field(&normalized_query, "host", limit) {
+            all_matches.append(&mut host_matches);
+        }
+
+        // Search in tags (JSON array search)
+        if let Ok(mut tag_matches) = self.search_in_tags(&normalized_query, limit) {
+            all_matches.append(&mut tag_matches);
+        }
+
+        // Remove duplicates and sort by relevance
+        self.deduplicate_and_rank(&mut all_matches, &normalized_query);
+
+        // Limit results
+        all_matches.truncate(limit);
+
+        Ok(all_matches)
+    }
+
+    fn search_by_field(&self, query: &str, field: &str, limit: usize) -> Result<Vec<Connection>> {
+        let sql = format!(
+            "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used, tags
+             FROM connections
+             WHERE {} LIKE ? COLLATE NOCASE
+             ORDER BY last_used DESC NULLS LAST, name ASC
+             LIMIT ?",
+            field
+        );
+
+        let mut stmt = self.conn.prepare(&sql)?;
+        let like_pattern = format!("%{}%", query);
+        let mut rows = stmt.query(params![like_pattern, limit])?;
+
+        let mut connections = Vec::new();
+        while let Some(row) = rows.next()? {
+            connections.push(self.row_to_connection(row)?);
+        }
+
+        Ok(connections)
+    }
+
+    fn enhanced_fuzzy_search(&self, query: &str, limit: usize) -> Result<Vec<Connection>> {
+        let sql = "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used, tags
+                   FROM connections
+                   ORDER BY last_used DESC NULLS LAST, name ASC";
+
+        let mut stmt = self.conn.prepare(sql)?;
+        let mut rows = stmt.query([])?;
+
+        let mut connections = Vec::new();
+        while let Some(row) = rows.next()? {
+            let connection = self.row_to_connection(row)?;
+            let name_lower = connection.name.to_lowercase();
+
+            // Enhanced matching patterns
+            if self.matches_enhanced_patterns(query, &name_lower) {
+                connections.push(connection);
+                if connections.len() >= limit {
+                    break;
+                }
+            }
+        }
+
+        Ok(connections)
+    }
+
+    fn matches_enhanced_patterns(&self, query: &str, name: &str) -> bool {
+        let query = query.to_lowercase();
+
+        // 1. Standard substring match (already covered by search_by_field)
+
+        // 2. Word-based matching - split query into words and find them
+        let query_words: Vec<&str> = query.split_whitespace().collect();
+        if query_words.len() > 1 {
+            let all_words_found = query_words.iter()
+                .all(|word| name.contains(word));
+            if all_words_found {
+                return true;
+            }
+        }
+
+        // 3. Handle common separators (hyphens, underscores, dots)
+        let normalized_name = name
+            .replace("-", "")
+            .replace("_", "")
+            .replace(".", "");
+
+        let normalized_query = query
+            .replace("-", "")
+            .replace("_", "")
+            .replace(".", "");
+
+        // Check if normalized versions match
+        if normalized_name.contains(&normalized_query) {
+            return true;
+        }
+
+        // 4. Acronym matching (first letters of words)
+        if query.len() >= 2 {
+            let words: Vec<&str> = name.split(&['-', '_', ' '][..]).collect();
+            if words.len() > 1 {
+                let acronym: String = words.iter()
+                    .filter_map(|word| word.chars().next())
+                    .collect();
+                if acronym.to_lowercase().contains(&query) {
+                    return true;
+                }
+            }
+        }
+
+        // 5. Partial acronym matching
+        if query.len() >= 2 {
+            let name_chars: String = name.chars()
+                .filter(|c| c.is_alphanumeric())
+                .collect();
+            if name_chars.to_lowercase().starts_with(&query) {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    fn search_in_tags(&self, query: &str, limit: usize) -> Result<Vec<Connection>> {
+        let sql =
+            "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used, tags
+             FROM connections
+             WHERE tags LIKE ? COLLATE NOCASE
+             ORDER BY last_used DESC NULLS LAST, name ASC
+             LIMIT ?";
+
+        let mut stmt = self.conn.prepare(sql)?;
+        let like_pattern = format!("%\"{}\"%", query);
+        let mut rows = stmt.query(params![like_pattern, limit])?;
+
+        let mut connections = Vec::new();
+        while let Some(row) = rows.next()? {
+            connections.push(self.row_to_connection(row)?);
+        }
+
+        Ok(connections)
+    }
+
+    fn deduplicate_and_rank(&self, connections: &mut Vec<Connection>, query: &str) {
+        use std::collections::HashSet;
+
+        let mut seen = HashSet::new();
+        connections.retain(|conn| {
+            if seen.contains(&conn.id) {
+                false
+            } else {
+                seen.insert(conn.id);
+                true
+            }
+        });
+
+        // Sort by relevance score
+        connections.sort_by(|a, b| {
+            let score_a = self.calculate_relevance_score(a, query);
+            let score_b = self.calculate_relevance_score(b, query);
+            score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+        });
+    }
+
+    fn calculate_relevance_score(&self, connection: &Connection, query: &str) -> f64 {
+        let query_lower = query.to_lowercase();
+        let name_lower = connection.name.to_lowercase();
+        let mut score = 0.0;
+
+        // Exact match in name gets highest score
+        if name_lower == query_lower {
+            score += 100.0;
+        }
+
+        // Starts with query (high relevance)
+        if name_lower.starts_with(&query_lower) {
+            score += 50.0;
+        }
+
+        // Contains query in name
+        if name_lower.contains(&query_lower) {
+            score += 25.0;
+        }
+
+        // Enhanced pattern matching scores
+        if self.matches_enhanced_patterns(query, &name_lower) {
+            score += 15.0; // Bonus for pattern matching
+        }
+
+        // Query in host
+        if connection.host.to_lowercase().contains(&query_lower) {
+            score += 15.0;
+        }
+
+        // Query in tags
+        for tag in &connection.tags {
+            if tag.to_lowercase().contains(&query_lower) {
+                score += 20.0;
+                break;
+            }
+        }
+
+        // Recent usage bonus
+        if let Some(last_used) = connection.last_used {
+            let hours_since_used = chrono::Utc::now()
+                .signed_duration_since(last_used)
+                .num_hours();
+
+            if hours_since_used < 24 {
+                score += 30.0;
+            } else if hours_since_used < 168 { // 1 week
+                score += 15.0;
+            } else if hours_since_used < 720 { // 1 month
+                score += 5.0;
+            }
+        }
+
+        score
     }
 }

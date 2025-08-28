@@ -297,4 +297,66 @@ impl SshService {
             ))
         }
     }
+
+    // Fuzzy search methods for enhanced connection discovery
+    pub async fn fuzzy_search(&self, query: &str, limit: usize) -> Result<Vec<Connection>> {
+        self.database.fuzzy_search_connections(query, limit)
+    }
+
+    pub async fn get_recent_connections(&self, limit: usize) -> Result<Vec<Connection>> {
+        self.database.list_connections(None, true)
+            .map(|mut connections| {
+                connections.truncate(limit);
+                connections
+            })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn connect_to_connection(
+        &self,
+        connection: &Connection,
+        user: Option<String>,
+        port: Option<u16>,
+        kerberos: Option<bool>,
+        bastion: Option<String>,
+        no_bastion: bool,
+        bastion_user: Option<String>,
+        key: Option<String>,
+    ) -> Result<()> {
+        info!("Connecting to connection: {}", connection.name);
+
+        // Create a mutable copy to apply overrides
+        let mut conn = connection.clone();
+
+        // Apply command-line overrides
+        if let Some(user) = user {
+            conn.user = user;
+        }
+        if let Some(port) = port {
+            conn.port = port;
+        }
+        if let Some(kerberos) = kerberos {
+            conn.use_kerberos = kerberos;
+        }
+        if let Some(bastion) = bastion {
+            conn.bastion = Some(bastion);
+        }
+        if no_bastion {
+            conn.bastion = None;
+            conn.bastion_user = None;
+        }
+        if let Some(bastion_user) = bastion_user {
+            conn.bastion_user = Some(bastion_user);
+        }
+        if let Some(key) = key {
+            conn.key_path = Some(key);
+        }
+
+        // Update last used timestamp
+        conn.update_last_used();
+        self.database.update_connection(&conn)?;
+
+        // Execute the connection
+        self.execute_ssh(&conn).await
+    }
 }

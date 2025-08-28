@@ -4,18 +4,19 @@
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![CI](https://github.com/abdoufermat5/bayesian-ssh/workflows/CI/badge.svg)](https://github.com/abdoufermat5/bayesian-ssh/actions/workflows/ci.yml)
 
-> **An ultra-fast and intelligent SSH session manager with Kerberos support, bastion hosts, and advanced history management.**
+> **An ultra-fast and intelligent SSH session manager with fuzzy search across all commands, Kerberos support, bastion hosts, and advanced history management.**
 
 ## 🎯 What is Bayesian SSH?
 
 **Bayesian SSH** transforms your SSH experience with intelligent automation:
 
-- 🚀 **One-click connections** to your servers
-- 🔐 **Automatic Kerberos** ticket management
-- 🚪 **Smart bastion host** routing
-- 🏷️ **Tag-based organization** for easy management
-- 📊 **Complete connection history** with statistics
-- 💾 **SQLite database** for persistence
+- **One-click connections** to your servers
+- **Intelligent fuzzy search** across all commands - find connections by partial names, tags, or patterns
+- **Automatic Kerberos** ticket management
+- **Smart bastion host** routing
+- **Tag-based organization** for easy management
+- **Complete connection history** with statistics
+- **SQLite database** for persistence
 
 ## 🚀 Quick Start
 
@@ -60,17 +61,21 @@ bayesian-ssh connect "My Server"
 
 ### Core Commands
 ```bash
-# Connect to a server
-bayesian-ssh connect "Server Name"
+# Connect to a server (with fuzzy search)
+bayesian-ssh connect "Server Name"        # Exact match
+bayesian-ssh connect "webprod"            # Finds "web-prod-server"
+bayesian-ssh connect "prod"               # Shows all production servers
+
+# Manage connections (all with fuzzy search)
+bayesian-ssh edit "webprod"               # Edit connection settings
+bayesian-ssh show "dbprod"                # Show connection details
+bayesian-ssh remove "apigateway"          # Remove connection
 
 # Add new connection
 bayesian-ssh add "Server Name" hostname.com
 
 # List connections
 bayesian-ssh list
-
-# Show details
-bayesian-ssh show "Server Name"
 
 # Import from SSH config
 bayesian-ssh import
