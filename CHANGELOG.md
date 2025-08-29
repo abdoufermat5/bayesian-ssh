@@ -5,6 +5,23 @@ All notable changes to Bayesian SSH will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2025-08-29
+
+### Fixed
+- **Configuration defaults**: Changed default user from hardcoded "admin" to current system user
+- **Kerberos default**: Disabled Kerberos by default (changed from `true` to `false`)
+- **Documentation**: Updated all examples to reflect new sensible defaults
+
+### Changed
+- **Default configuration**: Application now uses current Linux username instead of "admin"
+- **Kerberos behavior**: Kerberos authentication is now opt-in rather than default
+- **Documentation examples**: Updated configuration commands and JSON examples across all docs
+
+### Technical
+- **Dependencies**: Added `whoami` crate for system user detection
+- **Configuration**: Updated `AppConfig::default()` implementation
+- **Documentation**: Updated README.md, docs/README.md, and docs/advanced-usage.md
+
 ## [1.1.0] - 2025-08-28
 
 ### Added

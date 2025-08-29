@@ -422,23 +422,16 @@ impl Database {
         // 2. Word-based matching - split query into words and find them
         let query_words: Vec<&str> = query.split_whitespace().collect();
         if query_words.len() > 1 {
-            let all_words_found = query_words.iter()
-                .all(|word| name.contains(word));
+            let all_words_found = query_words.iter().all(|word| name.contains(word));
             if all_words_found {
                 return true;
             }
         }
 
         // 3. Handle common separators (hyphens, underscores, dots)
-        let normalized_name = name
-            .replace("-", "")
-            .replace("_", "")
-            .replace(".", "");
+        let normalized_name = name.replace("-", "").replace("_", "").replace(".", "");
 
-        let normalized_query = query
-            .replace("-", "")
-            .replace("_", "")
-            .replace(".", "");
+        let normalized_query = query.replace("-", "").replace("_", "").replace(".", "");
 
         // Check if normalized versions match
         if normalized_name.contains(&normalized_query) {
@@ -449,7 +442,8 @@ impl Database {
         if query.len() >= 2 {
             let words: Vec<&str> = name.split(&['-', '_', ' '][..]).collect();
             if words.len() > 1 {
-                let acronym: String = words.iter()
+                let acronym: String = words
+                    .iter()
                     .filter_map(|word| word.chars().next())
                     .collect();
                 if acronym.to_lowercase().contains(&query) {
@@ -460,9 +454,7 @@ impl Database {
 
         // 5. Partial acronym matching
         if query.len() >= 2 {
-            let name_chars: String = name.chars()
-                .filter(|c| c.is_alphanumeric())
-                .collect();
+            let name_chars: String = name.chars().filter(|c| c.is_alphanumeric()).collect();
             if name_chars.to_lowercase().starts_with(&query) {
                 return true;
             }
@@ -508,7 +500,9 @@ impl Database {
         connections.sort_by(|a, b| {
             let score_a = self.calculate_relevance_score(a, query);
             let score_b = self.calculate_relevance_score(b, query);
-            score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+            score_b
+                .partial_cmp(&score_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
     }
 
@@ -558,9 +552,11 @@ impl Database {
 
             if hours_since_used < 24 {
                 score += 30.0;
-            } else if hours_since_used < 168 { // 1 week
+            } else if hours_since_used < 168 {
+                // 1 week
                 score += 15.0;
-            } else if hours_since_used < 720 { // 1 month
+            } else if hours_since_used < 720 {
+                // 1 month
                 score += 5.0;
             }
         }
