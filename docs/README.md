@@ -71,7 +71,7 @@ bayesian-ssh list
 bayesian-ssh connect "Server Name"
 
 # Connect with custom parameters
-bayesian-ssh connect "Server Name" --no-bastion --user admin
+bayesian-ssh connect "Server Name" --no-bastion --user customuser
 
 # Show connection details
 bayesian-ssh show "Server Name"
@@ -88,8 +88,8 @@ bayesian-ssh remove "Server Name"
 # View current configuration
 bayesian-ssh config
 
-# Update configuration
-bayesian-ssh config --default-user admin --use-kerberos
+# Update configuration (Kerberos disabled by default)
+bayesian-ssh config --use-kerberos --default-user customuser
 
 # Set default bastion
 bayesian-ssh config --default-bastion bastion.company.com
@@ -119,10 +119,10 @@ bayesian-ssh import --file /path/to/ssh/config
 ### Key Configuration Options
 ```json
 {
-  "default_user": "admin",
+  "default_user": "current-system-user",
   "default_bastion": "bastion.company.com",
-  "default_bastion_user": "admin",
-  "use_kerberos_by_default": true,
+  "default_bastion_user": "current-system-user",
+  "use_kerberos_by_default": false,
   "log_level": "info",
   "auto_save_history": true,
   "max_history_size": 1000

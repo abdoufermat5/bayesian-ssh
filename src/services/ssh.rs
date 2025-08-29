@@ -304,7 +304,8 @@ impl SshService {
     }
 
     pub async fn get_recent_connections(&self, limit: usize) -> Result<Vec<Connection>> {
-        self.database.list_connections(None, true)
+        self.database
+            .list_connections(None, true)
             .map(|mut connections| {
                 connections.truncate(limit);
                 connections

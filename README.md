@@ -102,8 +102,8 @@ The app automatically creates configuration in `~/.config/bayesian-ssh/`:
 # View current config
 bayesian-ssh config
 
-# Set defaults
-bayesian-ssh config --default-user admin --use-kerberos
+# Set defaults (Kerberos is disabled by default, current user is used)
+bayesian-ssh config --use-kerberos --default-user customuser
 ```
 
 ## 📚 Documentation

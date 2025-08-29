@@ -6,7 +6,7 @@
 ```bash
 # Set up default enterprise configuration
 bayesian-ssh config \
-  --default-user admin \
+  --default-user currentuser \
   --default-bastion bastion-server.company.priv \
   --use-kerberos
 
@@ -106,7 +106,7 @@ bayesian-ssh add "DB EC2" ec2-db.company.com \
 
 # Application instance
 bayesian-ssh add "App EC2" ec2-app.company.com \
-  --user admin \
+  --user currentuser \
   --kerberos false \
   --key ~/.ssh/ec2-app-key.pem \
   --tags ec2,production,application
@@ -143,7 +143,7 @@ bayesian-ssh add "K8s Web Pod" web-pod.namespace.svc.cluster.local \
 
 # Service access
 bayesian-ssh add "K8s Service" web-service.namespace.svc.cluster.local \
-  --user admin \
+  --user currentuser \
   --kerberos false \
   --tags kubernetes,service,web
 ```
@@ -200,12 +200,12 @@ bayesian-ssh add "GCP App" gcp-app.company.com \
 ```bash
 # Primary load balancer
 bayesian-ssh add "LB Primary" lb-primary.company.com \
-  --user admin \
+  --user currentuser \
   --tags loadbalancer,primary,production
 
 # Secondary load balancer
 bayesian-ssh add "LB Secondary" lb-secondary.company.com \
-  --user admin \
+  --user currentuser \
   --tags loadbalancer,secondary,production
 
 # Backend servers
@@ -431,7 +431,7 @@ kinit -f
 ssh -t -A -K user@bastion.company.com
 
 # Test with specific bastion user
-bayesian-ssh connect "Target Server" --bastion-user admin
+bayesian-ssh connect "Target Server" --bastion-user currentuser
 
 # Test bastion port
 bayesian-ssh connect "Target Server" --bastion-port 2222

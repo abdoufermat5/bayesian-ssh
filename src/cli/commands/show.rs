@@ -15,7 +15,10 @@ pub async fn execute(target: String, config: AppConfig) -> Result<()> {
     }
 
     // No exact match, try fuzzy search
-    info!("No exact match found for '{}', attempting fuzzy search", target);
+    info!(
+        "No exact match found for '{}', attempting fuzzy search",
+        target
+    );
 
     let matches = ssh_service.fuzzy_search(&target, 10).await?;
 
@@ -28,13 +31,16 @@ pub async fn execute(target: String, config: AppConfig) -> Result<()> {
             if !recent.is_empty() {
                 println!("\nRecent connections:");
                 for (i, conn) in recent.iter().enumerate() {
-                    let last_used = conn.last_used
+                    let last_used = conn
+                        .last_used
                         .map(|dt| format!(" (last: {})", format_duration(dt)))
-                        .unwrap_or_else(|| "".to_string());
+                        .unwrap_or_default();
                     println!("  {}. {}{}", i + 1, conn.name, last_used);
                 }
 
-                if let Some(selection) = interactive_selection(&recent, "Select connection to show")? {
+                if let Some(selection) =
+                    interactive_selection(&recent, "Select connection to show")?
+                {
                     return show_connection_details(&selection);
                 }
             } else {
@@ -63,7 +69,11 @@ pub async fn execute(target: String, config: AppConfig) -> Result<()> {
         }
         _ => {
             // Multiple matches - interactive selection
-            println!("Found {} similar connections for '{}':", matches.len(), target);
+            println!(
+                "Found {} similar connections for '{}':",
+                matches.len(),
+                target
+            );
             println!();
 
             for (i, conn) in matches.iter().enumerate() {
@@ -134,12 +144,21 @@ fn print_connection_info(connection: &crate::models::Connection, index: usize) {
         format!(" [{}]", connection.tags.join(", "))
     };
 
-    let last_used = connection.last_used
+    let last_used = connection
+        .last_used
         .map(|dt| format!(" (last used: {})", format_duration(dt)))
-        .unwrap_or_else(|| "".to_string());
+        .unwrap_or_default();
 
     println!("  {}. {} ({})", index, connection.name, connection.host);
-    println!("     Tags: {}{}", if tags_str.is_empty() { "none" } else { &tags_str[1..tags_str.len()-1] }, last_used);
+    println!(
+        "     Tags: {}{}",
+        if tags_str.is_empty() {
+            "none"
+        } else {
+            &tags_str[1..tags_str.len() - 1]
+        },
+        last_used
+    );
     println!();
 }
 
@@ -170,9 +189,16 @@ fn format_duration(dt: chrono::DateTime<chrono::Utc>) -> String {
     }
 }
 
-fn interactive_selection(connections: &[crate::models::Connection], prompt: &str) -> Result<Option<crate::models::Connection>> {
+fn interactive_selection(
+    connections: &[crate::models::Connection],
+    prompt: &str,
+) -> Result<Option<crate::models::Connection>> {
     loop {
-        print!("{} [1-{}, 's' to search again, 'q' to quit]: ", prompt, connections.len());
+        print!(
+            "{} [1-{}, 's' to search again, 'q' to quit]: ",
+            prompt,
+            connections.len()
+        );
         io::stdout().flush()?;
 
         let mut input = String::new();
@@ -205,7 +231,10 @@ fn interactive_selection(connections: &[crate::models::Connection], prompt: &str
                     if index >= 1 && index <= connections.len() {
                         return Ok(Some(connections[index - 1].clone()));
                     } else {
-                        println!("Invalid selection. Please enter a number between 1 and {}.", connections.len());
+                        println!(
+                            "Invalid selection. Please enter a number between 1 and {}.",
+                            connections.len()
+                        );
                     }
                 } else {
                     println!("Invalid input. Please enter a number, 's' to search again, or 'q' to quit.");

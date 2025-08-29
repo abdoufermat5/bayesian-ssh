@@ -24,11 +24,11 @@ impl Default for AppConfig {
 
         Self {
             database_path: config_dir.join("history.db"),
-            default_user: "admin".to_string(),
+            default_user: whoami::username(),
             default_bastion: None,
             default_bastion_user: None,
             default_port: 22,
-            use_kerberos_by_default: true,
+            use_kerberos_by_default: false,
             ssh_config_path: dirs::home_dir().map(|h| h.join(".ssh/config")),
             log_level: "info".to_string(),
             auto_save_history: true,
