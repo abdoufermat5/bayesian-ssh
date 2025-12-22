@@ -7,10 +7,11 @@ pub async fn execute(file: Option<String>, no_bastion: bool, config: AppConfig) 
     let ssh_config_path = if let Some(file) = file {
         std::path::PathBuf::from(file)
     } else {
-        config
-            .ssh_config_path
-            .clone()
-            .unwrap_or_else(|| dirs::home_dir().unwrap().join(".ssh/config"))
+        config.ssh_config_path.clone().unwrap_or_else(|| {
+            dirs::home_dir()
+                .expect("Unable to determine home directory. Please specify the SSH config path with --file")
+                .join(".ssh/config")
+        })
     };
 
     info!(

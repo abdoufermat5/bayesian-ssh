@@ -5,6 +5,29 @@ All notable changes to Bayesian SSH will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2025-12-22
+
+### Added
+- **`--force` flag for remove command**: Skip confirmation prompt with `-f` or `--force`
+- **`--clear-bastion` flag for config command**: Clear default bastion settings
+- **Shared CLI utilities module**: New `src/cli/utils.rs` for consistent UX across commands
+- **Working "search again" feature**: The 's' option in interactive selection now performs actual recursive search
+- **Contextual help messages**: Suggestions like "Use 'bssh list' to see all connections" when no matches found
+
+### Changed
+- **Single-match auto-connect**: Connect and show commands now auto-select when only one fuzzy match is found (improved UX)
+- **Default yes for non-destructive operations**: Confirmation prompts now default to Yes `[Y/n]` for show/connect
+- **Simplified remove confirmation**: Changed from typing full connection name to simple y/n prompt (use `--force` to skip)
+
+### Fixed
+- **Config update bug**: Fixed double-wrapping of `Option<Option<String>>` for bastion settings that prevented clearing values
+- **DateTime parsing panic**: Graceful handling of malformed dates in database instead of crashing
+- **Home directory panic**: Better error message when `$HOME` is not set during SSH config import
+
+### Technical
+- **Major code deduplication**: Extracted ~300 lines of duplicated code from connect.rs, edit.rs, remove.rs, show.rs into shared utilities
+- **Reduced file sizes**: connect.rs (257→65 lines), edit.rs (360→70 lines), remove.rs (235→70 lines), show.rs (246→35 lines)
+
 ## [1.1.1] - 2025-08-29
 
 ### Fixed

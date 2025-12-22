@@ -9,14 +9,31 @@ pub async fn execute(
     default_port: Option<u16>,
     use_kerberos: Option<bool>,
     log_level: Option<String>,
+    clear_bastion: bool,
     mut config: AppConfig,
 ) -> Result<()> {
     info!("Updating application configuration");
 
+    // Handle bastion settings: 
+    // - If --clear-bastion is passed, set to Some(None) to clear
+    // - If a value is provided, set to Some(Some(value))
+    // - Otherwise, set to None (don't change)
+    let bastion_update = if clear_bastion {
+        Some(None)
+    } else {
+        default_bastion.map(Some)
+    };
+
+    let bastion_user_update = if clear_bastion {
+        Some(None)
+    } else {
+        default_bastion_user.map(Some)
+    };
+
     let updates = AppConfigUpdates {
         default_user,
-        default_bastion: Some(default_bastion),
-        default_bastion_user: Some(default_bastion_user),
+        default_bastion: bastion_update,
+        default_bastion_user: bastion_user_update,
         default_port,
         use_kerberos_by_default: use_kerberos,
         log_level,

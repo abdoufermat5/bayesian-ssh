@@ -281,11 +281,13 @@ impl Database {
             key_path: row.get(8)?,
             created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(9)?)?
                 .with_timezone(&chrono::Utc),
-            last_used: row.get::<_, Option<String>>(10)?.map(|s| {
-                chrono::DateTime::parse_from_rfc3339(&s)
-                    .unwrap()
-                    .with_timezone(&chrono::Utc)
-            }),
+            last_used: row
+                .get::<_, Option<String>>(10)?
+                .and_then(|s| {
+                    chrono::DateTime::parse_from_rfc3339(&s)
+                        .ok()
+                        .map(|dt| dt.with_timezone(&chrono::Utc))
+                }),
             tags,
         })
     }

@@ -3,6 +3,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 mod commands;
+pub mod utils;
 
 #[allow(unused_imports)]
 use commands::*;
@@ -94,6 +95,9 @@ pub enum Commands {
     Remove {
         /// Connection name or ID
         target: String,
+        /// Skip confirmation prompt
+        #[arg(short, long)]
+        force: bool,
     },
 
     /// Show connection details
@@ -161,6 +165,9 @@ pub enum Commands {
         /// Log level
         #[arg(long)]
         log_level: Option<String>,
+        /// Clear default bastion settings
+        #[arg(long)]
+        clear_bastion: bool,
     },
 
     /// Show application statistics
@@ -242,7 +249,7 @@ impl Cli {
                 recent,
                 detailed,
             } => commands::list::execute(tag, recent, detailed, config).await,
-            Commands::Remove { target } => commands::remove::execute(target, config).await,
+            Commands::Remove { target, force } => commands::remove::execute(target, force, config).await,
             Commands::Show { target } => commands::show::execute(target, config).await,
             Commands::Edit {
                 target,
@@ -282,6 +289,7 @@ impl Cli {
                 default_port,
                 use_kerberos,
                 log_level,
+                clear_bastion,
             } => {
                 commands::config::execute(
                     default_user,
@@ -290,6 +298,7 @@ impl Cli {
                     default_port,
                     use_kerberos,
                     log_level,
+                    clear_bastion,
                     config,
                 )
                 .await
