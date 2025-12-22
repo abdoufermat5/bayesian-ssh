@@ -1,4 +1,4 @@
-# 🚀 Bayesian SSH - Fast and Easy SSH Session Manager
+# Bayesian SSH - Fast and Easy SSH Session Manager
 
 [![Rust](https://img.shields.io/badge/Rust-1.70+-blue.svg)](https://rustup.rs/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
@@ -6,7 +6,7 @@
 
 > **An ultra-fast and intelligent SSH session manager with fuzzy search across all commands, Kerberos support, bastion hosts, and advanced history management.**
 
-## 🎯 What is Bayesian SSH?
+## What is Bayesian SSH?
 
 **Bayesian SSH** transforms your SSH experience with intelligent automation:
 
@@ -18,7 +18,7 @@
 - **Complete connection history** with statistics
 - **SQLite database** for persistence
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Installation
 
@@ -106,7 +106,7 @@ bayesian-ssh config
 bayesian-ssh config --use-kerberos --default-user customuser
 ```
 
-## 📚 Documentation
+## Documentation
 
 For comprehensive guides and advanced topics, see the [docs/](docs/) folder:
 
@@ -117,11 +117,11 @@ For comprehensive guides and advanced topics, see the [docs/](docs/) folder:
 
 
 ### Coming Soon
-- 🎨 **Tauri GUI Interface** - Modern React-based interface
-- ☁️ **Cloud Integrations** - AWS, Azure, GCP, Kubernetes
-- 🔐 **Advanced Security** - Vault integration, MFA support
+-  **Tauri GUI Interface** - Modern React-based interface
+-  **Cloud Integrations** - AWS, Azure, GCP, Kubernetes
+-  **Advanced Security** - Vault integration, MFA support
 
-## 🤝 Contributing
+##  Contributing
 
 1. **Fork** the project
 2. **Create** a feature branch (`git checkout -b feature/AmazingFeature`)
@@ -129,11 +129,8 @@ For comprehensive guides and advanced topics, see the [docs/](docs/) folder:
 4. **Push** to the branch (`git push origin feature/AmazingFeature`)
 5. **Open** a Pull Request
 
-## 📄 License
+##  License
 
 This project is licensed under **MIT**. See the [LICENSE](LICENSE) file for details.
 
 ---
-
-
-*Developed with ❤️ by Abdoufermat*
