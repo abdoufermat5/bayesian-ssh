@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 300" width="700" height="300">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#888"/>
+    </marker>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="700" height="300" fill="#000"/>
+  
+  <!-- Grid pattern -->
+  <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+    <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#0a0a0a" stroke-width="0.5"/>
+  </pattern>
+  <rect width="700" height="300" fill="url(#grid)"/>
+  
+  <!-- Title -->
+  <text x="350" y="30" font-family="monospace" font-size="18" font-weight="bold" fill="#fff" text-anchor="middle">Connection Workflow</text>
+  
+  <!-- Step 1: Command -->
+  <rect x="20" y="60" width="120" height="60" rx="8" fill="#0a0a0a" stroke="#444" stroke-width="2"/>
+  <text x="80" y="85" font-family="monospace" font-size="10" fill="#888" text-anchor="middle">$ bssh connect</text>
+  <text x="80" y="105" font-family="monospace" font-size="12" fill="#fff" text-anchor="middle">"prod"</text>
+  
+  <!-- Arrow 1 -->
+  <line x1="145" y1="90" x2="175" y2="90" stroke="#888" stroke-width="2" marker-end="url(#arrow)"/>
+  
+  <!-- Step 2: Fuzzy Search -->
+  <rect x="180" y="60" width="120" height="60" rx="8" fill="#0a0a0a" stroke="#444" stroke-width="2"/>
+  <text x="240" y="80" font-family="monospace" font-size="10" fill="#888" text-anchor="middle">Fuzzy Search</text>
+  <text x="240" y="100" font-family="monospace" font-size="9" fill="#fff" text-anchor="middle">web-prod-server</text>
+  <text x="240" y="112" font-family="monospace" font-size="9" fill="#555" text-anchor="middle">db-prod-server</text>
+  
+  <!-- Arrow 2 -->
+  <line x1="305" y1="90" x2="335" y2="90" stroke="#888" stroke-width="2" marker-end="url(#arrow)"/>
+  
+  <!-- Step 3: Selection -->
+  <rect x="340" y="60" width="120" height="60" rx="8" fill="#0a0a0a" stroke="#444" stroke-width="2"/>
+  <text x="400" y="80" font-family="monospace" font-size="10" fill="#888" text-anchor="middle">Select / Auto</text>
+  <text x="400" y="100" font-family="monospace" font-size="10" fill="#fff" text-anchor="middle">▶ web-prod</text>
+  
+  <!-- Arrow 3 -->
+  <line x1="465" y1="90" x2="495" y2="90" stroke="#888" stroke-width="2" marker-end="url(#arrow)"/>
+  
+  <!-- Step 4: Connect -->
+  <rect x="500" y="60" width="120" height="60" rx="8" fill="#0a0a0a" stroke="#555" stroke-width="2"/>
+  <text x="560" y="80" font-family="monospace" font-size="10" fill="#fff" text-anchor="middle">SSH Connect</text>
+  <text x="560" y="100" font-family="monospace" font-size="9" fill="#888" text-anchor="middle">🔐 Kerberos</text>
+  <text x="560" y="112" font-family="monospace" font-size="9" fill="#888" text-anchor="middle">🔗 Bastion</text>
+  
+  <!-- Arrow 4 -->
+  <line x1="625" y1="90" x2="655" y2="90" stroke="#888" stroke-width="2" marker-end="url(#arrow)"/>
+  
+  <!-- Step 5: Server -->
+  <circle cx="680" cy="90" r="15" fill="#fff"/>
+  <text x="680" y="95" font-family="monospace" font-size="14" fill="#000" text-anchor="middle">✓</text>
+  
+  <!-- Bottom flow: Session tracking -->
+  <text x="350" y="160" font-family="monospace" font-size="14" fill="#666" text-anchor="middle">Session Tracking</text>
+  
+  <rect x="100" y="180" width="100" height="50" rx="6" fill="#0a0a0a" stroke="#444" stroke-width="1"/>
+  <text x="150" y="200" font-family="monospace" font-size="9" fill="#888" text-anchor="middle">Started</text>
+  <text x="150" y="218" font-family="monospace" font-size="8" fill="#555" text-anchor="middle">PID: 12345</text>
+  
+  <line x1="205" y1="205" x2="245" y2="205" stroke="#888" stroke-width="1" marker-end="url(#arrow)"/>
+  
+  <rect x="250" y="180" width="100" height="50" rx="6" fill="#0a0a0a" stroke="#444" stroke-width="1"/>
+  <text x="300" y="200" font-family="monospace" font-size="9" fill="#fff" text-anchor="middle">Active 🟢</text>
+  <text x="300" y="218" font-family="monospace" font-size="8" fill="#555" text-anchor="middle">Duration: 2h</text>
+  
+  <line x1="355" y1="205" x2="395" y2="205" stroke="#888" stroke-width="1" marker-end="url(#arrow)"/>
+  
+  <rect x="400" y="180" width="100" height="50" rx="6" fill="#0a0a0a" stroke="#444" stroke-width="1"/>
+  <text x="450" y="200" font-family="monospace" font-size="9" fill="#888" text-anchor="middle">Ended</text>
+  <text x="450" y="218" font-family="monospace" font-size="8" fill="#555" text-anchor="middle">Exit: 0 ✓</text>
+  
+  <line x1="505" y1="205" x2="545" y2="205" stroke="#888" stroke-width="1" marker-end="url(#arrow)"/>
+  
+  <rect x="550" y="180" width="100" height="50" rx="6" fill="#0a0a0a" stroke="#444" stroke-width="1"/>
+  <text x="600" y="200" font-family="monospace" font-size="9" fill="#fff" text-anchor="middle">📊 History</text>
+  <text x="600" y="218" font-family="monospace" font-size="8" fill="#555" text-anchor="middle">Stats saved</text>
+  
+  <!-- Legend -->
+  <rect x="20" y="260" width="660" height="30" rx="4" fill="#0a0a0a"/>
+  <text x="40" y="280" font-family="monospace" font-size="10" fill="#888">🔍 Fuzzy</text>
+  <text x="130" y="280" font-family="monospace" font-size="10" fill="#888">🔐 Kerberos</text>
+  <text x="240" y="280" font-family="monospace" font-size="10" fill="#888">🔗 Bastion</text>
+  <text x="340" y="280" font-family="monospace" font-size="10" fill="#888">📊 History</text>
+  <text x="440" y="280" font-family="monospace" font-size="10" fill="#888">🏷️ Tags</text>
+  <text x="530" y="280" font-family="monospace" font-size="10" fill="#888">⚡ Aliases</text>
+</svg>

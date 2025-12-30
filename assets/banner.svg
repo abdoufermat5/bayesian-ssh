@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" width="1200" height="300">
+  <!-- Background - pure black -->
+  <rect width="1200" height="300" fill="#000000"/>
+  
+  <!-- Matrix-style grid -->
+  <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+    <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#0a0a0a" stroke-width="0.5"/>
+  </pattern>
+  <rect width="1200" height="300" fill="url(#grid)"/>
+  
+  <!-- Falling code effect - left side -->
+  <text x="50" y="30" font-family="monospace" font-size="10" fill="#1a1a1a">01100010 01110011</text>
+  <text x="30" y="50" font-family="monospace" font-size="10" fill="#1a1a1a">ssh -J bastion</text>
+  <text x="60" y="70" font-family="monospace" font-size="10" fill="#222">kinit user@REALM</text>
+  <text x="20" y="90" font-family="monospace" font-size="10" fill="#1a1a1a">Connection::new()</text>
+  <text x="70" y="110" font-family="monospace" font-size="10" fill="#222">10101110 11001</text>
+  <text x="40" y="200" font-family="monospace" font-size="10" fill="#1a1a1a">ratatui::Frame</text>
+  <text x="60" y="220" font-family="monospace" font-size="10" fill="#222">tokio::spawn</text>
+  <text x="30" y="240" font-family="monospace" font-size="10" fill="#1a1a1a">rusqlite::params!</text>
+  <text x="50" y="260" font-family="monospace" font-size="10" fill="#222">11100101 00110</text>
+  
+  <!-- Falling code effect - right side -->
+  <text x="1050" y="40" font-family="monospace" font-size="10" fill="#1a1a1a">fuzzy_search()</text>
+  <text x="1080" y="60" font-family="monospace" font-size="10" fill="#222">00110 10101</text>
+  <text x="1030" y="80" font-family="monospace" font-size="10" fill="#1a1a1a">ProxyJump=%h</text>
+  <text x="1060" y="100" font-family="monospace" font-size="10" fill="#222">impl Session</text>
+  <text x="1040" y="200" font-family="monospace" font-size="10" fill="#1a1a1a">async fn main</text>
+  <text x="1070" y="220" font-family="monospace" font-size="10" fill="#222">vec!["prod"]</text>
+  <text x="1050" y="240" font-family="monospace" font-size="10" fill="#1a1a1a">01001 11010</text>
+  <text x="1080" y="260" font-family="monospace" font-size="10" fill="#222">#[derive(Clone)]</text>
+  
+  <!-- Terminal prompt decoration -->
+  <text x="200" y="80" font-family="monospace" font-size="14" fill="#333">$</text>
+  <text x="220" y="80" font-family="monospace" font-size="14" fill="#444">bssh connect prod</text>
+  <text x="200" y="100" font-family="monospace" font-size="12" fill="#333">▶ Connecting to web-prod-server...</text>
+  
+  <!-- Main title with terminal aesthetic -->
+  <rect x="300" y="115" width="600" height="80" rx="4" fill="#0a0a0a" stroke="#333" stroke-width="2"/>
+  
+  <!-- Terminal dots -->
+  <circle cx="320" cy="130" r="5" fill="#444"/>
+  <circle cx="340" cy="130" r="5" fill="#555"/>
+  <circle cx="360" cy="130" r="5" fill="#666"/>
+  
+  <!-- ASCII art style title -->
+  <text x="600" y="165" font-family="'Courier New', monospace" font-size="48" font-weight="bold" fill="#ffffff" text-anchor="middle" letter-spacing="8">
+    BAYESIAN SSH
+  </text>
+  
+  <!-- Cursor blink -->
+  <rect x="870" y="140" width="12" height="35" fill="#fff">
+    <animate attributeName="opacity" values="1;0;1" dur="1s" repeatCount="indefinite"/>
+  </rect>
+  
+  <!-- Tagline -->
+  <text x="600" y="230" font-family="monospace" font-size="16" fill="#666" text-anchor="middle">
+    [ Smart SSH Connection Manager ]
+  </text>
+  
+  <!-- Feature tags - monochrome -->
+  <rect x="260" y="250" width="90" height="24" rx="3" fill="none" stroke="#444" stroke-width="1"/>
+  <text x="305" y="267" font-family="monospace" font-size="11" fill="#888" text-anchor="middle">fuzzy</text>
+  
+  <rect x="360" y="250" width="90" height="24" rx="3" fill="none" stroke="#444" stroke-width="1"/>
+  <text x="405" y="267" font-family="monospace" font-size="11" fill="#888" text-anchor="middle">tui</text>
+  
+  <rect x="460" y="250" width="90" height="24" rx="3" fill="none" stroke="#444" stroke-width="1"/>
+  <text x="505" y="267" font-family="monospace" font-size="11" fill="#888" text-anchor="middle">kerberos</text>
+  
+  <rect x="560" y="250" width="90" height="24" rx="3" fill="none" stroke="#444" stroke-width="1"/>
+  <text x="605" y="267" font-family="monospace" font-size="11" fill="#888" text-anchor="middle">bastion</text>
+  
+  <rect x="660" y="250" width="90" height="24" rx="3" fill="none" stroke="#444" stroke-width="1"/>
+  <text x="705" y="267" font-family="monospace" font-size="11" fill="#888" text-anchor="middle">history</text>
+  
+  <rect x="760" y="250" width="90" height="24" rx="3" fill="none" stroke="#444" stroke-width="1"/>
+  <text x="805" y="267" font-family="monospace" font-size="11" fill="#888" text-anchor="middle">aliases</text>
+  
+  <!-- Rust crab minimal -->
+  <text x="950" y="267" font-family="monospace" font-size="12" fill="#555">🦀 Rust</text>
+  
+  <!-- Connection lines decoration -->
+  <line x1="0" y1="298" x2="1200" y2="298" stroke="#222" stroke-width="2"/>
+  <line x1="0" y1="2" x2="1200" y2="2" stroke="#222" stroke-width="2"/>
+</svg>

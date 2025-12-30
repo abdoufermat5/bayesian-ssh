@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect x="4" y="8" width="56" height="48" rx="4" fill="#000" stroke="#444" stroke-width="2"/>
+  <rect x="8" y="12" width="12" height="4" rx="1" fill="#444"/>
+  <rect x="22" y="12" width="12" height="4" rx="1" fill="#555"/>
+  <rect x="36" y="12" width="12" height="4" rx="1" fill="#666"/>
+  
+  <!-- List items -->
+  <rect x="8" y="22" width="48" height="8" rx="2" fill="#333"/>
+  <text x="12" y="29" font-family="monospace" font-size="6" fill="#fff">▶ server-prod</text>
+  
+  <rect x="8" y="32" width="48" height="8" rx="2" fill="transparent"/>
+  <text x="12" y="39" font-family="monospace" font-size="6" fill="#666">  server-staging</text>
+  
+  <rect x="8" y="42" width="48" height="8" rx="2" fill="transparent"/>
+  <text x="12" y="49" font-family="monospace" font-size="6" fill="#666">  database-main</text>
+</svg>

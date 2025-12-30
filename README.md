@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/banner.svg" alt="Bayesian SSH Banner" width="100%">
+</p>
+
 # Bayesian SSH - Fast and Easy SSH Session Manager
 
 [![Rust](https://img.shields.io/badge/Rust-1.70+-blue.svg)](https://rustup.rs/)

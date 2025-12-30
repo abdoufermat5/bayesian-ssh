@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <circle cx="26" cy="26" r="16" fill="none" stroke="#fff" stroke-width="3"/>
+  <line x1="38" y1="38" x2="54" y2="54" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+  
+  <!-- Fuzzy match indicator -->
+  <text x="18" y="30" font-family="monospace" font-size="10" fill="#888">pr*</text>
+  
+  <!-- Sparkles -->
+  <circle cx="50" cy="14" r="2" fill="#666"/>
+  <circle cx="56" cy="22" r="1.5" fill="#666"/>
+  <circle cx="10" cy="50" r="1.5" fill="#555"/>
+</svg>

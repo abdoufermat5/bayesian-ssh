@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <!-- Background circle -->
+  <circle cx="100" cy="100" r="90" fill="#0a0a0a"/>
+  <circle cx="100" cy="100" r="90" fill="none" stroke="#333" stroke-width="3"/>
+  
+  <!-- Terminal icon -->
+  <rect x="45" y="55" width="110" height="80" rx="8" fill="#000" stroke="#444" stroke-width="2"/>
+  
+  <!-- Terminal header dots -->
+  <circle cx="60" cy="68" r="4" fill="#444"/>
+  <circle cx="75" cy="68" r="4" fill="#555"/>
+  <circle cx="90" cy="68" r="4" fill="#666"/>
+  
+  <!-- BSSH text -->
+  <text x="100" y="105" font-family="monospace" font-size="20" font-weight="bold" fill="#ffffff" text-anchor="middle">BSSH</text>
+  
+  <!-- Cursor blink -->
+  <rect x="125" y="92" width="10" height="20" fill="#fff">
+    <animate attributeName="opacity" values="1;0;1" dur="1s" repeatCount="indefinite"/>
+  </rect>
+  
+  <!-- Connection lines -->
+  <path d="M30 100 Q10 100 10 80 L10 50" stroke="#444" stroke-width="2" fill="none" stroke-dasharray="4"/>
+  <path d="M170 100 Q190 100 190 80 L190 50" stroke="#444" stroke-width="2" fill="none" stroke-dasharray="4"/>
+  <circle cx="10" cy="45" r="5" fill="#666"/>
+  <circle cx="190" cy="45" r="5" fill="#666"/>
+  
+  <!-- Bayesian wave -->
+  <path d="M45 145 Q70 135 100 145 T155 145" stroke="#555" stroke-width="3" fill="none"/>
+</svg>

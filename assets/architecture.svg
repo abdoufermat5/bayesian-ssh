@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" width="800" height="500">
+  <defs>
+    <marker id="arrowDown" markerWidth="10" markerHeight="10" refX="5" refY="10" orient="auto">
+      <path d="M0,0 L10,0 L5,10 z" fill="#555"/>
+    </marker>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="800" height="500" fill="#000"/>
+  
+  <!-- Grid pattern -->
+  <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+    <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#0a0a0a" stroke-width="0.5"/>
+  </pattern>
+  <rect width="800" height="500" fill="url(#grid)"/>
+  
+  <!-- Title -->
+  <text x="400" y="35" font-family="monospace" font-size="24" font-weight="bold" fill="#fff" text-anchor="middle">Bayesian SSH Architecture</text>
+  
+  <!-- CLI Layer -->
+  <rect x="50" y="60" width="700" height="80" rx="8" fill="#0a0a0a" stroke="#444" stroke-width="2"/>
+  <text x="70" y="85" font-family="monospace" font-size="14" font-weight="bold" fill="#fff">CLI Layer</text>
+  
+  <rect x="70" y="100" width="80" height="30" rx="4" fill="#1a1a1a" stroke="#333" stroke-width="1"/>
+  <text x="110" y="120" font-family="monospace" font-size="10" fill="#888" text-anchor="middle">connect</text>
+  
+  <rect x="160" y="100" width="80" height="30" rx="4" fill="#1a1a1a" stroke="#333" stroke-width="1"/>
+  <text x="200" y="120" font-family="monospace" font-size="10" fill="#888" text-anchor="middle">list</text>
+  
+  <rect x="250" y="100" width="80" height="30" rx="4" fill="#1a1a1a" stroke="#333" stroke-width="1"/>
+  <text x="290" y="120" font-family="monospace" font-size="10" fill="#888" text-anchor="middle">history</text>
+  
+  <rect x="340" y="100" width="80" height="30" rx="4" fill="#1a1a1a" stroke="#555" stroke-width="1"/>
+  <text x="380" y="120" font-family="monospace" font-size="10" fill="#fff" text-anchor="middle">tui</text>
+  
+  <rect x="430" y="100" width="80" height="30" rx="4" fill="#1a1a1a" stroke="#333" stroke-width="1"/>
+  <text x="470" y="120" font-family="monospace" font-size="10" fill="#888" text-anchor="middle">alias</text>
+  
+  <rect x="520" y="100" width="80" height="30" rx="4" fill="#1a1a1a" stroke="#333" stroke-width="1"/>
+  <text x="560" y="120" font-family="monospace" font-size="10" fill="#888" text-anchor="middle">close</text>
+  
+  <rect x="610" y="100" width="60" height="30" rx="4" fill="#1a1a1a" stroke="#333" stroke-width="1"/>
+  <text x="640" y="120" font-family="monospace" font-size="10" fill="#555" text-anchor="middle">...</text>
+
+  <!-- Arrow down -->
+  <path d="M400 145 L400 165" stroke="#555" stroke-width="2"/>
+  <polygon points="400,175 395,165 405,165" fill="#555"/>
+  
+  <!-- Services Layer -->
+  <rect x="150" y="180" width="500" height="80" rx="8" fill="#0a0a0a" stroke="#444" stroke-width="2"/>
+  <text x="170" y="205" font-family="monospace" font-size="14" font-weight="bold" fill="#ccc">Services</text>
+  
+  <rect x="170" y="220" width="140" height="30" rx="4" fill="#1a1a1a" stroke="#333" stroke-width="1"/>
+  <text x="240" y="240" font-family="monospace" font-size="10" fill="#888" text-anchor="middle">SshService</text>
+  
+  <rect x="330" y="220" width="140" height="30" rx="4" fill="#1a1a1a" stroke="#333" stroke-width="1"/>
+  <text x="400" y="240" font-family="monospace" font-size="10" fill="#888" text-anchor="middle">Kerberos</text>
+  
+  <rect x="490" y="220" width="140" height="30" rx="4" fill="#1a1a1a" stroke="#333" stroke-width="1"/>
+  <text x="560" y="240" font-family="monospace" font-size="10" fill="#888" text-anchor="middle">SessionManager</text>
+
+  <!-- Arrow down -->
+  <path d="M400 265 L400 285" stroke="#555" stroke-width="2"/>
+  <polygon points="400,295 395,285 405,285" fill="#555"/>
+  
+  <!-- Database Layer -->
+  <rect x="200" y="300" width="400" height="80" rx="8" fill="#0a0a0a" stroke="#444" stroke-width="2"/>
+  <text x="220" y="325" font-family="monospace" font-size="14" font-weight="bold" fill="#aaa">Database Layer</text>
+  
+  <rect x="220" y="340" width="160" height="30" rx="4" fill="#1a1a1a" stroke="#333" stroke-width="1"/>
+  <text x="300" y="360" font-family="monospace" font-size="10" fill="#888" text-anchor="middle">SQLite + FuzzySearch</text>
+  
+  <rect x="400" y="340" width="180" height="30" rx="4" fill="#1a1a1a" stroke="#333" stroke-width="1"/>
+  <text x="490" y="360" font-family="monospace" font-size="10" fill="#888" text-anchor="middle">Connections | Sessions</text>
+
+  <!-- Arrow down -->
+  <path d="M400 385 L400 405" stroke="#555" stroke-width="2"/>
+  <polygon points="400,415 395,405 405,405" fill="#555"/>
+  
+  <!-- Models -->
+  <rect x="200" y="420" width="400" height="60" rx="8" fill="#0a0a0a" stroke="#444" stroke-width="2"/>
+  <text x="220" y="445" font-family="monospace" font-size="14" font-weight="bold" fill="#888">Models</text>
+  
+  <text x="400" y="460" font-family="monospace" font-size="9" fill="#666" text-anchor="middle">Connection | Session | Alias | Config</text>
+  
+  <!-- External: SSH -->
+  <rect x="650" y="180" width="120" height="180" rx="8" fill="#0a0a0a" stroke="#333" stroke-width="2" stroke-dasharray="5"/>
+  <text x="710" y="210" font-family="monospace" font-size="12" font-weight="bold" fill="#666" text-anchor="middle">External</text>
+  
+  <text x="710" y="250" font-family="monospace" font-size="10" fill="#888" text-anchor="middle">ssh</text>
+  <text x="710" y="280" font-family="monospace" font-size="10" fill="#888" text-anchor="middle">kinit</text>
+  <text x="710" y="310" font-family="monospace" font-size="10" fill="#888" text-anchor="middle">klist</text>
+  <text x="710" y="340" font-family="monospace" font-size="10" fill="#555" text-anchor="middle">bastion</text>
+  
+  <!-- Connection arrows to external -->
+  <path d="M650 220 L560 240" stroke="#333" stroke-width="1" stroke-dasharray="3"/>
+</svg>
