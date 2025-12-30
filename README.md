@@ -143,11 +143,8 @@ For comprehensive guides and advanced topics, see the [docs/](docs/) folder:
 - **[Troubleshooting](docs/troubleshooting.md)** - Common issues and solutions
 - **[Documentation Index](docs/README.md)** - Complete documentation overview
 
-
-### Coming Soon
--  **Tauri GUI Interface** - Modern React-based interface
--  **Cloud Integrations** - AWS, Azure, GCP, Kubernetes
--  **Advanced Security** - Vault integration, MFA support
+## Changelog
+See [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
 ##  Contributing
 
