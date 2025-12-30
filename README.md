@@ -79,6 +79,34 @@ bayesian-ssh list
 
 # Import from SSH config
 bayesian-ssh import
+
+# Interactive TUI mode
+bayesian-ssh tui                          # Full-screen connection browser
+```
+
+### Session Management
+```bash
+# View session history with stats
+bayesian-ssh history                      # Recent sessions
+bayesian-ssh history -c "prod"            # Filter by connection
+bayesian-ssh history --days 7 --failed    # Last week's failures
+
+# Manage active sessions
+bayesian-ssh close                        # List active sessions
+bayesian-ssh close "Server"               # Close specific session
+bayesian-ssh close --cleanup              # Clean stale sessions
+bayesian-ssh close --all                  # Close all sessions
+```
+
+### Connection Aliases
+```bash
+# Create shortcuts for connections
+bayesian-ssh alias add db prod-database   # 'db' → 'prod-database'
+bayesian-ssh alias add p1 Portail01       # Quick alias
+bayesian-ssh connect db                   # Uses alias
+
+bayesian-ssh alias list                   # Show all aliases
+bayesian-ssh alias remove db              # Remove alias
 ```
 
 ### Bastion Management

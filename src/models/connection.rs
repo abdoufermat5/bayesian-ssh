@@ -16,6 +16,9 @@ pub struct Connection {
     pub created_at: DateTime<Utc>,
     pub last_used: Option<DateTime<Utc>>,
     pub tags: Vec<String>,
+    /// Aliases for this connection (not stored in main table, loaded separately)
+    #[serde(default)]
+    pub aliases: Vec<String>,
 }
 
 impl Connection {
@@ -43,6 +46,7 @@ impl Connection {
             created_at: Utc::now(),
             last_used: None,
             tags: Vec::new(),
+            aliases: Vec::new(),
         }
     }
 

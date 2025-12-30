@@ -436,3 +436,80 @@ bayesian-ssh connect "Target Server" --bastion-user currentuser
 # Test bastion port
 bayesian-ssh connect "Target Server" --bastion-port 2222
 ```
+
+## Interactive TUI Mode
+
+Launch a full-screen terminal interface for browsing connections:
+
+```bash
+bayesian-ssh tui
+```
+
+### TUI Keybindings
+| Key | Action |
+|-----|--------|
+| `↑/k`, `↓/j` | Navigate |
+| `Enter` | Connect |
+| `/` | Search |
+| `t` | Filter by tag |
+| `d` | Delete |
+| `s` | Show details |
+| `r` | Refresh |
+| `?` | Help |
+| `q` | Quit |
+
+## Session Management
+
+### View History
+```bash
+# Recent sessions with stats
+bayesian-ssh history
+
+# Filter by connection
+bayesian-ssh history --connection prod
+
+# Last 7 days, failures only
+bayesian-ssh history --days 7 --failed
+
+# Limit results
+bayesian-ssh history --limit 50
+```
+
+### Manage Active Sessions
+```bash
+# List active sessions (shows PIDs and stale detection)
+bayesian-ssh close
+
+# Close specific session
+bayesian-ssh close "Prod Server"
+
+# Clean up stale sessions (PIDs no longer running)
+bayesian-ssh close --cleanup
+
+# Force close all
+bayesian-ssh close --all --force
+```
+
+## Connection Aliases
+
+Create shortcuts for frequently used connections:
+
+```bash
+# Add aliases
+bayesian-ssh alias add p1 Portail01
+bayesian-ssh alias add db prod-database
+bayesian-ssh alias add staging Portail-staging
+
+# Use aliases
+bayesian-ssh connect p1
+bayesian-ssh connect db
+
+# List all aliases
+bayesian-ssh alias list
+
+# List aliases for specific connection
+bayesian-ssh alias list Portail01
+
+# Remove alias
+bayesian-ssh alias remove p1
+```

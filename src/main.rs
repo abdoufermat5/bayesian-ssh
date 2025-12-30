@@ -6,6 +6,7 @@ mod config;
 mod database;
 mod models;
 mod services;
+mod tui;
 
 use cli::{Cli, Commands};
 use config::AppConfig;

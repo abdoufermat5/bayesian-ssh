@@ -320,6 +320,10 @@ pub fn show_connection_details(connection: &Connection) -> Result<()> {
         println!("  Tags:     {}", connection.tags.join(", "));
     }
 
+    if !connection.aliases.is_empty() {
+        println!("  Aliases:  {}", connection.aliases.join(", "));
+    }
+
     println!("\n  SSH Command: {}", connection.to_ssh_command());
 
     Ok(())

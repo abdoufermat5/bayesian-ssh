@@ -189,6 +189,69 @@ pub enum Commands {
         #[arg(value_enum)]
         shell: clap_complete::Shell,
     },
+
+    /// Show session history
+    History {
+        /// Filter by connection name
+        #[arg(short, long)]
+        connection: Option<String>,
+        /// Maximum number of entries to show
+        #[arg(short, long, default_value = "20")]
+        limit: usize,
+        /// Show only sessions from the last N days
+        #[arg(short, long)]
+        days: Option<u32>,
+        /// Show only failed sessions
+        #[arg(short, long)]
+        failed: bool,
+    },
+
+    /// Launch interactive TUI mode
+    #[command(alias = "ui")]
+    Tui,
+
+    /// Manage connection aliases
+    Alias {
+        #[command(subcommand)]
+        action: AliasSubcommand,
+    },
+
+    /// Close active SSH sessions
+    #[command(alias = "kill")]
+    Close {
+        /// Connection name to close (shows active sessions if omitted)
+        target: Option<String>,
+        /// Close all active sessions
+        #[arg(short, long)]
+        all: bool,
+        /// Clean up stale sessions (PIDs no longer running)
+        #[arg(long)]
+        cleanup: bool,
+        /// Skip confirmation prompts
+        #[arg(short, long)]
+        force: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AliasSubcommand {
+    /// Add a new alias for a connection
+    Add {
+        /// Alias name
+        alias: String,
+        /// Target connection name
+        target: String,
+    },
+    /// Remove an alias
+    Remove {
+        /// Alias to remove
+        alias: String,
+    },
+    /// List aliases
+    List {
+        /// Connection to list aliases for (optional)
+        target: Option<String>,
+    },
 }
 
 impl Cli {
@@ -308,6 +371,33 @@ impl Cli {
                 commands::import::execute(file, no_bastion, config).await
             }
             Commands::Completions { shell } => commands::completions::execute(shell, config).await,
+            Commands::History {
+                connection,
+                limit,
+                days,
+                failed,
+            } => commands::history::execute(connection, limit, days, failed, config).await,
+            Commands::Tui => commands::tui::execute(config).await,
+            Commands::Alias { action } => {
+                let alias_action = match action {
+                    AliasSubcommand::Add { alias, target } => {
+                        commands::alias::AliasAction::Add { alias, target }
+                    }
+                    AliasSubcommand::Remove { alias } => {
+                        commands::alias::AliasAction::Remove { alias }
+                    }
+                    AliasSubcommand::List { target } => {
+                        commands::alias::AliasAction::List { target }
+                    }
+                };
+                commands::alias::execute(alias_action, config).await
+            }
+            Commands::Close {
+                target,
+                all,
+                cleanup,
+                force,
+            } => commands::close::execute(target, all, cleanup, force, config).await,
         }
     }
 }

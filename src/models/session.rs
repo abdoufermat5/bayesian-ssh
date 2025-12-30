@@ -79,3 +79,14 @@ pub struct SessionStats {
     pub average_duration: Option<chrono::Duration>,
     pub success_rate: f64,
 }
+
+/// Session history entry for display purposes
+#[derive(Debug)]
+pub struct SessionHistoryEntry {
+    pub connection_name: String,
+    pub started_at: DateTime<Utc>,
+    pub ended_at: Option<DateTime<Utc>>,
+    pub status: SessionStatus,
+    pub exit_code: Option<i32>,
+    pub duration: Option<chrono::Duration>,
+}

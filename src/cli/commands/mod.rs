@@ -1,10 +1,14 @@
 pub mod add;
+pub mod alias;
+pub mod close;
 pub mod completions;
 pub mod config;
 pub mod connect;
 pub mod edit;
+pub mod history;
 pub mod import;
 pub mod list;
 pub mod remove;
 pub mod show;
 pub mod stats;
+pub mod tui;

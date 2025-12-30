@@ -79,6 +79,27 @@ impl Database {
             [],
         )?;
 
+        // Create aliases table for connection aliasing
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS aliases (
+                alias TEXT PRIMARY KEY,
+                connection_id TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (connection_id) REFERENCES connections (id) ON DELETE CASCADE
+            )",
+            [],
+        )?;
+
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_aliases_connection_id ON aliases(connection_id)",
+            [],
+        )?;
+
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sessions_started_at ON sessions(started_at)",
+            [],
+        )?;
+
         Ok(())
     }
 
@@ -264,6 +285,217 @@ impl Database {
         Ok(())
     }
 
+    // Session history retrieval
+    pub fn get_session_history(
+        &self,
+        connection_filter: Option<&str>,
+        limit: usize,
+        days: Option<u32>,
+        show_failed_only: bool,
+    ) -> Result<Vec<crate::models::SessionHistoryEntry>> {
+        use crate::models::{SessionHistoryEntry, SessionStatus};
+        use chrono::{Duration, Utc};
+
+        let mut query = String::from(
+            "SELECT s.id, c.name, s.started_at, s.ended_at, s.status, s.exit_code
+             FROM sessions s
+             JOIN connections c ON s.connection_id = c.id
+             WHERE 1=1"
+        );
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+        if let Some(conn_name) = connection_filter {
+            query.push_str(" AND (c.name LIKE ? OR c.id = ?)");
+            params.push(Box::new(format!("%{}%", conn_name)));
+            params.push(Box::new(conn_name.to_string()));
+        }
+
+        if let Some(d) = days {
+            let cutoff = Utc::now() - Duration::days(d as i64);
+            query.push_str(" AND s.started_at >= ?");
+            params.push(Box::new(cutoff.to_rfc3339()));
+        }
+
+        if show_failed_only {
+            query.push_str(" AND (s.status LIKE '%Error%' OR s.exit_code != 0)");
+        }
+
+        query.push_str(" ORDER BY s.started_at DESC LIMIT ?");
+        params.push(Box::new(limit as i64));
+
+        let mut stmt = self.conn.prepare(&query)?;
+        let mut rows = stmt.query(rusqlite::params_from_iter(
+            params.iter().map(|p| p.as_ref()),
+        ))?;
+
+        let mut entries = Vec::new();
+        while let Some(row) = rows.next()? {
+            let started_at_str: String = row.get(2)?;
+            let ended_at_str: Option<String> = row.get(3)?;
+            let status_json: String = row.get(4)?;
+
+            let started_at = chrono::DateTime::parse_from_rfc3339(&started_at_str)?
+                .with_timezone(&Utc);
+            let ended_at = ended_at_str.and_then(|s| {
+                chrono::DateTime::parse_from_rfc3339(&s)
+                    .ok()
+                    .map(|dt| dt.with_timezone(&Utc))
+            });
+
+            let status: SessionStatus = serde_json::from_str(&status_json)
+                .unwrap_or(SessionStatus::Error("unknown".to_string()));
+
+            let duration = ended_at.map(|end| end - started_at);
+
+            entries.push(SessionHistoryEntry {
+                connection_name: row.get(1)?,
+                started_at,
+                ended_at,
+                status,
+                exit_code: row.get(5)?,
+                duration,
+            });
+        }
+
+        Ok(entries)
+    }
+
+    // Alias management
+    pub fn add_alias(&self, alias: &str, connection_id: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO aliases (alias, connection_id, created_at)
+             VALUES (?, ?, ?)",
+            params![alias, connection_id, chrono::Utc::now().to_rfc3339()],
+        )?;
+        info!("Alias '{}' added for connection {}", alias, connection_id);
+        Ok(())
+    }
+
+    pub fn remove_alias(&self, alias: &str) -> Result<bool> {
+        let rows = self.conn.execute(
+            "DELETE FROM aliases WHERE alias = ?",
+            params![alias],
+        )?;
+        Ok(rows > 0)
+    }
+
+    pub fn get_aliases_for_connection(&self, connection_id: &str) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT alias FROM aliases WHERE connection_id = ?"
+        )?;
+        let mut rows = stmt.query(params![connection_id])?;
+        
+        let mut aliases = Vec::new();
+        while let Some(row) = rows.next()? {
+            aliases.push(row.get(0)?);
+        }
+        Ok(aliases)
+    }
+
+    pub fn get_connection_by_alias(&self, alias: &str) -> Result<Option<Connection>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT c.id, c.name, c.host, c.user, c.port, c.bastion, c.bastion_user, 
+                    c.use_kerberos, c.key_path, c.created_at, c.last_used, c.tags
+             FROM connections c
+             JOIN aliases a ON c.id = a.connection_id
+             WHERE a.alias = ?"
+        )?;
+        let mut rows = stmt.query(params![alias])?;
+
+        if let Some(row) = rows.next()? {
+            Ok(Some(self.row_to_connection(row)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Enhanced get_connection that also checks aliases
+    pub fn get_connection_or_alias(&self, name_or_alias: &str) -> Result<Option<Connection>> {
+        // First try direct lookup
+        if let Some(conn) = self.get_connection(name_or_alias)? {
+            return Ok(Some(conn));
+        }
+        // Then try alias lookup
+        self.get_connection_by_alias(name_or_alias)
+    }
+
+    // Active session management
+    pub fn get_active_sessions(&self) -> Result<Vec<(String, Option<u32>, chrono::DateTime<chrono::Utc>)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT c.name, s.pid, s.started_at
+             FROM sessions s
+             JOIN connections c ON s.connection_id = c.id
+             WHERE s.ended_at IS NULL AND s.status LIKE '%Active%'
+             ORDER BY s.started_at DESC"
+        )?;
+        let mut rows = stmt.query([])?;
+
+        let mut sessions = Vec::new();
+        while let Some(row) = rows.next()? {
+            let started_str: String = row.get(2)?;
+            let started_at = chrono::DateTime::parse_from_rfc3339(&started_str)?
+                .with_timezone(&chrono::Utc);
+            sessions.push((row.get(0)?, row.get(1)?, started_at));
+        }
+        Ok(sessions)
+    }
+
+    pub fn get_active_sessions_for_connection(&self, target: &str) -> Result<Vec<(String, String, Option<u32>, chrono::DateTime<chrono::Utc>)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT s.id, c.name, s.pid, s.started_at
+             FROM sessions s
+             JOIN connections c ON s.connection_id = c.id
+             WHERE s.ended_at IS NULL AND s.status LIKE '%Active%'
+               AND (c.name LIKE ? OR c.id = ?)
+             ORDER BY s.started_at DESC"
+        )?;
+        let like_pattern = format!("%{}%", target);
+        let mut rows = stmt.query(params![like_pattern, target])?;
+
+        let mut sessions = Vec::new();
+        while let Some(row) = rows.next()? {
+            let started_str: String = row.get(3)?;
+            let started_at = chrono::DateTime::parse_from_rfc3339(&started_str)?
+                .with_timezone(&chrono::Utc);
+            sessions.push((row.get(0)?, row.get(1)?, row.get(2)?, started_at));
+        }
+        Ok(sessions)
+    }
+
+    pub fn get_session_id_by_pid(&self, pid: u32) -> Result<Option<String>> {
+        let result = self.conn.query_row(
+            "SELECT id FROM sessions WHERE pid = ? AND ended_at IS NULL",
+            params![pid],
+            |row| row.get(0)
+        );
+        match result {
+            Ok(id) => Ok(Some(id)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    pub fn mark_session_terminated(&self, session_id: &str, exit_code: i32) -> Result<()> {
+        self.conn.execute(
+            "UPDATE sessions SET ended_at = ?, status = ?, exit_code = ? WHERE id = ?",
+            params![
+                chrono::Utc::now().to_rfc3339(),
+                "\"Terminated\"",
+                exit_code,
+                session_id
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn mark_all_sessions_terminated(&self) -> Result<()> {
+        self.conn.execute(
+            "UPDATE sessions SET ended_at = ?, status = ?, exit_code = -1 WHERE ended_at IS NULL",
+            params![chrono::Utc::now().to_rfc3339(), "\"Terminated\""],
+        )?;
+        Ok(())
+    }
+
     // Helper methods
     fn row_to_connection(&self, row: &rusqlite::Row) -> Result<Connection> {
         let tags_json: String = row.get(11)?;
@@ -279,6 +511,7 @@ impl Database {
             bastion_user: row.get(6)?,
             use_kerberos: row.get(7)?,
             key_path: row.get(8)?,
+            aliases: Vec::new(), // Loaded separately when needed
             created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(9)?)?
                 .with_timezone(&chrono::Utc),
             last_used: row

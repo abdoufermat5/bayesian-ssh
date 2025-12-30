@@ -1,4 +1,5 @@
 use crate::config::AppConfig;
+use crate::cli::utils::format_duration;
 use crate::services::SshService;
 use anyhow::Result;
 use tracing::info;
@@ -19,70 +20,105 @@ pub async fn execute(
 
     if connections.is_empty() {
         println!("📭 No connections found.");
+        if tag.is_some() {
+            println!("   Try without --tag filter or use 'bssh add' to create connections.");
+        }
         return Ok(());
     }
 
-    println!("🔗 Found {} connection(s):\n", connections.len());
+    // Header
+    let filter_info = match (&tag, recent) {
+        (Some(t), true) => format!(" (tag: {}, recent only)", t),
+        (Some(t), false) => format!(" (tag: {})", t),
+        (None, true) => " (recent only)".to_string(),
+        (None, false) => String::new(),
+    };
+    
+    println!("\n🔗 Connections{}", filter_info);
+    println!("{}", "═".repeat(70));
 
-    for (i, conn) in connections.iter().enumerate() {
-        if detailed {
-            println!("{}. {} (ID: {})", i + 1, conn.name, conn.id);
-            println!("   Host: {}:{}", conn.host, conn.port);
-            println!("   User: {}", conn.user);
+    if detailed {
+        for conn in &connections {
+            // Connection header
+            let status_icons = format!(
+                "{}{}",
+                if conn.use_kerberos { "🔐" } else { "" },
+                if conn.bastion.is_some() { "🔗" } else { "" }
+            );
+            
+            println!("\n┌─ {} {}", conn.name, status_icons);
+            println!("│  {}@{}:{}", conn.user, conn.host, conn.port);
+            
             if let Some(bastion) = &conn.bastion {
-                println!(
-                    "   Bastion: {}@{}",
-                    conn.bastion_user.as_deref().unwrap_or(&conn.user),
+                println!("│  via {}@{}", 
+                    conn.bastion_user.as_deref().unwrap_or(&conn.user), 
                     bastion
                 );
             }
-            println!(
-                "   Kerberos: {}",
-                if conn.use_kerberos { "✅" } else { "❌" }
-            );
+            
             if let Some(key) = &conn.key_path {
-                println!("   SSH Key: {}", key);
+                println!("│  key: {}", key);
             }
-            if let Some(last_used) = conn.last_used {
-                println!("   Last used: {}", last_used.format("%Y-%m-%d %H:%M:%S"));
-            }
+            
             if !conn.tags.is_empty() {
-                println!("   Tags: {}", conn.tags.join(", "));
+                println!("│  tags: {}", conn.tags.join(", "));
             }
-            println!();
-        } else {
-            let bastion_info = if let Some(bastion) = &conn.bastion {
-                format!(
-                    " → {}@{}",
-                    conn.bastion_user.as_deref().unwrap_or(&conn.user),
-                    bastion
-                )
+            
+            if let Some(last_used) = conn.last_used {
+                println!("│  last: {}", format_duration(last_used));
+            }
+            
+            println!("└─ id: {}", conn.id);
+        }
+    } else {
+        // Table header
+        println!(
+            "{:<3} {:<20} {:<25} {:<8} {}",
+            "#", "NAME", "HOST", "PORT", "INFO"
+        );
+        println!("{}", "─".repeat(70));
+
+        for (i, conn) in connections.iter().enumerate() {
+            let icons = format!(
+                "{}{}",
+                if conn.use_kerberos { "🔐" } else { "  " },
+                if conn.bastion.is_some() { "🔗" } else { "  " }
+            );
+            
+            let last_used = conn.last_used
+                .map(|dt| format_duration(dt))
+                .unwrap_or_default();
+            
+            let tags = if !conn.tags.is_empty() {
+                format!("[{}]", conn.tags.join(","))
             } else {
                 String::new()
             };
-
-            let kerberos_icon = if conn.use_kerberos { "🔐" } else { "" };
-            let last_used_info = if let Some(last_used) = conn.last_used {
-                format!(" (last: {})", last_used.format("%m-%d %H:%M"))
-            } else {
-                String::new()
-            };
-
+            
+            let info = format!("{} {} {}", icons, last_used, tags).trim().to_string();
+            
             println!(
-                "{}. {}{} {}{}{}",
+                "{:<3} {:<20} {:<25} {:<8} {}",
                 i + 1,
-                conn.name,
-                bastion_info,
-                kerberos_icon,
-                last_used_info,
-                if !conn.tags.is_empty() {
-                    format!(" [{}]", conn.tags.join(", "))
-                } else {
-                    String::new()
-                }
+                truncate(&conn.name, 19),
+                format!("{}@{}", truncate(&conn.user, 8), truncate(&conn.host, 15)),
+                conn.port,
+                info
             );
         }
     }
 
+    println!("{}", "─".repeat(70));
+    println!("Total: {} connection(s)", connections.len());
+    println!();
+
     Ok(())
+}
+
+fn truncate(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        s.to_string()
+    } else {
+        format!("{}…", &s[..max - 1])
+    }
 }

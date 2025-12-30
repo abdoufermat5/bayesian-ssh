@@ -29,8 +29,8 @@ impl SshService {
         bastion_user: Option<String>,
         key: Option<String>,
     ) -> Result<()> {
-        // Try to find connection in database first
-        if let Some(mut connection) = self.database.get_connection(target)? {
+        // Try to find connection in database first (also checks aliases)
+        if let Some(mut connection) = self.database.get_connection_or_alias(target)? {
             info!("Found existing connection: {}", connection.name);
 
             // Override with command line arguments if provided

@@ -5,6 +5,32 @@ All notable changes to Bayesian SSH will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2025-12-30
+
+### Added
+- **Interactive TUI mode** (`bssh tui`): Full-screen terminal interface with ratatui
+  - Browse, search, and connect to servers
+  - Keyboard navigation (vim-style j/k, arrows, PgUp/PgDn)
+  - Tag filtering, help overlay, confirmation dialogs
+- **Session history command** (`bssh history`): View connection history with statistics
+  - Success/failure rates, average duration
+  - Filter by connection, days, failed-only
+- **Connection aliases** (`bssh alias`): Create shortcuts for connections
+  - `bssh alias add db prod-database` → `bssh connect db`
+  - Aliases work transparently with connect command
+- **Close/kill sessions** (`bssh close`): Manage active SSH sessions
+  - List active sessions with PID and stale detection
+  - Close specific sessions or all at once
+  - `--cleanup` to remove stale sessions (PIDs no longer running)
+
+### Changed
+- Connect command now checks aliases before fuzzy search
+- Session tracking improved with accurate active/stale detection
+
+### Dependencies
+- Added `ratatui` and `crossterm` for TUI
+- Enabled `signal` feature in `nix` for process management
+
 ## [1.2.0] - 2025-12-22
 
 ### Added
