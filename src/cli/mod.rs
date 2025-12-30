@@ -168,6 +168,9 @@ pub enum Commands {
         /// Clear default bastion settings
         #[arg(long)]
         clear_bastion: bool,
+        /// Search mode: "bayesian" (smart ranking) or "fuzzy" (simple matching)
+        #[arg(long, value_parser = ["bayesian", "fuzzy"])]
+        search_mode: Option<String>,
     },
 
     /// Show application statistics
@@ -353,6 +356,7 @@ impl Cli {
                 use_kerberos,
                 log_level,
                 clear_bastion,
+                search_mode,
             } => {
                 commands::config::execute(
                     default_user,
@@ -362,6 +366,7 @@ impl Cli {
                     use_kerberos,
                     log_level,
                     clear_bastion,
+                    search_mode,
                     config,
                 )
                 .await

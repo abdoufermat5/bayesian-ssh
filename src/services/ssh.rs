@@ -303,6 +303,11 @@ impl SshService {
         self.database.fuzzy_search_connections(query, limit)
     }
 
+    // Search with configurable mode (bayesian or fuzzy)
+    pub async fn search(&self, query: &str, limit: usize, mode: &str) -> Result<Vec<Connection>> {
+        self.database.search_connections(query, limit, mode)
+    }
+
     pub async fn get_recent_connections(&self, limit: usize) -> Result<Vec<Connection>> {
         self.database
             .list_connections(None, true)

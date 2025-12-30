@@ -14,6 +14,12 @@ pub struct AppConfig {
     pub log_level: String,
     pub auto_save_history: bool,
     pub max_history_size: usize,
+    #[serde(default = "default_search_mode")]
+    pub search_mode: String, // "bayesian" or "fuzzy"
+}
+
+fn default_search_mode() -> String {
+    "bayesian".to_string()
 }
 
 impl Default for AppConfig {
@@ -33,6 +39,7 @@ impl Default for AppConfig {
             log_level: "info".to_string(),
             auto_save_history: true,
             max_history_size: 1000,
+            search_mode: "bayesian".to_string(),
         }
     }
 }
@@ -104,6 +111,11 @@ impl AppConfig {
         if let Some(max_size) = updates.max_history_size {
             self.max_history_size = max_size;
         }
+        if let Some(search_mode) = updates.search_mode {
+            if search_mode == "bayesian" || search_mode == "fuzzy" {
+                self.search_mode = search_mode;
+            }
+        }
 
         self.save()
     }
@@ -119,4 +131,5 @@ pub struct AppConfigUpdates {
     pub log_level: Option<String>,
     pub auto_save_history: Option<bool>,
     pub max_history_size: Option<usize>,
+    pub search_mode: Option<String>,
 }

@@ -8,14 +8,15 @@
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![CI](https://github.com/abdoufermat5/bayesian-ssh/workflows/CI/badge.svg)](https://github.com/abdoufermat5/bayesian-ssh/actions/workflows/ci.yml)
 
-> **An ultra-fast and intelligent SSH session manager with fuzzy search across all commands, Kerberos support, bastion hosts, and advanced history management.**
+> **An ultra-fast and intelligent SSH session manager with Bayesian-ranked search, fuzzy matching, Kerberos support, bastion hosts, and advanced history management.**
 
 ## What is Bayesian SSH?
 
 **Bayesian SSH** transforms your SSH experience with intelligent automation:
 
-- **One-click connections** to your servers
+- **Bayesian-ranked search** - connections ranked by frequency, recency, and match quality
 - **Intelligent fuzzy search** across all commands - find connections by partial names, tags, or patterns
+- **One-click connections** to your servers
 - **Automatic Kerberos** ticket management
 - **Smart bastion host** routing
 - **Tag-based organization** for easy management

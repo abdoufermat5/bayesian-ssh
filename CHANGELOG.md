@@ -8,7 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.3.0] - 2025-12-30
 
 ### Added
-- **Interactive TUI mode** (`bssh tui`): Full-screen terminal interface with ratatui
+- **Bayesian-ranked search**: Smart connection ranking combining:
+  - Prior probability (usage frequency with Laplace smoothing)
+  - Likelihood (match quality: exact, prefix, word-boundary, contains)
+  - Recency (exponential decay based on last use)
+  - Success rate (connections that work get boosted)- **Configurable search mode** (`bssh config --search-mode bayesian|fuzzy`)
+  - `bayesian`: Smart ranking based on usage patterns (default)
+  - `fuzzy`: Simple pattern matching
+- **Assets**: SVG icons, banner, architecture and workflow diagrams
+
+### Changed
+- Default search mode is now "bayesian" for smarter results
+
+## [1.3.0] - 2025-12-30
+
+### Added- **Interactive TUI mode** (`bssh tui`): Full-screen terminal interface with ratatui
   - Browse, search, and connect to servers
   - Keyboard navigation (vim-style j/k, arrows, PgUp/PgDn)
   - Tag filtering, help overlay, confirmation dialogs
@@ -22,10 +36,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - List active sessions with PID and stale detection
   - Close specific sessions or all at once
   - `--cleanup` to remove stale sessions (PIDs no longer running)
+- **Configurable search mode** (`bssh config --search-mode bayesian|fuzzy`)
+  - `bayesian`: Smart ranking based on usage patterns (default)
+  - `fuzzy`: Simple pattern matching
 
 ### Changed
 - Connect command now checks aliases before fuzzy search
 - Session tracking improved with accurate active/stale detection
+- Default search mode is now "bayesian" for smarter results
 
 ### Dependencies
 - Added `ratatui` and `crossterm` for TUI

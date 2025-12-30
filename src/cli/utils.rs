@@ -3,6 +3,7 @@
 //! This module provides common UI components used across multiple commands
 //! to reduce code duplication and ensure consistent UX.
 
+use crate::config::AppConfig;
 use crate::models::Connection;
 use crate::services::SshService;
 use anyhow::Result;
@@ -146,10 +147,29 @@ pub async fn fuzzy_select_connection(
     action_name: &str,
     auto_select_single: bool,
 ) -> Result<Option<Connection>> {
+    fuzzy_select_connection_with_config(
+        ssh_service,
+        initial_query,
+        action_name,
+        auto_select_single,
+        &AppConfig::load()?,
+    )
+    .await
+}
+
+/// Same as fuzzy_select_connection but accepts a config parameter
+pub async fn fuzzy_select_connection_with_config(
+    ssh_service: &SshService,
+    initial_query: &str,
+    action_name: &str,
+    auto_select_single: bool,
+    config: &AppConfig,
+) -> Result<Option<Connection>> {
     let mut current_query = initial_query.to_string();
+    let search_mode = config.search_mode.as_str();
 
     loop {
-        let matches = ssh_service.fuzzy_search(&current_query, 10).await?;
+        let matches = ssh_service.search(&current_query, 10, search_mode).await?;
 
         match matches.len() {
             0 => {

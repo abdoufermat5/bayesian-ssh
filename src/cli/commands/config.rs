@@ -10,6 +10,7 @@ pub async fn execute(
     use_kerberos: Option<bool>,
     log_level: Option<String>,
     clear_bastion: bool,
+    search_mode: Option<String>,
     mut config: AppConfig,
 ) -> Result<()> {
     info!("Updating application configuration");
@@ -39,6 +40,7 @@ pub async fn execute(
         log_level,
         auto_save_history: None,
         max_history_size: None,
+        search_mode,
     };
 
     config.update(updates)?;
@@ -64,6 +66,15 @@ pub async fn execute(
         }
     );
     println!("  Log level: {}", config.log_level);
+    println!(
+        "  Search mode: {} {}",
+        config.search_mode,
+        if config.search_mode == "bayesian" {
+            "(smart ranking with frequency/recency)"
+        } else {
+            "(simple pattern matching)"
+        }
+    );
 
     Ok(())
 }
