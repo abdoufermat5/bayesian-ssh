@@ -5,6 +5,11 @@ All notable changes to Bayesian SSH will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.2] - 2025-12-31
+
+### Fixed
+- **Log level configuration ignored**: The `log_level` setting in config file was not being applied because logging was initialized before loading the configuration. Now the config is loaded first and the tracing subscriber respects the configured log level (`trace`, `debug`, `info`, `warn`, `error`, `off`/`none`).
+
 ## [1.3.1] - 2025-12-30
 
 ### Added
