@@ -2,7 +2,8 @@
 
 use crate::config::AppConfig;
 use crate::services::SshService;
-use crate::tui::app::{run_tui, PendingAction};
+use crate::tui::event_loop::run_tui;
+use crate::tui::models::PendingAction;
 use anyhow::Result;
 
 /// Execute the TUI command

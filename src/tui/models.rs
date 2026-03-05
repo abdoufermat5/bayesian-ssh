@@ -1,0 +1,333 @@
+//! TUI data models, enums, and small types
+
+use crate::models::Connection;
+use std::collections::HashSet;
+
+/// Active tab in the TUI
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tab {
+    Connections,
+    History,
+    Config,
+}
+
+impl Tab {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Tab::Connections => "Connections",
+            Tab::History => "History",
+            Tab::Config => "Config",
+        }
+    }
+
+    pub fn all() -> &'static [Tab] {
+        &[Tab::Connections, Tab::History, Tab::Config]
+    }
+
+    pub fn index(&self) -> usize {
+        match self {
+            Tab::Connections => 0,
+            Tab::History => 1,
+            Tab::Config => 2,
+        }
+    }
+
+    pub fn from_index(i: usize) -> Self {
+        match i {
+            0 => Tab::Connections,
+            1 => Tab::History,
+            2 => Tab::Config,
+            _ => Tab::Connections,
+        }
+    }
+
+    pub fn next(&self) -> Self {
+        Self::from_index((self.index() + 1) % Self::all().len())
+    }
+
+    pub fn prev(&self) -> Self {
+        let len = Self::all().len();
+        Self::from_index((self.index() + len - 1) % len)
+    }
+}
+
+/// Application mode/state
+#[derive(Debug, Clone, PartialEq)]
+pub enum AppMode {
+    /// Normal browsing mode
+    Normal,
+    /// Search/filter mode
+    Search,
+    /// Help overlay
+    Help,
+    /// Confirmation dialog
+    Confirm(ConfirmAction),
+    /// Detail preview pane
+    Detail,
+    /// Inline edit mode
+    Edit,
+    /// Add new connection mode
+    Add,
+    /// Quick connect bar
+    QuickConnect,
+    /// SSH command preview
+    CommandPreview,
+}
+
+/// Actions that require confirmation
+#[derive(Debug, Clone, PartialEq)]
+pub enum ConfirmAction {
+    Delete(usize),
+    BatchDelete,
+}
+
+/// Sort field for connection list
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SortField {
+    Name,
+    Host,
+    LastUsed,
+    Created,
+}
+
+impl SortField {
+    pub fn label(&self) -> &'static str {
+        match self {
+            SortField::Name => "Name",
+            SortField::Host => "Host",
+            SortField::LastUsed => "Last Used",
+            SortField::Created => "Created",
+        }
+    }
+
+    pub fn next(&self) -> Self {
+        match self {
+            SortField::Name => SortField::Host,
+            SortField::Host => SortField::LastUsed,
+            SortField::LastUsed => SortField::Created,
+            SortField::Created => SortField::Name,
+        }
+    }
+}
+
+/// Sort direction
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SortDirection {
+    Asc,
+    Desc,
+}
+
+impl SortDirection {
+    pub fn toggle(&self) -> Self {
+        match self {
+            SortDirection::Asc => SortDirection::Desc,
+            SortDirection::Desc => SortDirection::Asc,
+        }
+    }
+
+    pub fn arrow(&self) -> &'static str {
+        match self {
+            SortDirection::Asc => "↑",
+            SortDirection::Desc => "↓",
+        }
+    }
+}
+
+/// State for inline editing (edit or add)
+#[derive(Debug, Clone)]
+pub struct EditState {
+    /// Working copy of the connection being edited
+    pub connection: Connection,
+    /// Original connection name (for DB update lookup); empty for new connections
+    pub original_name: String,
+    /// Whether this is a new connection (Add mode)
+    pub is_new: bool,
+    /// Which field is currently selected (0-8)
+    pub field_index: usize,
+    /// Current input buffer for the active field
+    pub field_value: String,
+}
+
+impl EditState {
+    pub const FIELD_COUNT: usize = 9;
+
+    pub fn field_label(index: usize) -> &'static str {
+        match index {
+            0 => "Name",
+            1 => "Host",
+            2 => "User",
+            3 => "Port",
+            4 => "Bastion",
+            5 => "Bastion User",
+            6 => "Key Path",
+            7 => "Kerberos",
+            8 => "Tags",
+            _ => "",
+        }
+    }
+
+    pub fn field_value_str(&self, index: usize) -> String {
+        match index {
+            0 => self.connection.name.clone(),
+            1 => self.connection.host.clone(),
+            2 => self.connection.user.clone(),
+            3 => self.connection.port.to_string(),
+            4 => self.connection.bastion.clone().unwrap_or_default(),
+            5 => self.connection.bastion_user.clone().unwrap_or_default(),
+            6 => self.connection.key_path.clone().unwrap_or_default(),
+            7 => {
+                if self.connection.use_kerberos {
+                    "yes".into()
+                } else {
+                    "no".into()
+                }
+            }
+            8 => self.connection.tags.join(", "),
+            _ => String::new(),
+        }
+    }
+
+    /// Apply the current field_value buffer into the connection struct
+    pub fn apply_field(&mut self) {
+        let val = self.field_value.trim().to_string();
+        match self.field_index {
+            0 => self.connection.name = val,
+            1 => self.connection.host = val,
+            2 => self.connection.user = val,
+            3 => {
+                if let Ok(p) = val.parse::<u16>() {
+                    self.connection.port = p;
+                }
+            }
+            4 => {
+                self.connection.bastion = if val.is_empty() { None } else { Some(val) };
+            }
+            5 => {
+                self.connection.bastion_user = if val.is_empty() { None } else { Some(val) };
+            }
+            6 => {
+                self.connection.key_path = if val.is_empty() { None } else { Some(val) };
+            }
+            7 => {
+                self.connection.use_kerberos =
+                    matches!(val.to_lowercase().as_str(), "yes" | "y" | "true" | "1");
+            }
+            8 => {
+                self.connection.tags = val
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+            }
+            _ => {}
+        }
+    }
+
+    /// Load the current field value from the connection into the buffer
+    pub fn load_field(&mut self) {
+        self.field_value = self.field_value_str(self.field_index);
+    }
+
+    /// Validate required fields for saving
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.connection.name.trim().is_empty() {
+            return Err("Name is required");
+        }
+        if self.connection.host.trim().is_empty() {
+            return Err("Host is required");
+        }
+        if self.connection.user.trim().is_empty() {
+            return Err("User is required");
+        }
+        Ok(())
+    }
+}
+
+/// Action to perform after TUI exits
+#[derive(Debug, Clone)]
+pub enum PendingAction {
+    Connect,
+}
+
+/// Sort field for history tab
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum HistorySortField {
+    Date,
+    Name,
+    Duration,
+    Status,
+}
+
+impl HistorySortField {
+    pub fn label(&self) -> &'static str {
+        match self {
+            HistorySortField::Date => "Date",
+            HistorySortField::Name => "Name",
+            HistorySortField::Duration => "Duration",
+            HistorySortField::Status => "Status",
+        }
+    }
+
+    pub fn next(&self) -> Self {
+        match self {
+            HistorySortField::Date => HistorySortField::Name,
+            HistorySortField::Name => HistorySortField::Duration,
+            HistorySortField::Duration => HistorySortField::Status,
+            HistorySortField::Status => HistorySortField::Date,
+        }
+    }
+}
+
+/// Grouping mode for connections
+#[derive(Debug, Clone, PartialEq)]
+pub enum GroupMode {
+    None,
+    ByTag,
+}
+
+/// Multi-select state
+#[derive(Debug, Clone, Default)]
+pub struct MultiSelectState {
+    /// Indices of selected items in the filtered list
+    pub selected: HashSet<usize>,
+    /// Whether multi-select mode is active
+    pub active: bool,
+}
+
+impl MultiSelectState {
+    pub fn toggle(&mut self, index: usize) {
+        if self.selected.contains(&index) {
+            self.selected.remove(&index);
+        } else {
+            self.selected.insert(index);
+        }
+        self.active = !self.selected.is_empty();
+    }
+
+    pub fn select_all(&mut self, count: usize) {
+        self.selected = (0..count).collect();
+        self.active = count > 0;
+    }
+
+    pub fn clear(&mut self) {
+        self.selected.clear();
+        self.active = false;
+    }
+
+    pub fn is_selected(&self, index: usize) -> bool {
+        self.selected.contains(&index)
+    }
+
+    pub fn count(&self) -> usize {
+        self.selected.len()
+    }
+}
+
+/// Connection ping status
+#[derive(Debug, Clone, PartialEq)]
+pub enum PingStatus {
+    Unknown,
+    Checking,
+    Reachable(std::time::Duration),
+    Unreachable,
+}
