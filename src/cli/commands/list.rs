@@ -73,8 +73,8 @@ pub async fn execute(
     } else {
         // Table header
         println!(
-            "{:<3} {:<20} {:<25} {:<8} {}",
-            "#", "NAME", "HOST", "PORT", "INFO"
+            "{:<3} {:<20} {:<25} {:<8} INFO",
+            "#", "NAME", "HOST", "PORT"
         );
         println!("{}", "─".repeat(70));
 
@@ -86,7 +86,7 @@ pub async fn execute(
             );
             
             let last_used = conn.last_used
-                .map(|dt| format_duration(dt))
+                .map(format_duration)
                 .unwrap_or_default();
             
             let tags = if !conn.tags.is_empty() {

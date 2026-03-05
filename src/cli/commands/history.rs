@@ -48,8 +48,8 @@ pub async fn execute(
 
     // Print session entries
     println!(
-        "{:<20} {:<25} {:<12} {:<15} {}",
-        "CONNECTION", "STARTED", "DURATION", "STATUS", "EXIT CODE"
+        "{:<20} {:<25} {:<12} {:<15} EXIT CODE",
+        "CONNECTION", "STARTED", "DURATION", "STATUS"
     );
     println!("{}", "─".repeat(80));
 
@@ -57,7 +57,7 @@ pub async fn execute(
         let status_str = format_status(&session.status);
         let duration_str = session
             .duration
-            .map(|d| format_duration_short(d))
+            .map(format_duration_short)
             .unwrap_or_else(|| "ongoing".to_string());
         let exit_str = session
             .exit_code

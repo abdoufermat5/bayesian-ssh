@@ -3,7 +3,7 @@
 use crate::config::AppConfig;
 use crate::database::Database;
 use crate::cli::utils::confirm;
-use anyhow::{bail, Result};
+use anyhow::Result;
 use nix::sys::signal::{kill, Signal};
 use nix::unistd::Pid;
 
@@ -43,7 +43,7 @@ fn list_active_sessions(db: &Database) -> Result<()> {
     }
 
     println!("📋 Active Sessions\n");
-    println!("{:<20} {:<10} {:<25} {}", "CONNECTION", "PID", "STARTED", "DURATION");
+    println!("{:<20} {:<10} {:<25} DURATION", "CONNECTION", "PID", "STARTED");
     println!("{}", "─".repeat(70));
 
     for (conn_name, pid, started_at) in &sessions {
@@ -131,7 +131,7 @@ fn close_all_sessions(db: &Database, force: bool) -> Result<()> {
     let mut closed = 0;
     let mut cleaned = 0;
 
-    for (conn_name, pid, _) in &sessions {
+    for (_conn_name, pid, _) in &sessions {
         if let Some(p) = pid {
             if is_process_running(*p) {
                 if kill(Pid::from_raw(*p as i32), Signal::SIGTERM).is_ok() {
