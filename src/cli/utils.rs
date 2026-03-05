@@ -189,7 +189,10 @@ pub async fn fuzzy_select_connection_with_config(
                         println!("  {}. {}{}", i + 1, conn.name, last_used);
                     }
 
-                    match interactive_selection_with_search(&recent, &format!("Select recent connection to {}", action_name))? {
+                    match interactive_selection_with_search(
+                        &recent,
+                        &format!("Select recent connection to {}", action_name),
+                    )? {
                         SelectionResult::Selected(conn) => return Ok(Some(conn)),
                         SelectionResult::SearchAgain(new_query) => {
                             current_query = new_query;
@@ -245,7 +248,10 @@ pub async fn fuzzy_select_connection_with_config(
                     print_connection_info(conn, i + 1);
                 }
 
-                match interactive_selection_with_search(&matches, &format!("Select connection to {}", action_name))? {
+                match interactive_selection_with_search(
+                    &matches,
+                    &format!("Select connection to {}", action_name),
+                )? {
                     SelectionResult::Selected(conn) => return Ok(Some(conn)),
                     SelectionResult::SearchAgain(new_query) => {
                         current_query = new_query;

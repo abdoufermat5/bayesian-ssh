@@ -4,7 +4,6 @@ use anyhow::Result;
 use rusqlite::params;
 
 impl Database {
-
     // Session management
     pub fn add_session(&self, session: &Session) -> Result<()> {
         self.conn.execute(
@@ -56,7 +55,7 @@ impl Database {
             "SELECT s.id, c.name, s.started_at, s.ended_at, s.status, s.exit_code
              FROM sessions s
              JOIN connections c ON s.connection_id = c.id
-             WHERE 1=1"
+             WHERE 1=1",
         );
         let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
 
@@ -90,8 +89,8 @@ impl Database {
             let ended_at_str: Option<String> = row.get(3)?;
             let status_json: String = row.get(4)?;
 
-            let started_at = chrono::DateTime::parse_from_rfc3339(&started_at_str)?
-                .with_timezone(&Utc);
+            let started_at =
+                chrono::DateTime::parse_from_rfc3339(&started_at_str)?.with_timezone(&Utc);
             let ended_at = ended_at_str.and_then(|s| {
                 chrono::DateTime::parse_from_rfc3339(&s)
                     .ok()
@@ -116,38 +115,42 @@ impl Database {
         Ok(entries)
     }
 
-    
     // Active session management
     #[allow(clippy::type_complexity)]
-    pub fn get_active_sessions(&self) -> Result<Vec<(String, Option<u32>, chrono::DateTime<chrono::Utc>)>> {
+    pub fn get_active_sessions(
+        &self,
+    ) -> Result<Vec<(String, Option<u32>, chrono::DateTime<chrono::Utc>)>> {
         let mut stmt = self.conn.prepare(
             "SELECT c.name, s.pid, s.started_at
              FROM sessions s
              JOIN connections c ON s.connection_id = c.id
              WHERE s.ended_at IS NULL AND s.status LIKE '%Active%'
-             ORDER BY s.started_at DESC"
+             ORDER BY s.started_at DESC",
         )?;
         let mut rows = stmt.query([])?;
 
         let mut sessions = Vec::new();
         while let Some(row) = rows.next()? {
             let started_str: String = row.get(2)?;
-            let started_at = chrono::DateTime::parse_from_rfc3339(&started_str)?
-                .with_timezone(&chrono::Utc);
+            let started_at =
+                chrono::DateTime::parse_from_rfc3339(&started_str)?.with_timezone(&chrono::Utc);
             sessions.push((row.get(0)?, row.get(1)?, started_at));
         }
         Ok(sessions)
     }
 
     #[allow(clippy::type_complexity)]
-    pub fn get_active_sessions_for_connection(&self, target: &str) -> Result<Vec<(String, String, Option<u32>, chrono::DateTime<chrono::Utc>)>> {
+    pub fn get_active_sessions_for_connection(
+        &self,
+        target: &str,
+    ) -> Result<Vec<(String, String, Option<u32>, chrono::DateTime<chrono::Utc>)>> {
         let mut stmt = self.conn.prepare(
             "SELECT s.id, c.name, s.pid, s.started_at
              FROM sessions s
              JOIN connections c ON s.connection_id = c.id
              WHERE s.ended_at IS NULL AND s.status LIKE '%Active%'
                AND (c.name LIKE ? OR c.id = ?)
-             ORDER BY s.started_at DESC"
+             ORDER BY s.started_at DESC",
         )?;
         let like_pattern = format!("%{}%", target);
         let mut rows = stmt.query(params![like_pattern, target])?;
@@ -155,8 +158,8 @@ impl Database {
         let mut sessions = Vec::new();
         while let Some(row) = rows.next()? {
             let started_str: String = row.get(3)?;
-            let started_at = chrono::DateTime::parse_from_rfc3339(&started_str)?
-                .with_timezone(&chrono::Utc);
+            let started_at =
+                chrono::DateTime::parse_from_rfc3339(&started_str)?.with_timezone(&chrono::Utc);
             sessions.push((row.get(0)?, row.get(1)?, row.get(2)?, started_at));
         }
         Ok(sessions)
@@ -166,7 +169,7 @@ impl Database {
         let result = self.conn.query_row(
             "SELECT id FROM sessions WHERE pid = ? AND ended_at IS NULL",
             params![pid],
-            |row| row.get(0)
+            |row| row.get(0),
         );
         match result {
             Ok(id) => Ok(Some(id)),
@@ -195,6 +198,4 @@ impl Database {
         )?;
         Ok(())
     }
-
-    
 }

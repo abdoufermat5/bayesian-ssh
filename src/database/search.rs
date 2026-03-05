@@ -4,7 +4,6 @@ use anyhow::Result;
 use rusqlite::params;
 
 impl Database {
-
     // Fuzzy search methods for enhanced connection discovery
     #[allow(dead_code)]
     pub fn fuzzy_search_connections(&self, query: &str, limit: usize) -> Result<Vec<Connection>> {
@@ -13,12 +12,21 @@ impl Database {
 
     // Bayesian search - combines frequency, recency, and match quality
     #[allow(dead_code)]
-    pub fn bayesian_search_connections(&self, query: &str, limit: usize) -> Result<Vec<Connection>> {
+    pub fn bayesian_search_connections(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<Connection>> {
         self.search_connections(query, limit, "bayesian")
     }
 
     // Unified search method with mode selection
-    pub fn search_connections(&self, query: &str, limit: usize, mode: &str) -> Result<Vec<Connection>> {
+    pub fn search_connections(
+        &self,
+        query: &str,
+        limit: usize,
+        mode: &str,
+    ) -> Result<Vec<Connection>> {
         let mut all_matches = Vec::new();
         let normalized_query = query.to_lowercase();
 
@@ -205,7 +213,7 @@ impl Database {
     fn calculate_bayesian_score(&self, connection: &Connection, query: &str) -> f64 {
         // Get connection usage statistics
         let (frequency, total_connections) = self.get_connection_frequency(&connection.id);
-        
+
         // 1. Prior probability: P(connection) based on historical usage
         let prior = if total_connections > 0 {
             (frequency as f64 + 1.0) / (total_connections as f64 + 10.0) // Laplace smoothing
@@ -225,13 +233,14 @@ impl Database {
         // Combine using Bayesian-inspired formula:
         // Score = Prior * Likelihood * Recency * SuccessBonus
         let score = prior * likelihood * recency * (0.5 + success_rate * 0.5);
-        
+
         // Scale to readable range
         score * 100.0
     }
 
     fn get_connection_frequency(&self, connection_id: &uuid::Uuid) -> (i64, i64) {
-        let conn_count: i64 = self.conn
+        let conn_count: i64 = self
+            .conn
             .query_row(
                 "SELECT COUNT(*) FROM sessions WHERE connection_id = ?",
                 params![connection_id.to_string()],
@@ -239,7 +248,8 @@ impl Database {
             )
             .unwrap_or(0);
 
-        let total: i64 = self.conn
+        let total: i64 = self
+            .conn
             .query_row("SELECT COUNT(*) FROM sessions", [], |row| row.get(0))
             .unwrap_or(1);
 
@@ -265,7 +275,7 @@ impl Database {
     fn calculate_match_likelihood(&self, connection: &Connection, query: &str) -> f64 {
         let query_lower = query.to_lowercase();
         let name_lower = connection.name.to_lowercase();
-        
+
         // Exact match - highest likelihood
         if name_lower == query_lower {
             return 1.0;
@@ -337,7 +347,7 @@ impl Database {
             // λ = 0.005 means ~37% weight after 200 hours (~8 days)
             let lambda = 0.005;
             let decay = (-lambda * hours_since_used).exp();
-            
+
             // Ensure minimum factor of 0.1 for very old connections
             decay.max(0.1)
         } else {
@@ -402,5 +412,4 @@ impl Database {
 
         score
     }
-
 }

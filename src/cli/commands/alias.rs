@@ -1,16 +1,13 @@
 //! Alias command implementation - manage connection aliases
 
+use crate::cli::utils::fuzzy_select_connection;
 use crate::config::AppConfig;
 use crate::database::Database;
-use crate::cli::utils::fuzzy_select_connection;
 use crate::services::SshService;
 use anyhow::{bail, Result};
 
 /// Execute the alias command
-pub async fn execute(
-    action: AliasAction,
-    config: AppConfig,
-) -> Result<()> {
+pub async fn execute(action: AliasAction, config: AppConfig) -> Result<()> {
     let db = Database::new(&config)?;
 
     match action {
@@ -92,7 +89,9 @@ async fn list_aliases(db: &Database, target: Option<&str>, config: &AppConfig) -
         let connection = if let Some(conn) = db.get_connection(target_name)? {
             conn
         } else {
-            match fuzzy_select_connection(&ssh_service, target_name, "show aliases for", true).await? {
+            match fuzzy_select_connection(&ssh_service, target_name, "show aliases for", true)
+                .await?
+            {
                 Some(conn) => conn,
                 None => {
                     bail!("No connection found matching '{}'", target_name);
@@ -104,7 +103,10 @@ async fn list_aliases(db: &Database, target: Option<&str>, config: &AppConfig) -
 
         if aliases.is_empty() {
             println!("📝 No aliases for connection '{}'", connection.name);
-            println!("   Use 'bssh alias add <alias> {}' to create one", connection.name);
+            println!(
+                "   Use 'bssh alias add <alias> {}' to create one",
+                connection.name
+            );
         } else {
             println!("📝 Aliases for '{}':", connection.name);
             for alias in &aliases {

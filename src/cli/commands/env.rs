@@ -58,7 +58,11 @@ fn list_environments() -> Result<()> {
 fn use_environment(name: &str) -> Result<()> {
     let env_dir = get_environments_dir().join(name);
     if !env_dir.exists() {
-        anyhow::bail!("Environment '{}' does not exist. Use `bayesian-ssh env create {}` to create it.", name, name);
+        anyhow::bail!(
+            "Environment '{}' does not exist. Use `bayesian-ssh env create {}` to create it.",
+            name,
+            name
+        );
     }
 
     AppConfig::set_active_env(name)?;
@@ -73,7 +77,7 @@ fn create_environment(name: &str) -> Result<()> {
     }
 
     std::fs::create_dir_all(&env_dir)?;
-    
+
     // Create default config for this environment
     let config = AppConfig::default_for_env(name);
     config.save()?;
@@ -86,7 +90,10 @@ fn create_environment(name: &str) -> Result<()> {
 fn remove_environment(name: &str) -> Result<()> {
     let active_env = AppConfig::get_active_env();
     if name == active_env {
-        anyhow::bail!("Cannot remove the currently active environment '{}'. Change environment first.", name);
+        anyhow::bail!(
+            "Cannot remove the currently active environment '{}'. Change environment first.",
+            name
+        );
     }
 
     if name == "default" {
@@ -99,7 +106,7 @@ fn remove_environment(name: &str) -> Result<()> {
     }
 
     std::fs::remove_dir_all(&env_dir).context("Failed to securely delete environment directory")?;
-    
+
     println!("🗑️ Removed environment '{}'", name);
     info!("Removed environment {}", name);
     Ok(())

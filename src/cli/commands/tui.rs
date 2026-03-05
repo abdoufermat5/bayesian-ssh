@@ -17,16 +17,7 @@ pub async fn execute(config: AppConfig) -> Result<()> {
                 println!("\n🔗 Connecting to {}...\n", connection.name);
                 let ssh_service = SshService::new(config)?;
                 ssh_service
-                    .connect_to_connection(
-                        &connection,
-                        None,
-                        None,
-                        None,
-                        None,
-                        false,
-                        None,
-                        None,
-                    )
+                    .connect_to_connection(&connection, None, None, None, None, false, None, None)
                     .await?;
             }
         }

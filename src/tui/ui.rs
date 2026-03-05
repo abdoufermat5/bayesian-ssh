@@ -16,7 +16,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3), // Header
-            Constraint::Min(10),  // Main content
+            Constraint::Min(10),   // Main content
             Constraint::Length(3), // Status bar
         ])
         .split(area);
@@ -98,11 +98,7 @@ fn draw_connection_list(frame: &mut Frame, area: Rect, app: &App) {
         .map(|(i, conn)| {
             let is_selected = i == app.selected_index;
 
-            let bastion_indicator = if conn.bastion.is_some() {
-                " [B]"
-            } else {
-                ""
-            };
+            let bastion_indicator = if conn.bastion.is_some() { " [B]" } else { "" };
             let kerberos_indicator = if conn.use_kerberos { " [K]" } else { "" };
 
             if app.compact_view {
@@ -212,9 +208,7 @@ fn item_style(index: usize, is_selected: bool) -> Style {
             .bg(Color::Rgb(30, 60, 90))
             .bold()
     } else if index.is_multiple_of(2) {
-        Style::default()
-            .fg(Color::White)
-            .bg(Color::Rgb(20, 20, 30))
+        Style::default().fg(Color::White).bg(Color::Rgb(20, 20, 30))
     } else {
         Style::default().fg(Color::White)
     }
@@ -355,7 +349,9 @@ fn draw_status_bar(frame: &mut Frame, area: Rect, app: &App) {
     };
 
     let help_hint = match &app.mode {
-        AppMode::Normal => "? help │ / search │ Enter connect │ s detail │ e edit │ d delete │ q quit",
+        AppMode::Normal => {
+            "? help │ / search │ Enter connect │ s detail │ e edit │ d delete │ q quit"
+        }
         AppMode::Search => "Enter confirm │ Esc cancel",
         AppMode::Help => "Esc/Enter close",
         AppMode::Confirm(_) => "y confirm │ n cancel",
@@ -534,7 +530,10 @@ fn draw_edit_overlay(frame: &mut Frame, area: Rect, edit: &EditState) {
         let arrow = if is_active { "▶ " } else { "  " };
 
         lines.push(Line::from(vec![
-            Span::styled(format!("  {}{:<14}", arrow, format!("{}:", label)), label_style),
+            Span::styled(
+                format!("  {}{:<14}", arrow, format!("{}:", label)),
+                label_style,
+            ),
             Span::styled(value_str, value_style),
         ]));
 

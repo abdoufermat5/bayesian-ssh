@@ -16,7 +16,7 @@ pub async fn execute(
 ) -> Result<()> {
     info!("Updating application configuration");
 
-    // Handle bastion settings: 
+    // Handle bastion settings:
     // - If --clear-bastion is passed, set to Some(None) to clear
     // - If a value is provided, set to Some(Some(value))
     // - Otherwise, set to None (don't change)

@@ -9,8 +9,11 @@ pub async fn execute(group_name: Option<String>, config: AppConfig) -> Result<()
 
     if let Some(tag) = group_name {
         // List connections in the specific group
-        let filtered: Vec<_> = connections.into_iter().filter(|c| c.tags.contains(&tag)).collect();
-        
+        let filtered: Vec<_> = connections
+            .into_iter()
+            .filter(|c| c.tags.contains(&tag))
+            .collect();
+
         if filtered.is_empty() {
             println!("No connections found in group '{}'", tag);
         } else {
@@ -22,7 +25,7 @@ pub async fn execute(group_name: Option<String>, config: AppConfig) -> Result<()
     } else {
         // List all groups and their connection counts
         let mut group_counts: HashMap<String, usize> = HashMap::new();
-        
+
         for conn in connections {
             for tag in conn.tags {
                 *group_counts.entry(tag).or_insert(0) += 1;
@@ -35,9 +38,13 @@ pub async fn execute(group_name: Option<String>, config: AppConfig) -> Result<()
             println!("Available groups:");
             let mut groups: Vec<_> = group_counts.into_iter().collect();
             groups.sort_by(|a, b| a.0.cmp(&b.0)); // Sort alphabetically
-            
+
             for (tag, count) in groups {
-                let suffix = if count == 1 { "connection" } else { "connections" };
+                let suffix = if count == 1 {
+                    "connection"
+                } else {
+                    "connections"
+                };
                 println!("  - {} ({} {})", tag, count, suffix);
             }
             println!("\nUse `bssh groups <name>` to see connections in a group.");

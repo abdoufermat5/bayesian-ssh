@@ -5,7 +5,6 @@ use rusqlite::params;
 use tracing::info;
 
 impl Database {
-
     // Alias management
     pub fn add_alias(&self, alias: &str, connection_id: &str) -> Result<()> {
         self.conn.execute(
@@ -18,19 +17,18 @@ impl Database {
     }
 
     pub fn remove_alias(&self, alias: &str) -> Result<bool> {
-        let rows = self.conn.execute(
-            "DELETE FROM aliases WHERE alias = ?",
-            params![alias],
-        )?;
+        let rows = self
+            .conn
+            .execute("DELETE FROM aliases WHERE alias = ?", params![alias])?;
         Ok(rows > 0)
     }
 
     pub fn get_aliases_for_connection(&self, connection_id: &str) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT alias FROM aliases WHERE connection_id = ?"
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT alias FROM aliases WHERE connection_id = ?")?;
         let mut rows = stmt.query(params![connection_id])?;
-        
+
         let mut aliases = Vec::new();
         while let Some(row) = rows.next()? {
             aliases.push(row.get(0)?);
@@ -44,7 +42,7 @@ impl Database {
                     c.use_kerberos, c.key_path, c.created_at, c.last_used, c.tags
              FROM connections c
              JOIN aliases a ON c.id = a.connection_id
-             WHERE a.alias = ?"
+             WHERE a.alias = ?",
         )?;
         let mut rows = stmt.query(params![alias])?;
 
@@ -64,6 +62,4 @@ impl Database {
         // Then try alias lookup
         self.get_connection_by_alias(name_or_alias)
     }
-
-    
 }

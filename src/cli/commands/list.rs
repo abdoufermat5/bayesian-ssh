@@ -1,5 +1,5 @@
-use crate::config::AppConfig;
 use crate::cli::utils::format_duration;
+use crate::config::AppConfig;
 use crate::services::SshService;
 use anyhow::Result;
 use tracing::info;
@@ -33,7 +33,7 @@ pub async fn execute(
         (None, true) => " (recent only)".to_string(),
         (None, false) => String::new(),
     };
-    
+
     println!("\n🔗 Connections{}", filter_info);
     println!("{}", "═".repeat(70));
 
@@ -45,29 +45,30 @@ pub async fn execute(
                 if conn.use_kerberos { "🔐" } else { "" },
                 if conn.bastion.is_some() { "🔗" } else { "" }
             );
-            
+
             println!("\n┌─ {} {}", conn.name, status_icons);
             println!("│  {}@{}:{}", conn.user, conn.host, conn.port);
-            
+
             if let Some(bastion) = &conn.bastion {
-                println!("│  via {}@{}", 
-                    conn.bastion_user.as_deref().unwrap_or(&conn.user), 
+                println!(
+                    "│  via {}@{}",
+                    conn.bastion_user.as_deref().unwrap_or(&conn.user),
                     bastion
                 );
             }
-            
+
             if let Some(key) = &conn.key_path {
                 println!("│  key: {}", key);
             }
-            
+
             if !conn.tags.is_empty() {
                 println!("│  tags: {}", conn.tags.join(", "));
             }
-            
+
             if let Some(last_used) = conn.last_used {
                 println!("│  last: {}", format_duration(last_used));
             }
-            
+
             println!("└─ id: {}", conn.id);
         }
     } else {
@@ -84,19 +85,19 @@ pub async fn execute(
                 if conn.use_kerberos { "🔐" } else { "  " },
                 if conn.bastion.is_some() { "🔗" } else { "  " }
             );
-            
-            let last_used = conn.last_used
-                .map(format_duration)
-                .unwrap_or_default();
-            
+
+            let last_used = conn.last_used.map(format_duration).unwrap_or_default();
+
             let tags = if !conn.tags.is_empty() {
                 format!("[{}]", conn.tags.join(","))
             } else {
                 String::new()
             };
-            
-            let info = format!("{} {} {}", icons, last_used, tags).trim().to_string();
-            
+
+            let info = format!("{} {} {}", icons, last_used, tags)
+                .trim()
+                .to_string();
+
             println!(
                 "{:<3} {:<20} {:<25} {:<8} {}",
                 i + 1,

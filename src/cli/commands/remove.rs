@@ -52,7 +52,10 @@ async fn remove_connection_with_confirmation(
     // If force flag is set, skip confirmation
     if force {
         if ssh_service.remove_connection(&connection.name).await? {
-            println!("\n✅ Connection '{}' removed successfully!", connection.name);
+            println!(
+                "\n✅ Connection '{}' removed successfully!",
+                connection.name
+            );
         } else {
             println!("\n❌ Failed to remove connection '{}'", connection.name);
         }

@@ -2,19 +2,16 @@ use crate::config::AppConfig;
 use anyhow::Result;
 use rusqlite::Connection as SqliteConnection;
 
-
 pub struct Database {
     pub(crate) conn: SqliteConnection,
 }
 
-
-mod connection;
-mod session;
 mod alias;
+mod connection;
 mod search;
+mod session;
 
 impl Database {
-
     pub fn new(config: &AppConfig) -> Result<Self> {
         // Ensure database directory exists
         if let Some(parent) = config.database_path.parent() {
@@ -108,5 +105,4 @@ impl Database {
 
         Ok(())
     }
-
-    }
+}

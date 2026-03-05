@@ -227,9 +227,7 @@ impl App {
             should_quit: false,
             selected_connection: None,
             pending_action: None,
-            status_message: Some(
-                "Press ? for help, / to search, Enter to connect".to_string(),
-            ),
+            status_message: Some("Press ? for help, / to search, Enter to connect".to_string()),
             status_set_at: Some(Instant::now()),
             config,
             sort_field: SortField::Name,

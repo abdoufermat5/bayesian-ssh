@@ -63,12 +63,12 @@ impl AppConfig {
         let default_env_dir = config_dir.join("environments").join("default");
         if !default_env_dir.exists() {
             std::fs::create_dir_all(&default_env_dir)?;
-            
+
             let legacy_config = config_dir.join("config.json");
             if legacy_config.exists() {
                 std::fs::rename(&legacy_config, default_env_dir.join("config.json"))?;
             }
-            
+
             let legacy_db = config_dir.join("history.db");
             if legacy_db.exists() {
                 std::fs::rename(&legacy_db, default_env_dir.join("history.db"))?;

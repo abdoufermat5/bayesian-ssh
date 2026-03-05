@@ -5,7 +5,6 @@ use rusqlite::params;
 use tracing::info;
 
 impl Database {
-
     // Connection management
     pub fn add_connection(&self, connection: &Connection) -> Result<()> {
         let tags_json = serde_json::to_string(&connection.tags)?;
@@ -152,7 +151,6 @@ impl Database {
         }
     }
 
-    
     // Helper methods
     pub(crate) fn row_to_connection(&self, row: &rusqlite::Row) -> Result<Connection> {
         let tags_json: String = row.get(11)?;
@@ -171,18 +169,15 @@ impl Database {
             aliases: Vec::new(), // Loaded separately when needed
             created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(9)?)?
                 .with_timezone(&chrono::Utc),
-            last_used: row
-                .get::<_, Option<String>>(10)?
-                .and_then(|s| {
-                    chrono::DateTime::parse_from_rfc3339(&s)
-                        .ok()
-                        .map(|dt| dt.with_timezone(&chrono::Utc))
-                }),
+            last_used: row.get::<_, Option<String>>(10)?.and_then(|s| {
+                chrono::DateTime::parse_from_rfc3339(&s)
+                    .ok()
+                    .map(|dt| dt.with_timezone(&chrono::Utc))
+            }),
             tags,
         })
     }
 
-    
     pub fn get_stats(&self) -> Result<crate::models::ConnectionStats> {
         let total_connections: i64 =
             self.conn
@@ -225,6 +220,4 @@ impl Database {
             by_tag: tag_counts,
         })
     }
-
-    
 }

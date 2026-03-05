@@ -45,24 +45,34 @@ pub async fn execute(
 
     let exported_content = match format {
         ExportFormat::Json => serde_json::to_string_pretty(&connections)?,
-        ExportFormat::Toml => toml::to_string_pretty(&ConnectionsWrapper { connections: connections.clone() })?,
+        ExportFormat::Toml => toml::to_string_pretty(&ConnectionsWrapper {
+            connections: connections.clone(),
+        })?,
         ExportFormat::SshConfig => generate_ssh_config(&connections),
     };
 
     if let Some(output_path) = output {
         let expanded_path = expand_tilde(&output_path);
         let path = std::path::Path::new(&expanded_path);
-        
+
         if let Some(parent) = path.parent() {
             if !parent.exists() {
                 std::fs::create_dir_all(parent).context("Failed to create parent directories")?;
             }
         }
-        
+
         let mut file = File::create(&expanded_path).context("Failed to create output file")?;
         file.write_all(exported_content.as_bytes())?;
-        info!("Exported {} connections to {}", connections.len(), expanded_path);
-        println!("✅ Exported {} connections to {}", connections.len(), expanded_path);
+        info!(
+            "Exported {} connections to {}",
+            connections.len(),
+            expanded_path
+        );
+        println!(
+            "✅ Exported {} connections to {}",
+            connections.len(),
+            expanded_path
+        );
     } else {
         println!("{}", exported_content);
     }
@@ -84,21 +94,24 @@ fn generate_ssh_config(connections: &[Connection]) -> String {
         config.push_str(&format!("    HostName {}\n", conn.host));
         config.push_str(&format!("    User {}\n", conn.user));
         config.push_str(&format!("    Port {}\n", conn.port));
-        
+
         if let Some(key) = &conn.key_path {
             config.push_str(&format!("    IdentityFile {}\n", key));
         }
 
         if let Some(bastion) = &conn.bastion {
             let bastion_user = conn.bastion_user.as_deref().unwrap_or(&conn.user);
-            config.push_str(&format!("    ProxyCommand ssh -W %h:%p {}@{}\n", bastion_user, bastion));
+            config.push_str(&format!(
+                "    ProxyCommand ssh -W %h:%p {}@{}\n",
+                bastion_user, bastion
+            ));
         }
-        
+
         if conn.use_kerberos {
             config.push_str("    GSSAPIAuthentication yes\n");
             config.push_str("    GSSAPIDelegateCredentials yes\n");
         }
-        
+
         config.push('\n');
     }
 

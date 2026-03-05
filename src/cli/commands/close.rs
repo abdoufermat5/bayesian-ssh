@@ -1,8 +1,8 @@
 //! Close command implementation - manage active sessions
 
+use crate::cli::utils::confirm;
 use crate::config::AppConfig;
 use crate::database::Database;
-use crate::cli::utils::confirm;
 use anyhow::Result;
 use nix::sys::signal::{kill, Signal};
 use nix::unistd::Pid;
@@ -43,17 +43,26 @@ fn list_active_sessions(db: &Database) -> Result<()> {
     }
 
     println!("📋 Active Sessions\n");
-    println!("{:<20} {:<10} {:<25} DURATION", "CONNECTION", "PID", "STARTED");
+    println!(
+        "{:<20} {:<10} {:<25} DURATION",
+        "CONNECTION", "PID", "STARTED"
+    );
     println!("{}", "─".repeat(70));
 
     for (conn_name, pid, started_at) in &sessions {
         let duration = chrono::Utc::now().signed_duration_since(*started_at);
         let duration_str = format_duration(duration);
-        let pid_str = pid.map(|p| p.to_string()).unwrap_or_else(|| "-".to_string());
-        
+        let pid_str = pid
+            .map(|p| p.to_string())
+            .unwrap_or_else(|| "-".to_string());
+
         // Check if process is actually running
         let status = if let Some(p) = pid {
-            if is_process_running(*p) { "🟢" } else { "⚠️ stale" }
+            if is_process_running(*p) {
+                "🟢"
+            } else {
+                "⚠️ stale"
+            }
         } else {
             "❓"
         };
@@ -86,7 +95,12 @@ fn close_session(db: &Database, target: &str, force: bool) -> Result<()> {
     for (session_id, conn_name, pid, _) in sessions {
         if let Some(p) = pid {
             if is_process_running(p) {
-                if !force && !confirm(&format!("Close session for '{}' (PID {})?", conn_name, p), true)? {
+                if !force
+                    && !confirm(
+                        &format!("Close session for '{}' (PID {})?", conn_name, p),
+                        true,
+                    )?
+                {
                     println!("Skipped.");
                     continue;
                 }
@@ -102,7 +116,10 @@ fn close_session(db: &Database, target: &str, force: bool) -> Result<()> {
                 }
             } else {
                 // Process not running, just update the record
-                println!("⚠️  Session '{}' (PID {}) is stale, cleaning up...", conn_name, p);
+                println!(
+                    "⚠️  Session '{}' (PID {}) is stale, cleaning up...",
+                    conn_name, p
+                );
                 db.mark_session_terminated(&session_id, -1)?;
             }
         } else {
@@ -123,7 +140,12 @@ fn close_all_sessions(db: &Database, force: bool) -> Result<()> {
         return Ok(());
     }
 
-    if !force && !confirm(&format!("Close all {} active sessions?", sessions.len()), false)? {
+    if !force
+        && !confirm(
+            &format!("Close all {} active sessions?", sessions.len()),
+            false,
+        )?
+    {
         println!("Cancelled.");
         return Ok(());
     }
@@ -146,7 +168,10 @@ fn close_all_sessions(db: &Database, force: bool) -> Result<()> {
     // Mark all as terminated in DB
     db.mark_all_sessions_terminated()?;
 
-    println!("✅ Closed {} sessions, cleaned {} stale records", closed, cleaned);
+    println!(
+        "✅ Closed {} sessions, cleaned {} stale records",
+        closed, cleaned
+    );
 
     Ok(())
 }
