@@ -119,9 +119,9 @@ fn generate_ssh_config(connections: &[Connection]) -> String {
 }
 
 fn expand_tilde(path: &str) -> String {
-    if path.starts_with("~/") {
+    if let Some(stripped) = path.strip_prefix("~/") {
         if let Some(mut home) = dirs::home_dir() {
-            home.push(&path[2..]);
+            home.push(stripped);
             return home.to_string_lossy().into_owned();
         }
     }

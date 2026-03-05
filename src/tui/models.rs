@@ -326,7 +326,6 @@ impl MultiSelectState {
 /// Connection ping status
 #[derive(Debug, Clone, PartialEq)]
 pub enum PingStatus {
-    Unknown,
     Checking,
     Reachable(std::time::Duration),
     Unreachable,

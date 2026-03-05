@@ -399,7 +399,6 @@ impl App {
             // Create environment
             KeyCode::Char('a') => {
                 self.config_editing = Some(ConfigEditState {
-                    field_index: 0,
                     field_value: String::new(),
                 });
                 self.mode = AppMode::Edit;

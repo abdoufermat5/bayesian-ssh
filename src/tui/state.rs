@@ -63,7 +63,6 @@ pub struct App {
 /// Config field editing state
 #[derive(Debug, Clone)]
 pub struct ConfigEditState {
-    pub field_index: usize,
     pub field_value: String,
 }
 
