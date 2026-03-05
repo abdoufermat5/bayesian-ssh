@@ -682,19 +682,6 @@ pub async fn run_tui(config: AppConfig) -> Result<Option<(Connection, PendingAct
     use ratatui::prelude::*;
     use std::io::stdout;
 
-    // Suppress tracing output during TUI by redirecting stderr to /dev/null.
-    // Log records written to stderr corrupt the alternate screen display.
-    let saved_stderr = unsafe { libc::dup(2) };
-    anyhow::ensure!(saved_stderr >= 0, "failed to dup stderr");
-    {
-        let devnull = std::fs::OpenOptions::new()
-            .write(true)
-            .open("/dev/null")?;
-        use std::os::unix::io::AsRawFd;
-        let rc = unsafe { libc::dup2(devnull.as_raw_fd(), 2) };
-        anyhow::ensure!(rc >= 0, "failed to redirect stderr");
-    }
-
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = stdout();
@@ -730,12 +717,6 @@ pub async fn run_tui(config: AppConfig) -> Result<Option<(Connection, PendingAct
     // Restore terminal
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-
-    // Restore stderr so logging works again after TUI exits
-    unsafe {
-        libc::dup2(saved_stderr, 2);
-        libc::close(saved_stderr);
-    }
 
     // Return selected connection and action if any
     Ok(app.selected_connection.zip(app.pending_action))

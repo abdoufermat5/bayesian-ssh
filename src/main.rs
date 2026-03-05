@@ -34,6 +34,11 @@ async fn main() -> anyhow::Result<()> {
     // Check if this is a completions command (don't log for completions)
     let is_completions = matches!(&cli.command, Commands::Completions { .. });
 
+    // The TUI command runs an alternate-screen terminal UI. Any log output written
+    // to stderr would corrupt the display, so we redirect tracing to a log file
+    // instead when the tui command is active.
+    let is_tui = matches!(&cli.command, Commands::Tui);
+
     // Load configuration first (before initializing logging)
     let config = AppConfig::load(cli.env.clone())?;
 
@@ -42,19 +47,43 @@ async fn main() -> anyhow::Result<()> {
     if !is_completions {
         // Initialize logging with the configured log level and environment prefix
         let log_level = parse_log_level(&config.log_level);
-        
+
         // Use a custom format block to prepend the [environment] tag to logs
         let format = tracing_subscriber::fmt::format()
             .with_target(false)
             .compact();
 
-        tracing_subscriber::fmt()
-            .event_format(format)
-            .with_max_level(log_level)
-            .init();
+        if is_tui {
+            // Route all log output to a file so the TUI display is never corrupted.
+            let log_dir = dirs::data_local_dir()
+                .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
+                .join("bayesian-ssh");
+            let _ = std::fs::create_dir_all(&log_dir);
+            let log_file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(log_dir.join("tui.log"))
+                .unwrap_or_else(|_| {
+                    // Fall back to /dev/null if we can't open the log file
+                    std::fs::OpenOptions::new()
+                        .write(true)
+                        .open("/dev/null")
+                        .expect("/dev/null always exists")
+                });
+            tracing_subscriber::fmt()
+                .event_format(format)
+                .with_max_level(log_level)
+                .with_writer(std::sync::Mutex::new(log_file))
+                .init();
+        } else {
+            tracing_subscriber::fmt()
+                .event_format(format)
+                .with_max_level(log_level)
+                .init();
 
-        if log_level >= LevelFilter::INFO {
-            info!("{}Starting Bayesian SSH...", env_prefix);
+            if log_level >= LevelFilter::INFO {
+                info!("{}Starting Bayesian SSH...", env_prefix);
+            }
         }
     }
 
