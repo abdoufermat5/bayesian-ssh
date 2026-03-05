@@ -1,7 +1,7 @@
 # Bayesian SSH Makefile
 # Provides common development and build tasks
 
-.PHONY: help build test release clean install uninstall format lint check deps update-deps
+.PHONY: help build test release clean install uninstall format lint check deps update-deps docs docs-serve docs-api
 
 # Configuration
 BINARY_NAME = bayesian-ssh
@@ -143,10 +143,19 @@ quick: build test ## Quick build and test
 	@echo "🎉 Quick build and test completed!"
 
 # Documentation
-docs: ## Build documentation
+docs: ## Build documentation with mdBook
 	@echo "📚 Building documentation..."
+	mdbook build
+	@echo "✅ Documentation built in docs/book/"
+
+docs-serve: ## Serve documentation locally with live reload
+	@echo "📚 Serving documentation..."
+	mdbook serve --open
+
+docs-api: ## Build Rust API documentation
+	@echo "📚 Building API documentation..."
 	$(CARGO) doc --no-deps --open
-	@echo "✅ Documentation built"
+	@echo "✅ API documentation built"
 
 # Show binary info
 info: release ## Show binary information

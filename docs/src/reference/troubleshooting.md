@@ -1,10 +1,9 @@
-# Troubleshooting Guide
+# Troubleshooting
 
-## Common Issues and Solutions
+## Kerberos Authentication Problems
 
-### Kerberos Authentication Problems
+### No Valid Kerberos Ticket Found
 
-#### No Valid Kerberos Ticket Found
 ```bash
 # Check current ticket status
 klist
@@ -27,7 +26,8 @@ klist -s
 3. Verify realm configuration: Check `/etc/krb5.conf`
 4. Check DNS resolution: Ensure realm DNS is working
 
-#### Ticket Expired or Invalid
+### Ticket Expired or Invalid
+
 ```bash
 # Check ticket expiration
 klist
@@ -50,9 +50,10 @@ kinit -f -A
 3. Check clock sync: Ensure system time is correct
 4. Verify KDC: Check KDC server availability
 
-### SSH Connection Issues
+## SSH Connection Issues
 
-#### Connection Refused
+### Connection Refused
+
 ```bash
 # Test basic connectivity
 telnet server.company.com 22
@@ -75,7 +76,8 @@ sudo iptables -L
 3. Check firewall: Verify firewall allows SSH traffic
 4. Network connectivity: Test basic network reachability
 
-#### Authentication Failed
+### Authentication Failed
+
 ```bash
 # Test with verbose output
 ssh -v user@server.company.com
@@ -99,9 +101,10 @@ ssh -i ~/.ssh/id_rsa user@server.company.com
 3. Check server configuration: Verify `authorized_keys` setup
 4. Test manually: Use standard SSH command to test
 
-### Bastion Host Problems
+## Bastion Host Problems
 
-#### Bastion Connection Fails
+### Bastion Connection Fails
+
 ```bash
 # Test bastion connectivity
 ssh -t -A -K user@bastion.company.com
@@ -130,7 +133,8 @@ bayesian-ssh show "Target Server"
 3. Verify user permissions: Ensure bastion user has access
 4. Check network path: Verify bastion is reachable
 
-#### Target Host Unreachable via Bastion
+### Target Host Unreachable via Bastion
+
 ```bash
 # Test from bastion to target
 ssh -t -A -K user@bastion.company.com "ssh user@target.company.com"
@@ -153,7 +157,8 @@ ssh user@bastion.company.com "ping target.company.com"
 3. Check network segmentation: Verify network policies
 4. Test manually: Connect to bastion and test target manually
 
-#### Unexpected Bastion Usage
+### Unexpected Bastion Usage
+
 ```bash
 # Check if connection is using default bastion
 bayesian-ssh show "Server Name"
@@ -172,14 +177,15 @@ bayesian-ssh add "Server Name" hostname.com --no-bastion --tags production
 - Default bastion being used when not intended
 
 **Solutions:**
-1. Use --no-bastion flag: Explicitly disable bastion for specific connections
+1. Use `--no-bastion` flag: Explicitly disable bastion for specific connections
 2. Check connection details: Use `bayesian-ssh show` to see bastion configuration
 3. Re-add connection: Remove and re-add with correct bastion settings
 4. Verify configuration: Check if default bastion is set in config
 
-### Database Issues
+## Database Issues
 
-#### Database Connection Failed
+### Database Connection Failed
+
 ```bash
 # Check database file
 ls -la ~/.config/bayesian-ssh/
@@ -204,7 +210,8 @@ bayesian-ssh stats
 3. Recreate database: Remove corrupted database file
 4. Check SQLite version: Ensure compatible SQLite version
 
-#### Database Schema Issues
+### Database Schema Issues
+
 ```bash
 # Check database schema
 sqlite3 ~/.config/bayesian-ssh/history.db ".schema"
@@ -224,9 +231,10 @@ sqlite3 ~/.config/bayesian-ssh/history.db "SELECT * FROM connections LIMIT 1;"
 3. Check migrations: Ensure schema is up to date
 4. Verify SQLite: Check SQLite version compatibility
 
-### Configuration Problems
+## Configuration Problems
 
-#### Configuration File Not Found
+### Configuration File Not Found
+
 ```bash
 # Check configuration directory
 ls -la ~/.config/bayesian-ssh/
@@ -249,7 +257,8 @@ cat ~/.config/bayesian-ssh/config.json
 3. Check permissions: Ensure directory is writable
 4. Verify path: Check configuration file path
 
-#### Invalid Configuration Values
+### Invalid Configuration Values
+
 ```bash
 # View current configuration
 bayesian-ssh config
@@ -273,9 +282,10 @@ cat ~/.config/bayesian-ssh/config.json | jq .
 3. Check values: Verify configuration parameter values
 4. Use defaults: Start with minimal configuration
 
-### Performance Issues
+## Performance Issues
 
-#### Slow Connection Establishment
+### Slow Connection Establishment
+
 ```bash
 # Check DNS resolution time
 time nslookup server.company.com
@@ -296,18 +306,16 @@ bayesian-ssh --log-level debug connect "Server Name"
 1. Check DNS: Verify DNS resolution speed
 2. Network latency: Test network performance
 3. Server load: Check target server performance
-4. Optimize configuration: Use connection pooling
+4. Optimize configuration: Review connection settings
 
-#### High Memory Usage
+### High Memory Usage
+
 ```bash
 # Check memory usage
 ps aux | grep bayesian-ssh
 
 # Monitor resource usage
 top -p $(pgrep bayesian-ssh)
-
-# Check for memory leaks
-valgrind --tool=memcheck ./target/debug/bayesian-ssh
 ```
 
 **Symptoms:**
@@ -321,9 +329,10 @@ valgrind --tool=memcheck ./target/debug/bayesian-ssh
 3. Limit connections: Reduce concurrent connections
 4. Update dependencies: Ensure latest library versions
 
-### Network and Firewall Issues
+## Network and Firewall Issues
 
-#### Firewall Blocking Connections
+### Firewall Blocking Connections
+
 ```bash
 # Check local firewall
 sudo ufw status
@@ -332,9 +341,6 @@ sudo iptables -L
 # Test port accessibility
 telnet server.company.com 22
 nmap -p 22 server.company.com
-
-# Check corporate firewall
-# Contact network administrator
 ```
 
 **Symptoms:**
@@ -348,7 +354,8 @@ nmap -p 22 server.company.com
 3. Alternative ports: Use non-standard SSH ports
 4. VPN access: Connect through corporate VPN
 
-#### DNS Resolution Issues
+### DNS Resolution Issues
+
 ```bash
 # Check DNS resolution
 nslookup server.company.com
@@ -372,42 +379,19 @@ cat /etc/hosts
 3. Check /etc/hosts: Verify local host entries
 4. Network configuration: Check network settings
 
-### Application Crashes
+## Application Crashes
 
-#### Segmentation Faults
-```bash
-# Run with debugger
-gdb ./target/debug/bayesian-ssh
+### Panic Errors
 
-# Check core dumps
-coredumpctl list
-coredumpctl info
-
-# Run with valgrind
-valgrind --tool=memcheck ./target/debug/bayesian-ssh
-```
-
-**Symptoms:**
-- Application crashes with segfault
-- Core dumps generated
-- Unpredictable behavior
-
-**Solutions:**
-1. Debug build: Use debug version for better error reporting
-2. Check dependencies: Verify library compatibility
-3. Memory issues: Look for memory corruption
-4. Update Rust: Ensure latest Rust version
-
-#### Panic Errors
 ```bash
 # Enable backtrace
-RUST_BACKTRACE=1 ./target/release/bayesian-ssh
+RUST_BACKTRACE=1 bayesian-ssh connect "Server"
 
 # Check logs
 tail -f ~/.config/bayesian-ssh/bayesian-ssh.log
 
 # Run with verbose output
-./target/release/bayesian-ssh --log-level debug
+bayesian-ssh --log-level debug
 ```
 
 **Symptoms:**
@@ -418,20 +402,22 @@ tail -f ~/.config/bayesian-ssh/bayesian-ssh.log
 **Solutions:**
 1. Enable backtraces: Set `RUST_BACKTRACE=1`
 2. Check logs: Review application logs
-3. Update code: Fix panic conditions
-4. Error handling: Improve error handling
+3. Update to latest version: Bug may be fixed in newer release
+4. Report issue: File a bug report with backtrace on [GitHub Issues](https://github.com/abdoufermat5/bayesian-ssh/issues)
 
 ## Getting Help
 
 ### Debug Information
+
 When reporting issues, include:
 - Error messages: Complete error output
 - Environment: OS version, Rust version, dependencies
-- Configuration: Relevant configuration files
+- Configuration: Relevant configuration files (redact sensitive data)
 - Steps to reproduce: Detailed reproduction steps
 - Logs: Application and system logs
 
-### Useful Commands
+### Useful Diagnostic Commands
+
 ```bash
 # Enable debug logging
 bayesian-ssh --log-level debug
@@ -442,15 +428,9 @@ rustc --version
 cargo --version
 
 # Verify dependencies
-ldd ./target/release/bayesian-ssh
+ldd $(which bayesian-ssh)
 
 # Check file permissions
 ls -la ~/.config/bayesian-ssh/
 ls -la ~/.ssh/
 ```
-
-### Community Support
-- GitHub Issues: Report bugs and request features
-- Discussions: Ask questions and share solutions
-- Documentation: Check existing documentation
-- Code examples: Review example configurations

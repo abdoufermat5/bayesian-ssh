@@ -141,12 +141,19 @@ bayesian-ssh config --use-kerberos --default-user customuser
 
 ## Documentation
 
-For comprehensive guides and advanced topics, see the [docs/](docs/) folder:
+Full documentation is built with [mdBook](https://rust-lang.github.io/mdBook/). To build and view locally:
 
-- **[Technical Architecture](docs/technical-architecture.md)** - System design and architecture
-- **[Advanced Usage](docs/advanced-usage.md)** - Enterprise scenarios and complex use cases  
-- **[Troubleshooting](docs/troubleshooting.md)** - Common issues and solutions
-- **[Documentation Index](docs/README.md)** - Complete documentation overview
+```bash
+make docs          # Build to docs/book/
+make docs-serve    # Serve locally with live reload
+```
+
+Documentation covers:
+
+- **[Getting Started](docs/src/getting-started/installation.md)** - Installation, quick start, configuration
+- **[User Guide](docs/src/user-guide/connection-management.md)** - Connections, sessions, aliases, TUI, bastion hosts
+- **[Advanced Usage](docs/src/advanced-usage/enterprise.md)** - Enterprise, cloud, CI/CD, security & compliance
+- **[Reference](docs/src/reference/architecture.md)** - Architecture, troubleshooting, changelog
 
 ## Changelog
 See [CHANGELOG.md](CHANGELOG.md) for detailed release notes.

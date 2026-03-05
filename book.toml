@@ -1,0 +1,16 @@
+[book]
+title = "Bayesian SSH Documentation"
+authors = ["Abdoufermat5"]
+description = "Documentation for Bayesian SSH - An intelligent SSH session manager"
+src = "docs/src"
+language = "en"
+
+[build]
+build-dir = "docs/book"
+
+[output.html]
+default-theme = "navy"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/abdoufermat5/bayesian-ssh"
+edit-url-template = "https://github.com/abdoufermat5/bayesian-ssh/edit/main/{path}"
+site-url = "/bayesian-ssh/"

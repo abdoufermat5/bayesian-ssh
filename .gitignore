@@ -43,6 +43,7 @@ config.local.json
 
 # Documentation build artifacts
 docs/_build/
+docs/book/
 site/
 
 # Temporary files
@@ -68,10 +69,6 @@ Thumbs.db
 # Test coverage
 coverage/
 *.profraw
-
-# Documentation build
-docs/_build/
-site/
 
 # Package files
 *.tar.gz
