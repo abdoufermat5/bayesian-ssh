@@ -64,6 +64,7 @@ pub fn print_connection_info(connection: &Connection, index: usize) {
 }
 
 /// Result type for interactive selection operations
+#[allow(clippy::large_enum_variant)]
 pub enum SelectionResult {
     /// User selected a connection
     Selected(Connection),
@@ -152,7 +153,7 @@ pub async fn fuzzy_select_connection(
         initial_query,
         action_name,
         auto_select_single,
-        &AppConfig::load()?,
+        &AppConfig::load(None)?,
     )
     .await
 }
@@ -261,7 +262,7 @@ pub async fn fuzzy_select_connection_with_config(
     }
 }
 
-/// Show "no matches" message with helpful suggestions
+#[allow(dead_code)]
 pub fn show_no_matches_message(query: &str) {
     println!("❌ No connections found matching '{}'", query);
     println!("\n💡 Suggestions:");

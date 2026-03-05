@@ -5,6 +5,7 @@ use tracing_subscriber::filter::LevelFilter;
 mod cli;
 mod config;
 mod database;
+pub mod errors;
 mod models;
 mod services;
 mod tui;
@@ -34,17 +35,26 @@ async fn main() -> anyhow::Result<()> {
     let is_completions = matches!(&cli.command, Commands::Completions { .. });
 
     // Load configuration first (before initializing logging)
-    let config = AppConfig::load()?;
+    let config = AppConfig::load(cli.env.clone())?;
+
+    let env_prefix = format!("[{}] ", config.environment);
 
     if !is_completions {
-        // Initialize logging with the configured log level
+        // Initialize logging with the configured log level and environment prefix
         let log_level = parse_log_level(&config.log_level);
+        
+        // Use a custom format block to prepend the [environment] tag to logs
+        let format = tracing_subscriber::fmt::format()
+            .with_target(false)
+            .compact();
+
         tracing_subscriber::fmt()
+            .event_format(format)
             .with_max_level(log_level)
             .init();
 
         if log_level >= LevelFilter::INFO {
-            info!("Starting Bayesian SSH...");
+            info!("{}Starting Bayesian SSH...", env_prefix);
         }
     }
 
@@ -57,7 +67,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     if !is_completions {
-        info!("Bayesian SSH completed successfully");
+        info!("{}Bayesian SSH completed successfully", env_prefix);
     }
     Ok(())
 }

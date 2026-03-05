@@ -85,6 +85,7 @@ pub struct SessionStats {
 pub struct SessionHistoryEntry {
     pub connection_name: String,
     pub started_at: DateTime<Utc>,
+    #[allow(dead_code)]
     pub ended_at: Option<DateTime<Utc>>,
     pub status: SessionStatus,
     pub exit_code: Option<i32>,

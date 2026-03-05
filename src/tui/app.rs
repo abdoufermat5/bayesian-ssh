@@ -301,6 +301,7 @@ impl App {
     }
 
     /// Get the currently selected connection
+    #[allow(dead_code)]
     pub fn get_selected_connection(&self) -> Option<&Connection> {
         self.filtered_connections.get(self.selected_index)
     }

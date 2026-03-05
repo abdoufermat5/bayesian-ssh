@@ -299,6 +299,7 @@ impl SshService {
     }
 
     // Fuzzy search methods for enhanced connection discovery
+    #[allow(dead_code)]
     pub async fn fuzzy_search(&self, query: &str, limit: usize) -> Result<Vec<Connection>> {
         self.database.fuzzy_search_connections(query, limit)
     }
