@@ -5,6 +5,30 @@ All notable changes to Bayesian SSH will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-03-05
+
+### Added
+- **New commands**: `bssh backup`, `bssh restore`, `bssh duplicate`, `bssh env`, `bssh export`, `bssh groups`, `bssh ping` — expand the CLI with backup/restore, connection cloning, environment management, export, grouping, and latency checks
+- **Multi-environment configuration**: Manage separate configs per environment with the `--env` flag; environment name shown in TUI header and logs
+- **TUI detail pane**: Side panel (toggled with `Enter`/`d`) displaying all connection fields, full SSH command preview, and contextual hints
+- **TUI inline editing**: Edit any connection directly from the TUI with `e` — 8-field overlay with cursor navigation, written back to the database on save
+- **TUI sorting**: Cycle sort field with `s` (Name → Host → Last Used → Created) and toggle direction with `S`; indicator shown in header
+- **TUI compact view**: Toggle single-line vs two-line row display with `v`
+- **Optimized release profile**: `opt-level=3`, thin LTO, single codegen unit, stripped symbols, `panic=abort`
+
+### Changed
+- **Database module split**: `database/` refactored into separate submodules (`connection`, `alias`, `session`, `search`) for better organisation
+- **Core error handling**: Internal refactoring of error types and propagation across modules
+- **TUI visual refresh**: Alternating row backgrounds, `[B]`/`[K]` bastion/Kerberos badges, mode-coloured status bar badge, improved help overlay (50-col popup)
+
+### Fixed
+- **TUI log corruption**: Tracing output is now routed to `~/.local/share/bayesian-ssh/tui.log` when the TUI is active, preventing log lines from corrupting the alternate-screen display
+
+### Removed
+- **SCP command**: Removed `bssh scp` and the associated config fields `bastion_scp_mode` and `bastion_scp_wrapper`
+
+---
+
 ## [1.3.2] - 2025-12-31
 
 ### Fixed
