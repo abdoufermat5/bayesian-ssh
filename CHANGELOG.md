@@ -5,6 +5,36 @@ All notable changes to Bayesian SSH will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2026-03-05
+
+### Added
+- **TUI tab-based navigation**: Three tabs — Connections (`1`), History (`2`), Config (`3`) — switchable with number keys or `Tab`/`Shift+Tab`
+- **Add new connection form**: Press `a` in the Connections tab to create a connection directly from the TUI with a 9-field overlay (Name, Host, User, Port, Bastion, Bastion User, Key Path, Kerberos, Tags) and validation
+- **Session history view**: History tab with sortable columns (Date, Name, Duration, Status), connection name filter (`/`), failed-only toggle (`f`), and reconnect on `Enter`
+- **Environment management**: Config tab listing all environments with the active one highlighted; switch (`Enter`), create (`a`), or delete (`d`) environments without leaving the TUI
+- **Connection grouping by tag**: Toggle grouped view with `f` — connections are organized under collapsible tag headers
+- **Quick-connect bar**: Press `:` and type `[user@]host[:port]` to connect to an ad-hoc host without saving it
+- **Multi-select and batch operations**: `Space` to toggle selection, `Ctrl+A` to select all, `x` to batch-delete selected connections with a confirmation dialog
+- **SSH command preview**: Press `p` to see the full SSH command that would be executed, broken down by component (host, port, user, bastion, kerberos flags, key path)
+- **Async TCP ping with status indicators**: Press `P` to ping the selected connection in the background; results appear as colored indicators — green `●` with round-trip time for reachable, red `●` for unreachable, yellow `◌` while checking
+- **Shared ping service** (`services/ping.rs`): Lightweight TCP-level reachability check using `tokio::net::TcpStream` with timeout — no external process spawning; pings bastion host on port 22 for bastion connections
+
+### Changed
+- **TUI modular architecture**: Split monolithic `tui/app.rs` (721 lines) and `tui/ui.rs` (572 lines) into focused modules:
+  - `models.rs` — enums and small types (`Tab`, `AppMode`, `EditState`, `PingStatus`, etc.)
+  - `state.rs` — `App` struct and state management with `tokio::sync::mpsc` ping channel
+  - `input.rs` — keyboard handlers dispatched per tab and mode
+  - `event_loop.rs` — terminal setup/teardown and main loop with async ping result draining
+  - `ui/mod.rs` — draw dispatcher routing to tab views and overlays
+  - `ui/header.rs`, `ui/list.rs`, `ui/detail.rs`, `ui/status.rs`, `ui/overlays.rs`, `ui/history.rs`, `ui/config.rs`, `ui/helpers.rs`
+- **Edit overlay extended**: Now supports 9 fields (added Key Path); `EditState` includes `is_new` flag and `validate()` for required-field checks
+- **Ping indicators use distinct colors**: Reachable (green), unreachable (red), checking (yellow) — previously all rendered identically
+
+### Fixed
+- **Unreachable key binding patterns**: `Ctrl+A` select-all now correctly takes precedence over plain `a` add-connection; removed dead `g` grouping arm that was shadowed by go-to-top
+
+---
+
 ## [1.4.0] - 2026-03-05
 
 ### Added
