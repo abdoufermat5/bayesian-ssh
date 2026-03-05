@@ -4,6 +4,8 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
+    #[serde(skip, default = "default_environment")]
+    pub environment: String,
     pub database_path: PathBuf,
     pub default_user: String,
     pub default_bastion: Option<String>,
@@ -22,14 +24,102 @@ fn default_search_mode() -> String {
     "bayesian".to_string()
 }
 
+fn default_environment() -> String {
+    "default".to_string()
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
+        Self::default_for_env("default")
+    }
+}
+
+impl AppConfig {
+    pub fn get_active_env() -> String {
+        let config_dir = dirs::config_dir()
+            .unwrap_or_else(|| PathBuf::from("~/.config"))
+            .join("bayesian-ssh");
+        let env_file = config_dir.join("active_env");
+        if env_file.exists() {
+            std::fs::read_to_string(&env_file)
+                .map(|s| s.trim().to_string())
+                .unwrap_or_else(|_| "default".to_string())
+        } else {
+            "default".to_string()
+        }
+    }
+
+    pub fn set_active_env(env: &str) -> Result<()> {
+        let config_dir = dirs::config_dir()
+            .unwrap_or_else(|| PathBuf::from("~/.config"))
+            .join("bayesian-ssh");
+        std::fs::create_dir_all(&config_dir)?;
+        let env_file = config_dir.join("active_env");
+        std::fs::write(env_file, env)?;
+        Ok(())
+    }
+
+    fn migrate_legacy_config(config_dir: &std::path::Path) -> Result<()> {
+        let default_env_dir = config_dir.join("environments").join("default");
+        if !default_env_dir.exists() {
+            std::fs::create_dir_all(&default_env_dir)?;
+            
+            let legacy_config = config_dir.join("config.json");
+            if legacy_config.exists() {
+                std::fs::rename(&legacy_config, default_env_dir.join("config.json"))?;
+            }
+            
+            let legacy_db = config_dir.join("history.db");
+            if legacy_db.exists() {
+                std::fs::rename(&legacy_db, default_env_dir.join("history.db"))?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn load(env_override: Option<String>) -> Result<Self> {
         let config_dir = dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("~/.config"))
             .join("bayesian-ssh");
 
+        std::fs::create_dir_all(&config_dir)?;
+        Self::migrate_legacy_config(&config_dir)?;
+
+        let environment = env_override.unwrap_or_else(Self::get_active_env);
+        let env_dir = config_dir.join("environments").join(&environment);
+        std::fs::create_dir_all(&env_dir)?;
+
+        let config_file = env_dir.join("config.json");
+
+        let mut config = if config_file.exists() {
+            let content = std::fs::read_to_string(&config_file)?;
+            let mut cfg: AppConfig = serde_json::from_str(&content)?;
+            cfg.environment = environment.clone();
+            cfg
+        } else {
+            let cfg = Self::default_for_env(&environment);
+            cfg.save()?;
+            cfg
+        };
+
+        // Ensure database path is absolute and uses the environment dir
+        if config.database_path.is_relative() || !config.database_path.starts_with(&env_dir) {
+            config.database_path = env_dir.join("history.db");
+            config.save()?;
+        }
+
+        Ok(config)
+    }
+
+    pub fn default_for_env(env: &str) -> Self {
+        let config_dir = dirs::config_dir()
+            .unwrap_or_else(|| PathBuf::from("~/.config"))
+            .join("bayesian-ssh");
+        let env_dir = config_dir.join("environments").join(env);
+
         Self {
-            database_path: config_dir.join("history.db"),
+            environment: env.to_string(),
+            database_path: env_dir.join("history.db"),
             default_user: whoami::username(),
             default_bastion: None,
             default_bastion_user: None,
@@ -42,44 +132,16 @@ impl Default for AppConfig {
             search_mode: "bayesian".to_string(),
         }
     }
-}
-
-impl AppConfig {
-    pub fn load() -> Result<Self> {
-        let config_dir = dirs::config_dir()
-            .unwrap_or_else(|| PathBuf::from("~/.config"))
-            .join("bayesian-ssh");
-
-        // Create config directory if it doesn't exist
-        std::fs::create_dir_all(&config_dir)?;
-
-        let config_file = config_dir.join("config.json");
-
-        if config_file.exists() {
-            let content = std::fs::read_to_string(&config_file)?;
-            let mut config: AppConfig = serde_json::from_str(&content)?;
-
-            // Ensure database path is absolute
-            if config.database_path.is_relative() {
-                config.database_path = config_dir.join(&config.database_path);
-            }
-
-            Ok(config)
-        } else {
-            let config = AppConfig::default();
-            config.save()?;
-            Ok(config)
-        }
-    }
 
     pub fn save(&self) -> Result<()> {
         let config_dir = dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("~/.config"))
             .join("bayesian-ssh");
 
-        std::fs::create_dir_all(&config_dir)?;
+        let env_dir = config_dir.join("environments").join(&self.environment);
+        std::fs::create_dir_all(&env_dir)?;
 
-        let config_file = config_dir.join("config.json");
+        let config_file = env_dir.join("config.json");
         let content = serde_json::to_string_pretty(self)?;
         std::fs::write(config_file, content)?;
 

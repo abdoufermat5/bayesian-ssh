@@ -2,6 +2,7 @@ use crate::config::{AppConfig, AppConfigUpdates};
 use anyhow::Result;
 use tracing::info;
 
+#[allow(clippy::too_many_arguments)]
 pub async fn execute(
     default_user: Option<String>,
     default_bastion: Option<String>,
