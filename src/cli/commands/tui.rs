@@ -3,7 +3,6 @@
 use crate::config::AppConfig;
 use crate::services::SshService;
 use crate::tui::app::{run_tui, PendingAction};
-use crate::cli::utils::show_connection_details;
 use anyhow::Result;
 
 /// Execute the TUI command
@@ -17,11 +16,18 @@ pub async fn execute(config: AppConfig) -> Result<()> {
             PendingAction::Connect => {
                 println!("\n🔗 Connecting to {}...\n", connection.name);
                 let ssh_service = SshService::new(config)?;
-                ssh_service.connect_to_connection(&connection, None, None, None, None, false, None, None).await?;
-            }
-            PendingAction::ShowDetails => {
-                println!();
-                show_connection_details(&connection)?;
+                ssh_service
+                    .connect_to_connection(
+                        &connection,
+                        None,
+                        None,
+                        None,
+                        None,
+                        false,
+                        None,
+                        None,
+                    )
+                    .await?;
             }
         }
     }
