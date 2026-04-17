@@ -92,20 +92,39 @@ impl SshService {
             self.ensure_kerberos_ticket().await?;
         }
 
-        // Choose transport. Phase 1: always subprocess; Phase 2 adds native.
+        // Choose transport based on connection properties.
         let kind = crate::services::transport::pick_kind(connection, &self.config);
-        let transport =
-            crate::services::transport::SubprocessTransport::new(self.config.clone());
         info!("Using transport: {:?}", kind);
 
-        // Create session record
+        // Create session record before running.
         let mut session = Session::new(connection.clone());
-        session.transport = Some(format!("{:?}", kind).to_lowercase());
+        session.transport = Some(format!("{kind:?}").to_lowercase());
         self.database.add_session(&session)?;
         session.mark_active(std::process::id());
         self.database.update_session(&session)?;
 
-        let result = transport.run_interactive(connection).await;
+        let result: Result<i32, crate::services::transport::TransportError> = match kind {
+            crate::services::transport::TransportKind::Native => {
+                let t = crate::services::transport::RusshTransport::new(self.config.clone());
+                match t.run_interactive(connection).await {
+                    // Permanent failure — propagate as-is
+                    Err(e @ crate::services::transport::TransportError::Permanent(_)) => Err(e),
+                    // Fallback requested — retry with subprocess
+                    Err(crate::services::transport::TransportError::Fallback(e)) => {
+                        warn!("Native transport fallback ({e}), retrying with subprocess");
+                        crate::services::transport::SubprocessTransport::new(self.config.clone())
+                            .run_interactive(connection)
+                            .await
+                    }
+                    Ok(code) => Ok(code),
+                }
+            }
+            crate::services::transport::TransportKind::Subprocess => {
+                crate::services::transport::SubprocessTransport::new(self.config.clone())
+                    .run_interactive(connection)
+                    .await
+            }
+        };
 
         match result {
             Ok(0) => {

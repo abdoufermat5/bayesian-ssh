@@ -4,6 +4,27 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+pub struct AuthConfig {
+    /// Override identity file paths (equivalent to `-i` flag). Empty = auto-discover.
+    pub identity_files: Vec<PathBuf>,
+    /// Prefer ssh-agent when available.
+    pub use_agent: bool,
+    /// Path to ssh-agent socket; `None` → read `SSH_AUTH_SOCK`.
+    pub agent_socket: Option<PathBuf>,
+}
+
+impl Default for AuthConfig {
+    fn default() -> Self {
+        Self {
+            identity_files: Vec::new(),
+            use_agent: true,
+            agent_socket: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct TransportConfig {
     pub force_subprocess: bool,
     pub strict_host_key_checking: String, // "strict" | "accept-new" | "off"
@@ -36,6 +57,8 @@ pub struct AppConfig {
     pub search_mode: String, // "bayesian" or "fuzzy"
     #[serde(default)]
     pub transport: TransportConfig,
+    #[serde(default)]
+    pub auth: AuthConfig,
 }
 
 fn default_search_mode() -> String {
@@ -149,6 +172,7 @@ impl AppConfig {
             max_history_size: 1000,
             search_mode: "bayesian".to_string(),
             transport: TransportConfig::default(),
+            auth: AuthConfig::default(),
         }
     }
 
