@@ -7,8 +7,8 @@ impl Database {
     // Session management
     pub fn add_session(&self, session: &Session) -> Result<()> {
         self.conn.execute(
-            "INSERT INTO sessions (id, connection_id, started_at, ended_at, status, pid, exit_code)
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO sessions (id, connection_id, started_at, ended_at, status, pid, exit_code, transport)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 session.id.to_string(),
                 session.connection.id.to_string(),
@@ -17,6 +17,7 @@ impl Database {
                 serde_json::to_string(&session.status)?,
                 session.pid,
                 session.exit_code,
+                session.transport.as_deref(),
             ],
         )?;
 
@@ -26,13 +27,14 @@ impl Database {
     pub fn update_session(&self, session: &Session) -> Result<()> {
         self.conn.execute(
             "UPDATE sessions SET 
-             ended_at = ?, status = ?, pid = ?, exit_code = ?
+             ended_at = ?, status = ?, pid = ?, exit_code = ?, transport = ?
              WHERE id = ?",
             params![
                 session.ended_at.map(|d| d.to_rfc3339()),
                 serde_json::to_string(&session.status)?,
                 session.pid,
                 session.exit_code,
+                session.transport.as_deref(),
                 session.id.to_string(),
             ],
         )?;

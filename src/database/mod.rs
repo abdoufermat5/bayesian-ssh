@@ -56,10 +56,23 @@ impl Database {
                 status TEXT NOT NULL,
                 pid INTEGER,
                 exit_code INTEGER,
+                transport TEXT,
                 FOREIGN KEY (connection_id) REFERENCES connections (id)
             )",
             [],
         )?;
+
+        // Additive migration: sessions.transport was added in 1.5.0.
+        let has_col: bool = {
+            let mut stmt = self.conn.prepare("PRAGMA table_info(sessions)")?;
+            let rows = stmt.query_map([], |r| r.get::<_, String>(1))?;
+            let names: Vec<String> = rows.filter_map(Result::ok).collect();
+            names.iter().any(|n| n == "transport")
+        };
+        if !has_col {
+            self.conn
+                .execute("ALTER TABLE sessions ADD COLUMN transport TEXT", [])?;
+        }
 
         // Create indexes
         self.conn.execute(

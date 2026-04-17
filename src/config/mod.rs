@@ -3,6 +3,22 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TransportConfig {
+    pub force_subprocess: bool,
+    pub strict_host_key_checking: String, // "strict" | "accept-new" | "off"
+}
+
+impl Default for TransportConfig {
+    fn default() -> Self {
+        Self {
+            force_subprocess: false,
+            strict_host_key_checking: "accept-new".into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(skip, default = "default_environment")]
     pub environment: String,
@@ -18,6 +34,8 @@ pub struct AppConfig {
     pub max_history_size: usize,
     #[serde(default = "default_search_mode")]
     pub search_mode: String, // "bayesian" or "fuzzy"
+    #[serde(default)]
+    pub transport: TransportConfig,
 }
 
 fn default_search_mode() -> String {
@@ -130,6 +148,7 @@ impl AppConfig {
             auto_save_history: true,
             max_history_size: 1000,
             search_mode: "bayesian".to_string(),
+            transport: TransportConfig::default(),
         }
     }
 

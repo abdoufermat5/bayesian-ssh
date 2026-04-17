@@ -7,6 +7,8 @@ use uuid::Uuid;
 pub struct Session {
     pub id: Uuid,
     pub connection: Connection,
+    #[serde(default)]
+    pub transport: Option<String>,
     pub started_at: DateTime<Utc>,
     pub ended_at: Option<DateTime<Utc>>,
     pub status: SessionStatus,
@@ -28,6 +30,7 @@ impl Session {
         Self {
             id: Uuid::new_v4(),
             connection,
+            transport: None,
             started_at: Utc::now(),
             ended_at: None,
             status: SessionStatus::Starting,

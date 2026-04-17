@@ -2,7 +2,7 @@ use crate::config::AppConfig;
 use crate::database::Database;
 use crate::models::{Connection, Session};
 use anyhow::Result;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use tokio::process::Command as TokioCommand;
 use tracing::{error, info, warn};
 
@@ -92,88 +92,39 @@ impl SshService {
             self.ensure_kerberos_ticket().await?;
         }
 
+        // Choose transport. Phase 1: always subprocess; Phase 2 adds native.
+        let kind = crate::services::transport::pick_kind(connection, &self.config);
+        let transport =
+            crate::services::transport::SubprocessTransport::new(self.config.clone());
+        info!("Using transport: {:?}", kind);
+
         // Create session record
         let mut session = Session::new(connection.clone());
+        session.transport = Some(format!("{:?}", kind).to_lowercase());
         self.database.add_session(&session)?;
+        session.mark_active(std::process::id());
+        self.database.update_session(&session)?;
 
-        // Build SSH command
-        let mut cmd = Command::new("ssh");
+        let result = transport.run_interactive(connection).await;
 
-        // Add Kerberos flags if enabled
-        if connection.use_kerberos {
-            cmd.arg("-t").arg("-A").arg("-K");
-        }
-
-        // Add SSH key if specified
-        if let Some(key_path) = &connection.key_path {
-            cmd.arg("-i").arg(key_path);
-        }
-
-        // Add port and target
-        if let Some(bastion) = &connection.bastion {
-            // If bastion is specified, connect to bastion and specify target
-            let bastion_user = connection
-                .bastion_user
-                .as_deref()
-                .unwrap_or(&connection.user);
-            cmd.arg("-p").arg("22"); // Default bastion port
-            cmd.arg(format!("{}@{}", bastion_user, bastion));
-            // Add the target host as additional argument
-            cmd.arg(format!("{}@{}", connection.user, connection.host));
-
-            info!(
-                "Connecting via bastion {} to target {}",
-                bastion, connection.host
-            );
-        } else {
-            // Direct connection
-            cmd.arg("-p").arg(connection.port.to_string());
-            cmd.arg(format!("{}@{}", connection.user, connection.host));
-        }
-
-        // Set up terminal
-        cmd.stdin(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit());
-
-        info!("Executing command: {:?}", cmd);
-
-        // Execute SSH command
-        match cmd.spawn() {
-            Ok(mut child) => {
-                let pid = child.id();
-                session.mark_active(pid);
-                self.database.update_session(&session)?;
-
-                info!("SSH session started with PID: {}", pid);
-
-                // Wait for completion
-                match child.wait() {
-                    Ok(status) => {
-                        if status.success() {
-                            info!("SSH session completed successfully");
-                            session.mark_terminated(0);
-                        } else {
-                            warn!("SSH session exited with code: {:?}", status.code());
-                            session.mark_terminated(status.code().unwrap_or(-1));
-                        }
-                    }
-                    Err(e) => {
-                        error!("Error waiting for SSH process: {}", e);
-                        session.mark_error(format!("Process error: {}", e));
-                    }
-                }
-
-                self.database.update_session(&session)?;
+        match result {
+            Ok(0) => {
+                info!("SSH session completed successfully");
+                session.mark_terminated(0);
+            }
+            Ok(code) => {
+                warn!("SSH session exited with code {code}");
+                session.mark_terminated(code);
             }
             Err(e) => {
-                error!("Failed to spawn SSH process: {}", e);
-                session.mark_error(format!("Spawn error: {}", e));
+                error!("SSH transport error: {e}");
+                session.mark_error(format!("{e}"));
                 self.database.update_session(&session)?;
-                return Err(e.into());
+                return Err(anyhow::anyhow!("{}", e));
             }
         }
 
+        self.database.update_session(&session)?;
         Ok(())
     }
 
