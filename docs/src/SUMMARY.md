@@ -18,6 +18,8 @@
 - [Session Management](./user-guide/session-management.md)
 - [Aliases](./user-guide/aliases.md)
 - [Bastion Hosts](./user-guide/bastion-hosts.md)
+- [Remote Execution & Transfer](./user-guide/remote-execution.md)
+- [Environments](./user-guide/environments.md)
 - [TUI Mode](./user-guide/tui.md)
 - [Import & Export](./user-guide/import-export.md)
 

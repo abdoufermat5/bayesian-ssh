@@ -14,11 +14,14 @@
 - **Intelligent fuzzy search** across all commands - find connections by partial names, tags, or patterns
 - **One-click connections** to your servers
 - **Automatic Kerberos** ticket management
-- **Smart bastion host** routing
-- **Tag-based organization** for easy management
+- **Smart bastion host** routing — including interactive bastions (e.g. OVH “The Bastion”)
+- **Native russh transport** with SFTP support — `exec`, `upload`, `download` without shelling out
+- **Local port forwarding** (`forward -L`) and **SOCKS5 dynamic proxy** (`proxy -D`) tunnels
+- **Multi-environment profiles** (`env`, `--env`) — isolated databases per client/context
+- **Tag-based organization** with grouping and multi-select
 - **Complete connection history** with statistics
 - **SQLite database** for persistence
-- **Full-screen TUI** for browsing and managing connections
+- **Full-screen TUI** with tabs for Connections, History, Config, Files (SFTP browser), and Tunnels
 
 ## Documentation Overview
 

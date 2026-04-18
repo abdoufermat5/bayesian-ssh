@@ -5,6 +5,56 @@ All notable changes to Bayesian SSH will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-04-18
+
+### Added
+- **Native russh SSH transport**: Pure-Rust SSH transport layer (`SshTransport` trait) with `russh` backend, known-hosts verification, and multi-method authentication — replaces subprocess-based SSH for supported operations
+- **SFTP via russh-sftp**: Full SFTP session implementation (`RusshSftpSession`) built on the native transport for file operations without shelling out
+- **`exec`, `upload`, `download` commands**: New CLI commands backed by `TransferService` for remote command execution and file transfers
+- **Recursive upload and download**: SFTP upload and download now support entire directory trees recursively
+- **Local port-forward tunnel**: `bssh forward -L` establishes SSH local port-forwarding tunnels
+- **SOCKS5 dynamic proxy**: `bssh proxy -D` creates a SOCKS5 dynamic forwarding proxy through the SSH connection
+- **TUI SFTP file browser**: New Files tab for browsing remote file systems, uploading, deleting, creating directories, and renaming files interactively
+- **TUI Tunnels tab**: Start, list, and stop port-forward tunnels directly from the TUI
+
+### Changed
+- **Transport architecture refactored**: Extracted `SshTransport` trait with `SubprocessTransport` and `RusshTransport` implementations behind a dispatcher for flexible backend selection
+
+### Fixed
+- **CLI argument short flags**: Corrected conflicting short flags for SSH commands
+
+---
+
+## [1.4.1] - 2026-03-05
+
+### Added
+- **TUI tab-based navigation**: Three tabs — Connections (`1`), History (`2`), Config (`3`) — switchable with number keys or `Tab`/`Shift+Tab`
+- **Add new connection form**: Press `a` in the Connections tab to create a connection directly from the TUI with a 9-field overlay (Name, Host, User, Port, Bastion, Bastion User, Key Path, Kerberos, Tags) and validation
+- **Session history view**: History tab with sortable columns (Date, Name, Duration, Status), connection name filter (`/`), failed-only toggle (`f`), and reconnect on `Enter`
+- **Environment management**: Config tab listing all environments with the active one highlighted; switch (`Enter`), create (`a`), or delete (`d`) environments without leaving the TUI
+- **Connection grouping by tag**: Toggle grouped view with `f` — connections are organized under collapsible tag headers
+- **Quick-connect bar**: Press `:` and type `[user@]host[:port]` to connect to an ad-hoc host without saving it
+- **Multi-select and batch operations**: `Space` to toggle selection, `Ctrl+A` to select all, `x` to batch-delete selected connections with a confirmation dialog
+- **SSH command preview**: Press `p` to see the full SSH command that would be executed, broken down by component (host, port, user, bastion, kerberos flags, key path)
+- **Async TCP ping with status indicators**: Press `P` to ping the selected connection in the background; results appear as colored indicators — green `●` with round-trip time for reachable, red `●` for unreachable, yellow `◌` while checking
+- **Shared ping service** (`services/ping.rs`): Lightweight TCP-level reachability check using `tokio::net::TcpStream` with timeout — no external process spawning; pings bastion host on port 22 for bastion connections
+
+### Changed
+- **TUI modular architecture**: Split monolithic `tui/app.rs` (721 lines) and `tui/ui.rs` (572 lines) into focused modules:
+  - `models.rs` — enums and small types (`Tab`, `AppMode`, `EditState`, `PingStatus`, etc.)
+  - `state.rs` — `App` struct and state management with `tokio::sync::mpsc` ping channel
+  - `input.rs` — keyboard handlers dispatched per tab and mode
+  - `event_loop.rs` — terminal setup/teardown and main loop with async ping result draining
+  - `ui/mod.rs` — draw dispatcher routing to tab views and overlays
+  - `ui/header.rs`, `ui/list.rs`, `ui/detail.rs`, `ui/status.rs`, `ui/overlays.rs`, `ui/history.rs`, `ui/config.rs`, `ui/helpers.rs`
+- **Edit overlay extended**: Now supports 9 fields (added Key Path); `EditState` includes `is_new` flag and `validate()` for required-field checks
+- **Ping indicators use distinct colors**: Reachable (green), unreachable (red), checking (yellow) — previously all rendered identically
+
+### Fixed
+- **Unreachable key binding patterns**: `Ctrl+A` select-all now correctly takes precedence over plain `a` add-connection; removed dead `g` grouping arm that was shadowed by go-to-top
+
+---
+
 ## [1.4.0] - 2026-03-05
 
 ### Added
@@ -12,7 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Multi-environment configuration**: Manage separate configs per environment with the `--env` flag; environment name shown in TUI header and logs
 - **TUI detail pane**: Side panel (toggled with `Enter`/`d`) displaying all connection fields, full SSH command preview, and contextual hints
 - **TUI inline editing**: Edit any connection directly from the TUI with `e` — 8-field overlay with cursor navigation, written back to the database on save
-- **TUI sorting**: Cycle sort field with `s` (Name -> Host -> Last Used -> Created) and toggle direction with `S`; indicator shown in header
+- **TUI sorting**: Cycle sort field with `s` (Name → Host → Last Used → Created) and toggle direction with `S`; indicator shown in header
 - **TUI compact view**: Toggle single-line vs two-line row display with `v`
 - **Optimized release profile**: `opt-level=3`, thin LTO, single codegen unit, stripped symbols, `panic=abort`
 
@@ -41,8 +91,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Prior probability (usage frequency with Laplace smoothing)
   - Likelihood (match quality: exact, prefix, word-boundary, contains)
   - Recency (exponential decay based on last use)
-  - Success rate (connections that work get boosted)
-- **Configurable search mode** (`bssh config --search-mode bayesian|fuzzy`)
+  - Success rate (connections that work get boosted)- **Configurable search mode** (`bssh config --search-mode bayesian|fuzzy`)
   - `bayesian`: Smart ranking based on usage patterns (default)
   - `fuzzy`: Simple pattern matching
 - **Assets**: SVG icons, banner, architecture and workflow diagrams
@@ -52,8 +101,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.3.0] - 2025-12-30
 
-### Added
-- **Interactive TUI mode** (`bssh tui`): Full-screen terminal interface with ratatui
+### Added- **Interactive TUI mode** (`bssh tui`): Full-screen terminal interface with ratatui
   - Browse, search, and connect to servers
   - Keyboard navigation (vim-style j/k, arrows, PgUp/PgDn)
   - Tag filtering, help overlay, confirmation dialogs
@@ -61,7 +109,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Success/failure rates, average duration
   - Filter by connection, days, failed-only
 - **Connection aliases** (`bssh alias`): Create shortcuts for connections
-  - `bssh alias add db prod-database` -> `bssh connect db`
+  - `bssh alias add db prod-database` → `bssh connect db`
   - Aliases work transparently with connect command
 - **Close/kill sessions** (`bssh close`): Manage active SSH sessions
   - List active sessions with PID and stale detection
@@ -101,7 +149,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Technical
 - **Major code deduplication**: Extracted ~300 lines of duplicated code from connect.rs, edit.rs, remove.rs, show.rs into shared utilities
-- **Reduced file sizes**: connect.rs (257->65 lines), edit.rs (360->70 lines), remove.rs (235->70 lines), show.rs (246->35 lines)
+- **Reduced file sizes**: connect.rs (257→65 lines), edit.rs (360→70 lines), remove.rs (235→70 lines), show.rs (246→35 lines)
 
 ## [1.1.1] - 2025-08-29
 
@@ -118,6 +166,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Technical
 - **Dependencies**: Added `whoami` crate for system user detection
 - **Configuration**: Updated `AppConfig::default()` implementation
+- **Documentation**: Updated README.md, docs/README.md, and docs/advanced-usage.md
 
 ## [1.1.0] - 2025-08-28
 
@@ -129,7 +178,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Enhanced `remove` command with fuzzy search and extra confirmation
 
 ### Fuzzy Search Features
-- **Smart pattern matching**: Handles hyphens, underscores, and separators (`webprod` -> `web-prod-server`)
+- **Smart pattern matching**: Handles hyphens, underscores, and separators (`webprod` → `web-prod-server`)
 - **Tag-based search**: Search within connection tags
 - **Recent connections fallback**: Shows recently used connections when no matches found
 - **Interactive selection**: Numbered menus for multiple matches with user-friendly prompts
@@ -139,6 +188,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Extra confirmation for destructive operations**: `remove` command requires typing full connection name
 - **Graceful error handling**: Clear messages and helpful suggestions
 - **Backwards compatibility**: All existing functionality preserved
+
+### Documentation
+- Updated README with fuzzy search examples across all commands
+- Enhanced user guide with practical usage scenarios
+- Improved feature descriptions and examples
 
 ### Technical Improvements
 - Enhanced database layer with fuzzy search algorithms
@@ -163,3 +217,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tag-based organization for easy management
 - Complete connection history with statistics
 - SQLite database for persistence
+
+---
+
+## Types of changes
+- `Added` for new features
+- `Changed` for changes in existing functionality
+- `Fixed` for any bug fixes
+- `Removed` for now removed features
+- `Security` in case of vulnerabilities
