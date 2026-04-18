@@ -296,6 +296,46 @@ pub enum Commands {
     #[command(alias = "ui")]
     Tui,
 
+    /// Execute a command on a remote host and print the output
+    #[command(alias = "run")]
+    Exec {
+        /// Connection name, hostname, or alias
+        target: String,
+        /// Command and its arguments (pass after --)
+        #[arg(last = true, required = true)]
+        command: Vec<String>,
+    },
+
+    /// Upload a local file to a remote host via SFTP
+    Upload {
+        /// Connection name, hostname, or alias
+        target: String,
+        /// Local file path
+        #[arg(value_name = "LOCAL")]
+        local: std::path::PathBuf,
+        /// Remote destination path
+        #[arg(value_name = "REMOTE")]
+        remote: String,
+        /// Resume an interrupted upload at this byte offset
+        #[arg(long, default_value = "0")]
+        offset: u64,
+        /// Unix file permission mode for the remote file (octal)
+        #[arg(long, default_value = "0o644", value_parser = parse_octal)]
+        mode: u32,
+    },
+
+    /// Download a remote file from a host via SFTP
+    Download {
+        /// Connection name, hostname, or alias
+        target: String,
+        /// Remote file path
+        #[arg(value_name = "REMOTE")]
+        remote: String,
+        /// Local destination path
+        #[arg(value_name = "LOCAL")]
+        local: std::path::PathBuf,
+    },
+
     /// Manage connection aliases
     Alias {
         #[command(subcommand)]
@@ -338,6 +378,11 @@ pub enum AliasSubcommand {
         /// Connection to list aliases for (optional)
         target: Option<String>,
     },
+}
+
+fn parse_octal(s: &str) -> Result<u32, String> {
+    let s = s.trim_start_matches("0o").trim_start_matches("0O");
+    u32::from_str_radix(s, 8).map_err(|e| format!("invalid octal mode '{s}': {e}"))
 }
 
 impl Cli {
@@ -485,6 +530,15 @@ impl Cli {
                 failed,
             } => commands::history::execute(connection, limit, days, failed, config).await,
             Commands::Tui => commands::tui::execute(config).await,
+            Commands::Exec { target, command } => {
+                commands::exec::execute(target, command, config).await
+            }
+            Commands::Upload { target, local, remote, offset, mode } => {
+                commands::transfer::execute_upload(target, local, remote, offset, mode, config).await
+            }
+            Commands::Download { target, remote, local } => {
+                commands::transfer::execute_download(target, remote, local, config).await
+            }
             Commands::Alias { action } => {
                 let alias_action = match action {
                     AliasSubcommand::Add { alias, target } => {

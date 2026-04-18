@@ -1,0 +1,84 @@
+use std::path::PathBuf;
+
+use anyhow::{bail, Result};
+use tracing::info;
+
+use crate::config::AppConfig;
+use crate::services::{SshService, TransferService};
+
+pub async fn execute_upload(
+    target: String,
+    local: PathBuf,
+    remote: String,
+    offset: u64,
+    mode: u32,
+    config: AppConfig,
+) -> Result<()> {
+    let ssh_service = SshService::new(config.clone())?;
+    let connection = resolve_connection(&ssh_service, &target, "upload").await?;
+
+    let transfer = TransferService::new(config)?;
+
+    let progress: crate::services::transfer::ProgressFn = Box::new(|done, total| {
+        if let Some(t) = total {
+            let pct = done * 100 / t.max(1);
+            eprint!("\r  upload {done}/{t} bytes ({pct}%)   ");
+        } else {
+            eprint!("\r  upload {done} bytes   ");
+        }
+    });
+
+    let written = transfer
+        .upload(&connection, &local, &remote, offset, mode, Some(progress))
+        .await?;
+
+    eprintln!(); // newline after progress
+    info!("upload complete: {written} bytes");
+    println!("✅ Uploaded {} → {}:{remote} ({written} bytes)", local.display(), connection.host);
+    Ok(())
+}
+
+pub async fn execute_download(
+    target: String,
+    remote: String,
+    local: PathBuf,
+    config: AppConfig,
+) -> Result<()> {
+    let ssh_service = SshService::new(config.clone())?;
+    let connection = resolve_connection(&ssh_service, &target, "download").await?;
+
+    let transfer = TransferService::new(config)?;
+
+    let progress: crate::services::transfer::ProgressFn = Box::new(|done, total| {
+        if let Some(t) = total {
+            let pct = done * 100 / t.max(1);
+            eprint!("\r  download {done}/{t} bytes ({pct}%)   ");
+        } else {
+            eprint!("\r  download {done} bytes   ");
+        }
+    });
+
+    let read = transfer
+        .download(&connection, &remote, &local, Some(progress))
+        .await?;
+
+    eprintln!();
+    info!("download complete: {read} bytes");
+    println!("✅ Downloaded {}:{remote} → {} ({read} bytes)", connection.host, local.display());
+    Ok(())
+}
+
+async fn resolve_connection(
+    ssh_service: &SshService,
+    target: &str,
+    action: &str,
+) -> Result<crate::models::Connection> {
+    let mut conn_opt = ssh_service.get_connection(target).await.unwrap_or_default();
+    if conn_opt.is_none() {
+        conn_opt = crate::cli::utils::fuzzy_select_connection(ssh_service, target, action, true).await?;
+    }
+    match conn_opt {
+        Some(c) => Ok(c),
+        None => bail!("no connection selected"),
+    }
+}
