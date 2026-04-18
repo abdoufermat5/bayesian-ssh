@@ -5,7 +5,7 @@ use crate::database::Database;
 use crate::models::connection::Connection;
 use crate::models::session::SessionHistoryEntry;
 use crate::services::ping;
-use crate::services::transport::{pick_kind, RusshTransport, TransportKind};
+use crate::services::transport::{pick_kind, RusshTransport, SubprocessTransport, TransportKind};
 use crate::services::transport::types::SshTransport;
 use anyhow::Result;
 use std::collections::HashMap;
@@ -49,6 +49,20 @@ pub struct App {
     pub sftp_tx: mpsc::UnboundedSender<SftpMsg>,
     /// Receiver drained each event loop tick
     pub sftp_rx: mpsc::UnboundedReceiver<SftpMsg>,
+
+    // -- Tunnels tab state --
+    /// Live port-forward tunnel entries (owned handles)
+    pub tunnels: Vec<TunnelEntry>,
+    /// Selected row in the tunnels table
+    pub tunnel_selected: usize,
+    /// Input buffer for the TunnelLaunch dialog ([bind:]port:host:port)
+    pub tunnel_input: String,
+    /// Connection to forward when TunnelLaunch is confirmed
+    pub tunnel_target: Option<Connection>,
+    /// Sender for async tunnel-start results
+    pub tunnel_tx: mpsc::UnboundedSender<TunnelMsg>,
+    /// Receiver drained each event loop tick
+    pub tunnel_rx: mpsc::UnboundedReceiver<TunnelMsg>,
 
     // -- History tab state --
     pub history_entries: Vec<SessionHistoryEntry>,
@@ -96,6 +110,9 @@ impl App {
         // SFTP result channel
         let (sftp_tx, sftp_rx) = mpsc::unbounded_channel();
 
+        // Tunnel result channel
+        let (tunnel_tx, tunnel_rx) = mpsc::unbounded_channel();
+
         Ok(Self {
             active_tab: Tab::Connections,
             connections,
@@ -122,6 +139,13 @@ impl App {
             files_state: None,
             sftp_tx,
             sftp_rx,
+
+            tunnels: Vec::new(),
+            tunnel_selected: 0,
+            tunnel_input: String::new(),
+            tunnel_target: None,
+            tunnel_tx,
+            tunnel_rx,
 
             history_entries,
             history_selected: 0,
@@ -368,6 +392,112 @@ impl App {
         });
     }
 
+    // ─── Port-forward tunnels ─────────────────────────────────────────────────
+
+    /// Drain completed tunnel-start results and update `tunnels` list.
+    pub fn drain_tunnel_results(&mut self) {
+        while let Ok(msg) = self.tunnel_rx.try_recv() {
+            match msg {
+                TunnelMsg::Started {
+                    connection_name,
+                    bind_host,
+                    bind_port,
+                    remote_host,
+                    remote_port,
+                    handle,
+                } => {
+                    let id = self.tunnels.len() + 1;
+                    self.set_status(format!(
+                        "Tunnel #{id}: {}:{} → {}:{} active",
+                        bind_host, bind_port, remote_host, remote_port
+                    ));
+                    self.tunnels.push(TunnelEntry {
+                        id,
+                        connection_name,
+                        bind_host,
+                        bind_port,
+                        remote_host,
+                        remote_port,
+                        started_at: chrono::Utc::now(),
+                        handle: Some(handle),
+                    });
+                }
+                TunnelMsg::Failed { spec, error } => {
+                    self.set_status(format!("Tunnel {spec} failed: {error}"));
+                }
+            }
+        }
+    }
+
+    /// Start an async task that establishes a forward tunnel for `conn`.
+    pub fn spawn_tunnel(
+        &self,
+        conn: Connection,
+        bind_host: String,
+        bind_port: u16,
+        remote_host: String,
+        remote_port: u16,
+    ) {
+        let config = self.config.clone();
+        let tx = self.tunnel_tx.clone();
+        let spec = format!("{bind_host}:{bind_port}:{remote_host}:{remote_port}");
+        let cname = conn.name.clone();
+
+        tokio::spawn(async move {
+            let kind = pick_kind(&conn, &config);
+            let result = match kind {
+                TransportKind::Native => RusshTransport::new(config)
+                    .forward_local(&conn, &bind_host, bind_port, &remote_host, remote_port)
+                    .await
+                    .map_err(|e| e.to_string()),
+                TransportKind::Subprocess => SubprocessTransport::new(config)
+                    .forward_local(&conn, &bind_host, bind_port, &remote_host, remote_port)
+                    .await
+                    .map_err(|e| e.to_string()),
+            };
+            match result {
+                Ok(handle) => {
+                    let _ = tx.send(TunnelMsg::Started {
+                        connection_name: cname,
+                        bind_host,
+                        bind_port,
+                        remote_host,
+                        remote_port,
+                        handle,
+                    });
+                }
+                Err(error) => {
+                    let _ = tx.send(TunnelMsg::Failed { spec, error });
+                }
+            }
+        });
+    }
+
+    /// Stop the tunnel at `index` by consuming and cancelling its handle.
+    pub fn stop_tunnel(&mut self, index: usize) {
+        if let Some(entry) = self.tunnels.get_mut(index) {
+            if let Some(handle) = entry.handle.take() {
+                tokio::spawn(handle.cancel());
+            }
+        }
+        if index < self.tunnels.len() {
+            self.tunnels.remove(index);
+        }
+        if self.tunnel_selected >= self.tunnels.len() && !self.tunnels.is_empty() {
+            self.tunnel_selected = self.tunnels.len() - 1;
+        }
+    }
+
+    /// Cancel every active tunnel (called when the TUI is about to exit).
+    pub async fn cancel_all_tunnels(&mut self) {
+        let entries = std::mem::take(&mut self.tunnels);
+        for mut entry in entries {
+            if let Some(handle) = entry.handle.take() {
+                handle.cancel().await;
+            }
+        }
+    }
+
     /// Internal: spawn a task that lists `path` on `connection` via SFTP.
     fn spawn_sftp_list(&self, conn: Connection, path: String) {
         let config = self.config.clone();
@@ -603,6 +733,9 @@ impl App {
                     fs.cursor_up();
                 }
             }
+            Tab::Tunnels => {
+                self.tunnel_selected = self.tunnel_selected.saturating_sub(1);
+            }
         }
     }
 
@@ -627,6 +760,12 @@ impl App {
             Tab::Files => {
                 if let Some(ref mut fs) = self.files_state {
                     fs.cursor_down();
+                }
+            }
+            Tab::Tunnels => {
+                if !self.tunnels.is_empty() {
+                    self.tunnel_selected =
+                        (self.tunnel_selected + 1).min(self.tunnels.len() - 1);
                 }
             }
         }

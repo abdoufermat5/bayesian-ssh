@@ -39,6 +39,9 @@ pub async fn run_tui(config: AppConfig) -> Result<Option<(Connection, PendingAct
         // Drain any completed SFTP operation results
         app.drain_sftp_results();
 
+        // Drain any completed tunnel start/fail results
+        app.drain_tunnel_results();
+
         // Draw UI
         terminal.draw(|frame| {
             super::ui::draw(frame, &app);
@@ -55,6 +58,9 @@ pub async fn run_tui(config: AppConfig) -> Result<Option<(Connection, PendingAct
             break;
         }
     }
+
+    // Cancel any active tunnels before exit
+    app.cancel_all_tunnels().await;
 
     // Restore terminal
     disable_raw_mode()?;

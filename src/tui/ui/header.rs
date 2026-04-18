@@ -97,6 +97,15 @@ pub fn draw_header(frame: &mut Frame, area: Rect, app: &App) {
                 " File Browser ".to_string()
             }
         }
+        Tab::Tunnels => {
+            if app.mode == AppMode::TunnelLaunch {
+                let cursor = "│";
+                let target = app.tunnel_target.as_ref().map(|c| c.name.as_str()).unwrap_or("(none)");
+                format!(" Tunnels — {} via {}  spec: {}{}", "new tunnel", target, app.tunnel_input, cursor)
+            } else {
+                format!(" Tunnels — {} active", app.tunnels.len())
+            }
+        }
     };
 
     let style = match app.mode {

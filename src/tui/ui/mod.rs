@@ -12,6 +12,7 @@ pub mod history;
 pub mod list;
 pub mod overlays;
 pub mod status;
+pub mod tunnels;
 
 use crate::tui::models::{AppMode, Tab};
 use crate::tui::state::App;
@@ -62,6 +63,7 @@ fn draw_body(frame: &mut Frame, area: Rect, app: &App) {
         Tab::History => history::draw_history_tab(frame, area, app),
         Tab::Config => config::draw_config_tab(frame, area, app),
         Tab::Files => files::draw_files_tab(frame, area, app),
+        Tab::Tunnels => tunnels::draw_tunnels_tab(frame, area, app),
     }
 }
 
@@ -106,6 +108,9 @@ fn draw_overlays(frame: &mut Frame, area: Rect, app: &App) {
         }
         AppMode::CommandPreview => {
             overlays::draw_command_preview(frame, area, app);
+        }
+        AppMode::TunnelLaunch => {
+            tunnels::draw_tunnel_launch_dialog(frame, area, app);
         }
         // Normal, Search, Detail, QuickConnect — no overlay needed
         // (Search & QuickConnect are shown inline in the header)

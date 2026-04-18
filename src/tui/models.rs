@@ -1,7 +1,8 @@
 //! TUI data models, enums, and small types
 
 use crate::models::Connection;
-use crate::services::transport::types::RemoteEntry;
+use crate::services::transport::types::{ForwardHandle, RemoteEntry};
+use chrono::{DateTime, Utc};
 use std::collections::HashSet;
 
 /// Active tab in the TUI
@@ -11,6 +12,7 @@ pub enum Tab {
     History,
     Config,
     Files,
+    Tunnels,
 }
 
 impl Tab {
@@ -20,11 +22,18 @@ impl Tab {
             Tab::History => "History",
             Tab::Config => "Config",
             Tab::Files => "Files",
+            Tab::Tunnels => "Tunnels",
         }
     }
 
     pub fn all() -> &'static [Tab] {
-        &[Tab::Connections, Tab::History, Tab::Config, Tab::Files]
+        &[
+            Tab::Connections,
+            Tab::History,
+            Tab::Config,
+            Tab::Files,
+            Tab::Tunnels,
+        ]
     }
 
     pub fn index(&self) -> usize {
@@ -33,6 +42,7 @@ impl Tab {
             Tab::History => 1,
             Tab::Config => 2,
             Tab::Files => 3,
+            Tab::Tunnels => 4,
         }
     }
 
@@ -42,6 +52,7 @@ impl Tab {
             1 => Tab::History,
             2 => Tab::Config,
             3 => Tab::Files,
+            4 => Tab::Tunnels,
             _ => Tab::Connections,
         }
     }
@@ -77,6 +88,8 @@ pub enum AppMode {
     QuickConnect,
     /// SSH command preview
     CommandPreview,
+    /// Tunnel launch dialog (entering -L spec)
+    TunnelLaunch,
 }
 
 /// Actions that require confirmation
@@ -84,6 +97,7 @@ pub enum AppMode {
 pub enum ConfirmAction {
     Delete(usize),
     BatchDelete,
+    StopTunnel(usize),
 }
 
 /// Sort field for connection list
@@ -248,6 +262,36 @@ impl EditState {
     }
 }
 
+/// A live port-forward tunnel managed by the TUI.
+pub struct TunnelEntry {
+    /// Human-readable id (sequential, for display)
+    pub id: usize,
+    /// Name of the connection being forwarded
+    pub connection_name: String,
+    /// Local bind address
+    pub bind_host: String,
+    /// Local bind port
+    pub bind_port: u16,
+    /// Remote target host
+    pub remote_host: String,
+    /// Remote target port
+    pub remote_port: u16,
+    /// When the tunnel was started
+    pub started_at: DateTime<Utc>,
+    /// Owned handle — present while the tunnel is alive, consumed on cancel
+    pub handle: Option<ForwardHandle>,
+}
+
+impl TunnelEntry {
+    pub fn local_spec(&self) -> String {
+        format!("{}:{}", self.bind_host, self.bind_port)
+    }
+
+    pub fn remote_spec(&self) -> String {
+        format!("{}:{}", self.remote_host, self.remote_port)
+    }
+}
+
 /// Action to perform after TUI exits
 #[derive(Debug, Clone)]
 pub enum PendingAction {
@@ -395,6 +439,21 @@ impl FilesTabState {
             })
             .unwrap_or_else(|| "/".to_string())
     }
+}
+
+/// Messages sent from async tunnel-start tasks back to the event loop.
+pub enum TunnelMsg {
+    /// Tunnel started successfully.
+    Started {
+        connection_name: String,
+        bind_host: String,
+        bind_port: u16,
+        remote_host: String,
+        remote_port: u16,
+        handle: crate::services::transport::types::ForwardHandle,
+    },
+    /// Tunnel failed to start.
+    Failed { spec: String, error: String },
 }
 
 /// Messages sent back from async SFTP tasks to the event loop.

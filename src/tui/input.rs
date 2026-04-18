@@ -36,6 +36,10 @@ impl App {
                     }
                     return Ok(());
                 }
+                KeyCode::Char('5') => {
+                    self.switch_to_tab(Tab::Tunnels);
+                    return Ok(());
+                }
                 KeyCode::Tab if !key.modifiers.contains(KeyModifiers::SHIFT) => {
                     let next = self.active_tab.next();
                     self.switch_to_tab(next);
@@ -57,6 +61,7 @@ impl App {
                 Tab::History => self.handle_history_normal(key)?,
                 Tab::Config => self.handle_config_normal(key)?,
                 Tab::Files => self.handle_files_normal(key)?,
+                Tab::Tunnels => self.handle_tunnels_normal(key)?,
             },
             AppMode::Search => self.handle_search_mode(key)?,
             AppMode::Help => self.handle_help_mode(key)?,
@@ -69,6 +74,7 @@ impl App {
             AppMode::Add => self.handle_edit_mode(key)?,
             AppMode::QuickConnect => self.handle_quick_connect_mode(key)?,
             AppMode::CommandPreview => self.handle_command_preview_mode(key)?,
+            AppMode::TunnelLaunch => self.handle_tunnel_launch_mode(key)?,
         }
         Ok(())
     }
@@ -96,6 +102,9 @@ impl App {
                 if let Some(ref fs) = self.files_state {
                     self.set_status(format!("Files: {}", fs.connection.name));
                 }
+            }
+            Tab::Tunnels => {
+                self.set_status(format!("Tunnels ({} active)", self.tunnels.len()));
             }
         }
     }
@@ -494,7 +503,107 @@ impl App {
         Ok(())
     }
 
-    // ─── Search mode ─────────────────────────────────────────────────
+    // ─── Tunnels tab: Normal mode ────────────────────────────────────
+
+    fn handle_tunnels_normal(&mut self, key: KeyEvent) -> Result<()> {
+        match key.code {
+            KeyCode::Char('q') | KeyCode::Esc => {
+                self.should_quit = true;
+            }
+            KeyCode::Char('?') => {
+                self.mode = AppMode::Help;
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if !self.tunnels.is_empty() {
+                    self.tunnel_selected =
+                        (self.tunnel_selected + 1).min(self.tunnels.len() - 1);
+                }
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.tunnel_selected = self.tunnel_selected.saturating_sub(1);
+            }
+            KeyCode::Char('n') => {
+                // Pick a connection then open TunnelLaunch dialog
+                self.open_tunnel_launch();
+            }
+            KeyCode::Char('x') | KeyCode::Delete => {
+                if !self.tunnels.is_empty() {
+                    let idx = self.tunnel_selected;
+                    self.mode = AppMode::Confirm(ConfirmAction::StopTunnel(idx));
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// Open the TunnelLaunch dialog, pre-selecting the currently highlighted
+    /// connection (if on Connections tab) or prompting the user to pick one.
+    fn open_tunnel_launch(&mut self) {
+        // Use selected connection from Connections tab if available
+        let conn = if self.active_tab == Tab::Connections {
+            self.filtered_connections.get(self.selected_index).cloned()
+        } else {
+            self.selected_connection.clone()
+        };
+        self.tunnel_target = conn;
+        self.tunnel_input.clear();
+        self.mode = AppMode::TunnelLaunch;
+    }
+
+    // ─── TunnelLaunch mode ───────────────────────────────────────────
+
+    fn handle_tunnel_launch_mode(&mut self, key: KeyEvent) -> Result<()> {
+        match key.code {
+            KeyCode::Esc => {
+                self.mode = AppMode::Normal;
+                self.tunnel_input.clear();
+                self.tunnel_target = None;
+                self.set_status("Tunnel launch cancelled");
+            }
+            KeyCode::Enter => {
+                let spec = self.tunnel_input.trim().to_string();
+                if spec.is_empty() {
+                    self.set_status("Enter a -L spec first");
+                    return Ok(());
+                }
+                match parse_forward_spec(&spec) {
+                    Ok((bind_host, bind_port, remote_host, remote_port)) => {
+                        let conn = match self.tunnel_target.clone() {
+                            Some(c) => c,
+                            None => {
+                                self.set_status("No target connection selected");
+                                return Ok(());
+                            }
+                        };
+                        self.set_status(format!(
+                            "Starting tunnel {}:{} → {}:{} via {}…",
+                            bind_host, bind_port, remote_host, remote_port, conn.name
+                        ));
+                        self.spawn_tunnel(conn, bind_host, bind_port, remote_host, remote_port);
+                        self.mode = AppMode::Normal;
+                        self.tunnel_input.clear();
+                        self.tunnel_target = None;
+                        // Auto-switch to Tunnels tab
+                        self.active_tab = Tab::Tunnels;
+                    }
+                    Err(e) => {
+                        self.set_status(format!("Invalid spec: {e}"));
+                    }
+                }
+            }
+            KeyCode::Backspace => {
+                self.tunnel_input.pop();
+            }
+            KeyCode::Char(c) => {
+                self.tunnel_input.push(c);
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    // ─── Search mode ───────────────────────────────────────────────────────────────
 
     fn handle_search_mode(&mut self, key: KeyEvent) -> Result<()> {
         match key.code {
@@ -760,6 +869,10 @@ impl App {
                         self.refresh_connections()?;
                         self.set_status(format!("Deleted {} connections", deleted));
                     }
+                    ConfirmAction::StopTunnel(idx) => {
+                        self.stop_tunnel(idx);
+                        self.set_status("Tunnel stopped");
+                    }
                 }
                 self.mode = AppMode::Normal;
             }
@@ -905,5 +1018,24 @@ impl App {
         Some(Connection::new(
             name, host, user, port, None, None, false, None,
         ))
+    }
+}
+
+/// Parse `[bind_addr:]bind_port:remote_host:remote_port` into its four parts.
+/// Identical logic to `forward.rs` but lives here to avoid a cross-module dep.
+fn parse_forward_spec(spec: &str) -> anyhow::Result<(String, u16, String, u16)> {
+    let parts: Vec<&str> = spec.splitn(4, ':').collect();
+    match parts.as_slice() {
+        [bp, rh, rp] => {
+            let bind_port: u16 = bp.parse().map_err(|_| anyhow::anyhow!("invalid bind port '{bp}'"))?;
+            let remote_port: u16 = rp.parse().map_err(|_| anyhow::anyhow!("invalid remote port '{rp}'"))?;
+            Ok(("127.0.0.1".to_string(), bind_port, rh.to_string(), remote_port))
+        }
+        [ba, bp, rh, rp] => {
+            let bind_port: u16 = bp.parse().map_err(|_| anyhow::anyhow!("invalid bind port '{bp}'"))?;
+            let remote_port: u16 = rp.parse().map_err(|_| anyhow::anyhow!("invalid remote port '{rp}'"))?;
+            Ok((ba.to_string(), bind_port, rh.to_string(), remote_port))
+        }
+        _ => anyhow::bail!("expected [bind_addr:]bind_port:remote_host:remote_port, got '{spec}'"),
     }
 }

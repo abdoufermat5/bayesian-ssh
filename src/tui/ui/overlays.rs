@@ -123,6 +123,29 @@ pub fn draw_help_overlay(frame: &mut Frame, area: Rect, app: &App) {
             "  q/Esc       Quit",
             "",
         ],
+        Tab::Tunnels => vec![
+            "",
+            "  Navigation",
+            "  ──────────────────────────────────────",
+            "  ↑/k ↓/j     Move up/down",
+            "  1-5         Switch tab",
+            "",
+            "  Actions",
+            "  ──────────────────────────────────────",
+            "  n           New tunnel (pick connection)",
+            "  x/Delete    Stop selected tunnel",
+            "",
+            "  Tunnel spec format",
+            "  ──────────────────────────────────────",
+            "  bind_port:remote_host:remote_port",
+            "  bind_addr:bind_port:remote_host:remote_port",
+            "",
+            "  General",
+            "  ──────────────────────────────────────",
+            "  ?           Toggle this help",
+            "  q/Esc       Quit",
+            "",
+        ],
     };
 
     let help_content = help_text.join("\n");
@@ -183,6 +206,17 @@ pub fn draw_confirm_dialog(frame: &mut Frame, area: Rect, action: &ConfirmAction
                     "Delete {} selected connections?\n\nThis action cannot be undone.\n\n[y] Yes  [n] No",
                     count
                 ),
+            )
+        }
+        ConfirmAction::StopTunnel(idx) => {
+            let spec = app
+                .tunnels
+                .get(*idx)
+                .map(|t| format!("{}:{} → {}:{}", t.bind_host, t.bind_port, t.remote_host, t.remote_port))
+                .unwrap_or_else(|| "unknown".to_string());
+            (
+                " Stop Tunnel ",
+                format!("Stop tunnel {}?\n\n[y] Yes  [n] No", spec),
             )
         }
     };

@@ -19,6 +19,7 @@ pub fn draw_status_bar(frame: &mut Frame, area: Rect, app: &App) {
         AppMode::Add => "ADD",
         AppMode::QuickConnect => "QUICK",
         AppMode::CommandPreview => "PREVIEW",
+        AppMode::TunnelLaunch => "TUNNEL",
     };
 
     let help_hint = match (&app.mode, app.active_tab) {
@@ -38,6 +39,14 @@ pub fn draw_status_bar(frame: &mut Frame, area: Rect, app: &App) {
         (AppMode::Normal, Tab::Files) => {
             "↑/k up | ↓/j down | Enter enter dir | ←/h up | d download | r refresh | q quit"
         }
+        (AppMode::Normal, Tab::Tunnels) => {
+            "n new tunnel | x/Del stop selected | ↑/k ↓/j navigate | ? help | q quit"
+        }
+        (AppMode::TunnelLaunch, _) => "[bind:]port:host:port  ·  Enter start  ·  Esc cancel",
+        (AppMode::Normal, Tab::Tunnels) => {
+            "n new tunnel | x/Del stop selected | ↑/k ↓/j navigate | ? help | q quit"
+        }
+        (AppMode::TunnelLaunch, _) => "[bind:]port:host:port  ·  Enter start  ·  Esc cancel",
         (AppMode::Search, _) => "Enter confirm | Esc cancel",
         (AppMode::Help, _) => "Esc/Enter close",
         (AppMode::Confirm(_), _) => "y confirm | n cancel",
@@ -62,6 +71,7 @@ pub fn draw_status_bar(frame: &mut Frame, area: Rect, app: &App) {
         AppMode::Edit | AppMode::Add => Style::default().fg(Color::Magenta).bold(),
         AppMode::Confirm(_) => Style::default().fg(Color::Red).bold(),
         AppMode::Help => Style::default().fg(Color::White).bold(),
+        AppMode::TunnelLaunch => Style::default().fg(Color::Cyan).bold(),
     };
 
     let status_text = app.status_message.as_deref().unwrap_or("");
