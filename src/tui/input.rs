@@ -535,9 +535,7 @@ impl App {
                     .map(|e| e.name.clone())
                 {
                     self.files_prompt_input.clear();
-                    self.mode = AppMode::FilesPrompt(FilesPromptKind::Rename {
-                        old_name,
-                    });
+                    self.mode = AppMode::FilesPrompt(FilesPromptKind::Rename { old_name });
                 }
             }
             _ => {}
@@ -557,8 +555,7 @@ impl App {
             }
             KeyCode::Down | KeyCode::Char('j') => {
                 if !self.tunnels.is_empty() {
-                    self.tunnel_selected =
-                        (self.tunnel_selected + 1).min(self.tunnels.len() - 1);
+                    self.tunnel_selected = (self.tunnel_selected + 1).min(self.tunnels.len() - 1);
                 }
             }
             KeyCode::Up | KeyCode::Char('k') => {
@@ -613,11 +610,7 @@ impl App {
 
     // ─── Files prompt mode (upload / mkdir / rename) ─────────────────
 
-    fn handle_files_prompt_mode(
-        &mut self,
-        key: KeyEvent,
-        kind: FilesPromptKind,
-    ) -> Result<()> {
+    fn handle_files_prompt_mode(&mut self, key: KeyEvent, kind: FilesPromptKind) -> Result<()> {
         match key.code {
             KeyCode::Esc => {
                 self.mode = AppMode::Normal;
@@ -643,7 +636,10 @@ impl App {
                             self.files_upload(input);
                         }
                     }
-                    FilesPromptKind::Download { remote_path, is_dir } => {
+                    FilesPromptKind::Download {
+                        remote_path,
+                        is_dir,
+                    } => {
                         if is_dir {
                             self.set_status(format!("Downloading directory → '{input}'…"));
                             self.files_download_dir_to(remote_path, input);
@@ -688,7 +684,9 @@ impl App {
                 if spec.is_empty() {
                     let hint = match self.tunnel_launch_kind {
                         crate::tui::models::TunnelKind::Local => "Enter a -L spec first",
-                        crate::tui::models::TunnelKind::Socks5 => "Enter a port (or addr:port) first",
+                        crate::tui::models::TunnelKind::Socks5 => {
+                            "Enter a port (or addr:port) first"
+                        }
                     };
                     self.set_status(hint);
                     return Ok(());
@@ -708,7 +706,13 @@ impl App {
                                     "Starting tunnel {}:{} → {}:{} via {}…",
                                     bind_host, bind_port, remote_host, remote_port, conn.name
                                 ));
-                                self.spawn_tunnel(conn, bind_host, bind_port, remote_host, remote_port);
+                                self.spawn_tunnel(
+                                    conn,
+                                    bind_host,
+                                    bind_port,
+                                    remote_host,
+                                    remote_port,
+                                );
                                 self.mode = AppMode::Normal;
                                 self.tunnel_input.clear();
                                 self.tunnel_target = None;
@@ -720,31 +724,29 @@ impl App {
                             }
                         }
                     }
-                    crate::tui::models::TunnelKind::Socks5 => {
-                        match parse_proxy_spec(&spec) {
-                            Ok((bind_host, bind_port)) => {
-                                let conn = match self.tunnel_target.clone() {
-                                    Some(c) => c,
-                                    None => {
-                                        self.set_status("No target connection selected");
-                                        return Ok(());
-                                    }
-                                };
-                                self.set_status(format!(
-                                    "Starting SOCKS5 proxy on {}:{} via {}…",
-                                    bind_host, bind_port, conn.name
-                                ));
-                                self.spawn_proxy(conn, bind_host, bind_port);
-                                self.mode = AppMode::Normal;
-                                self.tunnel_input.clear();
-                                self.tunnel_target = None;
-                                self.active_tab = Tab::Tunnels;
-                            }
-                            Err(e) => {
-                                self.set_status(format!("Invalid spec: {e}"));
-                            }
+                    crate::tui::models::TunnelKind::Socks5 => match parse_proxy_spec(&spec) {
+                        Ok((bind_host, bind_port)) => {
+                            let conn = match self.tunnel_target.clone() {
+                                Some(c) => c,
+                                None => {
+                                    self.set_status("No target connection selected");
+                                    return Ok(());
+                                }
+                            };
+                            self.set_status(format!(
+                                "Starting SOCKS5 proxy on {}:{} via {}…",
+                                bind_host, bind_port, conn.name
+                            ));
+                            self.spawn_proxy(conn, bind_host, bind_port);
+                            self.mode = AppMode::Normal;
+                            self.tunnel_input.clear();
+                            self.tunnel_target = None;
+                            self.active_tab = Tab::Tunnels;
                         }
-                    }
+                        Err(e) => {
+                            self.set_status(format!("Invalid spec: {e}"));
+                        }
+                    },
                 }
             }
             KeyCode::Backspace => {
@@ -1185,13 +1187,26 @@ fn parse_forward_spec(spec: &str) -> anyhow::Result<(String, u16, String, u16)> 
     let parts: Vec<&str> = spec.splitn(4, ':').collect();
     match parts.as_slice() {
         [bp, rh, rp] => {
-            let bind_port: u16 = bp.parse().map_err(|_| anyhow::anyhow!("invalid bind port '{bp}'"))?;
-            let remote_port: u16 = rp.parse().map_err(|_| anyhow::anyhow!("invalid remote port '{rp}'"))?;
-            Ok(("127.0.0.1".to_string(), bind_port, rh.to_string(), remote_port))
+            let bind_port: u16 = bp
+                .parse()
+                .map_err(|_| anyhow::anyhow!("invalid bind port '{bp}'"))?;
+            let remote_port: u16 = rp
+                .parse()
+                .map_err(|_| anyhow::anyhow!("invalid remote port '{rp}'"))?;
+            Ok((
+                "127.0.0.1".to_string(),
+                bind_port,
+                rh.to_string(),
+                remote_port,
+            ))
         }
         [ba, bp, rh, rp] => {
-            let bind_port: u16 = bp.parse().map_err(|_| anyhow::anyhow!("invalid bind port '{bp}'"))?;
-            let remote_port: u16 = rp.parse().map_err(|_| anyhow::anyhow!("invalid remote port '{rp}'"))?;
+            let bind_port: u16 = bp
+                .parse()
+                .map_err(|_| anyhow::anyhow!("invalid bind port '{bp}'"))?;
+            let remote_port: u16 = rp
+                .parse()
+                .map_err(|_| anyhow::anyhow!("invalid remote port '{rp}'"))?;
             Ok((ba.to_string(), bind_port, rh.to_string(), remote_port))
         }
         _ => anyhow::bail!("expected [bind_addr:]bind_port:remote_host:remote_port, got '{spec}'"),

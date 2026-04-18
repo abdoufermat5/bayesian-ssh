@@ -32,7 +32,10 @@ pub fn draw_files_tab(frame: &mut Frame, area: Rect, app: &App) {
 
     // ── File list ────────────────────────────────────────────────────────────
     let title = if fs.is_loading {
-        format!(" Files: {}  {} [loading…] ", fs.connection.name, fs.current_path)
+        format!(
+            " Files: {}  {} [loading…] ",
+            fs.connection.name, fs.current_path
+        )
     } else {
         format!(" Files: {}  {} ", fs.connection.name, fs.current_path)
     };
@@ -51,10 +54,7 @@ pub fn draw_files_tab(frame: &mut Frame, area: Rect, app: &App) {
         .padding(Padding::horizontal(1));
 
     if fs.entries.is_empty() && !fs.is_loading {
-        let msg = fs
-            .error
-            .as_deref()
-            .unwrap_or("Directory is empty.");
+        let msg = fs.error.as_deref().unwrap_or("Directory is empty.");
         let para = Paragraph::new(msg)
             .style(Style::default().fg(Color::DarkGray))
             .alignment(Alignment::Center)
@@ -109,8 +109,7 @@ pub fn draw_files_tab(frame: &mut Frame, area: Rect, app: &App) {
     let hints = Span::raw(
         " ↑/k up  ↓/j down  Enter enter  ←/h up  d dl  u upload  D delete  m mkdir  R rename  r refresh  ? help  q quit",
     );
-    let hint_para = Paragraph::new(hints)
-        .style(Style::default().fg(Color::DarkGray));
+    let hint_para = Paragraph::new(hints).style(Style::default().fg(Color::DarkGray));
     frame.render_widget(hint_para, chunks[1]);
 }
 
@@ -126,7 +125,10 @@ pub fn draw_files_prompt_dialog(frame: &mut Frame, area: Rect, app: &App, kind: 
             " Upload ",
             "Enter local file or directory path:".to_string(),
         ),
-        FilesPromptKind::Download { remote_path, is_dir } => {
+        FilesPromptKind::Download {
+            remote_path,
+            is_dir,
+        } => {
             let label = remote_path.rsplit('/').next().unwrap_or(remote_path);
             if *is_dir {
                 (
@@ -140,14 +142,10 @@ pub fn draw_files_prompt_dialog(frame: &mut Frame, area: Rect, app: &App, kind: 
                 )
             }
         }
-        FilesPromptKind::Mkdir => (
-            " New Directory ",
-            "Enter directory name:".to_string(),
-        ),
-        FilesPromptKind::Rename { old_name } => (
-            " Rename Entry ",
-            format!("New name for '{old_name}':"),
-        ),
+        FilesPromptKind::Mkdir => (" New Directory ", "Enter directory name:".to_string()),
+        FilesPromptKind::Rename { old_name } => {
+            (" Rename Entry ", format!("New name for '{old_name}':"))
+        }
     };
 
     let block = Block::default()
@@ -188,7 +186,12 @@ fn centered_rect(percent_x: u16, height: u16, area: Rect) -> Rect {
     let popup_width = area.width * percent_x / 100;
     let x = (area.width.saturating_sub(popup_width)) / 2;
     let y = (area.height.saturating_sub(height)) / 2;
-    Rect::new(x + area.x, y + area.y, popup_width.min(area.width), height.min(area.height))
+    Rect::new(
+        x + area.x,
+        y + area.y,
+        popup_width.min(area.width),
+        height.min(area.height),
+    )
 }
 
 fn format_bytes(bytes: u64) -> String {

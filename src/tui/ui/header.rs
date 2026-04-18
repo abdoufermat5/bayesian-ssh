@@ -89,9 +89,17 @@ pub fn draw_header(frame: &mut Frame, area: Rect, app: &App) {
         Tab::Files => {
             if let Some(ref fs) = app.files_state {
                 if fs.is_loading {
-                    format!(" Files: {}  {} [loading…]", fs.connection.name, fs.current_path)
+                    format!(
+                        " Files: {}  {} [loading…]",
+                        fs.connection.name, fs.current_path
+                    )
                 } else {
-                    format!(" Files: {}  {} — {} entries", fs.connection.name, fs.current_path, fs.entries.len())
+                    format!(
+                        " Files: {}  {} — {} entries",
+                        fs.connection.name,
+                        fs.current_path,
+                        fs.entries.len()
+                    )
                 }
             } else {
                 " File Browser ".to_string()
@@ -100,8 +108,15 @@ pub fn draw_header(frame: &mut Frame, area: Rect, app: &App) {
         Tab::Tunnels => {
             if app.mode == AppMode::TunnelLaunch {
                 let cursor = "│";
-                let target = app.tunnel_target.as_ref().map(|c| c.name.as_str()).unwrap_or("(none)");
-                format!(" Tunnels — {} via {}  spec: {}{}", "new tunnel", target, app.tunnel_input, cursor)
+                let target = app
+                    .tunnel_target
+                    .as_ref()
+                    .map(|c| c.name.as_str())
+                    .unwrap_or("(none)");
+                format!(
+                    " Tunnels — {} via {}  spec: {}{}",
+                    "new tunnel", target, app.tunnel_input, cursor
+                )
             } else {
                 format!(" Tunnels — {} active", app.tunnels.len())
             }

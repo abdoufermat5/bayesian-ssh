@@ -85,14 +85,20 @@ fn draw_tunnel_list(frame: &mut Frame, area: Rect, app: &App) {
         Constraint::Length(2), // column headers
         Constraint::Min(1),
     ])
-    .areas(area.inner(Margin { horizontal: 0, vertical: 0 }));
+    .areas(area.inner(Margin {
+        horizontal: 0,
+        vertical: 0,
+    }));
 
     let header_widget = Paragraph::new(header)
         .style(Style::default().fg(Color::DarkGray).bold())
-        .block(Block::default().borders(Borders::TOP | Borders::LEFT | Borders::RIGHT)
-            .border_style(Style::default().fg(Color::Blue))
-            .title(" Active Tunnels ")
-            .title_style(Style::default().fg(Color::Yellow).bold()));
+        .block(
+            Block::default()
+                .borders(Borders::TOP | Borders::LEFT | Borders::RIGHT)
+                .border_style(Style::default().fg(Color::Blue))
+                .title(" Active Tunnels ")
+                .title_style(Style::default().fg(Color::Yellow).bold()),
+        );
 
     frame.render_widget(header_widget, header_area);
 
@@ -103,12 +109,7 @@ fn draw_tunnel_list(frame: &mut Frame, area: Rect, app: &App) {
                 .borders(Borders::LEFT | Borders::RIGHT | Borders::BOTTOM)
                 .border_style(Style::default().fg(Color::Blue)),
         )
-        .highlight_style(
-            Style::default()
-                .fg(Color::Black)
-                .bg(Color::Cyan)
-                .bold(),
-        );
+        .highlight_style(Style::default().fg(Color::Black).bg(Color::Cyan).bold());
     frame.render_stateful_widget(list, list_area, &mut list_state);
 
     let _ = block; // consumed above
@@ -152,8 +153,7 @@ pub fn draw_tunnel_launch_dialog(frame: &mut Frame, area: Rect, app: &App) {
     .areas(inner);
 
     frame.render_widget(
-        Paragraph::new(hint_text)
-            .style(Style::default().fg(Color::DarkGray)),
+        Paragraph::new(hint_text).style(Style::default().fg(Color::DarkGray)),
         hint_area,
     );
 

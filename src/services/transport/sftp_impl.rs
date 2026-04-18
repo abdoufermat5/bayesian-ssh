@@ -35,7 +35,9 @@ pub struct RusshSftpSession {
 
 impl RusshSftpSession {
     pub fn new(inner: RawSftp) -> Self {
-        Self { inner: Arc::new(inner) }
+        Self {
+            inner: Arc::new(inner),
+        }
     }
 }
 
@@ -121,9 +123,10 @@ impl SftpSession for RusshSftpSession {
         let mut total: u64 = 0;
 
         loop {
-            let n = file.read(&mut buf).await.map_err(|e| {
-                TransportError::Permanent(anyhow!("SFTP read: {e}"))
-            })?;
+            let n = file
+                .read(&mut buf)
+                .await
+                .map_err(|e| TransportError::Permanent(anyhow!("SFTP read: {e}")))?;
             if n == 0 {
                 break;
             }
@@ -134,9 +137,9 @@ impl SftpSession for RusshSftpSession {
             })?;
         }
 
-        file.shutdown().await.map_err(|e| {
-            TransportError::Permanent(anyhow!("SFTP close: {e}"))
-        })?;
+        file.shutdown()
+            .await
+            .map_err(|e| TransportError::Permanent(anyhow!("SFTP close: {e}")))?;
         Ok(total)
     }
 
@@ -168,26 +171,29 @@ impl SftpSession for RusshSftpSession {
             .map_err(sftp_err)?;
 
         if offset > 0 {
-            file.seek(std::io::SeekFrom::Start(offset)).await.map_err(|e| {
-                TransportError::Permanent(anyhow!("SFTP seek: {e}"))
-            })?;
+            file.seek(std::io::SeekFrom::Start(offset))
+                .await
+                .map_err(|e| TransportError::Permanent(anyhow!("SFTP seek: {e}")))?;
         }
 
         let mut total: u64 = 0;
         while let Some(chunk) = source.recv().await {
-            file.write_all(&chunk).await.map_err(|e| {
-                TransportError::Permanent(anyhow!("SFTP write: {e}"))
-            })?;
+            file.write_all(&chunk)
+                .await
+                .map_err(|e| TransportError::Permanent(anyhow!("SFTP write: {e}")))?;
             total += chunk.len() as u64;
-            debug!("sftp write_all: {} bytes to {path} (total {total})", chunk.len());
+            debug!(
+                "sftp write_all: {} bytes to {path} (total {total})",
+                chunk.len()
+            );
         }
 
-        file.sync_all().await.map_err(|e| {
-            TransportError::Permanent(anyhow!("SFTP sync: {e}"))
-        })?;
-        file.shutdown().await.map_err(|e| {
-            TransportError::Permanent(anyhow!("SFTP close: {e}"))
-        })?;
+        file.sync_all()
+            .await
+            .map_err(|e| TransportError::Permanent(anyhow!("SFTP sync: {e}")))?;
+        file.shutdown()
+            .await
+            .map_err(|e| TransportError::Permanent(anyhow!("SFTP close: {e}")))?;
         Ok(total)
     }
 }

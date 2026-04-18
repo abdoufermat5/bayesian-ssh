@@ -30,12 +30,7 @@ pub enum AuthError {
 // ──────────────────────────────────────────────────────────────────────────────
 
 /// Standard key file names to probe under `~/.ssh/`, in preference order.
-const DEFAULT_KEY_NAMES: &[&str] = &[
-    "id_ed25519",
-    "id_ecdsa",
-    "id_rsa",
-    "id_dsa",
-];
+const DEFAULT_KEY_NAMES: &[&str] = &["id_ed25519", "id_ecdsa", "id_rsa", "id_dsa"];
 
 /// Return the ordered list of key paths to attempt.
 ///
@@ -85,14 +80,19 @@ pub fn try_load_key_no_passphrase(path: &Path) -> Result<Option<KeyPair>, AuthEr
     match russh_keys::load_secret_key(path, None) {
         Ok(kp) => Ok(Some(kp)),
         Err(russh_keys::Error::KeyIsEncrypted) => Ok(None),
-        Err(e) => Err(AuthError::KeyLoad { path: path.to_owned(), source: e }),
+        Err(e) => Err(AuthError::KeyLoad {
+            path: path.to_owned(),
+            source: e,
+        }),
     }
 }
 
 /// Load a `KeyPair` from `path` using `passphrase`.
 pub fn load_key_with_passphrase(path: &Path, passphrase: &str) -> Result<KeyPair, AuthError> {
-    russh_keys::load_secret_key(path, Some(passphrase))
-        .map_err(|e| AuthError::KeyLoad { path: path.to_owned(), source: e })
+    russh_keys::load_secret_key(path, Some(passphrase)).map_err(|e| AuthError::KeyLoad {
+        path: path.to_owned(),
+        source: e,
+    })
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -117,7 +117,8 @@ pub fn agent_socket_path(cfg: &AuthConfig) -> Option<PathBuf> {
 mod tests {
     use super::*;
     use crate::config::AuthConfig;
-    use crate::models::Connection;    fn minimal_conn() -> Connection {
+    use crate::models::Connection;
+    fn minimal_conn() -> Connection {
         Connection::new(
             "test".into(),
             "host.example".into(),
@@ -148,7 +149,9 @@ mod tests {
         let mut conn = minimal_conn();
         conn.key_path = Some("/home/user/.ssh/custom_ed25519".into());
         let paths = candidate_key_paths(&conn, &cfg);
-        assert!(paths.iter().any(|p| p.to_string_lossy().contains("custom_ed25519")));
+        assert!(paths
+            .iter()
+            .any(|p| p.to_string_lossy().contains("custom_ed25519")));
     }
 
     #[test]

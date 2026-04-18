@@ -38,7 +38,10 @@ pub enum CheckResult {
     /// Host is not in the file (new host).
     Unknown,
     /// Host is known but the key has changed — likely MITM.
-    Mismatch { stored_fp: String, remote_fp: String },
+    Mismatch {
+        stored_fp: String,
+        remote_fp: String,
+    },
 }
 
 /// Parsed entry from a known_hosts file.
@@ -95,7 +98,9 @@ fn glob_match(pattern: &str, text: &str) -> bool {
     if let Some(star) = pattern.find('*') {
         let prefix = &pattern[..star];
         let suffix = &pattern[star + 1..];
-        text.starts_with(prefix) && text.ends_with(suffix) && text.len() >= prefix.len() + suffix.len()
+        text.starts_with(prefix)
+            && text.ends_with(suffix)
+            && text.len() >= prefix.len() + suffix.len()
     } else {
         pattern == text
     }
@@ -131,7 +136,12 @@ fn parse_entry(line: &str) -> Option<KnownEntry> {
         return None;
     }
 
-    Some(KnownEntry { marker, patterns, key_type, key_bytes })
+    Some(KnownEntry {
+        marker,
+        patterns,
+        key_type,
+        key_bytes,
+    })
 }
 
 fn parse_host_pattern(pattern: &str) -> Option<HostPattern> {
@@ -186,7 +196,9 @@ pub fn check(
 
     for line in BufReader::new(file).lines() {
         let line = line?;
-        let Some(entry) = parse_entry(&line) else { continue };
+        let Some(entry) = parse_entry(&line) else {
+            continue;
+        };
 
         if entry.marker == "@revoked" {
             continue;
@@ -204,7 +216,10 @@ pub fn check(
             return Ok(CheckResult::KnownGood);
         } else {
             let stored_fp = fingerprint_sha256(&entry.key_bytes);
-            return Ok(CheckResult::Mismatch { stored_fp, remote_fp });
+            return Ok(CheckResult::Mismatch {
+                stored_fp,
+                remote_fp,
+            });
         }
     }
 
@@ -224,7 +239,10 @@ pub fn append(
         fs::create_dir_all(parent)?;
     }
 
-    let mut file = fs::OpenOptions::new().create(true).append(true).open(path)?;
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)?;
     let host_field = canonical_hostport(hostname, port);
     let key_b64 = B64.encode(key_bytes);
     writeln!(file, "{host_field} {key_type} {key_b64}")?;

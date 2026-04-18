@@ -57,29 +57,20 @@ mod tests {
     fn kerberos_forces_subprocess() {
         let mut conn = simple_conn();
         conn.use_kerberos = true;
-        assert_eq!(
-            pick_kind(&conn, &simple_cfg()),
-            TransportKind::Subprocess
-        );
+        assert_eq!(pick_kind(&conn, &simple_cfg()), TransportKind::Subprocess);
     }
 
     #[test]
     fn bastion_forces_subprocess() {
         let mut conn = simple_conn();
         conn.bastion = Some("bastion.example.com".into());
-        assert_eq!(
-            pick_kind(&conn, &simple_cfg()),
-            TransportKind::Subprocess
-        );
+        assert_eq!(pick_kind(&conn, &simple_cfg()), TransportKind::Subprocess);
     }
 
     #[test]
     fn force_subprocess_flag_wins() {
         let mut cfg = simple_cfg();
         cfg.transport.force_subprocess = true;
-        assert_eq!(
-            pick_kind(&simple_conn(), &cfg),
-            TransportKind::Subprocess
-        );
+        assert_eq!(pick_kind(&simple_conn(), &cfg), TransportKind::Subprocess);
     }
 }

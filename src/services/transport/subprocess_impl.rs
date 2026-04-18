@@ -119,7 +119,9 @@ impl SubprocessTransport {
         argv.push("-p".into());
         argv.push(conn.port.to_string());
         argv.push("-L".into());
-        argv.push(format!("{bind_host}:{bind_port}:{remote_host}:{remote_port}"));
+        argv.push(format!(
+            "{bind_host}:{bind_port}:{remote_host}:{remote_port}"
+        ));
         argv.push("-N".into());
         argv.push(format!("{}@{}", conn.user, conn.host));
         argv
@@ -225,12 +227,12 @@ impl SubprocessTransport {
         let echo_start_cmd = format!("echo '{marker_start}'");
         let echo_end_cmd = format!("echo '{marker_end}'");
         let echo_suffixes: Vec<&str> = vec![
-            command,                  // the real command echoed
-            "_bssh_rc=$?",            // exit-code capture
-            "exit $_bssh_rc",         // exit command
-            "stty cols",              // PTY resize command
-            echo_start_cmd.as_str(),  // echo of START marker
-            echo_end_cmd.as_str(),    // echo of END marker
+            command,                 // the real command echoed
+            "_bssh_rc=$?",           // exit-code capture
+            "exit $_bssh_rc",        // exit command
+            "stty cols",             // PTY resize command
+            echo_start_cmd.as_str(), // echo of START marker
+            echo_end_cmd.as_str(),   // echo of END marker
         ];
 
         let raw = String::from_utf8_lossy(&raw_bytes);
@@ -251,11 +253,9 @@ impl SubprocessTransport {
                 // Skip lines that are the PTY echoing our control commands.
                 // Echo lines from the bastion shell always carry a prompt
                 // indicator (`% ` for zsh, `$ ` for bash, `# ` for root).
-                let has_prompt = trimmed.contains("% ")
-                    || trimmed.contains("$ ")
-                    || trimmed.contains("# ");
-                let is_echo = has_prompt
-                    && echo_suffixes.iter().any(|s| trimmed.contains(s));
+                let has_prompt =
+                    trimmed.contains("% ") || trimmed.contains("$ ") || trimmed.contains("# ");
+                let is_echo = has_prompt && echo_suffixes.iter().any(|s| trimmed.contains(s));
                 if !is_echo {
                     clean_lines.push(line.trim_end_matches('\r'));
                 }
@@ -293,11 +293,7 @@ impl SshTransport for SubprocessTransport {
         )))
     }
 
-    async fn exec(
-        &self,
-        conn: &Connection,
-        command: &str,
-    ) -> Result<ExecOutput, TransportError> {
+    async fn exec(&self, conn: &Connection, command: &str) -> Result<ExecOutput, TransportError> {
         // Interactive bastions cannot pass a remote command in the SSH argv.
         // Delegate to the interactive exec path which pipes it via stdin.
         if conn.use_kerberos && conn.bastion.is_some() {
@@ -323,10 +319,7 @@ impl SshTransport for SubprocessTransport {
         })
     }
 
-    async fn open_sftp(
-        &self,
-        _conn: &Connection,
-    ) -> Result<Box<dyn SftpSession>, TransportError> {
+    async fn open_sftp(&self, _conn: &Connection) -> Result<Box<dyn SftpSession>, TransportError> {
         Err(TransportError::fallback(anyhow::anyhow!(
             "subprocess transport does not provide structured SFTP"
         )))
@@ -359,7 +352,9 @@ impl SshTransport for SubprocessTransport {
             }
         });
 
-        Ok(crate::services::transport::types::ForwardHandle::new(task, cancel_tx))
+        Ok(crate::services::transport::types::ForwardHandle::new(
+            task, cancel_tx,
+        ))
     }
 
     async fn forward_dynamic(
@@ -387,7 +382,9 @@ impl SshTransport for SubprocessTransport {
             }
         });
 
-        Ok(crate::services::transport::types::ForwardHandle::new(task, cancel_tx))
+        Ok(crate::services::transport::types::ForwardHandle::new(
+            task, cancel_tx,
+        ))
     }
 
     fn name(&self) -> &'static str {
@@ -490,10 +487,8 @@ mod tests {
 
     #[test]
     fn argv_key_path_uses_i_flag() {
-        let argv = SubprocessTransport::build_exec_argv(
-            &c(false, None, Some("/k/id_ed25519")),
-            "uptime",
-        );
+        let argv =
+            SubprocessTransport::build_exec_argv(&c(false, None, Some("/k/id_ed25519")), "uptime");
         assert!(argv.contains(&"-i".to_string()));
         assert!(argv.contains(&"/k/id_ed25519".to_string()));
     }

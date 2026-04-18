@@ -3,21 +3,20 @@ use tracing::info;
 
 use crate::cli::utils::fuzzy_select_connection;
 use crate::config::AppConfig;
-use crate::services::SshService;
-use crate::services::transport::{pick_kind, RusshTransport, SubprocessTransport, TransportKind};
 use crate::services::transport::types::SshTransport;
+use crate::services::transport::{pick_kind, RusshTransport, SubprocessTransport, TransportKind};
+use crate::services::SshService;
 
-pub async fn execute(
-    target: String,
-    command: Vec<String>,
-    config: AppConfig,
-) -> Result<()> {
+pub async fn execute(target: String, command: Vec<String>, config: AppConfig) -> Result<()> {
     if command.is_empty() {
         bail!("no command supplied — use: bssh exec <target> -- <command...>");
     }
 
     let ssh_service = SshService::new(config.clone())?;
-    let mut conn_opt = ssh_service.get_connection(&target).await.unwrap_or_default();
+    let mut conn_opt = ssh_service
+        .get_connection(&target)
+        .await
+        .unwrap_or_default();
 
     if conn_opt.is_none() {
         conn_opt = fuzzy_select_connection(&ssh_service, &target, "exec", true).await?;
@@ -38,13 +37,17 @@ pub async fn execute(
             match t.exec(&connection, &cmd_str).await {
                 Err(crate::services::transport::TransportError::Fallback(e)) => {
                     tracing::warn!("native exec fallback ({e}), retrying with subprocess");
-                    SubprocessTransport::new(config).exec(&connection, &cmd_str).await
+                    SubprocessTransport::new(config)
+                        .exec(&connection, &cmd_str)
+                        .await
                 }
                 other => other,
             }
         }
         TransportKind::Subprocess => {
-            SubprocessTransport::new(config).exec(&connection, &cmd_str).await
+            SubprocessTransport::new(config)
+                .exec(&connection, &cmd_str)
+                .await
         }
     }
     .map_err(|e| anyhow::anyhow!("{e}"))?;

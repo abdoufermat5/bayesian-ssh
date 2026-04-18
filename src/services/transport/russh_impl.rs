@@ -21,7 +21,7 @@ use crate::models::Connection;
 use crate::services::auth;
 use crate::services::known_hosts;
 use crate::services::transport::types::{
-    ExecOutput, PtyIo, ShellHandle, SftpSession, SshTransport, TransportError,
+    ExecOutput, PtyIo, SftpSession, ShellHandle, SshTransport, TransportError,
 };
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -37,7 +37,12 @@ struct ClientHandler {
 
 impl ClientHandler {
     fn new(config: AppConfig, hostname: String, port: u16) -> Self {
-        Self { config, hostname, port, host_key_accepted: false }
+        Self {
+            config,
+            hostname,
+            port,
+            host_key_accepted: false,
+        }
     }
 }
 
@@ -59,7 +64,10 @@ impl client::Handler for ClientHandler {
                 self.host_key_accepted = true;
                 Ok(true)
             }
-            known_hosts::CheckResult::Mismatch { stored_fp, remote_fp } => {
+            known_hosts::CheckResult::Mismatch {
+                stored_fp,
+                remote_fp,
+            } => {
                 let policy = &self.config.transport.strict_host_key_checking;
                 if policy == "off" {
                     warn!(
@@ -76,7 +84,8 @@ impl client::Handler for ClientHandler {
                          Remote  : {remote_fp}\n\
                          This could indicate a man-in-the-middle attack.\n\
                          Remove the old key from known_hosts if this is expected.",
-                        self.hostname, self.port
+                        self.hostname,
+                        self.port
                     ))
                 }
             }
@@ -87,7 +96,8 @@ impl client::Handler for ClientHandler {
                     Err(anyhow!(
                         "Unknown host {}:{} (fingerprint: {remote_fp})\n\
                          Refusing under strict_host_key_checking=strict.",
-                        self.hostname, self.port
+                        self.hostname,
+                        self.port
                     ))
                 } else {
                     // accept-new — print fingerprint and persist
@@ -164,7 +174,11 @@ impl RusshTransport {
             .map_err(|e| TransportError::Permanent(anyhow!("{e}")))
     }
 
-    async fn run_exec(&self, conn: &Connection, command: &str) -> Result<ExecOutput, TransportError> {
+    async fn run_exec(
+        &self,
+        conn: &Connection,
+        command: &str,
+    ) -> Result<ExecOutput, TransportError> {
         let mut handle = self.connect(conn).await?;
         self.authenticate(&mut handle, conn).await.and_then(|ok| {
             if ok {
@@ -189,7 +203,9 @@ impl RusshTransport {
         let mut exit_code = 0i32;
 
         loop {
-            let Some(msg) = channel.wait().await else { break };
+            let Some(msg) = channel.wait().await else {
+                break;
+            };
             match msg {
                 ChannelMsg::Data { data } => stdout.extend_from_slice(&data),
                 ChannelMsg::ExtendedData { data, ext: 1 } => stderr.extend_from_slice(&data),
@@ -198,8 +214,14 @@ impl RusshTransport {
                 _ => {}
             }
         }
-        let _ = handle.disconnect(russh::Disconnect::ByApplication, "", "en").await;
-        Ok(ExecOutput { stdout, stderr, exit_code })
+        let _ = handle
+            .disconnect(russh::Disconnect::ByApplication, "", "en")
+            .await;
+        Ok(ExecOutput {
+            stdout,
+            stderr,
+            exit_code,
+        })
     }
 }
 
@@ -231,11 +253,7 @@ impl SshTransport for RusshTransport {
 
         let term = std::env::var("TERM").unwrap_or_else(|_| "xterm-256color".into());
         channel
-            .request_pty(
-                true, &term,
-                io.cols as u32, io.rows as u32,
-                0, 0, &[],
-            )
+            .request_pty(true, &term, io.cols as u32, io.rows as u32, 0, 0, &[])
             .await
             .map_err(|e| TransportError::Permanent(anyhow!("PTY request: {e}")))?;
 
@@ -247,7 +265,12 @@ impl SshTransport for RusshTransport {
         let (exit_tx, exit_rx) = tokio::sync::oneshot::channel::<i32>();
         let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel::<()>();
 
-        let PtyIo { mut stdin_rx, output_tx, mut resize_rx, .. } = io;
+        let PtyIo {
+            mut stdin_rx,
+            output_tx,
+            mut resize_rx,
+            ..
+        } = io;
 
         // Use channel.wait() for incoming data and channel.data() for outgoing,
         // following the official russh pattern (no make_reader/make_writer).
@@ -295,25 +318,23 @@ impl SshTransport for RusshTransport {
                     _ = &mut cancel_rx => break,
                 }
             }
-            let _ = handle.disconnect(russh::Disconnect::ByApplication, "", "en").await;
+            let _ = handle
+                .disconnect(russh::Disconnect::ByApplication, "", "en")
+                .await;
             let _ = exit_tx.send(exit_code);
         });
 
-        Ok(ShellHandle { exit_rx, cancel: Some(cancel_tx) })
+        Ok(ShellHandle {
+            exit_rx,
+            cancel: Some(cancel_tx),
+        })
     }
 
-    async fn exec(
-        &self,
-        conn: &Connection,
-        command: &str,
-    ) -> Result<ExecOutput, TransportError> {
+    async fn exec(&self, conn: &Connection, command: &str) -> Result<ExecOutput, TransportError> {
         self.run_exec(conn, command).await
     }
 
-    async fn open_sftp(
-        &self,
-        conn: &Connection,
-    ) -> Result<Box<dyn SftpSession>, TransportError> {
+    async fn open_sftp(&self, conn: &Connection) -> Result<Box<dyn SftpSession>, TransportError> {
         use crate::services::transport::sftp_impl::RusshSftpSession;
 
         let mut handle = self.connect(conn).await?;
@@ -361,7 +382,11 @@ impl SshTransport for RusshTransport {
 
         let mut handle = self.connect(conn).await?;
         self.authenticate(&mut handle, conn).await.and_then(|ok| {
-            if ok { Ok(()) } else { Err(TransportError::Permanent(anyhow!("Authentication failed"))) }
+            if ok {
+                Ok(())
+            } else {
+                Err(TransportError::Permanent(anyhow!("Authentication failed")))
+            }
         })?;
 
         let listener = TcpListener::bind((bind_host, bind_port))
@@ -401,10 +426,14 @@ impl SshTransport for RusshTransport {
                 }
             }
             let guard = ssh.lock().await;
-            let _ = guard.disconnect(russh::Disconnect::ByApplication, "", "en").await;
+            let _ = guard
+                .disconnect(russh::Disconnect::ByApplication, "", "en")
+                .await;
         });
 
-        Ok(crate::services::transport::types::ForwardHandle::new(task, cancel_tx))
+        Ok(crate::services::transport::types::ForwardHandle::new(
+            task, cancel_tx,
+        ))
     }
 
     async fn forward_dynamic(
@@ -429,9 +458,7 @@ impl SshTransport for RusshTransport {
 
         let listener = TcpListener::bind((bind_host, bind_port))
             .await
-            .map_err(|e| {
-                TransportError::Permanent(anyhow!("bind {bind_host}:{bind_port}: {e}"))
-            })?;
+            .map_err(|e| TransportError::Permanent(anyhow!("bind {bind_host}:{bind_port}: {e}")))?;
 
         let ssh = Arc::new(Mutex::new(handle));
         let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel::<()>();
@@ -469,15 +496,22 @@ impl SshTransport for RusshTransport {
                 }
             }
             let guard = ssh.lock().await;
-            let _ = guard.disconnect(russh::Disconnect::ByApplication, "", "en").await;
+            let _ = guard
+                .disconnect(russh::Disconnect::ByApplication, "", "en")
+                .await;
         });
 
-        Ok(crate::services::transport::types::ForwardHandle::new(task, cancel_tx))
+        Ok(crate::services::transport::types::ForwardHandle::new(
+            task, cancel_tx,
+        ))
     }
 }
 
 /// Bidirectionally proxy bytes between a local `TcpStream` and an SSH `direct-tcpip` channel.
-async fn proxy_tcp_channel(stream: tokio::net::TcpStream, channel: russh::Channel<russh::client::Msg>) {
+async fn proxy_tcp_channel(
+    stream: tokio::net::TcpStream,
+    channel: russh::Channel<russh::client::Msg>,
+) {
     use tokio::io::copy_bidirectional;
     let mut tcp = stream;
     let mut ssh = channel.into_stream();
@@ -488,10 +522,7 @@ impl RusshTransport {
     /// Drive an interactive shell session directly on the calling terminal (CLI path).
     /// Sets the terminal to raw mode, bridges stdin/stdout to the SSH channel, then
     /// restores the terminal on exit.  Returns the remote exit code.
-    pub async fn run_interactive(
-        &self,
-        conn: &Connection,
-    ) -> Result<i32, TransportError> {
+    pub async fn run_interactive(&self, conn: &Connection) -> Result<i32, TransportError> {
         use crossterm::terminal::{disable_raw_mode, enable_raw_mode, size};
         use tokio::io::AsyncWriteExt;
 
@@ -509,8 +540,8 @@ impl RusshTransport {
             .await
             .map_err(|e| TransportError::Permanent(anyhow!("channel open: {e}")))?;
 
-        let (cols, rows) = size()
-            .map_err(|e| TransportError::Permanent(anyhow!("terminal size: {e}")))?;
+        let (cols, rows) =
+            size().map_err(|e| TransportError::Permanent(anyhow!("terminal size: {e}")))?;
         let term = std::env::var("TERM").unwrap_or_else(|_| "xterm-256color".into());
         channel
             .request_pty(true, &term, cols as u32, rows as u32, 0, 0, &[])
@@ -521,8 +552,7 @@ impl RusshTransport {
             .await
             .map_err(|e| TransportError::Permanent(anyhow!("shell request: {e}")))?;
 
-        enable_raw_mode()
-            .map_err(|e| TransportError::Permanent(anyhow!("raw mode: {e}")))?;
+        enable_raw_mode().map_err(|e| TransportError::Permanent(anyhow!("raw mode: {e}")))?;
 
         let mut stdin = tokio::io::stdin();
         let mut stdout = tokio::io::stdout();
@@ -558,7 +588,9 @@ impl RusshTransport {
         }
 
         let _ = disable_raw_mode();
-        let _ = handle.disconnect(russh::Disconnect::ByApplication, "", "en").await;
+        let _ = handle
+            .disconnect(russh::Disconnect::ByApplication, "", "en")
+            .await;
         Ok(exit_code)
     }
 }

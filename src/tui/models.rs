@@ -476,7 +476,11 @@ impl FilesTabState {
         p.parent()
             .map(|par| {
                 let s = par.to_string_lossy();
-                if s.is_empty() { "/".to_string() } else { s.into_owned() }
+                if s.is_empty() {
+                    "/".to_string()
+                } else {
+                    s.into_owned()
+                }
             })
             .unwrap_or_else(|| "/".to_string())
     }
@@ -501,11 +505,22 @@ pub enum TunnelMsg {
 /// Messages sent back from async SFTP tasks to the event loop.
 pub enum SftpMsg {
     /// A directory listing completed successfully.
-    Listed { path: String, entries: Vec<RemoteEntry> },
+    Listed {
+        path: String,
+        entries: Vec<RemoteEntry>,
+    },
     /// A file was downloaded to the given local path.
-    Downloaded { remote: String, local: String, bytes: u64 },
+    Downloaded {
+        remote: String,
+        local: String,
+        bytes: u64,
+    },
     /// A local file was uploaded to the remote.
-    Uploaded { local: String, remote: String, bytes: u64 },
+    Uploaded {
+        local: String,
+        remote: String,
+        bytes: u64,
+    },
     /// A remote file/dir was deleted.
     Removed { path: String },
     /// A remote directory was created.

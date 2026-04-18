@@ -15,12 +15,12 @@ use tracing::{debug, info, warn};
 use crate::config::AppConfig;
 use crate::database::Database;
 use crate::models::Connection;
-use crate::services::transport::{pick_kind, RusshTransport, SubprocessTransport, TransportKind};
 use crate::services::transport::scp_impl;
 use crate::services::transport::types::{SshTransport, TransportError};
+use crate::services::transport::{pick_kind, RusshTransport, SubprocessTransport, TransportKind};
 
 const CHUNK_SIZE: usize = 256 * 1024; // 256 KiB
-const CHANNEL_CAP: usize = 16;        // outstanding chunks in flight
+const CHANNEL_CAP: usize = 16; // outstanding chunks in flight
 
 pub type ProgressFn = Box<dyn Fn(u64, Option<u64>) + Send + Sync + 'static>;
 
@@ -150,9 +150,7 @@ impl TransferService {
 
         // Drive the SFTP read on a background task.
         let remote_path_owned = remote_path.to_owned();
-        let sftp_handle = tokio::spawn(async move {
-            sftp.read_all(&remote_path_owned, tx).await
-        });
+        let sftp_handle = tokio::spawn(async move { sftp.read_all(&remote_path_owned, tx).await });
 
         // Write chunks to the local file, reporting progress.
         let mut file = fs::OpenOptions::new()
@@ -182,7 +180,10 @@ impl TransferService {
             .context("SFTP read task panic")?
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-        info!("download complete: {read} bytes saved to {}", local_path.display());
+        info!(
+            "download complete: {read} bytes saved to {}",
+            local_path.display()
+        );
         Ok(read)
     }
 
@@ -204,7 +205,16 @@ impl TransferService {
         let sftp = self.open_sftp(connection).await?;
         let mut file_count = 0u64;
         let mut total_bytes = 0u64;
-        Self::upload_dir_inner(&*sftp, local_dir, remote_dir, mode, progress, &mut file_count, &mut total_bytes).await?;
+        Self::upload_dir_inner(
+            &*sftp,
+            local_dir,
+            remote_dir,
+            mode,
+            progress,
+            &mut file_count,
+            &mut total_bytes,
+        )
+        .await?;
         Ok((file_count, total_bytes))
     }
 
@@ -224,7 +234,8 @@ impl TransferService {
                 Err(_) => debug!("remote dir {remote_dir} may already exist, continuing"),
             }
 
-            let mut entries = fs::read_dir(local_dir).await
+            let mut entries = fs::read_dir(local_dir)
+                .await
                 .with_context(|| format!("read local dir {}", local_dir.display()))?;
 
             while let Some(entry) = entries.next_entry().await? {
@@ -235,7 +246,16 @@ impl TransferService {
                 let remote_child = format!("{}/{}", remote_dir.trim_end_matches('/'), name_str);
 
                 if file_type.is_dir() {
-                    Self::upload_dir_inner(sftp, &local_child, &remote_child, mode, progress, file_count, total_bytes).await?;
+                    Self::upload_dir_inner(
+                        sftp,
+                        &local_child,
+                        &remote_child,
+                        mode,
+                        progress,
+                        file_count,
+                        total_bytes,
+                    )
+                    .await?;
                 } else if file_type.is_file() {
                     info!("uploading {} → {remote_child}", local_child.display());
 
@@ -249,13 +269,18 @@ impl TransferService {
                         let mut buf = vec![0u8; CHUNK_SIZE];
                         loop {
                             let n = file.read(&mut buf).await?;
-                            if n == 0 { break; }
-                            if tx.send(buf[..n].to_vec()).await.is_err() { break; }
+                            if n == 0 {
+                                break;
+                            }
+                            if tx.send(buf[..n].to_vec()).await.is_err() {
+                                break;
+                            }
                         }
                         Ok::<(), anyhow::Error>(())
                     });
 
-                    let written = sftp.write_all(&remote_child, 0, rx, mode)
+                    let written = sftp
+                        .write_all(&remote_child, 0, rx, mode)
                         .await
                         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
@@ -292,7 +317,15 @@ impl TransferService {
         let sftp = self.open_sftp(connection).await?;
         let mut file_count = 0u64;
         let mut total_bytes = 0u64;
-        Self::download_dir_inner(&*sftp, remote_dir, local_dir, progress, &mut file_count, &mut total_bytes).await?;
+        Self::download_dir_inner(
+            &*sftp,
+            remote_dir,
+            local_dir,
+            progress,
+            &mut file_count,
+            &mut total_bytes,
+        )
+        .await?;
         Ok((file_count, total_bytes))
     }
 
@@ -306,10 +339,13 @@ impl TransferService {
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send + 'a>> {
         Box::pin(async move {
             // Create local directory
-            fs::create_dir_all(local_dir).await
+            fs::create_dir_all(local_dir)
+                .await
                 .with_context(|| format!("create local dir {}", local_dir.display()))?;
 
-            let entries = sftp.list(remote_dir).await
+            let entries = sftp
+                .list(remote_dir)
+                .await
                 .map_err(|e| anyhow::anyhow!("list {remote_dir}: {e}"))?;
 
             for entry in entries {
@@ -321,7 +357,15 @@ impl TransferService {
                 let local_child = local_dir.join(&entry.name);
 
                 if entry.is_dir {
-                    Self::download_dir_inner(sftp, &remote_child, &local_child, progress, file_count, total_bytes).await?;
+                    Self::download_dir_inner(
+                        sftp,
+                        &remote_child,
+                        &local_child,
+                        progress,
+                        file_count,
+                        total_bytes,
+                    )
+                    .await?;
                 } else if entry.is_symlink {
                     warn!("skipping symlink: {remote_child}");
                 } else {

@@ -223,16 +223,23 @@ pub fn draw_confirm_dialog(frame: &mut Frame, area: Rect, action: &ConfirmAction
             let spec = app
                 .tunnels
                 .get(*idx)
-                .map(|t| format!("{}:{} → {}:{}", t.bind_host, t.bind_port, t.remote_host, t.remote_port))
+                .map(|t| {
+                    format!(
+                        "{}:{} → {}:{}",
+                        t.bind_host, t.bind_port, t.remote_host, t.remote_port
+                    )
+                })
                 .unwrap_or_else(|| "unknown".to_string());
             (
                 " Stop Tunnel ",
                 format!("Stop tunnel {}?\n\n[y] Yes  [n] No", spec),
             )
-        }        ConfirmAction::DeleteFile(path) => (
+        }
+        ConfirmAction::DeleteFile(path) => (
             " Delete Remote Entry ",
             format!("Delete '{path}'?\n\nThis cannot be undone.\n\n[y] Yes  [n] No"),
-        ),    };
+        ),
+    };
 
     let popup_area = centered_rect(50, 10, area);
 

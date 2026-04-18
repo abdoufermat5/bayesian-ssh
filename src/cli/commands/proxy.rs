@@ -17,22 +17,15 @@ use crate::services::transport::types::SshTransport;
 use crate::services::transport::{pick_kind, RusshTransport, SubprocessTransport, TransportKind};
 use crate::services::SshService;
 
-pub async fn execute(
-    target: String,
-    port: u16,
-    bind: String,
-    config: AppConfig,
-) -> Result<()> {
+pub async fn execute(target: String, port: u16, bind: String, config: AppConfig) -> Result<()> {
     let ssh_service = SshService::new(config.clone())?;
-    let mut conn_opt = ssh_service.get_connection(&target).await.unwrap_or_default();
+    let mut conn_opt = ssh_service
+        .get_connection(&target)
+        .await
+        .unwrap_or_default();
     if conn_opt.is_none() {
-        conn_opt = crate::cli::utils::fuzzy_select_connection(
-            &ssh_service,
-            &target,
-            "proxy",
-            true,
-        )
-        .await?;
+        conn_opt = crate::cli::utils::fuzzy_select_connection(&ssh_service, &target, "proxy", true)
+            .await?;
     }
     let connection = match conn_opt {
         Some(c) => c,

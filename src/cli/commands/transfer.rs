@@ -36,7 +36,10 @@ pub async fn execute_upload(
 
     if recursive {
         if !local.is_dir() {
-            bail!("--recursive requires a local directory, but '{}' is not a directory", local.display());
+            bail!(
+                "--recursive requires a local directory, but '{}' is not a directory",
+                local.display()
+            );
         }
         let progress: crate::services::transfer::ProgressFn = Box::new(|done, _total| {
             eprint!("\r  uploaded {done} bytes total   ");
@@ -47,7 +50,8 @@ pub async fn execute_upload(
         eprintln!();
         println!(
             "✅ Uploaded {} → {}:{remote} ({files} files, {bytes} bytes)",
-            local.display(), connection.host
+            local.display(),
+            connection.host
         );
     } else {
         if local.is_dir() {
@@ -69,7 +73,11 @@ pub async fn execute_upload(
             .await?;
         eprintln!();
         info!("upload complete: {written} bytes");
-        println!("✅ Uploaded {} → {}:{remote} ({written} bytes)", local.display(), connection.host);
+        println!(
+            "✅ Uploaded {} → {}:{remote} ({written} bytes)",
+            local.display(),
+            connection.host
+        );
     }
     Ok(())
 }
@@ -110,7 +118,8 @@ pub async fn execute_download(
         eprintln!();
         println!(
             "✅ Downloaded {}:{remote} → {} ({files} files, {bytes} bytes)",
-            connection.host, local.display()
+            connection.host,
+            local.display()
         );
     } else {
         let progress: crate::services::transfer::ProgressFn = Box::new(|done, total| {
@@ -126,7 +135,11 @@ pub async fn execute_download(
             .await?;
         eprintln!();
         info!("download complete: {read} bytes");
-        println!("✅ Downloaded {}:{remote} → {} ({read} bytes)", connection.host, local.display());
+        println!(
+            "✅ Downloaded {}:{remote} → {} ({read} bytes)",
+            connection.host,
+            local.display()
+        );
     }
     Ok(())
 }
@@ -138,7 +151,8 @@ async fn resolve_connection(
 ) -> Result<crate::models::Connection> {
     let mut conn_opt = ssh_service.get_connection(target).await.unwrap_or_default();
     if conn_opt.is_none() {
-        conn_opt = crate::cli::utils::fuzzy_select_connection(ssh_service, target, action, true).await?;
+        conn_opt =
+            crate::cli::utils::fuzzy_select_connection(ssh_service, target, action, true).await?;
     }
     match conn_opt {
         Some(c) => Ok(c),

@@ -46,7 +46,10 @@ pub struct ForwardHandle {
 
 impl ForwardHandle {
     pub fn new(task: tokio::task::JoinHandle<()>, cancel_tx: oneshot::Sender<()>) -> Self {
-        Self { task, cancel_tx: Some(cancel_tx) }
+        Self {
+            task,
+            cancel_tx: Some(cancel_tx),
+        }
     }
 
     /// Signal the tunnel to stop and await clean shutdown.
@@ -118,22 +121,12 @@ pub trait SftpSession: Send + Sync {
 /// Top-level SSH transport.
 #[async_trait]
 pub trait SshTransport: Send + Sync {
-    async fn open_shell(
-        &self,
-        conn: &Connection,
-        io: PtyIo,
-    ) -> Result<ShellHandle, TransportError>;
+    async fn open_shell(&self, conn: &Connection, io: PtyIo)
+        -> Result<ShellHandle, TransportError>;
 
-    async fn exec(
-        &self,
-        conn: &Connection,
-        command: &str,
-    ) -> Result<ExecOutput, TransportError>;
+    async fn exec(&self, conn: &Connection, command: &str) -> Result<ExecOutput, TransportError>;
 
-    async fn open_sftp(
-        &self,
-        conn: &Connection,
-    ) -> Result<Box<dyn SftpSession>, TransportError>;
+    async fn open_sftp(&self, conn: &Connection) -> Result<Box<dyn SftpSession>, TransportError>;
 
     /// Open a local TCP port forward: connections to `bind_host:bind_port` are
     /// tunnelled through SSH to `remote_host:remote_port`.

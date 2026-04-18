@@ -64,8 +64,8 @@ pub async fn handshake(stream: &mut TcpStream) -> Result<(String, u16)> {
             let mut name = vec![0u8; len];
             stream.read_exact(&mut name).await?;
             let port = stream.read_u16().await?;
-            let host = String::from_utf8(name)
-                .map_err(|_| anyhow::anyhow!("non-UTF-8 domain name"))?;
+            let host =
+                String::from_utf8(name).map_err(|_| anyhow::anyhow!("non-UTF-8 domain name"))?;
             (host, port)
         }
         0x04 => {

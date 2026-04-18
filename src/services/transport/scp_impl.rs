@@ -77,7 +77,13 @@ fn create_bastion_wrapper(bastion: &str) -> Result<PathBuf> {
     // Use a sanitised bastion name in the filename to avoid collisions.
     let safe_name: String = bastion
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '.' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '.' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     let wrapper_path = data_dir.join(format!("scp-wrapper-{safe_name}.sh"));
 
@@ -279,7 +285,10 @@ mod tests {
         assert!(argv.contains(&"-O".to_string()));
         assert!(argv.contains(&"-P".to_string()));
         assert!(argv.contains(&"22".to_string()));
-        assert!(argv.last().unwrap().contains("alice@target.example:/remote/file.txt"));
+        assert!(argv
+            .last()
+            .unwrap()
+            .contains("alice@target.example:/remote/file.txt"));
     }
 
     #[test]

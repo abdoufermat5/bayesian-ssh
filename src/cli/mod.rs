@@ -55,16 +55,14 @@ pub enum EnvCommands {
 #[derive(Subcommand)]
 pub enum Commands {
     /// Connect to a saved server (supports fuzzy name matching)
-    #[command(
-        long_about = "Open an SSH session to a saved connection.\n\n\
+    #[command(long_about = "Open an SSH session to a saved connection.\n\n\
             The target is matched by name, alias, or hostname using fuzzy search.\n\
             Bayesian scoring ranks the best match from your usage history.\n\
             Override any stored setting with the optional flags below.\n\n\
             Examples:\n\
               bssh connect web-prod\n\
               bssh connect db01 -u admin -p 2222\n\
-              bssh connect backend -k true -b bastion.corp"
-    )]
+              bssh connect backend -k true -b bastion.corp")]
     Connect {
         /// Connection name, alias, or hostname (fuzzy-matched)
         target: String,
@@ -92,15 +90,13 @@ pub enum Commands {
     },
 
     /// Save a new SSH connection
-    #[command(
-        long_about = "Add a new named connection to the database.\n\n\
+    #[command(long_about = "Add a new named connection to the database.\n\n\
             The name is used as a friendly identifier for connect, upload, exec, etc.\n\
             Tags let you group related connections (e.g. --tags prod --tags eu-west).\n\n\
             Examples:\n\
               bssh add web-prod web.example.com -u deploy\n\
               bssh add db01 10.0.1.5 -p 2222 -k true -b bastion.corp\n\
-              bssh add staging app.staging.internal -t staging -t backend"
-    )]
+              bssh add staging app.staging.internal -t staging -t backend")]
     Add {
         /// Friendly name for this connection (must be unique)
         name: String,
@@ -170,14 +166,12 @@ pub enum Commands {
     },
 
     /// Edit one or more settings of an existing connection
-    #[command(
-        long_about = "Modify fields on a saved connection.\n\n\
+    #[command(long_about = "Modify fields on a saved connection.\n\n\
             Only the fields you pass are updated; everything else stays unchanged.\n\n\
             Examples:\n\
               bssh edit web-prod --user deploy --port 2222\n\
               bssh edit db01 --bastion new-bastion.corp\n\
-              bssh edit staging --add-tags canary --remove-tags legacy"
-    )]
+              bssh edit staging --add-tags canary --remove-tags legacy")]
     Edit {
         /// Connection name, alias, or ID to edit
         target: String,
@@ -217,16 +211,14 @@ pub enum Commands {
     },
 
     /// View or update global application settings
-    #[command(
-        long_about = "Read or modify bssh global defaults.\n\n\
+    #[command(long_about = "Read or modify bssh global defaults.\n\n\
             Run with no flags to print current settings.\n\
             Pass one or more flags to update values.\n\n\
             Examples:\n\
               bssh config\n\
               bssh config --default-user deploy --use-kerberos true\n\
               bssh config --search-mode bayesian\n\
-              bssh config --clear-bastion"
-    )]
+              bssh config --clear-bastion")]
     Config {
         /// Default SSH username for new connections
         #[arg(long, value_name = "USER")]
@@ -355,14 +347,12 @@ pub enum Commands {
     },
 
     /// Generate shell completion script for bash, zsh, fish, or powershell
-    #[command(
-        long_about = "Print a completion script to stdout.\n\
+    #[command(long_about = "Print a completion script to stdout.\n\
             Source or install it for your shell to enable tab-completion.\n\n\
             Examples:\n\
               bssh completions bash > ~/.local/share/bash-completion/completions/bssh\n\
               bssh completions zsh > ~/.zfunc/_bssh\n\
-              bssh completions fish > ~/.config/fish/completions/bssh.fish"
-    )]
+              bssh completions fish > ~/.config/fish/completions/bssh.fish")]
     Completions {
         /// Target shell
         #[arg(value_enum)]
@@ -370,14 +360,12 @@ pub enum Commands {
     },
 
     /// Show past SSH session history (timestamps, durations, exit codes)
-    #[command(
-        long_about = "Display a log of past SSH sessions.\n\
+    #[command(long_about = "Display a log of past SSH sessions.\n\
             Includes connection name, start time, duration, and exit status.\n\n\
             Examples:\n\
               bssh history\n\
               bssh history -c web-prod -n 50\n\
-              bssh history --days 7 --failed"
-    )]
+              bssh history --days 7 --failed")]
     History {
         /// Show only sessions for this connection name
         #[arg(short = 'c', long, value_name = "NAME")]
@@ -394,8 +382,11 @@ pub enum Commands {
     },
 
     /// Launch the interactive terminal dashboard
-    #[command(alias = "ui", long_about = "Open the full-screen TUI with connection list, session history,\n\
-        file browser, and port-forwarding panels. Use arrow keys or vim bindings to navigate.")]
+    #[command(
+        alias = "ui",
+        long_about = "Open the full-screen TUI with connection list, session history,\n\
+        file browser, and port-forwarding panels. Use arrow keys or vim bindings to navigate."
+    )]
     Tui,
 
     /// Run a command on a remote host and print its output locally
@@ -723,18 +714,35 @@ impl Cli {
             Commands::Exec { target, command } => {
                 commands::exec::execute(target, command, config).await
             }
-            Commands::Upload { target, local, remote, offset, mode, recursive } => {
-                commands::transfer::execute_upload(target, local, remote, offset, mode, recursive, config).await
+            Commands::Upload {
+                target,
+                local,
+                remote,
+                offset,
+                mode,
+                recursive,
+            } => {
+                commands::transfer::execute_upload(
+                    target, local, remote, offset, mode, recursive, config,
+                )
+                .await
             }
-            Commands::Download { target, remote, local, recursive } => {
+            Commands::Download {
+                target,
+                remote,
+                local,
+                recursive,
+            } => {
                 commands::transfer::execute_download(target, remote, local, recursive, config).await
             }
             Commands::Forward { target, local } => {
                 commands::forward::execute(target, local, config).await
             }
-            Commands::Proxy { target, dynamic, bind } => {
-                commands::proxy::execute(target, dynamic, bind, config).await
-            }
+            Commands::Proxy {
+                target,
+                dynamic,
+                bind,
+            } => commands::proxy::execute(target, dynamic, bind, config).await,
             Commands::Alias { action } => {
                 let alias_action = match action {
                     AliasSubcommand::Add { alias, target } => {

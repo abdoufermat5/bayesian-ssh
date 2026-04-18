@@ -9,8 +9,8 @@
 use anyhow::{bail, Context, Result};
 
 use crate::config::AppConfig;
-use crate::services::transport::{pick_kind, RusshTransport, SubprocessTransport, TransportKind};
 use crate::services::transport::types::SshTransport;
+use crate::services::transport::{pick_kind, RusshTransport, SubprocessTransport, TransportKind};
 use crate::services::SshService;
 
 pub async fn execute(target: String, local: String, config: AppConfig) -> Result<()> {
@@ -18,9 +18,14 @@ pub async fn execute(target: String, local: String, config: AppConfig) -> Result
         parse_local_spec(&local).context("invalid -L spec")?;
 
     let ssh_service = SshService::new(config.clone())?;
-    let mut conn_opt = ssh_service.get_connection(&target).await.unwrap_or_default();
+    let mut conn_opt = ssh_service
+        .get_connection(&target)
+        .await
+        .unwrap_or_default();
     if conn_opt.is_none() {
-        conn_opt = crate::cli::utils::fuzzy_select_connection(&ssh_service, &target, "forward", true).await?;
+        conn_opt =
+            crate::cli::utils::fuzzy_select_connection(&ssh_service, &target, "forward", true)
+                .await?;
     }
     let connection = match conn_opt {
         Some(c) => c,
@@ -36,20 +41,35 @@ pub async fn execute(target: String, local: String, config: AppConfig) -> Result
         remote_host,
         remote_port,
         connection.name,
-        match kind { TransportKind::Native => "native", TransportKind::Subprocess => "subprocess" }
+        match kind {
+            TransportKind::Native => "native",
+            TransportKind::Subprocess => "subprocess",
+        }
     );
     eprintln!("   Press Ctrl+C to stop.\n");
 
     let handle = match kind {
         TransportKind::Native => {
             let t = RusshTransport::new(config);
-            t.forward_local(&connection, &bind_host, bind_port, &remote_host, remote_port)
-                .await
+            t.forward_local(
+                &connection,
+                &bind_host,
+                bind_port,
+                &remote_host,
+                remote_port,
+            )
+            .await
         }
         TransportKind::Subprocess => {
             let t = SubprocessTransport::new(config);
-            t.forward_local(&connection, &bind_host, bind_port, &remote_host, remote_port)
-                .await
+            t.forward_local(
+                &connection,
+                &bind_host,
+                bind_port,
+                &remote_host,
+                remote_port,
+            )
+            .await
         }
     }
     .map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -74,7 +94,12 @@ fn parse_local_spec(spec: &str) -> Result<(String, u16, String, u16)> {
             let remote_port: u16 = remote_port_s
                 .parse()
                 .with_context(|| format!("invalid remote port '{remote_port_s}'"))?;
-            Ok(("127.0.0.1".to_string(), bind_port, remote_host.to_string(), remote_port))
+            Ok((
+                "127.0.0.1".to_string(),
+                bind_port,
+                remote_host.to_string(),
+                remote_port,
+            ))
         }
         [bind_addr, bind_port_s, remote_host, remote_port_s] => {
             let bind_port: u16 = bind_port_s
@@ -83,11 +108,14 @@ fn parse_local_spec(spec: &str) -> Result<(String, u16, String, u16)> {
             let remote_port: u16 = remote_port_s
                 .parse()
                 .with_context(|| format!("invalid remote port '{remote_port_s}'"))?;
-            Ok((bind_addr.to_string(), bind_port, remote_host.to_string(), remote_port))
+            Ok((
+                bind_addr.to_string(),
+                bind_port,
+                remote_host.to_string(),
+                remote_port,
+            ))
         }
-        _ => bail!(
-            "expected [bind_addr:]bind_port:remote_host:remote_port, got '{spec}'"
-        ),
+        _ => bail!("expected [bind_addr:]bind_port:remote_host:remote_port, got '{spec}'"),
     }
 }
 

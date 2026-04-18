@@ -5,8 +5,8 @@ use crate::database::Database;
 use crate::models::connection::Connection;
 use crate::models::session::SessionHistoryEntry;
 use crate::services::ping;
-use crate::services::transport::{pick_kind, RusshTransport, SubprocessTransport, TransportKind};
 use crate::services::transport::types::{SftpSession, SshTransport};
+use crate::services::transport::{pick_kind, RusshTransport, SubprocessTransport, TransportKind};
 use anyhow::Result;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -235,9 +235,7 @@ impl App {
         while let Ok(msg) = self.sftp_rx.try_recv() {
             match msg {
                 SftpMsg::Listed { path, mut entries } => {
-                    entries.sort_by(|a, b| {
-                        b.is_dir.cmp(&a.is_dir).then(a.name.cmp(&b.name))
-                    });
+                    entries.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then(a.name.cmp(&b.name)));
                     if let Some(ref mut fs) = self.files_state {
                         fs.is_loading = false;
                         fs.error = None;
@@ -246,17 +244,27 @@ impl App {
                         fs.selected = 0;
                     }
                 }
-                SftpMsg::Downloaded { remote, local, bytes } => {
+                SftpMsg::Downloaded {
+                    remote,
+                    local,
+                    bytes,
+                } => {
                     self.set_status(format!(
-                        "Downloaded '{}' → '{}' ({bytes} bytes)", remote, local
+                        "Downloaded '{}' → '{}' ({bytes} bytes)",
+                        remote, local
                     ));
                     if let Some(ref mut fs) = self.files_state {
                         fs.is_loading = false;
                     }
                 }
-                SftpMsg::Uploaded { local, remote, bytes } => {
+                SftpMsg::Uploaded {
+                    local,
+                    remote,
+                    bytes,
+                } => {
                     self.set_status(format!(
-                        "Uploaded '{}' → '{}' ({bytes} bytes)", local, remote
+                        "Uploaded '{}' → '{}' ({bytes} bytes)",
+                        local, remote
                     ));
                     if let Some(ref mut fs) = self.files_state {
                         fs.is_loading = false;
@@ -326,12 +334,16 @@ impl App {
                 Some(s) => s,
                 None => return,
             };
-            if fs.is_loading { return; }
+            if fs.is_loading {
+                return;
+            }
             let entry = match fs.selected_entry() {
                 Some(e) => e,
                 None => return,
             };
-            if !entry.is_dir { return; }
+            if !entry.is_dir {
+                return;
+            }
             let new_path = entry.path.to_string_lossy().into_owned();
             (fs.connection.clone(), new_path)
         };
@@ -348,7 +360,9 @@ impl App {
                 Some(s) => s,
                 None => return,
             };
-            if fs.is_loading || fs.current_path == "/" { return; }
+            if fs.is_loading || fs.current_path == "/" {
+                return;
+            }
             (fs.connection.clone(), fs.parent_path())
         };
         if let Some(ref mut fs) = self.files_state {
@@ -378,7 +392,9 @@ impl App {
             Some(s) => (s.is_loading, s.connection.clone()),
             None => return,
         };
-        if is_loading { return; }
+        if is_loading {
+            return;
+        }
 
         let local_path = std::path::PathBuf::from(&local_dest);
 
@@ -404,10 +420,7 @@ impl App {
                         }
                     }
                     Err(_) => {
-                        self.set_status(format!(
-                            "Cannot access directory '{}'",
-                            parent.display()
-                        ));
+                        self.set_status(format!("Cannot access directory '{}'", parent.display()));
                         return;
                     }
                 }
@@ -431,20 +444,17 @@ impl App {
             let result = async {
                 let kind = pick_kind(&conn, &config);
                 let sftp = match kind {
-                    TransportKind::Native => {
-                        RusshTransport::new(config.clone())
-                            .open_sftp(&conn)
-                            .await
-                            .map_err(|e| anyhow::anyhow!("{e}"))?
-                    }
+                    TransportKind::Native => RusshTransport::new(config.clone())
+                        .open_sftp(&conn)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("{e}"))?,
                     TransportKind::Subprocess => {
                         return Err(anyhow::anyhow!(
                             "SFTP not available via subprocess transport"
                         ));
                     }
                 };
-                let (chunk_tx, mut chunk_rx) =
-                    tokio::sync::mpsc::channel::<Vec<u8>>(16);
+                let (chunk_tx, mut chunk_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(16);
                 let read_fut = sftp.read_all(&remote_path, chunk_tx);
                 let mut file = tokio::fs::File::create(&local_path).await?;
                 let write_fut = async {
@@ -456,8 +466,7 @@ impl App {
                     }
                     Ok::<u64, anyhow::Error>(total)
                 };
-                let (read_result, write_result) =
-                    tokio::join!(read_fut, write_fut);
+                let (read_result, write_result) = tokio::join!(read_fut, write_fut);
                 read_result.map_err(|e| anyhow::anyhow!("{e}"))?;
                 write_result
             };
@@ -482,7 +491,9 @@ impl App {
             Some(s) => s,
             None => return,
         };
-        if fs.is_loading { return; }
+        if fs.is_loading {
+            return;
+        }
         let filename = std::path::Path::new(&local_path)
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
@@ -503,7 +514,9 @@ impl App {
                         .await
                         .map_err(|e| anyhow::anyhow!("{e}"))?,
                     TransportKind::Subprocess => {
-                        return Err(anyhow::anyhow!("SFTP not available via subprocess transport"));
+                        return Err(anyhow::anyhow!(
+                            "SFTP not available via subprocess transport"
+                        ));
                     }
                 };
                 let mut file = tokio::fs::File::open(&local_path).await?;
@@ -518,9 +531,13 @@ impl App {
                     loop {
                         use tokio::io::AsyncReadExt;
                         let n = file.read(&mut buf).await?;
-                        if n == 0 { break; }
+                        if n == 0 {
+                            break;
+                        }
                         total += n as u64;
-                        chunk_tx.send(buf[..n].to_vec()).await
+                        chunk_tx
+                            .send(buf[..n].to_vec())
+                            .await
                             .map_err(|_| anyhow::anyhow!("upload channel closed"))?;
                     }
                     drop(chunk_tx);
@@ -537,7 +554,9 @@ impl App {
                         bytes,
                     });
                 }
-                Err(e) => { let _ = tx.send(SftpMsg::Error(e.to_string())); }
+                Err(e) => {
+                    let _ = tx.send(SftpMsg::Error(e.to_string()));
+                }
             }
         });
     }
@@ -558,12 +577,10 @@ impl App {
             let result: Result<(u64, u64), anyhow::Error> = async {
                 let kind = pick_kind(&conn, &config);
                 let sftp = match kind {
-                    TransportKind::Native => {
-                        RusshTransport::new(config.clone())
-                            .open_sftp(&conn)
-                            .await
-                            .map_err(|e| anyhow::anyhow!("{e}"))?
-                    }
+                    TransportKind::Native => RusshTransport::new(config.clone())
+                        .open_sftp(&conn)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("{e}"))?,
                     TransportKind::Subprocess => {
                         return Err(anyhow::anyhow!(
                             "SFTP not available via subprocess transport"
@@ -597,7 +614,9 @@ impl App {
             Some(s) => s,
             None => return,
         };
-        if fs.is_loading { return; }
+        if fs.is_loading {
+            return;
+        }
         let dirname = std::path::Path::new(&local_path)
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
@@ -619,7 +638,9 @@ impl App {
                         .await
                         .map_err(|e| anyhow::anyhow!("{e}"))?,
                     TransportKind::Subprocess => {
-                        return Err(anyhow::anyhow!("SFTP not available via subprocess transport"));
+                        return Err(anyhow::anyhow!(
+                            "SFTP not available via subprocess transport"
+                        ));
                     }
                 };
                 upload_dir_recursive(&*sftp, &local_dir, &remote_path).await
@@ -636,7 +657,9 @@ impl App {
                         "Uploaded {files} files ({bytes} bytes)"
                     )));
                 }
-                Err(e) => { let _ = tx.send(SftpMsg::Error(e.to_string())); }
+                Err(e) => {
+                    let _ = tx.send(SftpMsg::Error(e.to_string()));
+                }
             }
         });
     }
@@ -647,7 +670,9 @@ impl App {
             Some(s) => s,
             None => return,
         };
-        if fs.is_loading { return; }
+        if fs.is_loading {
+            return;
+        }
         let entry = match fs.selected_entry() {
             Some(e) => e,
             None => return,
@@ -673,16 +698,24 @@ impl App {
                 let kind = pick_kind(&conn, &config);
                 let sftp = match kind {
                     TransportKind::Native => RusshTransport::new(config.clone())
-                        .open_sftp(&conn).await.map_err(|e| anyhow::anyhow!("{e}"))?,
+                        .open_sftp(&conn)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("{e}"))?,
                     TransportKind::Subprocess => {
-                        return Err(anyhow::anyhow!("SFTP not available via subprocess transport"));
+                        return Err(anyhow::anyhow!(
+                            "SFTP not available via subprocess transport"
+                        ));
                     }
                 };
                 sftp.remove(&path).await.map_err(|e| anyhow::anyhow!("{e}"))
             };
             match result.await {
-                Ok(()) => { let _ = tx.send(SftpMsg::Removed { path }); }
-                Err(e) => { let _ = tx.send(SftpMsg::Error(e.to_string())); }
+                Ok(()) => {
+                    let _ = tx.send(SftpMsg::Removed { path });
+                }
+                Err(e) => {
+                    let _ = tx.send(SftpMsg::Error(e.to_string()));
+                }
             }
         });
     }
@@ -693,7 +726,9 @@ impl App {
             Some(s) => s,
             None => return,
         };
-        if fs.is_loading { return; }
+        if fs.is_loading {
+            return;
+        }
         let new_path = format!("{}/{}", fs.current_path.trim_end_matches('/'), name.trim());
         let conn = fs.connection.clone();
         let config = self.config.clone();
@@ -706,16 +741,26 @@ impl App {
                 let kind = pick_kind(&conn, &config);
                 let sftp = match kind {
                     TransportKind::Native => RusshTransport::new(config.clone())
-                        .open_sftp(&conn).await.map_err(|e| anyhow::anyhow!("{e}"))?,
+                        .open_sftp(&conn)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("{e}"))?,
                     TransportKind::Subprocess => {
-                        return Err(anyhow::anyhow!("SFTP not available via subprocess transport"));
+                        return Err(anyhow::anyhow!(
+                            "SFTP not available via subprocess transport"
+                        ));
                     }
                 };
-                sftp.mkdir(&new_path, 0o755).await.map_err(|e| anyhow::anyhow!("{e}"))
+                sftp.mkdir(&new_path, 0o755)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("{e}"))
             };
             match result.await {
-                Ok(()) => { let _ = tx.send(SftpMsg::DirCreated { path: new_path }); }
-                Err(e) => { let _ = tx.send(SftpMsg::Error(e.to_string())); }
+                Ok(()) => {
+                    let _ = tx.send(SftpMsg::DirCreated { path: new_path });
+                }
+                Err(e) => {
+                    let _ = tx.send(SftpMsg::Error(e.to_string()));
+                }
             }
         });
     }
@@ -726,7 +771,9 @@ impl App {
             Some(s) => s,
             None => return,
         };
-        if fs.is_loading { return; }
+        if fs.is_loading {
+            return;
+        }
         let entry = match fs.selected_entry() {
             Some(e) => e,
             None => return,
@@ -748,16 +795,29 @@ impl App {
                 let kind = pick_kind(&conn, &config);
                 let sftp = match kind {
                     TransportKind::Native => RusshTransport::new(config.clone())
-                        .open_sftp(&conn).await.map_err(|e| anyhow::anyhow!("{e}"))?,
+                        .open_sftp(&conn)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("{e}"))?,
                     TransportKind::Subprocess => {
-                        return Err(anyhow::anyhow!("SFTP not available via subprocess transport"));
+                        return Err(anyhow::anyhow!(
+                            "SFTP not available via subprocess transport"
+                        ));
                     }
                 };
-                sftp.rename(&old_path, &new_path).await.map_err(|e| anyhow::anyhow!("{e}"))
+                sftp.rename(&old_path, &new_path)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("{e}"))
             };
             match result.await {
-                Ok(()) => { let _ = tx.send(SftpMsg::Renamed { from: old_path, to: new_path }); }
-                Err(e) => { let _ = tx.send(SftpMsg::Error(e.to_string())); }
+                Ok(()) => {
+                    let _ = tx.send(SftpMsg::Renamed {
+                        from: old_path,
+                        to: new_path,
+                    });
+                }
+                Err(e) => {
+                    let _ = tx.send(SftpMsg::Error(e.to_string()));
+                }
             }
         });
     }
@@ -783,10 +843,9 @@ impl App {
                             "Tunnel #{id}: {}:{} → {}:{} active",
                             bind_host, bind_port, remote_host, remote_port
                         ),
-                        crate::tui::models::TunnelKind::Socks5 => format!(
-                            "Proxy #{id}: SOCKS5 on {}:{} active",
-                            bind_host, bind_port
-                        ),
+                        crate::tui::models::TunnelKind::Socks5 => {
+                            format!("Proxy #{id}: SOCKS5 on {}:{} active", bind_host, bind_port)
+                        }
                     };
                     self.set_status(status);
                     self.tunnels.push(TunnelEntry {
@@ -854,12 +913,7 @@ impl App {
     }
 
     /// Start an async task that establishes a SOCKS5 dynamic proxy for `conn`.
-    pub fn spawn_proxy(
-        &self,
-        conn: Connection,
-        bind_host: String,
-        bind_port: u16,
-    ) {
+    pub fn spawn_proxy(&self, conn: Connection, bind_host: String, bind_port: u16) {
         let config = self.config.clone();
         let tx = self.tunnel_tx.clone();
         let spec = format!("{bind_host}:{bind_port}");
@@ -929,15 +983,13 @@ impl App {
             let result = async {
                 let kind = pick_kind(&conn, &config);
                 match kind {
-                    TransportKind::Native => {
-                        RusshTransport::new(config.clone())
-                            .open_sftp(&conn)
-                            .await
-                            .map_err(|e| anyhow::anyhow!("{e}"))?
-                            .list(&path)
-                            .await
-                            .map_err(|e| anyhow::anyhow!("{e}"))
-                    }
+                    TransportKind::Native => RusshTransport::new(config.clone())
+                        .open_sftp(&conn)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("{e}"))?
+                        .list(&path)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("{e}")),
                     TransportKind::Subprocess => Err(anyhow::anyhow!(
                         "SFTP not available via subprocess transport; \
                          use CLI commands: bssh upload / bssh download (SCP fallback)"
@@ -1187,8 +1239,7 @@ impl App {
             }
             Tab::Tunnels => {
                 if !self.tunnels.is_empty() {
-                    self.tunnel_selected =
-                        (self.tunnel_selected + 1).min(self.tunnels.len() - 1);
+                    self.tunnel_selected = (self.tunnel_selected + 1).min(self.tunnels.len() - 1);
                 }
             }
         }
@@ -1215,7 +1266,10 @@ fn download_dir_recursive<'a>(
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(u64, u64)>> + Send + 'a>> {
     Box::pin(async move {
         tokio::fs::create_dir_all(local_dir).await?;
-        let entries = sftp.list(remote_dir).await.map_err(|e| anyhow::anyhow!("{e}"))?;
+        let entries = sftp
+            .list(remote_dir)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
 
         let mut file_count = 0u64;
         let mut total_bytes = 0u64;
@@ -1303,9 +1357,13 @@ fn upload_dir_recursive<'a>(
                     loop {
                         use tokio::io::AsyncReadExt;
                         let n = file.read(&mut buf).await?;
-                        if n == 0 { break; }
+                        if n == 0 {
+                            break;
+                        }
                         total += n as u64;
-                        chunk_tx.send(buf[..n].to_vec()).await
+                        chunk_tx
+                            .send(buf[..n].to_vec())
+                            .await
                             .map_err(|_| anyhow::anyhow!("upload channel closed"))?;
                     }
                     drop(chunk_tx);
