@@ -20,6 +20,20 @@ pub async fn execute_upload(
 
     let transfer = TransferService::new(config)?;
 
+    // When SFTP is unavailable (e.g. interactive bastion + Kerberos), use SCP.
+    if !transfer.has_sftp(&connection) {
+        info!("SFTP unavailable for this connection, falling back to SCP");
+        transfer
+            .scp_upload(&connection, &local, &remote, recursive)
+            .await?;
+        println!(
+            "\u{2705} Uploaded {} \u{2192} {}:{remote} (via SCP)",
+            local.display(),
+            connection.host
+        );
+        return Ok(());
+    }
+
     if recursive {
         if !local.is_dir() {
             bail!("--recursive requires a local directory, but '{}' is not a directory", local.display());
@@ -71,6 +85,20 @@ pub async fn execute_download(
     let connection = resolve_connection(&ssh_service, &target, "download").await?;
 
     let transfer = TransferService::new(config)?;
+
+    // When SFTP is unavailable (e.g. interactive bastion + Kerberos), use SCP.
+    if !transfer.has_sftp(&connection) {
+        info!("SFTP unavailable for this connection, falling back to SCP");
+        transfer
+            .scp_download(&connection, &remote, &local, recursive)
+            .await?;
+        println!(
+            "\u{2705} Downloaded {}:{remote} \u{2192} {} (via SCP)",
+            connection.host,
+            local.display()
+        );
+        return Ok(());
+    }
 
     if recursive {
         let progress: crate::services::transfer::ProgressFn = Box::new(|done, _total| {

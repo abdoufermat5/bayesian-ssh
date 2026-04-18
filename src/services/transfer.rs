@@ -16,6 +16,7 @@ use crate::config::AppConfig;
 use crate::database::Database;
 use crate::models::Connection;
 use crate::services::transport::{pick_kind, RusshTransport, SubprocessTransport, TransportKind};
+use crate::services::transport::scp_impl;
 use crate::services::transport::types::{SshTransport, TransportError};
 
 const CHUNK_SIZE: usize = 256 * 1024; // 256 KiB
@@ -362,6 +363,52 @@ impl TransferService {
             }
             Ok(())
         })
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // SCP fallback: used when SFTP is unavailable (e.g. interactive bastion)
+    // ──────────────────────────────────────────────────────────────────────
+
+    /// Upload via SCP (bastion-aware). Falls back to this when SFTP is not
+    /// available on the subprocess transport.
+    pub async fn scp_upload(
+        &self,
+        connection: &Connection,
+        local_path: &Path,
+        remote_path: &str,
+        recursive: bool,
+    ) -> Result<()> {
+        info!(
+            "scp upload {} → {}:{} (recursive={recursive})",
+            local_path.display(),
+            connection.host,
+            remote_path,
+        );
+        scp_impl::scp_upload(connection, local_path, remote_path, recursive).await
+    }
+
+    /// Download via SCP (bastion-aware).
+    pub async fn scp_download(
+        &self,
+        connection: &Connection,
+        remote_path: &str,
+        local_path: &Path,
+        recursive: bool,
+    ) -> Result<()> {
+        info!(
+            "scp download {}:{} → {} (recursive={recursive})",
+            connection.host,
+            remote_path,
+            local_path.display(),
+        );
+        scp_impl::scp_download(connection, remote_path, local_path, recursive).await
+    }
+
+    /// Returns `true` when SFTP is available for this connection, `false`
+    /// when the caller should use SCP instead.
+    pub fn has_sftp(&self, connection: &Connection) -> bool {
+        let kind = pick_kind(connection, &self.config);
+        !matches!(kind, TransportKind::Subprocess)
     }
 
     // ──────────────────────────────────────────────────────────────────────

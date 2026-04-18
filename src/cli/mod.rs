@@ -10,11 +10,21 @@ use commands::*;
 
 #[derive(Parser)]
 #[command(name = "bayesian-ssh")]
-#[command(about = "A fast and lightweight SSH session manager with Kerberos support")]
+#[command(
+    about = "A fast and lightweight SSH session manager with Kerberos support",
+    long_about = "bayesian-ssh (bssh) is a smart SSH session manager that learns from your usage patterns.\n\n\
+        It ranks connections using Bayesian scoring, supports Kerberos authentication,\n\
+        interactive bastion hosts, multi-environment profiles, and provides both a CLI and TUI.\n\n\
+        Common workflows:\n\
+        \  bssh connect <name>     Connect to a saved server\n\
+        \  bssh add <name> <host>  Save a new connection\n\
+        \  bssh tui                Launch interactive dashboard\n\
+        \  bssh list               Show all saved connections"
+)]
 #[command(version)]
 pub struct Cli {
-    /// Override the active environment for this command
-    #[arg(long, global = true)]
+    /// Override the active environment for this invocation (does not persist)
+    #[arg(long, global = true, value_name = "ENV_NAME")]
     pub env: Option<String>,
 
     #[command(subcommand)]
@@ -23,363 +33,514 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum EnvCommands {
-    /// List all environments
+    /// List all environments and show which one is active
     List,
-    /// Set the active environment
+    /// Switch the active environment (connections are scoped per environment)
     Use {
-        /// Name of the environment
+        /// Name of the environment to activate
         name: String,
     },
-    /// Create a new environment
+    /// Create a new isolated environment with its own connection database
     Create {
-        /// Name of the new environment
+        /// Name for the new environment (must be unique)
         name: String,
     },
-    /// Remove an environment
+    /// Remove an environment and all its stored connections
     Remove {
-        /// Name of the environment to remove
+        /// Name of the environment to delete
         name: String,
     },
 }
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Connect to a server
+    /// Connect to a saved server (supports fuzzy name matching)
+    #[command(
+        long_about = "Open an SSH session to a saved connection.\n\n\
+            The target is matched by name, alias, or hostname using fuzzy search.\n\
+            Bayesian scoring ranks the best match from your usage history.\n\
+            Override any stored setting with the optional flags below.\n\n\
+            Examples:\n\
+            \  bssh connect web-prod\n\
+            \  bssh connect db01 -u admin -p 2222\n\
+            \  bssh connect backend -k true -b bastion.corp"
+    )]
     Connect {
-        /// Server name or hostname
+        /// Connection name, alias, or hostname (fuzzy-matched)
         target: String,
-        /// SSH user
-        #[arg(short = 'u', long)]
+        /// Override the SSH username for this session
+        #[arg(short = 'u', long, value_name = "USER")]
         user: Option<String>,
-        /// SSH port
-        #[arg(short = 'p', long, default_value = "22")]
+        /// Override the SSH port (default: 22)
+        #[arg(short = 'p', long, default_value = "22", value_name = "PORT")]
         port: Option<u16>,
-        /// Use Kerberos authentication
-        #[arg(short = 'k', long)]
+        /// Force Kerberos auth on or off for this session
+        #[arg(short = 'k', long, value_name = "BOOL")]
         kerberos: Option<bool>,
-        /// Bastion host
-        #[arg(short = 'b', long)]
+        /// Route through this bastion/jump host
+        #[arg(short = 'b', long, value_name = "HOST")]
         bastion: Option<String>,
-        /// Disable bastion (force direct connection)
+        /// Bypass any configured bastion and connect directly
         #[arg(long)]
         no_bastion: bool,
-        /// Bastion user
-        #[arg(short = 'B', long)]
+        /// Username for the bastion host
+        #[arg(short = 'B', long, value_name = "USER")]
         bastion_user: Option<String>,
-        /// SSH key path
-        #[arg(short = 'i', long)]
+        /// Path to an SSH private key to use
+        #[arg(short = 'i', long, value_name = "FILE")]
         key: Option<String>,
     },
 
-    /// Add a new connection to history
+    /// Save a new SSH connection
+    #[command(
+        long_about = "Add a new named connection to the database.\n\n\
+            The name is used as a friendly identifier for connect, upload, exec, etc.\n\
+            Tags let you group related connections (e.g. --tags prod --tags eu-west).\n\n\
+            Examples:\n\
+            \  bssh add web-prod web.example.com -u deploy\n\
+            \  bssh add db01 10.0.1.5 -p 2222 -k true -b bastion.corp\n\
+            \  bssh add staging app.staging.internal -t staging -t backend"
+    )]
     Add {
-        /// Connection name
+        /// Friendly name for this connection (must be unique)
         name: String,
-        /// Server hostname
+        /// Server hostname or IP address
         host: String,
-        /// SSH user
-        #[arg(short = 'u', long)]
+        /// SSH username (falls back to config default or $USER)
+        #[arg(short = 'u', long, value_name = "USER")]
         user: Option<String>,
-        /// SSH port
-        #[arg(short = 'p', long, default_value = "22")]
+        /// SSH port (default: 22)
+        #[arg(short = 'p', long, default_value = "22", value_name = "PORT")]
         port: Option<u16>,
-        /// Use Kerberos authentication
-        #[arg(short = 'k', long)]
+        /// Enable Kerberos (GSSAPI) authentication
+        #[arg(short = 'k', long, value_name = "BOOL")]
         kerberos: Option<bool>,
-        /// Bastion host
-        #[arg(short = 'b', long)]
+        /// Bastion/jump host to route through
+        #[arg(short = 'b', long, value_name = "HOST")]
         bastion: Option<String>,
-        /// Disable bastion (force direct connection)
+        /// Mark as direct connection (ignore default bastion)
         #[arg(long)]
         no_bastion: bool,
-        /// Bastion user
-        #[arg(short = 'B', long)]
+        /// Username for the bastion host
+        #[arg(short = 'B', long, value_name = "USER")]
         bastion_user: Option<String>,
-        /// SSH key path
-        #[arg(short = 'i', long)]
+        /// Path to an SSH private key
+        #[arg(short = 'i', long, value_name = "FILE")]
         key: Option<String>,
-        /// Tags for organization
-        #[arg(short = 't', long)]
+        /// Tags for grouping and filtering (repeatable)
+        #[arg(short = 't', long, value_name = "TAG")]
         tags: Vec<String>,
     },
 
-    /// List all connections
+    /// List saved connections (filterable by tag or recency)
+    #[command(
+        long_about = "Display all saved connections in the active environment.\n\n\
+            Connections are ranked by Bayesian score (most-used first).\n\
+            Use --tag to filter by group, --recent for recently used, --detailed for full info.\n\n\
+            Examples:\n\
+            \  bssh list\n\
+            \  bssh list -t prod -d\n\
+            \  bssh list --recent"
+    )]
     List {
-        /// Filter by tag
-        #[arg(short = 't', long)]
+        /// Show only connections with this tag
+        #[arg(short = 't', long, value_name = "TAG")]
         tag: Option<String>,
-        /// Show only recently used
+        /// Show only recently used connections
         #[arg(short = 'r', long)]
         recent: bool,
-        /// Show connection details
+        /// Show full connection details (host, port, bastion, auth)
         #[arg(short = 'd', long)]
         detailed: bool,
     },
 
-    /// Remove a connection
+    /// Remove a saved connection and its session history
     Remove {
-        /// Connection name or ID
+        /// Connection name, alias, or ID to delete
         target: String,
-        /// Skip confirmation prompt
+        /// Skip the confirmation prompt
         #[arg(short = 'f', long)]
         force: bool,
     },
 
-    /// Show connection details
+    /// Show full details of a saved connection
     Show {
-        /// Connection name or ID
+        /// Connection name, alias, or ID
         target: String,
     },
 
-    /// Edit connection settings
+    /// Edit one or more settings of an existing connection
+    #[command(
+        long_about = "Modify fields on a saved connection.\n\n\
+            Only the fields you pass are updated; everything else stays unchanged.\n\n\
+            Examples:\n\
+            \  bssh edit web-prod --user deploy --port 2222\n\
+            \  bssh edit db01 --bastion new-bastion.corp\n\
+            \  bssh edit staging --add-tags canary --remove-tags legacy"
+    )]
     Edit {
-        /// Connection name or ID
+        /// Connection name, alias, or ID to edit
         target: String,
-        /// New connection name
-        #[arg(long)]
+        /// Rename the connection
+        #[arg(long, value_name = "NAME")]
         name: Option<String>,
-        /// New host
-        #[arg(long)]
+        /// Change the hostname or IP
+        #[arg(long, value_name = "HOST")]
         host: Option<String>,
-        /// New user
-        #[arg(long)]
+        /// Change the SSH username
+        #[arg(long, value_name = "USER")]
         user: Option<String>,
-        /// New port
-        #[arg(long)]
+        /// Change the SSH port
+        #[arg(long, value_name = "PORT")]
         port: Option<u16>,
-        /// Toggle Kerberos
-        #[arg(long)]
+        /// Enable or disable Kerberos authentication
+        #[arg(long, value_name = "BOOL")]
         kerberos: Option<bool>,
-        /// New bastion
-        #[arg(long)]
+        /// Set or change the bastion host
+        #[arg(long, value_name = "HOST")]
         bastion: Option<String>,
-        /// Disable bastion (force direct connection)
+        /// Remove the bastion (switch to direct connection)
         #[arg(long)]
         no_bastion: bool,
-        /// New bastion user
-        #[arg(long)]
+        /// Change the bastion username
+        #[arg(long, value_name = "USER")]
         bastion_user: Option<String>,
-        /// New SSH key
-        #[arg(long)]
+        /// Set or change the SSH private key path
+        #[arg(long, value_name = "FILE")]
         key: Option<String>,
-        /// Add tags
-        #[arg(long)]
+        /// Add tags (repeatable)
+        #[arg(long, value_name = "TAG")]
         add_tags: Vec<String>,
-        /// Remove tags
-        #[arg(long)]
+        /// Remove tags (repeatable)
+        #[arg(long, value_name = "TAG")]
         remove_tags: Vec<String>,
     },
 
-    /// Configure application settings
+    /// View or update global application settings
+    #[command(
+        long_about = "Read or modify bssh global defaults.\n\n\
+            Run with no flags to print current settings.\n\
+            Pass one or more flags to update values.\n\n\
+            Examples:\n\
+            \  bssh config\n\
+            \  bssh config --default-user deploy --use-kerberos true\n\
+            \  bssh config --search-mode bayesian\n\
+            \  bssh config --clear-bastion"
+    )]
     Config {
-        /// Default user
-        #[arg(long)]
+        /// Default SSH username for new connections
+        #[arg(long, value_name = "USER")]
         default_user: Option<String>,
-        /// Default bastion
-        #[arg(long)]
+        /// Default bastion host applied to new connections
+        #[arg(long, value_name = "HOST")]
         default_bastion: Option<String>,
-        /// Default bastion user
-        #[arg(long)]
+        /// Default username for the bastion host
+        #[arg(long, value_name = "USER")]
         default_bastion_user: Option<String>,
-        /// Default port
-        #[arg(long)]
+        /// Default SSH port for new connections
+        #[arg(long, value_name = "PORT")]
         default_port: Option<u16>,
-        /// Use Kerberos by default
-        #[arg(long)]
+        /// Enable Kerberos authentication by default for new connections
+        #[arg(long, value_name = "BOOL")]
         use_kerberos: Option<bool>,
-        /// Log level
-        #[arg(long)]
+        /// Application log level (trace, debug, info, warn, error)
+        #[arg(long, value_name = "LEVEL")]
         log_level: Option<String>,
-        /// Clear default bastion settings
+        /// Remove the default bastion so new connections are direct
         #[arg(long)]
         clear_bastion: bool,
-        /// Search mode: "bayesian" (smart ranking) or "fuzzy" (simple matching)
-        #[arg(long, value_parser = ["bayesian", "fuzzy"])]
+        /// Connection search algorithm: "bayesian" (usage-ranked) or "fuzzy" (substring)
+        #[arg(long, value_parser = ["bayesian", "fuzzy"], value_name = "MODE")]
         search_mode: Option<String>,
     },
 
-    /// Show application statistics
+    /// Show usage statistics (total connections, sessions, top hosts)
     Stats,
 
-    /// Export connections to file or stdout
+    /// Export connections to a file or stdout
+    #[command(
+        long_about = "Serialize saved connections to JSON, TOML, or OpenSSH config format.\n\n\
+            Writes to stdout by default; use -o to write to a file.\n\n\
+            Examples:\n\
+            \  bssh export --format json\n\
+            \  bssh export --format ssh-config -o ~/.ssh/config.d/bssh\n\
+            \  bssh export --format toml -t prod -o prod-hosts.toml"
+    )]
     Export {
-        /// Output format (json, toml, ssh-config)
-        #[arg(long)]
+        /// Output format: json, toml, or ssh-config
+        #[arg(long, value_name = "FMT")]
         format: Option<String>,
-        /// Output file path
-        #[arg(short = 'o', long)]
+        /// Write output to this file instead of stdout
+        #[arg(short = 'o', long, value_name = "FILE")]
         output: Option<String>,
-        /// Filter by tag
-        #[arg(short = 't', long)]
+        /// Export only connections matching this tag
+        #[arg(short = 't', long, value_name = "TAG")]
         tag: Option<String>,
     },
 
-    /// Backup the database
+    /// Backup the connection database to a file
     Backup {
-        /// Output file path (defaults to a timestamped file in backups dir)
-        #[arg(short = 'o', long)]
+        /// Destination path (defaults to ~/.local/share/bayesian-ssh/backups/<timestamp>.db)
+        #[arg(short = 'o', long, value_name = "FILE")]
         output: Option<String>,
     },
 
-    /// Restore the database from a backup
+    /// Restore the connection database from a previous backup
     Restore {
-        /// Backup file path
+        /// Path to the backup file to restore
         file: String,
-        /// Skip confirmation prompt
+        /// Skip the confirmation prompt
         #[arg(short = 'f', long)]
         force: bool,
     },
 
-    /// Duplicate an existing connection
+    /// Clone an existing connection under a new name
+    #[command(
+        long_about = "Create a copy of a saved connection with a different name.\n\
+            All settings (host, port, bastion, tags, etc.) are preserved.\n\n\
+            Example:\n\
+            \  bssh duplicate web-prod web-staging"
+    )]
     Duplicate {
-        /// Name of the connection to duplicate
+        /// Name of the connection to copy
         source: String,
-        /// New name for the duplicated connection
+        /// Name for the new connection
         new_name: String,
     },
 
-    /// Test SSH connectivity to a connection
+    /// Test SSH reachability of a saved connection
+    #[command(
+        long_about = "Attempt a TCP connect (and optional SSH handshake) to verify the host is reachable.\n\
+            Useful for verifying firewall rules or bastion routing before a full session.\n\n\
+            Examples:\n\
+            \  bssh ping web-prod\n\
+            \  bssh ping db01 -t 10"
+    )]
     Ping {
-        /// Target connection name or alias
+        /// Connection name, alias, or hostname
         target: String,
-        /// Connect timeout in seconds (default 5)
-        #[arg(short = 't', long)]
+        /// Connection timeout in seconds (default: 5)
+        #[arg(short = 't', long, value_name = "SECS")]
         timeout: Option<u64>,
     },
 
-    /// Manage connection groups (tags)
+    /// List tag groups, or show connections in a specific group
     Groups {
-        /// Name of the group to list connections for
+        /// Tag name to filter by (omit to list all groups)
         group_name: Option<String>,
     },
 
-    /// Import connections from SSH config
+    /// Import SSH hosts from an OpenSSH config file
+    #[command(
+        long_about = "Parse an OpenSSH config file and import each Host block as a connection.\n\
+            Defaults to ~/.ssh/config when --file is omitted.\n\n\
+            Examples:\n\
+            \  bssh import\n\
+            \  bssh import -f /etc/ssh/ssh_config\n\
+            \  bssh import --no-bastion"
+    )]
     Import {
-        /// SSH config file path
-        #[arg(short = 'f', long)]
+        /// Path to the SSH config file (default: ~/.ssh/config)
+        #[arg(short = 'f', long, value_name = "FILE")]
         file: Option<String>,
-        /// Force direct connections (no bastion) for imported hosts
+        /// Import all hosts as direct connections (ignore ProxyJump)
         #[arg(long)]
         no_bastion: bool,
     },
 
-    /// Manage multi-environment profiles
+    /// Manage multi-environment profiles (separate connection databases)
     Env {
         #[command(subcommand)]
         command: EnvCommands,
     },
 
-    /// Generate shell completion script
+    /// Generate shell completion script for bash, zsh, fish, or powershell
+    #[command(
+        long_about = "Print a completion script to stdout.\n\
+            Source or install it for your shell to enable tab-completion.\n\n\
+            Examples:\n\
+            \  bssh completions bash > ~/.local/share/bash-completion/completions/bssh\n\
+            \  bssh completions zsh > ~/.zfunc/_bssh\n\
+            \  bssh completions fish > ~/.config/fish/completions/bssh.fish"
+    )]
     Completions {
-        /// Shell type
+        /// Target shell
         #[arg(value_enum)]
         shell: clap_complete::Shell,
     },
 
-    /// Show session history
+    /// Show past SSH session history (timestamps, durations, exit codes)
+    #[command(
+        long_about = "Display a log of past SSH sessions.\n\
+            Includes connection name, start time, duration, and exit status.\n\n\
+            Examples:\n\
+            \  bssh history\n\
+            \  bssh history -c web-prod -n 50\n\
+            \  bssh history --days 7 --failed"
+    )]
     History {
-        /// Filter by connection name
-        #[arg(short = 'c', long)]
+        /// Show only sessions for this connection name
+        #[arg(short = 'c', long, value_name = "NAME")]
         connection: Option<String>,
-        /// Maximum number of entries to show
-        #[arg(short = 'n', long, default_value = "20")]
+        /// Maximum number of entries to display
+        #[arg(short = 'n', long, default_value = "20", value_name = "COUNT")]
         limit: usize,
-        /// Show only sessions from the last N days
-        #[arg(short = 'd', long)]
+        /// Limit to sessions from the last N days
+        #[arg(short = 'd', long, value_name = "DAYS")]
         days: Option<u32>,
-        /// Show only failed sessions
+        /// Show only sessions that exited with an error
         #[arg(short = 'f', long)]
         failed: bool,
     },
 
-    /// Launch interactive TUI mode
-    #[command(alias = "ui")]
+    /// Launch the interactive terminal dashboard
+    #[command(alias = "ui", long_about = "Open the full-screen TUI with connection list, session history,\n\
+        file browser, and port-forwarding panels. Use arrow keys or vim bindings to navigate.")]
     Tui,
 
-    /// Execute a command on a remote host and print the output
-    #[command(alias = "run")]
+    /// Run a command on a remote host and print its output locally
+    #[command(
+        alias = "run",
+        long_about = "Execute a one-off command over SSH without opening an interactive shell.\n\
+            The remote stdout and stderr are printed locally.\n\
+            Separate the remote command from bssh flags with --.\n\n\
+            Examples:\n\
+            \  bssh exec web-prod -- uname -a\n\
+            \  bssh run db01 -- pg_dump mydb > backup.sql\n\
+            \  bssh exec staging -- systemctl status nginx"
+    )]
     Exec {
-        /// Connection name, hostname, or alias
+        /// Connection name, alias, or hostname
         target: String,
-        /// Command and its arguments (pass after --)
+        /// Remote command and arguments (everything after --)
         #[arg(last = true, required = true)]
         command: Vec<String>,
     },
 
-    /// Upload a local file or directory to a remote host via SFTP
+    /// Upload a file or directory to a remote host (SFTP or SCP fallback)
+    #[command(
+        long_about = "Transfer a local file or directory to the remote host.\n\
+            Uses SFTP for native connections and falls back to SCP automatically\n\
+            when connecting through an interactive bastion.\n\n\
+            Examples:\n\
+            \  bssh upload web-prod ./deploy.tar.gz /opt/releases/deploy.tar.gz\n\
+            \  bssh upload web-prod -r ./config/ /etc/myapp/ --mode 0o600\n\
+            \  bssh upload db01 dump.sql /tmp/dump.sql --offset 1048576"
+    )]
     Upload {
-        /// Connection name, hostname, or alias
+        /// Connection name, alias, or hostname
         target: String,
-        /// Local file or directory path
+        /// Local file or directory to upload
         #[arg(value_name = "LOCAL")]
         local: std::path::PathBuf,
-        /// Remote destination path
+        /// Destination path on the remote host
         #[arg(value_name = "REMOTE")]
         remote: String,
-        /// Resume an interrupted upload at this byte offset
-        #[arg(long, default_value = "0")]
+        /// Resume an interrupted upload starting at this byte offset
+        #[arg(long, default_value = "0", value_name = "BYTES")]
         offset: u64,
-        /// Unix file permission mode for the remote file (octal)
-        #[arg(long, default_value = "0o644", value_parser = parse_octal)]
+        /// Set file permissions on the remote side (octal, e.g. 0o644)
+        #[arg(long, default_value = "0o644", value_parser = parse_octal, value_name = "OCTAL")]
         mode: u32,
-        /// Recursively upload a directory
+        /// Recursively upload an entire directory tree
         #[arg(short = 'r', long)]
         recursive: bool,
     },
 
-    /// Download a remote file or directory from a host via SFTP
+    /// Download a file or directory from a remote host (SFTP or SCP fallback)
+    #[command(
+        long_about = "Transfer a remote file or directory to the local machine.\n\
+            Uses SFTP for native connections and falls back to SCP automatically\n\
+            when connecting through an interactive bastion.\n\n\
+            Examples:\n\
+            \  bssh download web-prod /var/log/app.log ./app.log\n\
+            \  bssh download db01 -r /backups/daily/ ./local-backups/"
+    )]
     Download {
-        /// Connection name, hostname, or alias
+        /// Connection name, alias, or hostname
         target: String,
-        /// Remote file or directory path
+        /// Path to the file or directory on the remote host
         #[arg(value_name = "REMOTE")]
         remote: String,
         /// Local destination path
         #[arg(value_name = "LOCAL")]
         local: std::path::PathBuf,
-        /// Recursively download a directory
+        /// Recursively download an entire directory tree
         #[arg(short = 'r', long)]
         recursive: bool,
     },
 
-    /// Open a local TCP port-forward tunnel through an SSH connection
-    #[command(alias = "tunnel")]
+    /// Forward a local port to a remote address through an SSH tunnel
+    #[command(
+        alias = "tunnel",
+        long_about = "Create an SSH local port-forward (-L style).\n\
+            Traffic to the local bind address is tunneled to the remote target.\n\n\
+            Spec format: [bind_addr:]bind_port:remote_host:remote_port\n\
+            (bind_addr defaults to 127.0.0.1 when omitted)\n\n\
+            Examples:\n\
+            \  bssh forward db01 -L 5432:localhost:5432\n\
+            \  bssh tunnel web-prod -L 0.0.0.0:8080:internal-api:80"
+    )]
     Forward {
-        /// Connection name, hostname, or alias
+        /// Connection name, alias, or hostname to tunnel through
         target: String,
-        /// Local forward spec: [bind_addr:]bind_port:remote_host:remote_port
+        /// Forward spec: [bind_addr:]bind_port:remote_host:remote_port
         #[arg(short = 'L', value_name = "SPEC")]
         local: String,
     },
 
     /// Start a SOCKS5 dynamic proxy through an SSH connection
-    #[command(alias = "socks")]
+    #[command(
+        alias = "socks",
+        long_about = "Open an SSH dynamic port-forward (-D style) acting as a local SOCKS5 proxy.\n\
+            Point your browser or application to the local port to route traffic through the remote host.\n\n\
+            Examples:\n\
+            \  bssh proxy web-prod -D 1080\n\
+            \  bssh socks bastion -D 9050 --bind 0.0.0.0"
+    )]
     Proxy {
-        /// Connection name, hostname, or alias
+        /// Connection name, alias, or hostname to proxy through
         target: String,
-        /// Local port to listen on as the SOCKS5 server
+        /// Local port for the SOCKS5 listener
         #[arg(short = 'D', value_name = "PORT")]
         dynamic: u16,
-        /// Bind address for the SOCKS5 listener (default: 127.0.0.1)
+        /// Bind address for the SOCKS5 listener
         #[arg(long, default_value = "127.0.0.1", value_name = "ADDR")]
         bind: String,
     },
 
-    /// Manage connection aliases
+    /// Create, remove, or list short aliases for connections
+    #[command(
+        long_about = "Aliases let you refer to connections by shorter names.\n\n\
+            Examples:\n\
+            \  bssh alias add wp web-prod\n\
+            \  bssh alias list\n\
+            \  bssh alias remove wp"
+    )]
     Alias {
         #[command(subcommand)]
         action: AliasSubcommand,
     },
 
-    /// Close active SSH sessions
-    #[command(alias = "kill")]
+    /// Close active SSH sessions or clean up stale ones
+    #[command(
+        alias = "kill",
+        long_about = "Terminate running SSH sessions started by bssh.\n\
+            With no arguments, lists currently active sessions.\n\
+            Use --cleanup to remove stale entries whose PIDs no longer exist.\n\n\
+            Examples:\n\
+            \  bssh close             # list active sessions\n\
+            \  bssh close web-prod    # close one session\n\
+            \  bssh kill --all -f     # force-close everything\n\
+            \  bssh close --cleanup   # prune dead entries"
+    )]
     Close {
-        /// Connection name to close (shows active sessions if omitted)
+        /// Connection name to close (omit to list active sessions)
         target: Option<String>,
-        /// Close all active sessions
+        /// Close all active sessions at once
         #[arg(short = 'a', long)]
         all: bool,
-        /// Clean up stale sessions (PIDs no longer running)
+        /// Remove stale session entries (PIDs that are no longer running)
         #[arg(long)]
         cleanup: bool,
         /// Skip confirmation prompts
@@ -390,21 +551,21 @@ pub enum Commands {
 
 #[derive(Subcommand)]
 pub enum AliasSubcommand {
-    /// Add a new alias for a connection
+    /// Map a short alias to an existing connection name
     Add {
-        /// Alias name
+        /// The alias to create (e.g. "wp")
         alias: String,
-        /// Target connection name
+        /// The connection name this alias points to
         target: String,
     },
-    /// Remove an alias
+    /// Delete an alias
     Remove {
-        /// Alias to remove
+        /// Alias name to delete
         alias: String,
     },
-    /// List aliases
+    /// List aliases (optionally filtered to one connection)
     List {
-        /// Connection to list aliases for (optional)
+        /// Show only aliases for this connection (omit for all)
         target: Option<String>,
     },
 }

@@ -940,7 +940,7 @@ impl App {
                     }
                     TransportKind::Subprocess => Err(anyhow::anyhow!(
                         "SFTP not available via subprocess transport; \
-                         switch to native transport to browse files"
+                         use CLI commands: bssh upload / bssh download (SCP fallback)"
                     )),
                 }
             };

@@ -7,6 +7,7 @@
 
 pub mod dispatcher;
 pub mod russh_impl;
+pub mod scp_impl;
 pub mod sftp_impl;
 pub mod socks5;
 pub mod subprocess_impl;

@@ -50,6 +50,12 @@ impl SubprocessTransport {
     }
 
     /// Build the argv for an interactive shell that takes over the terminal.
+    ///
+    /// When Kerberos + bastion are both active the bastion is an *interactive*
+    /// bastion: we SSH into it and pass the target as a remote-command argument
+    /// (matching `ssh -t -A -K user@bastion target_user@target`).
+    ///
+    /// Without Kerberos the bastion is a classic jump host and `-J` is used.
     pub(crate) fn build_shell_argv(conn: &Connection) -> Vec<String> {
         let mut argv: Vec<String> = vec!["ssh".into()];
         if conn.use_kerberos {
@@ -61,14 +67,28 @@ impl SubprocessTransport {
             argv.push("-i".into());
             argv.push(key.clone());
         }
+
         if let Some(bastion) = &conn.bastion {
             let bu = conn.bastion_user.as_deref().unwrap_or(&conn.user);
-            argv.push("-J".into());
-            argv.push(format!("{bu}@{bastion}"));
+            if conn.use_kerberos {
+                // Interactive bastion: connect to bastion, pass target as argument.
+                argv.push("-p".into());
+                argv.push("22".into());
+                argv.push(format!("{bu}@{bastion}"));
+                argv.push(format!("{}@{}", conn.user, conn.host));
+            } else {
+                // Jump host: transparent forwarding via -J.
+                argv.push("-J".into());
+                argv.push(format!("{bu}@{bastion}"));
+                argv.push("-p".into());
+                argv.push(conn.port.to_string());
+                argv.push(format!("{}@{}", conn.user, conn.host));
+            }
+        } else {
+            argv.push("-p".into());
+            argv.push(conn.port.to_string());
+            argv.push(format!("{}@{}", conn.user, conn.host));
         }
-        argv.push("-p".into());
-        argv.push(conn.port.to_string());
-        argv.push(format!("{}@{}", conn.user, conn.host));
         argv
     }
 
