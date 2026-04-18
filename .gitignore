@@ -79,3 +79,4 @@ coverage/
 # Local development
 .local/
 local/
+.docs/
