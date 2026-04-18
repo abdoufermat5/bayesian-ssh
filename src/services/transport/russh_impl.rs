@@ -312,9 +312,34 @@ impl SshTransport for RusshTransport {
 
     async fn open_sftp(
         &self,
-        _conn: &Connection,
+        conn: &Connection,
     ) -> Result<Box<dyn SftpSession>, TransportError> {
-        Err(TransportError::Fallback(anyhow!("SFTP not yet implemented in native transport")))
+        use crate::services::transport::sftp_impl::RusshSftpSession;
+
+        let mut handle = self.connect(conn).await?;
+        self.authenticate(&mut handle, conn).await.and_then(|ok| {
+            if ok {
+                Ok(())
+            } else {
+                Err(TransportError::Permanent(anyhow!("Authentication failed")))
+            }
+        })?;
+
+        let channel = handle
+            .channel_open_session()
+            .await
+            .map_err(|e| TransportError::Permanent(anyhow!("channel open: {e}")))?;
+
+        channel
+            .request_subsystem(true, "sftp")
+            .await
+            .map_err(|e| TransportError::Permanent(anyhow!("sftp subsystem: {e}")))?;
+
+        let sftp = russh_sftp::client::SftpSession::new(channel.into_stream())
+            .await
+            .map_err(|e| TransportError::Permanent(anyhow!("sftp init: {e}")))?;
+
+        Ok(Box::new(RusshSftpSession::new(sftp)))
     }
 
     fn name(&self) -> &'static str {

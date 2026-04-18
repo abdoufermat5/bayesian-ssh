@@ -46,6 +46,7 @@ async-trait = "0.1"
 
 # Native SSH (Phase 2)
 russh = "0.44"
+russh-sftp = "2.1"
 russh-keys = "0.44"
 rpassword = "7"
 base64 = "0.22"

@@ -6,9 +6,13 @@
 #![allow(dead_code, unused_imports)]
 
 pub mod dispatcher;
+pub mod russh_impl;
+pub mod sftp_impl;
 pub mod subprocess_impl;
 pub mod types;
 
 pub use dispatcher::{pick_kind, TransportKind};
+pub use russh_impl::RusshTransport;
+pub use sftp_impl::RusshSftpSession;
 pub use subprocess_impl::SubprocessTransport;
 pub use types::*;
