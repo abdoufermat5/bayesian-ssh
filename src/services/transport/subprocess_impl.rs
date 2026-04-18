@@ -199,8 +199,10 @@ impl SubprocessTransport {
         }
 
         // ── Phase 2: send markers + command ──
+        // Widen the PTY so `ls` and other column-aware tools don't
+        // wrap/pad to the default 80-col width.
         let payload = format!(
-            "echo '{marker_start}'\n{command}\n_bssh_rc=$?\necho '{marker_end}'\nexit $_bssh_rc\n"
+            "stty cols 200 rows 50 2>/dev/null\necho '{marker_start}'\n{command}\n_bssh_rc=$?\necho '{marker_end}'\nexit $_bssh_rc\n"
         );
         let _ = stdin.write_all(payload.as_bytes()).await;
         drop(stdin);
@@ -226,6 +228,7 @@ impl SubprocessTransport {
             command,                  // the real command echoed
             "_bssh_rc=$?",            // exit-code capture
             "exit $_bssh_rc",         // exit command
+            "stty cols",              // PTY resize command
             echo_start_cmd.as_str(),  // echo of START marker
             echo_end_cmd.as_str(),    // echo of END marker
         ];
