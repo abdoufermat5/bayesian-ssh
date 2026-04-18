@@ -10,7 +10,7 @@ use anyhow::{Context, Result};
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::config::AppConfig;
 use crate::database::Database;
@@ -21,7 +21,7 @@ use crate::services::transport::types::{SshTransport, TransportError};
 const CHUNK_SIZE: usize = 256 * 1024; // 256 KiB
 const CHANNEL_CAP: usize = 16;        // outstanding chunks in flight
 
-pub type ProgressFn = Box<dyn Fn(u64, Option<u64>) + Send + 'static>;
+pub type ProgressFn = Box<dyn Fn(u64, Option<u64>) + Send + Sync + 'static>;
 
 pub struct TransferService {
     config: AppConfig,
@@ -183,6 +183,185 @@ impl TransferService {
 
         info!("download complete: {read} bytes saved to {}", local_path.display());
         Ok(read)
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Recursive upload: local directory → remote directory
+    // ──────────────────────────────────────────────────────────────────────
+
+    /// Recursively upload a local directory to a remote path.
+    ///
+    /// Returns `(files_transferred, total_bytes)`.
+    pub async fn upload_recursive(
+        &self,
+        connection: &Connection,
+        local_dir: &Path,
+        remote_dir: &str,
+        mode: u32,
+        progress: Option<&ProgressFn>,
+    ) -> Result<(u64, u64)> {
+        let sftp = self.open_sftp(connection).await?;
+        let mut file_count = 0u64;
+        let mut total_bytes = 0u64;
+        Self::upload_dir_inner(&*sftp, local_dir, remote_dir, mode, progress, &mut file_count, &mut total_bytes).await?;
+        Ok((file_count, total_bytes))
+    }
+
+    fn upload_dir_inner<'a>(
+        sftp: &'a dyn crate::services::transport::types::SftpSession,
+        local_dir: &'a Path,
+        remote_dir: &'a str,
+        mode: u32,
+        progress: Option<&'a ProgressFn>,
+        file_count: &'a mut u64,
+        total_bytes: &'a mut u64,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send + 'a>> {
+        Box::pin(async move {
+            // Create the remote directory (ignore "already exists" errors)
+            match sftp.mkdir(remote_dir, 0o755).await {
+                Ok(()) => debug!("created remote dir {remote_dir}"),
+                Err(_) => debug!("remote dir {remote_dir} may already exist, continuing"),
+            }
+
+            let mut entries = fs::read_dir(local_dir).await
+                .with_context(|| format!("read local dir {}", local_dir.display()))?;
+
+            while let Some(entry) = entries.next_entry().await? {
+                let file_type = entry.file_type().await?;
+                let name = entry.file_name();
+                let name_str = name.to_string_lossy();
+                let local_child = entry.path();
+                let remote_child = format!("{}/{}", remote_dir.trim_end_matches('/'), name_str);
+
+                if file_type.is_dir() {
+                    Self::upload_dir_inner(sftp, &local_child, &remote_child, mode, progress, file_count, total_bytes).await?;
+                } else if file_type.is_file() {
+                    info!("uploading {} → {remote_child}", local_child.display());
+
+                    let meta = fs::metadata(&local_child).await?;
+                    let file_size = meta.len();
+
+                    let (tx, rx) = mpsc::channel::<Vec<u8>>(CHANNEL_CAP);
+                    let local_owned = local_child.clone();
+                    let reader = tokio::spawn(async move {
+                        let mut file = fs::File::open(&local_owned).await?;
+                        let mut buf = vec![0u8; CHUNK_SIZE];
+                        loop {
+                            let n = file.read(&mut buf).await?;
+                            if n == 0 { break; }
+                            if tx.send(buf[..n].to_vec()).await.is_err() { break; }
+                        }
+                        Ok::<(), anyhow::Error>(())
+                    });
+
+                    let written = sftp.write_all(&remote_child, 0, rx, mode)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+                    reader.await?.context("upload reader task")?;
+
+                    *file_count += 1;
+                    *total_bytes += written;
+
+                    if let Some(ref cb) = progress {
+                        cb(*total_bytes, Some(file_size));
+                    }
+                } else if file_type.is_symlink() {
+                    warn!("skipping symlink: {}", local_child.display());
+                }
+            }
+            Ok(())
+        })
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Recursive download: remote directory → local directory
+    // ──────────────────────────────────────────────────────────────────────
+
+    /// Recursively download a remote directory to a local path.
+    ///
+    /// Returns `(files_transferred, total_bytes)`.
+    pub async fn download_recursive(
+        &self,
+        connection: &Connection,
+        remote_dir: &str,
+        local_dir: &Path,
+        progress: Option<&ProgressFn>,
+    ) -> Result<(u64, u64)> {
+        let sftp = self.open_sftp(connection).await?;
+        let mut file_count = 0u64;
+        let mut total_bytes = 0u64;
+        Self::download_dir_inner(&*sftp, remote_dir, local_dir, progress, &mut file_count, &mut total_bytes).await?;
+        Ok((file_count, total_bytes))
+    }
+
+    fn download_dir_inner<'a>(
+        sftp: &'a dyn crate::services::transport::types::SftpSession,
+        remote_dir: &'a str,
+        local_dir: &'a Path,
+        progress: Option<&'a ProgressFn>,
+        file_count: &'a mut u64,
+        total_bytes: &'a mut u64,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send + 'a>> {
+        Box::pin(async move {
+            // Create local directory
+            fs::create_dir_all(local_dir).await
+                .with_context(|| format!("create local dir {}", local_dir.display()))?;
+
+            let entries = sftp.list(remote_dir).await
+                .map_err(|e| anyhow::anyhow!("list {remote_dir}: {e}"))?;
+
+            for entry in entries {
+                // Skip . and ..
+                if entry.name == "." || entry.name == ".." {
+                    continue;
+                }
+                let remote_child = format!("{}/{}", remote_dir.trim_end_matches('/'), entry.name);
+                let local_child = local_dir.join(&entry.name);
+
+                if entry.is_dir {
+                    Self::download_dir_inner(sftp, &remote_child, &local_child, progress, file_count, total_bytes).await?;
+                } else if entry.is_symlink {
+                    warn!("skipping symlink: {remote_child}");
+                } else {
+                    info!("downloading {remote_child} → {}", local_child.display());
+
+                    let (tx, mut rx) = mpsc::channel::<Vec<u8>>(CHANNEL_CAP);
+                    let remote_owned = remote_child.clone();
+                    let sftp_read = sftp.read_all(&remote_owned, tx);
+
+                    let mut file = fs::OpenOptions::new()
+                        .write(true)
+                        .create(true)
+                        .truncate(true)
+                        .open(&local_child)
+                        .await
+                        .with_context(|| format!("open {} for writing", local_child.display()))?;
+
+                    let write_task = async {
+                        let mut received = 0u64;
+                        while let Some(chunk) = rx.recv().await {
+                            file.write_all(&chunk).await?;
+                            received += chunk.len() as u64;
+                        }
+                        file.flush().await?;
+                        Ok::<u64, anyhow::Error>(received)
+                    };
+
+                    let (read_result, write_result) = tokio::join!(sftp_read, write_task);
+                    read_result.map_err(|e| anyhow::anyhow!("{e}"))?;
+                    let received = write_result?;
+
+                    *file_count += 1;
+                    *total_bytes += received;
+
+                    if let Some(ref cb) = progress {
+                        cb(*total_bytes, None);
+                    }
+                }
+            }
+            Ok(())
+        })
     }
 
     // ──────────────────────────────────────────────────────────────────────

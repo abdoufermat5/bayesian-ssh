@@ -5,6 +5,26 @@ All notable changes to Bayesian SSH will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-04-18
+
+### Added
+- **Native russh SSH transport**: Pure-Rust SSH transport layer (`SshTransport` trait) with `russh` backend, known-hosts verification, and multi-method authentication — replaces subprocess-based SSH for supported operations
+- **SFTP via russh-sftp**: Full SFTP session implementation (`RusshSftpSession`) built on the native transport for file operations without shelling out
+- **`exec`, `upload`, `download` commands**: New CLI commands backed by `TransferService` for remote command execution and file transfers
+- **Recursive upload and download**: SFTP upload and download now support entire directory trees recursively
+- **Local port-forward tunnel**: `bssh forward -L` establishes SSH local port-forwarding tunnels
+- **SOCKS5 dynamic proxy**: `bssh proxy -D` creates a SOCKS5 dynamic forwarding proxy through the SSH connection
+- **TUI SFTP file browser**: New Files tab for browsing remote file systems, uploading, deleting, creating directories, and renaming files interactively
+- **TUI Tunnels tab**: Start, list, and stop port-forward tunnels directly from the TUI
+
+### Changed
+- **Transport architecture refactored**: Extracted `SshTransport` trait with `SubprocessTransport` and `RusshTransport` implementations behind a dispatcher for flexible backend selection
+
+### Fixed
+- **CLI argument short flags**: Corrected conflicting short flags for SSH commands
+
+---
+
 ## [1.4.1] - 2026-03-05
 
 ### Added

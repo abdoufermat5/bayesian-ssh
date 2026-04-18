@@ -503,7 +503,18 @@ impl App {
                 self.set_status("Refreshing...");
             }
             KeyCode::Char('d') => {
-                self.files_download_selected();
+                // Open download prompt with pre-filled local path
+                if let Some(ref fs) = self.files_state {
+                    if let Some(entry) = fs.selected_entry() {
+                        let remote_path = entry.path.to_string_lossy().into_owned();
+                        let is_dir = entry.is_dir;
+                        self.files_prompt_input = entry.name.clone();
+                        self.mode = AppMode::FilesPrompt(FilesPromptKind::Download {
+                            remote_path,
+                            is_dir,
+                        });
+                    }
+                }
             }
             KeyCode::Char('u') => {
                 self.files_prompt_input.clear();
@@ -623,8 +634,23 @@ impl App {
                 self.files_prompt_input.clear();
                 match kind {
                     FilesPromptKind::Upload => {
-                        self.set_status(format!("Uploading '{input}'…"));
-                        self.files_upload(input);
+                        let local = std::path::Path::new(&input);
+                        if local.is_dir() {
+                            self.set_status(format!("Uploading directory '{input}'…"));
+                            self.files_upload_dir(input);
+                        } else {
+                            self.set_status(format!("Uploading '{input}'…"));
+                            self.files_upload(input);
+                        }
+                    }
+                    FilesPromptKind::Download { remote_path, is_dir } => {
+                        if is_dir {
+                            self.set_status(format!("Downloading directory → '{input}'…"));
+                            self.files_download_dir_to(remote_path, input);
+                        } else {
+                            self.set_status(format!("Downloading → '{input}'…"));
+                            self.files_download_to(remote_path, input);
+                        }
                     }
                     FilesPromptKind::Mkdir => {
                         self.set_status(format!("Creating directory '{input}'…"));

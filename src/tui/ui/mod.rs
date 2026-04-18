@@ -14,7 +14,7 @@ pub mod overlays;
 pub mod status;
 pub mod tunnels;
 
-use crate::tui::models::{AppMode, FilesPromptKind, Tab};
+use crate::tui::models::{AppMode, Tab};
 use crate::tui::state::App;
 use ratatui::prelude::*;
 

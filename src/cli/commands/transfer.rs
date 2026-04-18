@@ -12,6 +12,7 @@ pub async fn execute_upload(
     remote: String,
     offset: u64,
     mode: u32,
+    recursive: bool,
     config: AppConfig,
 ) -> Result<()> {
     let ssh_service = SshService::new(config.clone())?;
@@ -19,22 +20,43 @@ pub async fn execute_upload(
 
     let transfer = TransferService::new(config)?;
 
-    let progress: crate::services::transfer::ProgressFn = Box::new(|done, total| {
-        if let Some(t) = total {
-            let pct = done * 100 / t.max(1);
-            eprint!("\r  upload {done}/{t} bytes ({pct}%)   ");
-        } else {
-            eprint!("\r  upload {done} bytes   ");
+    if recursive {
+        if !local.is_dir() {
+            bail!("--recursive requires a local directory, but '{}' is not a directory", local.display());
         }
-    });
-
-    let written = transfer
-        .upload(&connection, &local, &remote, offset, mode, Some(progress))
-        .await?;
-
-    eprintln!(); // newline after progress
-    info!("upload complete: {written} bytes");
-    println!("✅ Uploaded {} → {}:{remote} ({written} bytes)", local.display(), connection.host);
+        let progress: crate::services::transfer::ProgressFn = Box::new(|done, _total| {
+            eprint!("\r  uploaded {done} bytes total   ");
+        });
+        let (files, bytes) = transfer
+            .upload_recursive(&connection, &local, &remote, mode, Some(&progress))
+            .await?;
+        eprintln!();
+        println!(
+            "✅ Uploaded {} → {}:{remote} ({files} files, {bytes} bytes)",
+            local.display(), connection.host
+        );
+    } else {
+        if local.is_dir() {
+            bail!(
+                "'{}' is a directory — use --recursive (-r) to upload directories",
+                local.display()
+            );
+        }
+        let progress: crate::services::transfer::ProgressFn = Box::new(|done, total| {
+            if let Some(t) = total {
+                let pct = done * 100 / t.max(1);
+                eprint!("\r  upload {done}/{t} bytes ({pct}%)   ");
+            } else {
+                eprint!("\r  upload {done} bytes   ");
+            }
+        });
+        let written = transfer
+            .upload(&connection, &local, &remote, offset, mode, Some(progress))
+            .await?;
+        eprintln!();
+        info!("upload complete: {written} bytes");
+        println!("✅ Uploaded {} → {}:{remote} ({written} bytes)", local.display(), connection.host);
+    }
     Ok(())
 }
 
@@ -42,6 +64,7 @@ pub async fn execute_download(
     target: String,
     remote: String,
     local: PathBuf,
+    recursive: bool,
     config: AppConfig,
 ) -> Result<()> {
     let ssh_service = SshService::new(config.clone())?;
@@ -49,22 +72,34 @@ pub async fn execute_download(
 
     let transfer = TransferService::new(config)?;
 
-    let progress: crate::services::transfer::ProgressFn = Box::new(|done, total| {
-        if let Some(t) = total {
-            let pct = done * 100 / t.max(1);
-            eprint!("\r  download {done}/{t} bytes ({pct}%)   ");
-        } else {
-            eprint!("\r  download {done} bytes   ");
-        }
-    });
-
-    let read = transfer
-        .download(&connection, &remote, &local, Some(progress))
-        .await?;
-
-    eprintln!();
-    info!("download complete: {read} bytes");
-    println!("✅ Downloaded {}:{remote} → {} ({read} bytes)", connection.host, local.display());
+    if recursive {
+        let progress: crate::services::transfer::ProgressFn = Box::new(|done, _total| {
+            eprint!("\r  downloaded {done} bytes total   ");
+        });
+        let (files, bytes) = transfer
+            .download_recursive(&connection, &remote, &local, Some(&progress))
+            .await?;
+        eprintln!();
+        println!(
+            "✅ Downloaded {}:{remote} → {} ({files} files, {bytes} bytes)",
+            connection.host, local.display()
+        );
+    } else {
+        let progress: crate::services::transfer::ProgressFn = Box::new(|done, total| {
+            if let Some(t) = total {
+                let pct = done * 100 / t.max(1);
+                eprint!("\r  download {done}/{t} bytes ({pct}%)   ");
+            } else {
+                eprint!("\r  download {done} bytes   ");
+            }
+        });
+        let read = transfer
+            .download(&connection, &remote, &local, Some(progress))
+            .await?;
+        eprintln!();
+        info!("download complete: {read} bytes");
+        println!("✅ Downloaded {}:{remote} → {} ({read} bytes)", connection.host, local.display());
+    }
     Ok(())
 }
 

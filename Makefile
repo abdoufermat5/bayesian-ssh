@@ -1,7 +1,7 @@
 # Bayesian SSH Makefile
 # Provides common development and build tasks
 
-.PHONY: help build test release clean install uninstall format lint check deps update-deps docs docs-serve docs-api
+.PHONY: help build test release clean install uninstall format lint check deps update-deps docs docs-serve docs-api demo-up demo-test demo-down demo-ssh-bastion demo-ssh-target1 demo-ssh-target2
 
 # Configuration
 BINARY_NAME = bayesian-ssh
@@ -138,6 +138,28 @@ bump-major: ## Bump major version
 # Quick shortcuts
 all: clean deps build test release ## Full build pipeline
 	@echo "🎉 Full build pipeline completed!"
+
+# ── Demo Environment (Vagrant) ──────────────────────────────
+demo-up: ## Boot the Vagrant demo VMs
+	@echo "🚀 Starting demo VMs..."
+	@cd demo && vagrant up
+
+demo-test: build ## Run integration tests against demo VMs
+	@echo "🧪 Running integration tests..."
+	@cd demo && bash test-all.sh --skip-build
+
+demo-down: ## Destroy the Vagrant demo VMs
+	@echo "🗑️  Destroying demo VMs..."
+	@cd demo && vagrant destroy -f
+
+demo-ssh-bastion: ## SSH into the bastion VM
+	@cd demo && vagrant ssh bastion
+
+demo-ssh-target1: ## SSH into target1 VM
+	@cd demo && vagrant ssh target1
+
+demo-ssh-target2: ## SSH into target2 VM
+	@cd demo && vagrant ssh target2
 
 quick: build test ## Quick build and test
 	@echo "🎉 Quick build and test completed!"

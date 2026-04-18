@@ -44,10 +44,6 @@ pub fn draw_status_bar(frame: &mut Frame, area: Rect, app: &App) {
             "n new tunnel | x/Del stop selected | ↑/k ↓/j navigate | ? help | q quit"
         }
         (AppMode::TunnelLaunch, _) => "[bind:]port:host:port  ·  Enter start  ·  Esc cancel",
-        (AppMode::Normal, Tab::Tunnels) => {
-            "n new tunnel | x/Del stop selected | ↑/k ↓/j navigate | ? help | q quit"
-        }
-        (AppMode::TunnelLaunch, _) => "[bind:]port:host:port  ·  Enter start  ·  Esc cancel",
         (AppMode::Search, _) => "Enter confirm | Esc cancel",
         (AppMode::Help, _) => "Esc/Enter close",
         (AppMode::Confirm(_), _) => "y confirm | n cancel",

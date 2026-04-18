@@ -306,11 +306,11 @@ pub enum Commands {
         command: Vec<String>,
     },
 
-    /// Upload a local file to a remote host via SFTP
+    /// Upload a local file or directory to a remote host via SFTP
     Upload {
         /// Connection name, hostname, or alias
         target: String,
-        /// Local file path
+        /// Local file or directory path
         #[arg(value_name = "LOCAL")]
         local: std::path::PathBuf,
         /// Remote destination path
@@ -322,18 +322,24 @@ pub enum Commands {
         /// Unix file permission mode for the remote file (octal)
         #[arg(long, default_value = "0o644", value_parser = parse_octal)]
         mode: u32,
+        /// Recursively upload a directory
+        #[arg(short = 'r', long)]
+        recursive: bool,
     },
 
-    /// Download a remote file from a host via SFTP
+    /// Download a remote file or directory from a host via SFTP
     Download {
         /// Connection name, hostname, or alias
         target: String,
-        /// Remote file path
+        /// Remote file or directory path
         #[arg(value_name = "REMOTE")]
         remote: String,
         /// Local destination path
         #[arg(value_name = "LOCAL")]
         local: std::path::PathBuf,
+        /// Recursively download a directory
+        #[arg(short = 'r', long)]
+        recursive: bool,
     },
 
     /// Open a local TCP port-forward tunnel through an SSH connection
@@ -556,11 +562,11 @@ impl Cli {
             Commands::Exec { target, command } => {
                 commands::exec::execute(target, command, config).await
             }
-            Commands::Upload { target, local, remote, offset, mode } => {
-                commands::transfer::execute_upload(target, local, remote, offset, mode, config).await
+            Commands::Upload { target, local, remote, offset, mode, recursive } => {
+                commands::transfer::execute_upload(target, local, remote, offset, mode, recursive, config).await
             }
-            Commands::Download { target, remote, local } => {
-                commands::transfer::execute_download(target, remote, local, config).await
+            Commands::Download { target, remote, local, recursive } => {
+                commands::transfer::execute_download(target, remote, local, recursive, config).await
             }
             Commands::Forward { target, local } => {
                 commands::forward::execute(target, local, config).await

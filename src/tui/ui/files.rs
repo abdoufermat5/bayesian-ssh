@@ -123,16 +123,30 @@ pub fn draw_files_prompt_dialog(frame: &mut Frame, area: Rect, app: &App, kind: 
 
     let (title, hint_text) = match kind {
         FilesPromptKind::Upload => (
-            " Upload File ",
-            "Enter local file path:",
+            " Upload ",
+            "Enter local file or directory path:".to_string(),
         ),
+        FilesPromptKind::Download { remote_path, is_dir } => {
+            let label = remote_path.rsplit('/').next().unwrap_or(remote_path);
+            if *is_dir {
+                (
+                    " Download Directory ",
+                    format!("Save directory '{}' to local path:", label),
+                )
+            } else {
+                (
+                    " Download File ",
+                    format!("Save '{}' to local path:", label),
+                )
+            }
+        }
         FilesPromptKind::Mkdir => (
             " New Directory ",
-            "Enter directory name:",
+            "Enter directory name:".to_string(),
         ),
         FilesPromptKind::Rename { old_name } => (
             " Rename Entry ",
-            Box::leak(format!("New name for '{old_name}':").into_boxed_str()) as &str,
+            format!("New name for '{old_name}':"),
         ),
     };
 

@@ -99,6 +99,8 @@ pub enum AppMode {
 pub enum FilesPromptKind {
     /// Upload: user types a local file path
     Upload,
+    /// Download: user types a local destination path
+    Download { remote_path: String, is_dir: bool },
     /// Mkdir: user types a directory name (relative to current path)
     Mkdir,
     /// Rename: user types the new name; old_name is the current file name

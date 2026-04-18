@@ -1,0 +1,5 @@
+This is a test file for bayesian-ssh SFTP upload testing.
+Created: 2026-04-18
+Content: Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+Line count verification: this file has exactly 5 lines.
+EOF marker — if you see this line, the upload was complete.

@@ -1,0 +1,33 @@
+# bayesian-ssh demo SSH config
+# Used to test: bssh import --file demo/test-data/ssh_config_sample
+
+Host bastion-demo
+    HostName 192.168.56.10
+    User testuser
+    Port 22
+    IdentityFile demo/keys/id_ed25519
+    ForwardAgent yes
+
+Host target1-demo
+    HostName 192.168.56.11
+    User testuser
+    Port 22
+    IdentityFile demo/keys/id_ed25519
+    ProxyJump bastion-demo
+
+Host target2-demo
+    HostName 192.168.56.12
+    User testuser
+    Port 22
+    IdentityFile demo/keys/id_ed25519
+    ProxyJump bastion-demo
+
+Host target1-direct
+    HostName 192.168.56.11
+    User demouser
+    Port 22
+
+Host target2-direct
+    HostName 192.168.56.12
+    User demouser
+    Port 22
