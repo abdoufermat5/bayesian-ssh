@@ -26,7 +26,8 @@ fn draw_empty_state(frame: &mut Frame, area: Rect) {
 
     let msg = Paragraph::new(
         "No active tunnels.\n\n\
-         Press  n  to start a new tunnel from a connection.\n\
+         Press  n  to start a new -L port-forward tunnel.\n\
+         Press  d  to start a SOCKS5 dynamic proxy.\n\
          Press  ?  for help.",
     )
     .style(Style::default().fg(Color::DarkGray))
@@ -40,8 +41,8 @@ fn draw_empty_state(frame: &mut Frame, area: Rect) {
 fn draw_tunnel_list(frame: &mut Frame, area: Rect, app: &App) {
     // Header line inside the block
     let header = format!(
-        "  {:<4}  {:<20}  {:<22}  {:<22}  {}",
-        "#", "Connection", "Local (bind)", "Remote target", "Uptime"
+        "  {:<2}  {:<4}  {:<20}  {:<22}  {:<22}  {}",
+        "K", "#", "Connection", "Local (bind)", "Remote target", "Uptime"
     );
 
     let items: Vec<ListItem> = app
@@ -59,7 +60,8 @@ fn draw_tunnel_list(frame: &mut Frame, area: Rect, app: &App) {
             };
 
             let line = format!(
-                "  {:<4}  {:<20}  {:<22}  {:<22}  {}",
+                "  {:<2}  {:<4}  {:<20}  {:<22}  {:<22}  {}",
+                t.kind.tag(),
                 t.id,
                 truncate(&t.connection_name, 20),
                 truncate(&t.local_spec(), 22),
@@ -123,7 +125,16 @@ pub fn draw_tunnel_launch_dialog(frame: &mut Frame, area: Rect, app: &App) {
         .map(|c| c.name.as_str())
         .unwrap_or("<none>");
 
-    let title = format!(" New tunnel → {} ", target_name);
+    let (title, hint_text) = match app.tunnel_launch_kind {
+        crate::tui::models::TunnelKind::Local => (
+            format!(" New -L Tunnel → {} ", target_name),
+            "Enter -L spec:  [bind_addr:]bind_port:remote_host:remote_port",
+        ),
+        crate::tui::models::TunnelKind::Socks5 => (
+            format!(" New SOCKS5 Proxy → {} ", target_name),
+            "Enter -D spec:  port  or  bind_addr:port",
+        ),
+    };
     let block = Block::default()
         .title(title)
         .title_style(Style::default().fg(Color::Cyan).bold())
@@ -141,7 +152,7 @@ pub fn draw_tunnel_launch_dialog(frame: &mut Frame, area: Rect, app: &App) {
     .areas(inner);
 
     frame.render_widget(
-        Paragraph::new("Enter -L spec:  [bind_addr:]bind_port:remote_host:remote_port")
+        Paragraph::new(hint_text)
             .style(Style::default().fg(Color::DarkGray)),
         hint_area,
     );

@@ -203,8 +203,71 @@ impl SshTransport for SubprocessTransport {
         Ok(crate::services::transport::types::ForwardHandle::new(task, cancel_tx))
     }
 
+    async fn forward_dynamic(
+        &self,
+        conn: &Connection,
+        bind_host: &str,
+        bind_port: u16,
+    ) -> Result<crate::services::transport::types::ForwardHandle, TransportError> {
+        let argv = Self::build_dynamic_argv(conn, bind_host, bind_port);
+        let (cmd_name, args) = argv.split_first().expect("argv non-empty");
+
+        let mut child = TokioCommand::new(cmd_name)
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .map_err(|e| TransportError::Permanent(anyhow::anyhow!("spawn: {e}")))?;
+
+        let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
+        let task = tokio::spawn(async move {
+            tokio::select! {
+                _ = cancel_rx => { let _ = child.kill().await; }
+                _ = child.wait() => {}
+            }
+        });
+
+        Ok(crate::services::transport::types::ForwardHandle::new(task, cancel_tx))
+    }
+
     fn name(&self) -> &'static str {
         "subprocess"
+    }
+}
+
+impl SubprocessTransport {
+    /// Build the argv for a SOCKS5 dynamic proxy session (`ssh -D -N`).
+    pub(crate) fn build_dynamic_argv(
+        conn: &Connection,
+        bind_host: &str,
+        bind_port: u16,
+    ) -> Vec<String> {
+        let mut argv: Vec<String> = vec!["ssh".into()];
+        if conn.use_kerberos {
+            argv.push("-K".into());
+        }
+        if let Some(key) = &conn.key_path {
+            argv.push("-i".into());
+            argv.push(key.clone());
+        }
+        if let Some(bastion) = &conn.bastion {
+            let bu = conn.bastion_user.as_deref().unwrap_or(&conn.user);
+            argv.push("-J".into());
+            argv.push(format!("{bu}@{bastion}"));
+        }
+        argv.push("-p".into());
+        argv.push(conn.port.to_string());
+        argv.push("-D".into());
+        // Use bind_host:port form only when bind_host is not loopback.
+        if bind_host == "127.0.0.1" || bind_host == "localhost" {
+            argv.push(format!("{bind_port}"));
+        } else {
+            argv.push(format!("{bind_host}:{bind_port}"));
+        }
+        argv.push("-N".into());
+        argv.push(format!("{}@{}", conn.user, conn.host));
+        argv
     }
 }
 

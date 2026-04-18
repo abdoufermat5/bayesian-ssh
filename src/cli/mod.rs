@@ -346,6 +346,19 @@ pub enum Commands {
         local: String,
     },
 
+    /// Start a SOCKS5 dynamic proxy through an SSH connection
+    #[command(alias = "socks")]
+    Proxy {
+        /// Connection name, hostname, or alias
+        target: String,
+        /// Local port to listen on as the SOCKS5 server
+        #[arg(short = 'D', value_name = "PORT")]
+        dynamic: u16,
+        /// Bind address for the SOCKS5 listener (default: 127.0.0.1)
+        #[arg(long, default_value = "127.0.0.1", value_name = "ADDR")]
+        bind: String,
+    },
+
     /// Manage connection aliases
     Alias {
         #[command(subcommand)]
@@ -551,6 +564,9 @@ impl Cli {
             }
             Commands::Forward { target, local } => {
                 commands::forward::execute(target, local, config).await
+            }
+            Commands::Proxy { target, dynamic, bind } => {
+                commands::proxy::execute(target, dynamic, bind, config).await
             }
             Commands::Alias { action } => {
                 let alias_action = match action {

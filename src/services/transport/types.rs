@@ -146,5 +146,15 @@ pub trait SshTransport: Send + Sync {
         remote_port: u16,
     ) -> Result<ForwardHandle, TransportError>;
 
+    /// Open a SOCKS5 dynamic proxy: the local listener at `bind_host:bind_port`
+    /// acts as a SOCKS5 server; each CONNECT request is forwarded through the
+    /// SSH tunnel via `direct-tcpip`.
+    async fn forward_dynamic(
+        &self,
+        conn: &Connection,
+        bind_host: &str,
+        bind_port: u16,
+    ) -> Result<ForwardHandle, TransportError>;
+
     fn name(&self) -> &'static str;
 }

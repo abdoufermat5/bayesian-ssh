@@ -57,6 +57,8 @@ pub struct App {
     pub tunnel_selected: usize,
     /// Input buffer for the TunnelLaunch dialog ([bind:]port:host:port)
     pub tunnel_input: String,
+    /// Whether the pending launch is a SOCKS5 proxy (true) or local -L forward (false)
+    pub tunnel_launch_kind: crate::tui::models::TunnelKind,
     /// Connection to forward when TunnelLaunch is confirmed
     pub tunnel_target: Option<Connection>,
     /// Sender for async tunnel-start results
@@ -143,6 +145,7 @@ impl App {
             tunnels: Vec::new(),
             tunnel_selected: 0,
             tunnel_input: String::new(),
+            tunnel_launch_kind: crate::tui::models::TunnelKind::Local,
             tunnel_target: None,
             tunnel_tx,
             tunnel_rx,
@@ -399,6 +402,7 @@ impl App {
         while let Ok(msg) = self.tunnel_rx.try_recv() {
             match msg {
                 TunnelMsg::Started {
+                    kind,
                     connection_name,
                     bind_host,
                     bind_port,
@@ -407,12 +411,20 @@ impl App {
                     handle,
                 } => {
                     let id = self.tunnels.len() + 1;
-                    self.set_status(format!(
-                        "Tunnel #{id}: {}:{} → {}:{} active",
-                        bind_host, bind_port, remote_host, remote_port
-                    ));
+                    let status = match kind {
+                        crate::tui::models::TunnelKind::Local => format!(
+                            "Tunnel #{id}: {}:{} → {}:{} active",
+                            bind_host, bind_port, remote_host, remote_port
+                        ),
+                        crate::tui::models::TunnelKind::Socks5 => format!(
+                            "Proxy #{id}: SOCKS5 on {}:{} active",
+                            bind_host, bind_port
+                        ),
+                    };
+                    self.set_status(status);
                     self.tunnels.push(TunnelEntry {
                         id,
+                        kind,
                         connection_name,
                         bind_host,
                         bind_port,
@@ -458,11 +470,55 @@ impl App {
             match result {
                 Ok(handle) => {
                     let _ = tx.send(TunnelMsg::Started {
+                        kind: crate::tui::models::TunnelKind::Local,
                         connection_name: cname,
                         bind_host,
                         bind_port,
                         remote_host,
                         remote_port,
+                        handle,
+                    });
+                }
+                Err(error) => {
+                    let _ = tx.send(TunnelMsg::Failed { spec, error });
+                }
+            }
+        });
+    }
+
+    /// Start an async task that establishes a SOCKS5 dynamic proxy for `conn`.
+    pub fn spawn_proxy(
+        &self,
+        conn: Connection,
+        bind_host: String,
+        bind_port: u16,
+    ) {
+        let config = self.config.clone();
+        let tx = self.tunnel_tx.clone();
+        let spec = format!("{bind_host}:{bind_port}");
+        let cname = conn.name.clone();
+
+        tokio::spawn(async move {
+            let kind = pick_kind(&conn, &config);
+            let result = match kind {
+                TransportKind::Native => RusshTransport::new(config)
+                    .forward_dynamic(&conn, &bind_host, bind_port)
+                    .await
+                    .map_err(|e| e.to_string()),
+                TransportKind::Subprocess => SubprocessTransport::new(config)
+                    .forward_dynamic(&conn, &bind_host, bind_port)
+                    .await
+                    .map_err(|e| e.to_string()),
+            };
+            match result {
+                Ok(handle) => {
+                    let _ = tx.send(TunnelMsg::Started {
+                        kind: crate::tui::models::TunnelKind::Socks5,
+                        connection_name: cname,
+                        bind_host,
+                        bind_port,
+                        remote_host: String::new(),
+                        remote_port: 0,
                         handle,
                     });
                 }

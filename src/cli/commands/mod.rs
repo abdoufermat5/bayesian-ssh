@@ -16,6 +16,7 @@ pub mod history;
 pub mod import;
 pub mod list;
 pub mod ping;
+pub mod proxy;
 pub mod remove;
 pub mod restore;
 pub mod show;
