@@ -336,6 +336,16 @@ pub enum Commands {
         local: std::path::PathBuf,
     },
 
+    /// Open a local TCP port-forward tunnel through an SSH connection
+    #[command(alias = "tunnel")]
+    Forward {
+        /// Connection name, hostname, or alias
+        target: String,
+        /// Local forward spec: [bind_addr:]bind_port:remote_host:remote_port
+        #[arg(short = 'L', value_name = "SPEC")]
+        local: String,
+    },
+
     /// Manage connection aliases
     Alias {
         #[command(subcommand)]
@@ -538,6 +548,9 @@ impl Cli {
             }
             Commands::Download { target, remote, local } => {
                 commands::transfer::execute_download(target, remote, local, config).await
+            }
+            Commands::Forward { target, local } => {
+                commands::forward::execute(target, local, config).await
             }
             Commands::Alias { action } => {
                 let alias_action = match action {

@@ -39,9 +39,6 @@ pub async fn run_tui(config: AppConfig) -> Result<Option<(Connection, PendingAct
         // Drain any completed SFTP operation results
         app.drain_sftp_results();
 
-        // Drain any completed SFTP operation results
-        app.drain_sftp_results();
-
         // Draw UI
         terminal.draw(|frame| {
             super::ui::draw(frame, &app);

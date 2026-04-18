@@ -36,6 +36,28 @@ impl ShellHandle {
     }
 }
 
+/// Handle to an active local-forward tunnel.
+///
+/// Dropping the handle does NOT stop the tunnel — call [`ForwardHandle::cancel`] explicitly.
+pub struct ForwardHandle {
+    task: tokio::task::JoinHandle<()>,
+    cancel_tx: Option<oneshot::Sender<()>>,
+}
+
+impl ForwardHandle {
+    pub fn new(task: tokio::task::JoinHandle<()>, cancel_tx: oneshot::Sender<()>) -> Self {
+        Self { task, cancel_tx: Some(cancel_tx) }
+    }
+
+    /// Signal the tunnel to stop and await clean shutdown.
+    pub async fn cancel(mut self) {
+        if let Some(tx) = self.cancel_tx.take() {
+            let _ = tx.send(());
+        }
+        let _ = self.task.await;
+    }
+}
+
 /// Errors classified by fallback policy.
 #[derive(Debug, thiserror::Error)]
 pub enum TransportError {
@@ -112,6 +134,17 @@ pub trait SshTransport: Send + Sync {
         &self,
         conn: &Connection,
     ) -> Result<Box<dyn SftpSession>, TransportError>;
+
+    /// Open a local TCP port forward: connections to `bind_host:bind_port` are
+    /// tunnelled through SSH to `remote_host:remote_port`.
+    async fn forward_local(
+        &self,
+        conn: &Connection,
+        bind_host: &str,
+        bind_port: u16,
+        remote_host: &str,
+        remote_port: u16,
+    ) -> Result<ForwardHandle, TransportError>;
 
     fn name(&self) -> &'static str;
 }

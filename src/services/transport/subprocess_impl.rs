@@ -72,6 +72,36 @@ impl SubprocessTransport {
         argv
     }
 
+    /// Build the argv for a local port-forward session (`ssh -L -N`).
+    pub(crate) fn build_forward_argv(
+        conn: &Connection,
+        bind_host: &str,
+        bind_port: u16,
+        remote_host: &str,
+        remote_port: u16,
+    ) -> Vec<String> {
+        let mut argv: Vec<String> = vec!["ssh".into()];
+        if conn.use_kerberos {
+            argv.push("-K".into());
+        }
+        if let Some(key) = &conn.key_path {
+            argv.push("-i".into());
+            argv.push(key.clone());
+        }
+        if let Some(bastion) = &conn.bastion {
+            let bu = conn.bastion_user.as_deref().unwrap_or(&conn.user);
+            argv.push("-J".into());
+            argv.push(format!("{bu}@{bastion}"));
+        }
+        argv.push("-p".into());
+        argv.push(conn.port.to_string());
+        argv.push("-L".into());
+        argv.push(format!("{bind_host}:{bind_port}:{remote_host}:{remote_port}"));
+        argv.push("-N".into());
+        argv.push(format!("{}@{}", conn.user, conn.host));
+        argv
+    }
+
     /// Run an interactive SSH session that takes over the current terminal.
     /// Returns the exit code of the ssh process.
     pub async fn run_interactive(&self, conn: &Connection) -> Result<i32, TransportError> {
@@ -141,6 +171,36 @@ impl SshTransport for SubprocessTransport {
         Err(TransportError::fallback(anyhow::anyhow!(
             "subprocess transport does not provide structured SFTP"
         )))
+    }
+
+    async fn forward_local(
+        &self,
+        conn: &Connection,
+        bind_host: &str,
+        bind_port: u16,
+        remote_host: &str,
+        remote_port: u16,
+    ) -> Result<crate::services::transport::types::ForwardHandle, TransportError> {
+        let argv = Self::build_forward_argv(conn, bind_host, bind_port, remote_host, remote_port);
+        let (cmd_name, args) = argv.split_first().expect("argv non-empty");
+
+        let mut child = TokioCommand::new(cmd_name)
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .map_err(|e| TransportError::Permanent(anyhow::anyhow!("spawn: {e}")))?;
+
+        let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
+        let task = tokio::spawn(async move {
+            tokio::select! {
+                _ = cancel_rx => { let _ = child.kill().await; }
+                _ = child.wait() => {}
+            }
+        });
+
+        Ok(crate::services::transport::types::ForwardHandle::new(task, cancel_tx))
     }
 
     fn name(&self) -> &'static str {

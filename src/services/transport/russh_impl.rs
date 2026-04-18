@@ -345,6 +345,75 @@ impl SshTransport for RusshTransport {
     fn name(&self) -> &'static str {
         "native-russh"
     }
+
+    async fn forward_local(
+        &self,
+        conn: &Connection,
+        bind_host: &str,
+        bind_port: u16,
+        remote_host: &str,
+        remote_port: u16,
+    ) -> Result<crate::services::transport::types::ForwardHandle, TransportError> {
+        use std::sync::Arc;
+        use tokio::net::TcpListener;
+        use tokio::sync::Mutex;
+        use tracing::warn;
+
+        let mut handle = self.connect(conn).await?;
+        self.authenticate(&mut handle, conn).await.and_then(|ok| {
+            if ok { Ok(()) } else { Err(TransportError::Permanent(anyhow!("Authentication failed"))) }
+        })?;
+
+        let listener = TcpListener::bind((bind_host, bind_port))
+            .await
+            .map_err(|e| TransportError::Permanent(anyhow!("bind {bind_host}:{bind_port}: {e}")))?;
+
+        // Wrap handle in Arc<Mutex> so it can be shared across per-connection tasks.
+        let ssh = Arc::new(Mutex::new(handle));
+        let remote_host = remote_host.to_string();
+        let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel::<()>();
+
+        let task = tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = &mut cancel_rx => break,
+                    result = listener.accept() => {
+                        let Ok((stream, peer_addr)) = result else { break };
+                        let ssh2 = Arc::clone(&ssh);
+                        let rhost = remote_host.clone();
+                        tokio::spawn(async move {
+                            let channel = {
+                                let guard = ssh2.lock().await;
+                                guard.channel_open_direct_tcpip(
+                                    rhost,
+                                    remote_port as u32,
+                                    peer_addr.ip().to_string(),
+                                    peer_addr.port() as u32,
+                                ).await
+                            };
+                            match channel {
+                                Ok(chan) => proxy_tcp_channel(stream, chan).await,
+                                Err(e) => warn!("direct-tcpip open failed: {e}"),
+                            }
+                        });
+                    }
+                }
+            }
+            let guard = ssh.lock().await;
+            let _ = guard.disconnect(russh::Disconnect::ByApplication, "", "en").await;
+        });
+
+        Ok(crate::services::transport::types::ForwardHandle::new(task, cancel_tx))
+    }
+}
+
+/// Bidirectionally proxy bytes between a local `TcpStream` and an SSH `direct-tcpip` channel.
+async fn proxy_tcp_channel(stream: tokio::net::TcpStream, channel: russh::Channel<russh::client::Msg>) {
+    use tokio::io::copy_bidirectional;
+    let mut tcp = stream;
+    let mut ssh = channel.into_stream();
+    let _ = copy_bidirectional(&mut tcp, &mut ssh).await;
 }
 
 impl RusshTransport {

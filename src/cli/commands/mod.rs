@@ -10,6 +10,7 @@ pub mod edit;
 pub mod env;
 pub mod exec;
 pub mod export;
+pub mod forward;
 pub mod groups;
 pub mod history;
 pub mod import;
