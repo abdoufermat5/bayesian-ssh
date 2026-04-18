@@ -23,7 +23,11 @@ impl SubprocessTransport {
     }
 
     /// Build the argv for a non-interactive exec call.
-    /// Pulled out for unit-testing the command assembly.
+    ///
+    /// NOTE: this is used for direct connections and classic jump-host
+    /// bastions only.  Interactive bastions (kerberos + bastion) cannot
+    /// pass a remote command via the argv — use `run_interactive_exec`
+    /// instead.
     pub(crate) fn build_exec_argv(conn: &Connection, command: &str) -> Vec<String> {
         let mut argv: Vec<String> = vec!["ssh".into()];
         if conn.use_kerberos {
@@ -37,6 +41,7 @@ impl SubprocessTransport {
         argv.push("BatchMode=yes".into());
         argv.push("-o".into());
         argv.push("StrictHostKeyChecking=accept-new".into());
+
         if let Some(bastion) = &conn.bastion {
             let bu = conn.bastion_user.as_deref().unwrap_or(&conn.user);
             argv.push("-J".into());
@@ -49,12 +54,10 @@ impl SubprocessTransport {
         argv
     }
 
-    /// Build the argv for an interactive shell that takes over the terminal.
+    /// Build the argv for an interactive shell session.
     ///
     /// When Kerberos + bastion are both active the bastion is an *interactive*
-    /// bastion: we SSH into it and pass the target as a remote-command argument
-    /// (matching `ssh -t -A -K user@bastion target_user@target`).
-    ///
+    /// bastion: we SSH into it and pass `target_user@target` as argument.
     /// Without Kerberos the bastion is a classic jump host and `-J` is used.
     pub(crate) fn build_shell_argv(conn: &Connection) -> Vec<String> {
         let mut argv: Vec<String> = vec!["ssh".into()];
@@ -143,6 +146,133 @@ impl SubprocessTransport {
 
         Ok(status.code().unwrap_or(-1))
     }
+
+    /// Execute a command through an interactive bastion.
+    ///
+    /// Interactive bastions only accept the target as an argument — they
+    /// do NOT forward extra arguments as a remote command.  We open a
+    /// shell-style connection in three phases:
+    ///
+    /// 1. **Drain** — read and discard the initial noise (bastion banner,
+    ///    MOTD, shell prompt) until 1 s of silence.
+    /// 2. **Payload** — send markers + command.
+    /// 3. **Extract** — read remaining output, extract lines between markers,
+    ///    and strip echoed control commands via suffix matching.
+    pub async fn run_interactive_exec(
+        &self,
+        conn: &Connection,
+        command: &str,
+    ) -> Result<ExecOutput, TransportError> {
+        use std::time::Duration;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let marker = format!("BSSH_{:016x}", rand::random::<u64>());
+        let marker_start = format!("{marker}_START");
+        let marker_end = format!("{marker}_END");
+
+        let mut argv = Self::build_shell_argv(conn);
+        if let Some(pos) = argv.iter().position(|a| a == "-t") {
+            argv[pos] = "-tt".into();
+        }
+        let (cmd_name, args) = argv.split_first().expect("argv non-empty");
+
+        let mut child = TokioCommand::new(cmd_name)
+            .args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| TransportError::permanent(anyhow::Error::from(e)))?;
+
+        let mut stdin = child.stdin.take().expect("stdin piped");
+        let mut stdout = child.stdout.take().expect("stdout piped");
+        // With -tt stderr is merged into stdout via the PTY.
+        let _stderr = child.stderr.take();
+
+        // ── Phase 1: drain initial noise (banner, MOTD, prompt) ──
+        loop {
+            let mut chunk = [0u8; 4096];
+            match tokio::time::timeout(Duration::from_secs(1), stdout.read(&mut chunk)).await {
+                Ok(Ok(n)) if n > 0 => { /* discard */ }
+                _ => break,
+            }
+        }
+
+        // ── Phase 2: send markers + command ──
+        let payload = format!(
+            "echo '{marker_start}'\n{command}\n_bssh_rc=$?\necho '{marker_end}'\nexit $_bssh_rc\n"
+        );
+        let _ = stdin.write_all(payload.as_bytes()).await;
+        drop(stdin);
+
+        // ── Phase 3: read remaining output and extract between markers ──
+        let mut raw_bytes = Vec::new();
+        stdout
+            .read_to_end(&mut raw_bytes)
+            .await
+            .map_err(|e| TransportError::permanent(anyhow::Error::from(e)))?;
+
+        let status = child
+            .wait()
+            .await
+            .map_err(|e| TransportError::permanent(anyhow::Error::from(e)))?;
+
+        // Build the set of suffixes that correspond to echoed control
+        // commands.  The PTY echoes them with a prompt prefix we can't
+        // predict, but the line always contains our known payload text.
+        let echo_start_cmd = format!("echo '{marker_start}'");
+        let echo_end_cmd = format!("echo '{marker_end}'");
+        let echo_suffixes: Vec<&str> = vec![
+            command,                  // the real command echoed
+            "_bssh_rc=$?",            // exit-code capture
+            "exit $_bssh_rc",         // exit command
+            echo_start_cmd.as_str(),  // echo of START marker
+            echo_end_cmd.as_str(),    // echo of END marker
+        ];
+
+        let raw = String::from_utf8_lossy(&raw_bytes);
+        let mut capture = false;
+        let mut clean_lines: Vec<&str> = Vec::new();
+
+        for line in raw.lines() {
+            let trimmed = line.trim();
+            if trimmed == marker_start || trimmed.ends_with(&marker_start) {
+                capture = true;
+                continue;
+            }
+            if trimmed == marker_end || trimmed.ends_with(&marker_end) {
+                capture = false;
+                continue;
+            }
+            if capture {
+                // Skip lines that are the PTY echoing our control commands.
+                // Echo lines from the bastion shell always carry a prompt
+                // indicator (`% ` for zsh, `$ ` for bash, `# ` for root).
+                let has_prompt = trimmed.contains("% ")
+                    || trimmed.contains("$ ")
+                    || trimmed.contains("# ");
+                let is_echo = has_prompt
+                    && echo_suffixes.iter().any(|s| trimmed.contains(s));
+                if !is_echo {
+                    clean_lines.push(line.trim_end_matches('\r'));
+                }
+            }
+        }
+
+        let stdout_bytes = if clean_lines.is_empty() {
+            raw_bytes
+        } else {
+            let mut joined = clean_lines.join("\n");
+            joined.push('\n');
+            joined.into_bytes()
+        };
+
+        Ok(ExecOutput {
+            stdout: stdout_bytes,
+            stderr: Vec::new(),
+            exit_code: status.code().unwrap_or(-1),
+        })
+    }
 }
 
 #[async_trait]
@@ -165,6 +295,12 @@ impl SshTransport for SubprocessTransport {
         conn: &Connection,
         command: &str,
     ) -> Result<ExecOutput, TransportError> {
+        // Interactive bastions cannot pass a remote command in the SSH argv.
+        // Delegate to the interactive exec path which pipes it via stdin.
+        if conn.use_kerberos && conn.bastion.is_some() {
+            return self.run_interactive_exec(conn, command).await;
+        }
+
         let argv = Self::build_exec_argv(conn, command);
         let (cmd_name, args) = argv.split_first().expect("argv non-empty");
 
@@ -334,6 +470,19 @@ mod tests {
             SubprocessTransport::build_exec_argv(&c(false, Some("b.example"), None), "uptime");
         assert!(argv.contains(&"-J".to_string()));
         assert!(argv.contains(&"alice@b.example".to_string()));
+    }
+
+    #[test]
+    fn argv_kerberos_bastion_still_uses_j_flag() {
+        // build_exec_argv is only used for non-interactive-bastion paths,
+        // but verify it produces valid argv even when called with kerberos+bastion.
+        // At runtime, the exec trait method short-circuits to run_interactive_exec instead.
+        let argv =
+            SubprocessTransport::build_exec_argv(&c(true, Some("b.example"), None), "ls -l /tmp");
+        assert!(argv.contains(&"-J".to_string()));
+        assert!(argv.contains(&"-K".to_string()));
+        assert!(argv.contains(&"alice@b.example".to_string()));
+        assert!(argv.contains(&"ls -l /tmp".to_string()));
     }
 
     #[test]

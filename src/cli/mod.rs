@@ -16,10 +16,10 @@ use commands::*;
         It ranks connections using Bayesian scoring, supports Kerberos authentication,\n\
         interactive bastion hosts, multi-environment profiles, and provides both a CLI and TUI.\n\n\
         Common workflows:\n\
-        \  bssh connect <name>     Connect to a saved server\n\
-        \  bssh add <name> <host>  Save a new connection\n\
-        \  bssh tui                Launch interactive dashboard\n\
-        \  bssh list               Show all saved connections"
+          bssh connect <name>     Connect to a saved server\n\
+          bssh add <name> <host>  Save a new connection\n\
+          bssh tui                Launch interactive dashboard\n\
+          bssh list               Show all saved connections"
 )]
 #[command(version)]
 pub struct Cli {
@@ -61,9 +61,9 @@ pub enum Commands {
             Bayesian scoring ranks the best match from your usage history.\n\
             Override any stored setting with the optional flags below.\n\n\
             Examples:\n\
-            \  bssh connect web-prod\n\
-            \  bssh connect db01 -u admin -p 2222\n\
-            \  bssh connect backend -k true -b bastion.corp"
+              bssh connect web-prod\n\
+              bssh connect db01 -u admin -p 2222\n\
+              bssh connect backend -k true -b bastion.corp"
     )]
     Connect {
         /// Connection name, alias, or hostname (fuzzy-matched)
@@ -97,9 +97,9 @@ pub enum Commands {
             The name is used as a friendly identifier for connect, upload, exec, etc.\n\
             Tags let you group related connections (e.g. --tags prod --tags eu-west).\n\n\
             Examples:\n\
-            \  bssh add web-prod web.example.com -u deploy\n\
-            \  bssh add db01 10.0.1.5 -p 2222 -k true -b bastion.corp\n\
-            \  bssh add staging app.staging.internal -t staging -t backend"
+              bssh add web-prod web.example.com -u deploy\n\
+              bssh add db01 10.0.1.5 -p 2222 -k true -b bastion.corp\n\
+              bssh add staging app.staging.internal -t staging -t backend"
     )]
     Add {
         /// Friendly name for this connection (must be unique)
@@ -138,9 +138,9 @@ pub enum Commands {
             Connections are ranked by Bayesian score (most-used first).\n\
             Use --tag to filter by group, --recent for recently used, --detailed for full info.\n\n\
             Examples:\n\
-            \  bssh list\n\
-            \  bssh list -t prod -d\n\
-            \  bssh list --recent"
+              bssh list\n\
+              bssh list -t prod -d\n\
+              bssh list --recent"
     )]
     List {
         /// Show only connections with this tag
@@ -174,9 +174,9 @@ pub enum Commands {
         long_about = "Modify fields on a saved connection.\n\n\
             Only the fields you pass are updated; everything else stays unchanged.\n\n\
             Examples:\n\
-            \  bssh edit web-prod --user deploy --port 2222\n\
-            \  bssh edit db01 --bastion new-bastion.corp\n\
-            \  bssh edit staging --add-tags canary --remove-tags legacy"
+              bssh edit web-prod --user deploy --port 2222\n\
+              bssh edit db01 --bastion new-bastion.corp\n\
+              bssh edit staging --add-tags canary --remove-tags legacy"
     )]
     Edit {
         /// Connection name, alias, or ID to edit
@@ -222,10 +222,10 @@ pub enum Commands {
             Run with no flags to print current settings.\n\
             Pass one or more flags to update values.\n\n\
             Examples:\n\
-            \  bssh config\n\
-            \  bssh config --default-user deploy --use-kerberos true\n\
-            \  bssh config --search-mode bayesian\n\
-            \  bssh config --clear-bastion"
+              bssh config\n\
+              bssh config --default-user deploy --use-kerberos true\n\
+              bssh config --search-mode bayesian\n\
+              bssh config --clear-bastion"
     )]
     Config {
         /// Default SSH username for new connections
@@ -262,9 +262,9 @@ pub enum Commands {
         long_about = "Serialize saved connections to JSON, TOML, or OpenSSH config format.\n\n\
             Writes to stdout by default; use -o to write to a file.\n\n\
             Examples:\n\
-            \  bssh export --format json\n\
-            \  bssh export --format ssh-config -o ~/.ssh/config.d/bssh\n\
-            \  bssh export --format toml -t prod -o prod-hosts.toml"
+              bssh export --format json\n\
+              bssh export --format ssh-config -o ~/.ssh/config.d/bssh\n\
+              bssh export --format toml -t prod -o prod-hosts.toml"
     )]
     Export {
         /// Output format: json, toml, or ssh-config
@@ -299,7 +299,7 @@ pub enum Commands {
         long_about = "Create a copy of a saved connection with a different name.\n\
             All settings (host, port, bastion, tags, etc.) are preserved.\n\n\
             Example:\n\
-            \  bssh duplicate web-prod web-staging"
+              bssh duplicate web-prod web-staging"
     )]
     Duplicate {
         /// Name of the connection to copy
@@ -313,8 +313,8 @@ pub enum Commands {
         long_about = "Attempt a TCP connect (and optional SSH handshake) to verify the host is reachable.\n\
             Useful for verifying firewall rules or bastion routing before a full session.\n\n\
             Examples:\n\
-            \  bssh ping web-prod\n\
-            \  bssh ping db01 -t 10"
+              bssh ping web-prod\n\
+              bssh ping db01 -t 10"
     )]
     Ping {
         /// Connection name, alias, or hostname
@@ -335,9 +335,9 @@ pub enum Commands {
         long_about = "Parse an OpenSSH config file and import each Host block as a connection.\n\
             Defaults to ~/.ssh/config when --file is omitted.\n\n\
             Examples:\n\
-            \  bssh import\n\
-            \  bssh import -f /etc/ssh/ssh_config\n\
-            \  bssh import --no-bastion"
+              bssh import\n\
+              bssh import -f /etc/ssh/ssh_config\n\
+              bssh import --no-bastion"
     )]
     Import {
         /// Path to the SSH config file (default: ~/.ssh/config)
@@ -359,9 +359,9 @@ pub enum Commands {
         long_about = "Print a completion script to stdout.\n\
             Source or install it for your shell to enable tab-completion.\n\n\
             Examples:\n\
-            \  bssh completions bash > ~/.local/share/bash-completion/completions/bssh\n\
-            \  bssh completions zsh > ~/.zfunc/_bssh\n\
-            \  bssh completions fish > ~/.config/fish/completions/bssh.fish"
+              bssh completions bash > ~/.local/share/bash-completion/completions/bssh\n\
+              bssh completions zsh > ~/.zfunc/_bssh\n\
+              bssh completions fish > ~/.config/fish/completions/bssh.fish"
     )]
     Completions {
         /// Target shell
@@ -374,9 +374,9 @@ pub enum Commands {
         long_about = "Display a log of past SSH sessions.\n\
             Includes connection name, start time, duration, and exit status.\n\n\
             Examples:\n\
-            \  bssh history\n\
-            \  bssh history -c web-prod -n 50\n\
-            \  bssh history --days 7 --failed"
+              bssh history\n\
+              bssh history -c web-prod -n 50\n\
+              bssh history --days 7 --failed"
     )]
     History {
         /// Show only sessions for this connection name
@@ -402,17 +402,17 @@ pub enum Commands {
     #[command(
         alias = "run",
         long_about = "Execute a one-off command over SSH without opening an interactive shell.\n\
-            The remote stdout and stderr are printed locally.\n\
-            Separate the remote command from bssh flags with --.\n\n\
+            The remote stdout and stderr are printed locally.\n\n\
+            IMPORTANT: Use -- to separate the remote command from bssh flags.\n\n\
             Examples:\n\
-            \  bssh exec web-prod -- uname -a\n\
-            \  bssh run db01 -- pg_dump mydb > backup.sql\n\
-            \  bssh exec staging -- systemctl status nginx"
+              bssh exec web-prod -- uname -a\n\
+              bssh exec db01 -- ls -l /tmp\n\
+              bssh run staging -- systemctl status nginx"
     )]
     Exec {
         /// Connection name, alias, or hostname
         target: String,
-        /// Remote command and arguments (everything after --)
+        /// Remote command and arguments (put -- before the command)
         #[arg(last = true, required = true)]
         command: Vec<String>,
     },
@@ -423,9 +423,9 @@ pub enum Commands {
             Uses SFTP for native connections and falls back to SCP automatically\n\
             when connecting through an interactive bastion.\n\n\
             Examples:\n\
-            \  bssh upload web-prod ./deploy.tar.gz /opt/releases/deploy.tar.gz\n\
-            \  bssh upload web-prod -r ./config/ /etc/myapp/ --mode 0o600\n\
-            \  bssh upload db01 dump.sql /tmp/dump.sql --offset 1048576"
+              bssh upload web-prod ./deploy.tar.gz /opt/releases/deploy.tar.gz\n\
+              bssh upload web-prod -r ./config/ /etc/myapp/ --mode 0o600\n\
+              bssh upload db01 dump.sql /tmp/dump.sql --offset 1048576"
     )]
     Upload {
         /// Connection name, alias, or hostname
@@ -453,8 +453,8 @@ pub enum Commands {
             Uses SFTP for native connections and falls back to SCP automatically\n\
             when connecting through an interactive bastion.\n\n\
             Examples:\n\
-            \  bssh download web-prod /var/log/app.log ./app.log\n\
-            \  bssh download db01 -r /backups/daily/ ./local-backups/"
+              bssh download web-prod /var/log/app.log ./app.log\n\
+              bssh download db01 -r /backups/daily/ ./local-backups/"
     )]
     Download {
         /// Connection name, alias, or hostname
@@ -478,8 +478,8 @@ pub enum Commands {
             Spec format: [bind_addr:]bind_port:remote_host:remote_port\n\
             (bind_addr defaults to 127.0.0.1 when omitted)\n\n\
             Examples:\n\
-            \  bssh forward db01 -L 5432:localhost:5432\n\
-            \  bssh tunnel web-prod -L 0.0.0.0:8080:internal-api:80"
+              bssh forward db01 -L 5432:localhost:5432\n\
+              bssh tunnel web-prod -L 0.0.0.0:8080:internal-api:80"
     )]
     Forward {
         /// Connection name, alias, or hostname to tunnel through
@@ -495,8 +495,8 @@ pub enum Commands {
         long_about = "Open an SSH dynamic port-forward (-D style) acting as a local SOCKS5 proxy.\n\
             Point your browser or application to the local port to route traffic through the remote host.\n\n\
             Examples:\n\
-            \  bssh proxy web-prod -D 1080\n\
-            \  bssh socks bastion -D 9050 --bind 0.0.0.0"
+              bssh proxy web-prod -D 1080\n\
+              bssh socks bastion -D 9050 --bind 0.0.0.0"
     )]
     Proxy {
         /// Connection name, alias, or hostname to proxy through
@@ -513,9 +513,9 @@ pub enum Commands {
     #[command(
         long_about = "Aliases let you refer to connections by shorter names.\n\n\
             Examples:\n\
-            \  bssh alias add wp web-prod\n\
-            \  bssh alias list\n\
-            \  bssh alias remove wp"
+              bssh alias add wp web-prod\n\
+              bssh alias list\n\
+              bssh alias remove wp"
     )]
     Alias {
         #[command(subcommand)]
@@ -529,10 +529,10 @@ pub enum Commands {
             With no arguments, lists currently active sessions.\n\
             Use --cleanup to remove stale entries whose PIDs no longer exist.\n\n\
             Examples:\n\
-            \  bssh close             # list active sessions\n\
-            \  bssh close web-prod    # close one session\n\
-            \  bssh kill --all -f     # force-close everything\n\
-            \  bssh close --cleanup   # prune dead entries"
+              bssh close             # list active sessions\n\
+              bssh close web-prod    # close one session\n\
+              bssh kill --all -f     # force-close everything\n\
+              bssh close --cleanup   # prune dead entries"
     )]
     Close {
         /// Connection name to close (omit to list active sessions)
