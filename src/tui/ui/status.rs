@@ -35,6 +35,9 @@ pub fn draw_status_bar(frame: &mut Frame, area: Rect, app: &App) {
         (AppMode::Normal, Tab::Config) => {
             "Enter switch env | a create | d delete | r refresh | q quit"
         }
+        (AppMode::Normal, Tab::Files) => {
+            "↑/k up | ↓/j down | Enter enter dir | ←/h up | d download | r refresh | q quit"
+        }
         (AppMode::Search, _) => "Enter confirm | Esc cancel",
         (AppMode::Help, _) => "Esc/Enter close",
         (AppMode::Confirm(_), _) => "y confirm | n cancel",

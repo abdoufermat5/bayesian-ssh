@@ -1,6 +1,7 @@
 //! TUI data models, enums, and small types
 
 use crate::models::Connection;
+use crate::services::transport::types::RemoteEntry;
 use std::collections::HashSet;
 
 /// Active tab in the TUI
@@ -9,6 +10,7 @@ pub enum Tab {
     Connections,
     History,
     Config,
+    Files,
 }
 
 impl Tab {
@@ -17,11 +19,12 @@ impl Tab {
             Tab::Connections => "Connections",
             Tab::History => "History",
             Tab::Config => "Config",
+            Tab::Files => "Files",
         }
     }
 
     pub fn all() -> &'static [Tab] {
-        &[Tab::Connections, Tab::History, Tab::Config]
+        &[Tab::Connections, Tab::History, Tab::Config, Tab::Files]
     }
 
     pub fn index(&self) -> usize {
@@ -29,6 +32,7 @@ impl Tab {
             Tab::Connections => 0,
             Tab::History => 1,
             Tab::Config => 2,
+            Tab::Files => 3,
         }
     }
 
@@ -37,6 +41,7 @@ impl Tab {
             0 => Tab::Connections,
             1 => Tab::History,
             2 => Tab::Config,
+            3 => Tab::Files,
             _ => Tab::Connections,
         }
     }
@@ -329,4 +334,75 @@ pub enum PingStatus {
     Checking,
     Reachable(std::time::Duration),
     Unreachable,
+}
+
+// ─── SFTP file browser ───────────────────────────────────────────────────────
+
+/// State for the Files tab (one active SFTP browsing session).
+pub struct FilesTabState {
+    /// Connection being browsed
+    pub connection: Connection,
+    /// Remote path currently displayed
+    pub current_path: String,
+    /// Sorted directory listing
+    pub entries: Vec<RemoteEntry>,
+    /// Cursor row in the list
+    pub selected: usize,
+    /// True while an async SFTP operation is in-flight
+    pub is_loading: bool,
+    /// Error message to display in the status bar
+    pub error: Option<String>,
+}
+
+impl FilesTabState {
+    pub fn new(connection: Connection) -> Self {
+        Self {
+            connection,
+            current_path: "/".to_string(),
+            entries: Vec::new(),
+            selected: 0,
+            is_loading: true,
+            error: None,
+        }
+    }
+
+    /// Move cursor up, clamped to list bounds.
+    pub fn cursor_up(&mut self) {
+        if self.selected > 0 {
+            self.selected -= 1;
+        }
+    }
+
+    /// Move cursor down, clamped to list bounds.
+    pub fn cursor_down(&mut self) {
+        if !self.entries.is_empty() && self.selected + 1 < self.entries.len() {
+            self.selected += 1;
+        }
+    }
+
+    /// Return the currently highlighted entry, if any.
+    pub fn selected_entry(&self) -> Option<&RemoteEntry> {
+        self.entries.get(self.selected)
+    }
+
+    /// Compute the parent path string (returns "/" for already-root paths).
+    pub fn parent_path(&self) -> String {
+        let p = std::path::Path::new(&self.current_path);
+        p.parent()
+            .map(|par| {
+                let s = par.to_string_lossy();
+                if s.is_empty() { "/".to_string() } else { s.into_owned() }
+            })
+            .unwrap_or_else(|| "/".to_string())
+    }
+}
+
+/// Messages sent back from async SFTP tasks to the event loop.
+pub enum SftpMsg {
+    /// A directory listing completed successfully.
+    Listed { path: String, entries: Vec<RemoteEntry> },
+    /// A file was downloaded to the given local path.
+    Downloaded { remote: String, local: String, bytes: u64 },
+    /// Any SFTP error.
+    Error(String),
 }

@@ -5,6 +5,8 @@ use crate::database::Database;
 use crate::models::connection::Connection;
 use crate::models::session::SessionHistoryEntry;
 use crate::services::ping;
+use crate::services::transport::{pick_kind, RusshTransport, TransportKind};
+use crate::services::transport::types::SshTransport;
 use anyhow::Result;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -40,6 +42,13 @@ pub struct App {
     pub ping_tx: mpsc::UnboundedSender<(String, PingStatus)>,
     /// Receiver half of the ping result channel (drained each event loop tick)
     pub ping_rx: mpsc::UnboundedReceiver<(String, PingStatus)>,
+
+    // -- Files tab state --
+    pub files_state: Option<FilesTabState>,
+    /// Sender for SFTP async task results
+    pub sftp_tx: mpsc::UnboundedSender<SftpMsg>,
+    /// Receiver drained each event loop tick
+    pub sftp_rx: mpsc::UnboundedReceiver<SftpMsg>,
 
     // -- History tab state --
     pub history_entries: Vec<SessionHistoryEntry>,
@@ -84,6 +93,9 @@ impl App {
         // Ping result channel
         let (ping_tx, ping_rx) = mpsc::unbounded_channel();
 
+        // SFTP result channel
+        let (sftp_tx, sftp_rx) = mpsc::unbounded_channel();
+
         Ok(Self {
             active_tab: Tab::Connections,
             connections,
@@ -106,6 +118,10 @@ impl App {
             ping_statuses: HashMap::new(),
             ping_tx,
             ping_rx,
+
+            files_state: None,
+            sftp_tx,
+            sftp_rx,
 
             history_entries,
             history_selected: 0,
@@ -179,6 +195,210 @@ impl App {
             };
             // Ignore send errors (receiver dropped = app is shutting down)
             let _ = tx.send((name, status));
+        });
+    }
+
+    // ─── SFTP file browser ───────────────────────────────────────────────────
+
+    /// Drain completed SFTP task results and update `files_state`.
+    pub fn drain_sftp_results(&mut self) {
+        while let Ok(msg) = self.sftp_rx.try_recv() {
+            match msg {
+                SftpMsg::Listed { path, mut entries } => {
+                    entries.sort_by(|a, b| {
+                        b.is_dir.cmp(&a.is_dir).then(a.name.cmp(&b.name))
+                    });
+                    if let Some(ref mut fs) = self.files_state {
+                        fs.is_loading = false;
+                        fs.error = None;
+                        fs.current_path = path;
+                        fs.entries = entries;
+                        fs.selected = 0;
+                    }
+                }
+                SftpMsg::Downloaded { remote, local, bytes } => {
+                    self.set_status(format!(
+                        "Downloaded '{}' → '{}' ({bytes} bytes)", remote, local
+                    ));
+                    if let Some(ref mut fs) = self.files_state {
+                        fs.is_loading = false;
+                    }
+                }
+                SftpMsg::Error(msg) => {
+                    self.set_status(format!("SFTP error: {msg}"));
+                    if let Some(ref mut fs) = self.files_state {
+                        fs.is_loading = false;
+                        fs.error = Some(msg);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Open the Files tab for `connection`, initiating a directory listing of "/".
+    pub fn open_files_for_connection(&mut self, connection: Connection) {
+        let state = FilesTabState::new(connection.clone());
+        self.files_state = Some(state);
+        self.spawn_sftp_list(connection, "/".to_string());
+    }
+
+    /// Navigate into the selected entry (if it is a directory).
+    pub fn files_enter_selected(&mut self) {
+        let (conn, path) = {
+            let fs = match self.files_state.as_ref() {
+                Some(s) => s,
+                None => return,
+            };
+            if fs.is_loading { return; }
+            let entry = match fs.selected_entry() {
+                Some(e) => e,
+                None => return,
+            };
+            if !entry.is_dir { return; }
+            let new_path = entry.path.to_string_lossy().into_owned();
+            (fs.connection.clone(), new_path)
+        };
+        if let Some(ref mut fs) = self.files_state {
+            fs.is_loading = true;
+        }
+        self.spawn_sftp_list(conn, path);
+    }
+
+    /// Navigate to the parent directory.
+    pub fn files_go_up(&mut self) {
+        let (conn, parent) = {
+            let fs = match self.files_state.as_ref() {
+                Some(s) => s,
+                None => return,
+            };
+            if fs.is_loading || fs.current_path == "/" { return; }
+            (fs.connection.clone(), fs.parent_path())
+        };
+        if let Some(ref mut fs) = self.files_state {
+            fs.is_loading = true;
+        }
+        self.spawn_sftp_list(conn, parent);
+    }
+
+    /// Refresh the current directory listing.
+    pub fn files_refresh(&mut self) {
+        let (conn, path) = {
+            let fs = match self.files_state.as_ref() {
+                Some(s) => s,
+                None => return,
+            };
+            (fs.connection.clone(), fs.current_path.clone())
+        };
+        if let Some(ref mut fs) = self.files_state {
+            fs.is_loading = true;
+        }
+        self.spawn_sftp_list(conn, path);
+    }
+
+    /// Download the selected file to the current working directory.
+    pub fn files_download_selected(&mut self) {
+        let fs = match self.files_state.as_ref() {
+            Some(s) => s,
+            None => return,
+        };
+        if fs.is_loading { return; }
+        let entry = match fs.selected_entry() {
+            Some(e) => e,
+            None => return,
+        };
+        if entry.is_dir {
+            self.set_status("Cannot download a directory");
+            return;
+        }
+        let remote_path = entry.path.to_string_lossy().into_owned();
+        let filename = entry.name.clone();
+        let conn = fs.connection.clone();
+        let config = self.config.clone();
+        let tx = self.sftp_tx.clone();
+        if let Some(ref mut fs) = self.files_state {
+            fs.is_loading = true;
+        }
+        tokio::spawn(async move {
+            let local_path = std::path::PathBuf::from(&filename);
+            let result = async {
+                let kind = pick_kind(&conn, &config);
+                let sftp = match kind {
+                    TransportKind::Native => {
+                        RusshTransport::new(config.clone())
+                            .open_sftp(&conn)
+                            .await
+                            .map_err(|e| anyhow::anyhow!("{e}"))?
+                    }
+                    TransportKind::Subprocess => {
+                        return Err(anyhow::anyhow!(
+                            "SFTP not available via subprocess transport"
+                        ));
+                    }
+                };
+                let (chunk_tx, mut chunk_rx) =
+                    tokio::sync::mpsc::channel::<Vec<u8>>(16);
+                let read_fut = sftp.read_all(&remote_path, chunk_tx);
+                let mut file = tokio::fs::File::create(&local_path).await?;
+                let write_fut = async {
+                    let mut total = 0u64;
+                    while let Some(chunk) = chunk_rx.recv().await {
+                        use tokio::io::AsyncWriteExt;
+                        file.write_all(&chunk).await?;
+                        total += chunk.len() as u64;
+                    }
+                    Ok::<u64, anyhow::Error>(total)
+                };
+                let (read_result, write_result) =
+                    tokio::join!(read_fut, write_fut);
+                read_result.map_err(|e| anyhow::anyhow!("{e}"))?;
+                write_result
+            };
+            match result.await {
+                Ok(bytes) => {
+                    let _ = tx.send(SftpMsg::Downloaded {
+                        remote: remote_path,
+                        local: filename,
+                        bytes,
+                    });
+                }
+                Err(e) => {
+                    let _ = tx.send(SftpMsg::Error(e.to_string()));
+                }
+            }
+        });
+    }
+
+    /// Internal: spawn a task that lists `path` on `connection` via SFTP.
+    fn spawn_sftp_list(&self, conn: Connection, path: String) {
+        let config = self.config.clone();
+        let tx = self.sftp_tx.clone();
+        tokio::spawn(async move {
+            let result = async {
+                let kind = pick_kind(&conn, &config);
+                match kind {
+                    TransportKind::Native => {
+                        RusshTransport::new(config.clone())
+                            .open_sftp(&conn)
+                            .await
+                            .map_err(|e| anyhow::anyhow!("{e}"))?
+                            .list(&path)
+                            .await
+                            .map_err(|e| anyhow::anyhow!("{e}"))
+                    }
+                    TransportKind::Subprocess => Err(anyhow::anyhow!(
+                        "SFTP not available via subprocess transport; \
+                         switch to native transport to browse files"
+                    )),
+                }
+            };
+            match result.await {
+                Ok(entries) => {
+                    let _ = tx.send(SftpMsg::Listed { path, entries });
+                }
+                Err(e) => {
+                    let _ = tx.send(SftpMsg::Error(e.to_string()));
+                }
+            }
         });
     }
 
@@ -378,6 +598,11 @@ impl App {
                     self.env_selected -= 1;
                 }
             }
+            Tab::Files => {
+                if let Some(ref mut fs) = self.files_state {
+                    fs.cursor_up();
+                }
+            }
         }
     }
 
@@ -397,6 +622,11 @@ impl App {
             Tab::Config => {
                 if self.env_selected < self.env_list.len().saturating_sub(1) {
                     self.env_selected += 1;
+                }
+            }
+            Tab::Files => {
+                if let Some(ref mut fs) = self.files_state {
+                    fs.cursor_down();
                 }
             }
         }

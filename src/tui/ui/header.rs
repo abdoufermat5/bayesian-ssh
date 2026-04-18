@@ -86,6 +86,17 @@ pub fn draw_header(frame: &mut Frame, area: Rect, app: &App) {
         Tab::Config => {
             format!(" Environments — Active: {}", app.active_env,)
         }
+        Tab::Files => {
+            if let Some(ref fs) = app.files_state {
+                if fs.is_loading {
+                    format!(" Files: {}  {} [loading…]", fs.connection.name, fs.current_path)
+                } else {
+                    format!(" Files: {}  {} — {} entries", fs.connection.name, fs.current_path, fs.entries.len())
+                }
+            } else {
+                " File Browser ".to_string()
+            }
+        }
     };
 
     let style = match app.mode {

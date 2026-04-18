@@ -27,6 +27,15 @@ impl App {
                     self.switch_to_tab(Tab::Config);
                     return Ok(());
                 }
+                KeyCode::Char('4') => {
+                    // Switch to Files tab only if a connection is already loaded
+                    if self.files_state.is_some() {
+                        self.switch_to_tab(Tab::Files);
+                    } else {
+                        self.set_status("Press 'f' on a connection to open the file browser");
+                    }
+                    return Ok(());
+                }
                 KeyCode::Tab if !key.modifiers.contains(KeyModifiers::SHIFT) => {
                     let next = self.active_tab.next();
                     self.switch_to_tab(next);
@@ -47,6 +56,7 @@ impl App {
                 Tab::Connections => self.handle_connections_normal(key)?,
                 Tab::History => self.handle_history_normal(key)?,
                 Tab::Config => self.handle_config_normal(key)?,
+                Tab::Files => self.handle_files_normal(key)?,
             },
             AppMode::Search => self.handle_search_mode(key)?,
             AppMode::Help => self.handle_help_mode(key)?,
@@ -81,6 +91,11 @@ impl App {
             Tab::Config => {
                 self.refresh_environments();
                 self.set_status("Environment Configuration");
+            }
+            Tab::Files => {
+                if let Some(ref fs) = self.files_state {
+                    self.set_status(format!("Files: {}", fs.connection.name));
+                }
             }
         }
     }
@@ -275,6 +290,16 @@ impl App {
                 }
             }
 
+            // Open Files tab for the highlighted connection (Shift+F)
+            KeyCode::Char('F') => {
+                if let Some(conn) = self.filtered_connections.get(self.selected_index).cloned() {
+                    let name = conn.name.clone();
+                    self.set_status(format!("Opening file browser for {}...", name));
+                    self.open_files_for_connection(conn);
+                    self.switch_to_tab(Tab::Files);
+                }
+            }
+
             _ => {}
         }
         Ok(())
@@ -429,6 +454,41 @@ impl App {
                 self.mode = AppMode::Help;
             }
 
+            _ => {}
+        }
+        Ok(())
+    }
+
+    // ─── Files tab: Normal mode ──────────────────────────────────────
+
+    fn handle_files_normal(&mut self, key: KeyEvent) -> Result<()> {
+        match key.code {
+            KeyCode::Char('q') | KeyCode::Esc => {
+                self.should_quit = true;
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if let Some(ref mut fs) = self.files_state {
+                    fs.cursor_down();
+                }
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if let Some(ref mut fs) = self.files_state {
+                    fs.cursor_up();
+                }
+            }
+            KeyCode::Enter => {
+                self.files_enter_selected();
+            }
+            KeyCode::Backspace | KeyCode::Char('h') | KeyCode::Left => {
+                self.files_go_up();
+            }
+            KeyCode::Char('r') => {
+                self.files_refresh();
+                self.set_status("Refreshing...");
+            }
+            KeyCode::Char('d') => {
+                self.files_download_selected();
+            }
             _ => {}
         }
         Ok(())

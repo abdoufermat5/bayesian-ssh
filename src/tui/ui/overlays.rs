@@ -105,6 +105,24 @@ pub fn draw_help_overlay(frame: &mut Frame, area: Rect, app: &App) {
             "  q/Esc       Quit",
             "",
         ],
+        Tab::Files => vec![
+            "",
+            "  Navigation",
+            "  ──────────────────────────────────────",
+            "  ↑/k ↓/j     Move up/down",
+            "  Enter       Enter directory",
+            "  ←/h/BS      Go to parent directory",
+            "",
+            "  Actions",
+            "  ──────────────────────────────────────",
+            "  d           Download selected file",
+            "  r           Refresh listing",
+            "",
+            "  General",
+            "  ──────────────────────────────────────",
+            "  q/Esc       Quit",
+            "",
+        ],
     };
 
     let help_content = help_text.join("\n");

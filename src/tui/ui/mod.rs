@@ -5,6 +5,7 @@
 
 pub mod config;
 pub mod detail;
+pub mod files;
 pub mod header;
 pub mod helpers;
 pub mod history;
@@ -60,6 +61,7 @@ fn draw_body(frame: &mut Frame, area: Rect, app: &App) {
         Tab::Connections => draw_connections_body(frame, area, app),
         Tab::History => history::draw_history_tab(frame, area, app),
         Tab::Config => config::draw_config_tab(frame, area, app),
+        Tab::Files => files::draw_files_tab(frame, area, app),
     }
 }
 
