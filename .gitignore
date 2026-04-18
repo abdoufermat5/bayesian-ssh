@@ -4,7 +4,8 @@
 *.pdb
 
 # Cargo
-Cargo.lock
+# Cargo.lock is intentionally tracked for binary crates (reproducible builds)
+# Cargo.lock
 Cargo.toml.bak
 
 # IDE and editor files
