@@ -45,6 +45,8 @@ pub struct App {
 
     // -- Files tab state --
     pub files_state: Option<FilesTabState>,
+    /// Text buffer for Files tab prompt dialogs (upload path / mkdir name / rename)
+    pub files_prompt_input: String,
     /// Sender for SFTP async task results
     pub sftp_tx: mpsc::UnboundedSender<SftpMsg>,
     /// Receiver drained each event loop tick
@@ -139,6 +141,7 @@ impl App {
             ping_rx,
 
             files_state: None,
+            files_prompt_input: String::new(),
             sftp_tx,
             sftp_rx,
 
@@ -249,6 +252,53 @@ impl App {
                     ));
                     if let Some(ref mut fs) = self.files_state {
                         fs.is_loading = false;
+                    }
+                }
+                SftpMsg::Uploaded { local, remote, bytes } => {
+                    self.set_status(format!(
+                        "Uploaded '{}' → '{}' ({bytes} bytes)", local, remote
+                    ));
+                    if let Some(ref mut fs) = self.files_state {
+                        fs.is_loading = false;
+                    }
+                    // Refresh listing so the new file appears
+                    if let Some(fs) = self.files_state.as_ref() {
+                        let conn = fs.connection.clone();
+                        let path = fs.current_path.clone();
+                        self.spawn_sftp_list(conn, path);
+                    }
+                }
+                SftpMsg::Removed { path } => {
+                    self.set_status(format!("Deleted '{path}'"));
+                    if let Some(ref mut fs) = self.files_state {
+                        fs.is_loading = false;
+                    }
+                    if let Some(fs) = self.files_state.as_ref() {
+                        let conn = fs.connection.clone();
+                        let dir = fs.current_path.clone();
+                        self.spawn_sftp_list(conn, dir);
+                    }
+                }
+                SftpMsg::DirCreated { path } => {
+                    self.set_status(format!("Created directory '{path}'"));
+                    if let Some(ref mut fs) = self.files_state {
+                        fs.is_loading = false;
+                    }
+                    if let Some(fs) = self.files_state.as_ref() {
+                        let conn = fs.connection.clone();
+                        let dir = fs.current_path.clone();
+                        self.spawn_sftp_list(conn, dir);
+                    }
+                }
+                SftpMsg::Renamed { from, to } => {
+                    self.set_status(format!("Renamed '{}' → '{}'", from, to));
+                    if let Some(ref mut fs) = self.files_state {
+                        fs.is_loading = false;
+                    }
+                    if let Some(fs) = self.files_state.as_ref() {
+                        let conn = fs.connection.clone();
+                        let dir = fs.current_path.clone();
+                        self.spawn_sftp_list(conn, dir);
                     }
                 }
                 SftpMsg::Error(msg) => {
@@ -391,6 +441,193 @@ impl App {
                 Err(e) => {
                     let _ = tx.send(SftpMsg::Error(e.to_string()));
                 }
+            }
+        });
+    }
+
+    /// Upload a local file to the current remote directory.
+    pub fn files_upload(&mut self, local_path: String) {
+        let fs = match self.files_state.as_ref() {
+            Some(s) => s,
+            None => return,
+        };
+        if fs.is_loading { return; }
+        let filename = std::path::Path::new(&local_path)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| local_path.clone());
+        let remote_path = format!("{}/{}", fs.current_path.trim_end_matches('/'), filename);
+        let conn = fs.connection.clone();
+        let config = self.config.clone();
+        let tx = self.sftp_tx.clone();
+        if let Some(ref mut fs) = self.files_state {
+            fs.is_loading = true;
+        }
+        tokio::spawn(async move {
+            let result = async {
+                let kind = pick_kind(&conn, &config);
+                let sftp = match kind {
+                    TransportKind::Native => RusshTransport::new(config.clone())
+                        .open_sftp(&conn)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("{e}"))?,
+                    TransportKind::Subprocess => {
+                        return Err(anyhow::anyhow!("SFTP not available via subprocess transport"));
+                    }
+                };
+                let mut file = tokio::fs::File::open(&local_path).await?;
+                let meta = file.metadata().await?;
+                let _size = meta.len();
+                let mode = 0o644u32;
+                let (chunk_tx, chunk_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(16);
+                let write_fut = sftp.write_all(&remote_path, 0, chunk_rx, mode);
+                let read_fut = async {
+                    let mut buf = vec![0u8; 32 * 1024];
+                    let mut total = 0u64;
+                    loop {
+                        use tokio::io::AsyncReadExt;
+                        let n = file.read(&mut buf).await?;
+                        if n == 0 { break; }
+                        total += n as u64;
+                        chunk_tx.send(buf[..n].to_vec()).await
+                            .map_err(|_| anyhow::anyhow!("upload channel closed"))?;
+                    }
+                    drop(chunk_tx);
+                    Ok::<u64, anyhow::Error>(total)
+                };
+                let (write_result, _read_result) = tokio::join!(write_fut, read_fut);
+                write_result.map_err(|e| anyhow::anyhow!("{e}"))
+            };
+            match result.await {
+                Ok(bytes) => {
+                    let _ = tx.send(SftpMsg::Uploaded {
+                        local: local_path,
+                        remote: remote_path,
+                        bytes,
+                    });
+                }
+                Err(e) => { let _ = tx.send(SftpMsg::Error(e.to_string())); }
+            }
+        });
+    }
+
+    /// Delete the selected remote entry (file or empty directory).
+    pub fn files_delete_selected(&mut self) {
+        let fs = match self.files_state.as_ref() {
+            Some(s) => s,
+            None => return,
+        };
+        if fs.is_loading { return; }
+        let entry = match fs.selected_entry() {
+            Some(e) => e,
+            None => return,
+        };
+        let path = entry.path.to_string_lossy().into_owned();
+        self.mode = AppMode::Confirm(ConfirmAction::DeleteFile(path));
+    }
+
+    /// Execute the confirmed remote delete.
+    pub fn files_do_delete(&mut self, path: String) {
+        let fs = match self.files_state.as_ref() {
+            Some(s) => s,
+            None => return,
+        };
+        let conn = fs.connection.clone();
+        let config = self.config.clone();
+        let tx = self.sftp_tx.clone();
+        if let Some(ref mut fs) = self.files_state {
+            fs.is_loading = true;
+        }
+        tokio::spawn(async move {
+            let result = async {
+                let kind = pick_kind(&conn, &config);
+                let sftp = match kind {
+                    TransportKind::Native => RusshTransport::new(config.clone())
+                        .open_sftp(&conn).await.map_err(|e| anyhow::anyhow!("{e}"))?,
+                    TransportKind::Subprocess => {
+                        return Err(anyhow::anyhow!("SFTP not available via subprocess transport"));
+                    }
+                };
+                sftp.remove(&path).await.map_err(|e| anyhow::anyhow!("{e}"))
+            };
+            match result.await {
+                Ok(()) => { let _ = tx.send(SftpMsg::Removed { path }); }
+                Err(e) => { let _ = tx.send(SftpMsg::Error(e.to_string())); }
+            }
+        });
+    }
+
+    /// Create a new directory under the current remote path.
+    pub fn files_mkdir(&mut self, name: String) {
+        let fs = match self.files_state.as_ref() {
+            Some(s) => s,
+            None => return,
+        };
+        if fs.is_loading { return; }
+        let new_path = format!("{}/{}", fs.current_path.trim_end_matches('/'), name.trim());
+        let conn = fs.connection.clone();
+        let config = self.config.clone();
+        let tx = self.sftp_tx.clone();
+        if let Some(ref mut fs) = self.files_state {
+            fs.is_loading = true;
+        }
+        tokio::spawn(async move {
+            let result = async {
+                let kind = pick_kind(&conn, &config);
+                let sftp = match kind {
+                    TransportKind::Native => RusshTransport::new(config.clone())
+                        .open_sftp(&conn).await.map_err(|e| anyhow::anyhow!("{e}"))?,
+                    TransportKind::Subprocess => {
+                        return Err(anyhow::anyhow!("SFTP not available via subprocess transport"));
+                    }
+                };
+                sftp.mkdir(&new_path, 0o755).await.map_err(|e| anyhow::anyhow!("{e}"))
+            };
+            match result.await {
+                Ok(()) => { let _ = tx.send(SftpMsg::DirCreated { path: new_path }); }
+                Err(e) => { let _ = tx.send(SftpMsg::Error(e.to_string())); }
+            }
+        });
+    }
+
+    /// Rename the selected remote entry to `new_name` (basename only).
+    pub fn files_rename(&mut self, new_name: String) {
+        let fs = match self.files_state.as_ref() {
+            Some(s) => s,
+            None => return,
+        };
+        if fs.is_loading { return; }
+        let entry = match fs.selected_entry() {
+            Some(e) => e,
+            None => return,
+        };
+        let old_path = entry.path.to_string_lossy().into_owned();
+        let parent = std::path::Path::new(&old_path)
+            .parent()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "/".to_string());
+        let new_path = format!("{}/{}", parent.trim_end_matches('/'), new_name.trim());
+        let conn = fs.connection.clone();
+        let config = self.config.clone();
+        let tx = self.sftp_tx.clone();
+        if let Some(ref mut fs) = self.files_state {
+            fs.is_loading = true;
+        }
+        tokio::spawn(async move {
+            let result = async {
+                let kind = pick_kind(&conn, &config);
+                let sftp = match kind {
+                    TransportKind::Native => RusshTransport::new(config.clone())
+                        .open_sftp(&conn).await.map_err(|e| anyhow::anyhow!("{e}"))?,
+                    TransportKind::Subprocess => {
+                        return Err(anyhow::anyhow!("SFTP not available via subprocess transport"));
+                    }
+                };
+                sftp.rename(&old_path, &new_path).await.map_err(|e| anyhow::anyhow!("{e}"))
+            };
+            match result.await {
+                Ok(()) => { let _ = tx.send(SftpMsg::Renamed { from: old_path, to: new_path }); }
+                Err(e) => { let _ = tx.send(SftpMsg::Error(e.to_string())); }
             }
         });
     }

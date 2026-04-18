@@ -14,7 +14,7 @@ pub mod overlays;
 pub mod status;
 pub mod tunnels;
 
-use crate::tui::models::{AppMode, Tab};
+use crate::tui::models::{AppMode, FilesPromptKind, Tab};
 use crate::tui::state::App;
 use ratatui::prelude::*;
 
@@ -111,6 +111,9 @@ fn draw_overlays(frame: &mut Frame, area: Rect, app: &App) {
         }
         AppMode::TunnelLaunch => {
             tunnels::draw_tunnel_launch_dialog(frame, area, app);
+        }
+        AppMode::FilesPrompt(kind) => {
+            files::draw_files_prompt_dialog(frame, area, app, kind);
         }
         // Normal, Search, Detail, QuickConnect — no overlay needed
         // (Search & QuickConnect are shown inline in the header)

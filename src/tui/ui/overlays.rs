@@ -116,10 +116,15 @@ pub fn draw_help_overlay(frame: &mut Frame, area: Rect, app: &App) {
             "  Actions",
             "  ──────────────────────────────────────",
             "  d           Download selected file",
+            "  u           Upload local file",
+            "  D           Delete selected entry",
+            "  m           New directory (mkdir)",
+            "  R           Rename selected entry",
             "  r           Refresh listing",
             "",
             "  General",
             "  ──────────────────────────────────────",
+            "  ?           Toggle this help",
             "  q/Esc       Quit",
             "",
         ],
@@ -224,8 +229,10 @@ pub fn draw_confirm_dialog(frame: &mut Frame, area: Rect, action: &ConfirmAction
                 " Stop Tunnel ",
                 format!("Stop tunnel {}?\n\n[y] Yes  [n] No", spec),
             )
-        }
-    };
+        }        ConfirmAction::DeleteFile(path) => (
+            " Delete Remote Entry ",
+            format!("Delete '{path}'?\n\nThis cannot be undone.\n\n[y] Yes  [n] No"),
+        ),    };
 
     let popup_area = centered_rect(50, 10, area);
 

@@ -75,6 +75,10 @@ impl App {
             AppMode::QuickConnect => self.handle_quick_connect_mode(key)?,
             AppMode::CommandPreview => self.handle_command_preview_mode(key)?,
             AppMode::TunnelLaunch => self.handle_tunnel_launch_mode(key)?,
+            AppMode::FilesPrompt(kind) => {
+                let kind = kind.clone();
+                self.handle_files_prompt_mode(key, kind)?;
+            }
         }
         Ok(())
     }
@@ -475,6 +479,9 @@ impl App {
             KeyCode::Char('q') | KeyCode::Esc => {
                 self.should_quit = true;
             }
+            KeyCode::Char('?') => {
+                self.mode = AppMode::Help;
+            }
             KeyCode::Down | KeyCode::Char('j') => {
                 if let Some(ref mut fs) = self.files_state {
                     fs.cursor_down();
@@ -497,6 +504,30 @@ impl App {
             }
             KeyCode::Char('d') => {
                 self.files_download_selected();
+            }
+            KeyCode::Char('u') => {
+                self.files_prompt_input.clear();
+                self.mode = AppMode::FilesPrompt(FilesPromptKind::Upload);
+            }
+            KeyCode::Char('D') => {
+                self.files_delete_selected();
+            }
+            KeyCode::Char('m') => {
+                self.files_prompt_input.clear();
+                self.mode = AppMode::FilesPrompt(FilesPromptKind::Mkdir);
+            }
+            KeyCode::Char('R') => {
+                if let Some(old_name) = self
+                    .files_state
+                    .as_ref()
+                    .and_then(|fs| fs.selected_entry())
+                    .map(|e| e.name.clone())
+                {
+                    self.files_prompt_input.clear();
+                    self.mode = AppMode::FilesPrompt(FilesPromptKind::Rename {
+                        old_name,
+                    });
+                }
             }
             _ => {}
         }
@@ -567,6 +598,53 @@ impl App {
         self.tunnel_input.clear();
         self.tunnel_launch_kind = crate::tui::models::TunnelKind::Socks5;
         self.mode = AppMode::TunnelLaunch;
+    }
+
+    // ─── Files prompt mode (upload / mkdir / rename) ─────────────────
+
+    fn handle_files_prompt_mode(
+        &mut self,
+        key: KeyEvent,
+        kind: FilesPromptKind,
+    ) -> Result<()> {
+        match key.code {
+            KeyCode::Esc => {
+                self.mode = AppMode::Normal;
+                self.files_prompt_input.clear();
+                self.set_status("Cancelled");
+            }
+            KeyCode::Enter => {
+                let input = self.files_prompt_input.trim().to_string();
+                if input.is_empty() {
+                    self.set_status("Please enter a value first");
+                    return Ok(());
+                }
+                self.mode = AppMode::Normal;
+                self.files_prompt_input.clear();
+                match kind {
+                    FilesPromptKind::Upload => {
+                        self.set_status(format!("Uploading '{input}'…"));
+                        self.files_upload(input);
+                    }
+                    FilesPromptKind::Mkdir => {
+                        self.set_status(format!("Creating directory '{input}'…"));
+                        self.files_mkdir(input);
+                    }
+                    FilesPromptKind::Rename { .. } => {
+                        self.set_status(format!("Renaming → '{input}'…"));
+                        self.files_rename(input);
+                    }
+                }
+            }
+            KeyCode::Backspace => {
+                self.files_prompt_input.pop();
+            }
+            KeyCode::Char(c) => {
+                self.files_prompt_input.push(c);
+            }
+            _ => {}
+        }
+        Ok(())
     }
 
     // ─── TunnelLaunch mode ───────────────────────────────────────────
@@ -923,6 +1001,9 @@ impl App {
                     ConfirmAction::StopTunnel(idx) => {
                         self.stop_tunnel(idx);
                         self.set_status("Tunnel stopped");
+                    }
+                    ConfirmAction::DeleteFile(path) => {
+                        self.files_do_delete(path);
                     }
                 }
                 self.mode = AppMode::Normal;

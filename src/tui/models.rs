@@ -90,6 +90,19 @@ pub enum AppMode {
     CommandPreview,
     /// Tunnel launch dialog (entering -L spec)
     TunnelLaunch,
+    /// Files tab prompt dialog (upload path / mkdir name / rename target)
+    FilesPrompt(FilesPromptKind),
+}
+
+/// What the Files tab prompt dialog is collecting
+#[derive(Debug, Clone, PartialEq)]
+pub enum FilesPromptKind {
+    /// Upload: user types a local file path
+    Upload,
+    /// Mkdir: user types a directory name (relative to current path)
+    Mkdir,
+    /// Rename: user types the new name; old_name is the current file name
+    Rename { old_name: String },
 }
 
 /// Actions that require confirmation
@@ -98,6 +111,8 @@ pub enum ConfirmAction {
     Delete(usize),
     BatchDelete,
     StopTunnel(usize),
+    /// Delete a remote file/dir at the given path
+    DeleteFile(String),
 }
 
 /// Sort field for connection list
@@ -487,6 +502,14 @@ pub enum SftpMsg {
     Listed { path: String, entries: Vec<RemoteEntry> },
     /// A file was downloaded to the given local path.
     Downloaded { remote: String, local: String, bytes: u64 },
+    /// A local file was uploaded to the remote.
+    Uploaded { local: String, remote: String, bytes: u64 },
+    /// A remote file/dir was deleted.
+    Removed { path: String },
+    /// A remote directory was created.
+    DirCreated { path: String },
+    /// A remote entry was renamed.
+    Renamed { from: String, to: String },
     /// Any SFTP error.
     Error(String),
 }

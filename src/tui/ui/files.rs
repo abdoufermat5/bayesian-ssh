@@ -1,9 +1,10 @@
 //! Files tab — SFTP remote file browser rendering
 
+use crate::tui::models::FilesPromptKind;
 use crate::tui::state::App;
 use ratatui::{
     prelude::*,
-    widgets::{Block, Borders, List, ListItem, ListState, Padding, Paragraph, Wrap},
+    widgets::{Block, Borders, Clear, List, ListItem, ListState, Padding, Paragraph, Wrap},
 };
 
 /// Draw the Files tab.
@@ -106,7 +107,7 @@ pub fn draw_files_tab(frame: &mut Frame, area: Rect, app: &App) {
 
     // ── Hint bar ─────────────────────────────────────────────────────────────
     let hints = Span::raw(
-        " ↑/k up  ↓/j down  Enter enter dir  ←/h go up  d download  r refresh  q quit",
+        " ↑/k up  ↓/j down  Enter enter  ←/h up  d dl  u upload  D delete  m mkdir  R rename  r refresh  ? help  q quit",
     );
     let hint_para = Paragraph::new(hints)
         .style(Style::default().fg(Color::DarkGray));
@@ -114,6 +115,67 @@ pub fn draw_files_tab(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/// Draw a floating prompt dialog for upload path / mkdir name / rename.
+pub fn draw_files_prompt_dialog(frame: &mut Frame, area: Rect, app: &App, kind: &FilesPromptKind) {
+    let popup = centered_rect(60, 8, area);
+    frame.render_widget(Clear, popup);
+
+    let (title, hint_text) = match kind {
+        FilesPromptKind::Upload => (
+            " Upload File ",
+            "Enter local file path:",
+        ),
+        FilesPromptKind::Mkdir => (
+            " New Directory ",
+            "Enter directory name:",
+        ),
+        FilesPromptKind::Rename { old_name } => (
+            " Rename Entry ",
+            Box::leak(format!("New name for '{old_name}':").into_boxed_str()) as &str,
+        ),
+    };
+
+    let block = Block::default()
+        .title(title)
+        .title_style(Style::default().fg(Color::Yellow).bold())
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow));
+
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+
+    let [hint_area, input_area, note_area] = Layout::vertical([
+        Constraint::Length(2),
+        Constraint::Length(1),
+        Constraint::Min(1),
+    ])
+    .areas(inner);
+
+    frame.render_widget(
+        Paragraph::new(hint_text).style(Style::default().fg(Color::DarkGray)),
+        hint_area,
+    );
+
+    let input_display = format!(" > {} ", app.files_prompt_input);
+    frame.render_widget(
+        Paragraph::new(input_display).style(Style::default().fg(Color::White).bold()),
+        input_area,
+    );
+
+    frame.render_widget(
+        Paragraph::new("Enter to confirm  ·  Esc to cancel")
+            .style(Style::default().fg(Color::DarkGray)),
+        note_area,
+    );
+}
+
+fn centered_rect(percent_x: u16, height: u16, area: Rect) -> Rect {
+    let popup_width = area.width * percent_x / 100;
+    let x = (area.width.saturating_sub(popup_width)) / 2;
+    let y = (area.height.saturating_sub(height)) / 2;
+    Rect::new(x + area.x, y + area.y, popup_width.min(area.width), height.min(area.height))
+}
 
 fn format_bytes(bytes: u64) -> String {
     const KB: u64 = 1_024;

@@ -1,0 +1,30 @@
+warning: unused import: `FilesPromptKind`
+  --> src/tui/ui/mod.rs:17:35
+   |
+17 | use crate::tui::models::{AppMode, FilesPromptKind, Tab};
+   |                                   ^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unreachable pattern
+  --> src/tui/ui/status.rs:47:9
+   |
+43 |         (AppMode::Normal, Tab::Tunnels) => {
+   |         ------------------------------- matches all the relevant values
+...
+47 |         (AppMode::Normal, Tab::Tunnels) => {
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no value can reach this
+   |
+   = note: `#[warn(unreachable_patterns)]` (part of `#[warn(unused)]`) on by default
+
+warning: unreachable pattern
+  --> src/tui/ui/status.rs:50:9
+   |
+46 | ...   (AppMode::TunnelLaunch, _) => "[bind:]port:host:port  ·  Enter sta...
+   |       -------------------------- matches all the relevant values
+...
+50 | ...   (AppMode::TunnelLaunch, _) => "[bind:]port:host:port  ·  Enter sta...
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^ no value can reach this
+
+warning: `bayesian-ssh` (bin "bayesian-ssh") generated 3 warnings (run `cargo fix --bin "bayesian-ssh" -p bayesian-ssh` to apply 1 suggestion)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.10s

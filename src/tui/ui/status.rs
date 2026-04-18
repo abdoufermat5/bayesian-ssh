@@ -20,6 +20,7 @@ pub fn draw_status_bar(frame: &mut Frame, area: Rect, app: &App) {
         AppMode::QuickConnect => "QUICK",
         AppMode::CommandPreview => "PREVIEW",
         AppMode::TunnelLaunch => "TUNNEL",
+        AppMode::FilesPrompt(_) => "FILES",
     };
 
     let help_hint = match (&app.mode, app.active_tab) {
@@ -37,7 +38,7 @@ pub fn draw_status_bar(frame: &mut Frame, area: Rect, app: &App) {
             "Enter switch env | a create | d delete | r refresh | q quit"
         }
         (AppMode::Normal, Tab::Files) => {
-            "↑/k up | ↓/j down | Enter enter dir | ←/h up | d download | r refresh | q quit"
+            "d download | u upload | D delete | m mkdir | R rename | r refresh | ? help | q quit"
         }
         (AppMode::Normal, Tab::Tunnels) => {
             "n new tunnel | x/Del stop selected | ↑/k ↓/j navigate | ? help | q quit"
@@ -56,6 +57,7 @@ pub fn draw_status_bar(frame: &mut Frame, area: Rect, app: &App) {
         }
         (AppMode::QuickConnect, _) => "[user@]host[:port] | Enter connect | Esc cancel",
         (AppMode::CommandPreview, _) => "Enter connect | Esc close",
+        (AppMode::FilesPrompt(_), _) => "Enter confirm | Esc cancel",
     };
 
     // Two-section layout
@@ -72,6 +74,7 @@ pub fn draw_status_bar(frame: &mut Frame, area: Rect, app: &App) {
         AppMode::Confirm(_) => Style::default().fg(Color::Red).bold(),
         AppMode::Help => Style::default().fg(Color::White).bold(),
         AppMode::TunnelLaunch => Style::default().fg(Color::Cyan).bold(),
+        AppMode::FilesPrompt(_) => Style::default().fg(Color::Yellow).bold(),
     };
 
     let status_text = app.status_message.as_deref().unwrap_or("");
