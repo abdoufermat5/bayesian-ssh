@@ -288,6 +288,11 @@ pub fn spawn_pty(
     // We will build shell execution: e.g. "ssh" with args
     let mut cmd_builder = CommandBuilder::new("ssh");
     
+    // Inherit env vars so Kerberos tickets (KRB5CCNAME) and ssh-agent (SSH_AUTH_SOCK) are passed down
+    for (key, val) in std::env::vars() {
+        cmd_builder.env(key, val);
+    }
+    
     if connection.use_kerberos {
         cmd_builder.arg("-t");
         cmd_builder.arg("-A");
