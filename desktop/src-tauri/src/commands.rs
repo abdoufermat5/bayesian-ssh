@@ -473,25 +473,30 @@ pub fn close_pty(
     state: State<'_, PtyState>,
     session_id: String,
 ) -> Result<(), String> {
-    let mut sessions = state.sessions.lock().unwrap();
-    if let Some(mut session) = sessions.remove(&session_id) {
+    let session = {
+        let mut sessions = state.sessions.lock().unwrap();
+        sessions.remove(&session_id)
+    };
+
+    if let Some(mut session) = session {
         // Signal the reader thread NOT to emit pty-exit (we're closing intentionally)
         session.cancelled.store(true, Ordering::SeqCst);
 
-        let exit_code = match session.child.wait() {
-            Ok(status) => status.exit_code() as i32,
-            Err(_) => {
-                let _ = session.child.kill();
-                -1
-            }
-        };
+        // Never wait on a live SSH process on the Tauri command thread — that freezes the UI.
+        let _ = session.child.kill();
 
-        finalize_db_session(session.db_session_id, exit_code);
-        Ok(())
-    } else {
-        // Session already gone — not an error
-        Ok(())
+        let db_session_id = session.db_session_id;
+        let mut child = session.child;
+        std::thread::spawn(move || {
+            let exit_code = child
+                .wait()
+                .map(|status| status.exit_code() as i32)
+                .unwrap_or(-1);
+            finalize_db_session(db_session_id, exit_code);
+        });
     }
+
+    Ok(())
 }
 
 // SSH Agent Integration Commands

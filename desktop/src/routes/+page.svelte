@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import { Plus, Search, List, LayoutGrid } from "lucide-svelte";
+  import { Plus, Search, List, LayoutGrid, OctagonX } from "lucide-svelte";
 
   import TitleBar from "$lib/components/TitleBar.svelte";
   import Sidebar from "$lib/components/Sidebar.svelte";
@@ -29,6 +29,7 @@
   import { notify } from "$lib/stores/notifications.svelte";
   import { applyTheme } from "$lib/utils/theme";
   import {
+    closeAllTabs,
     connectSSH,
     fitActiveTerminal,
     getTerminalState,
@@ -74,6 +75,9 @@
 
   let showDeleteConfirm = $state(false);
   let deleteTarget = $state<{
+    title?: string;
+    confirmLabel?: string;
+    warning?: string;
     label: string;
     subtitle: string;
     onConfirm: () => Promise<void>;
@@ -111,8 +115,13 @@
     timezone: "system",
   });
 
-  function promptDelete(label: string, subtitle: string, onConfirm: () => Promise<void>) {
-    deleteTarget = { label, subtitle, onConfirm };
+  function promptDelete(
+    label: string,
+    subtitle: string,
+    onConfirm: () => Promise<void>,
+    options?: { title?: string; confirmLabel?: string; warning?: string },
+  ) {
+    deleteTarget = { label, subtitle, onConfirm, ...options };
     showDeleteConfirm = true;
   }
 
@@ -563,6 +572,36 @@
     }
   }
 
+  async function terminateAllSessions() {
+    const count = await closeAllTabs();
+    if (count === 0) return;
+
+    await loadHistory();
+    await loadStats();
+    notify(`Closed ${count} active session${count === 1 ? "" : "s"}`, "success");
+  }
+
+  function requestCloseAllSessions() {
+    const count = terminalState.count;
+    if (count === 0) return;
+
+    if (count === 1) {
+      void terminateAllSessions();
+      return;
+    }
+
+    promptDelete(
+      `${count} active sessions`,
+      "Every open SSH terminal will be disconnected immediately.",
+      terminateAllSessions,
+      {
+        title: "Close all sessions",
+        confirmLabel: "Close all",
+        warning: "Unsaved work in remote shells may be lost.",
+      },
+    );
+  }
+
   function handleGlobalKeydown(e: KeyboardEvent) {
     if (showOnboarding || showModal || showEnvModal) {
       if (e.key === "Escape" && !showOnboarding) {
@@ -714,6 +753,12 @@
         </div>
 
         <div class="topbar-actions">
+          {#if terminalState.count > 0}
+            <button class="cyber-btn ghost danger" onclick={requestCloseAllSessions}>
+              <OctagonX size={16} />
+              <span>Close all ({terminalState.count})</span>
+            </button>
+          {/if}
           <button class="cyber-btn" onclick={openAddModal}>
             <Plus size={16} />
             <span>New Server</span>
@@ -772,7 +817,12 @@
             class:is-visible={activeTab === "terminals"}
             class:is-docked={activeTab !== "terminals"}
           >
-            <TerminalsView {connections} bind:searchQuery onSearchInput={loadConnections} />
+            <TerminalsView
+              {connections}
+              bind:searchQuery
+              onSearchInput={loadConnections}
+              onCloseAll={requestCloseAllSessions}
+            />
           </div>
         {/if}
       </div>
@@ -818,6 +868,9 @@
 
   {#if showDeleteConfirm && deleteTarget}
     <DeleteConfirm
+      title={deleteTarget.title}
+      confirmLabel={deleteTarget.confirmLabel}
+      warning={deleteTarget.warning}
       label={deleteTarget.label}
       subtitle={deleteTarget.subtitle}
       onCancel={() => {

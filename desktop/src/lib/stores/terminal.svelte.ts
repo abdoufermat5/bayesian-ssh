@@ -204,10 +204,12 @@ export async function disconnectTab(tabId: string): Promise<void> {
   }
 }
 
-export async function closeAllTabs(): Promise<void> {
-  for (const tab of [...tabs]) {
+export async function closeAllTabs(): Promise<number> {
+  const snapshots = [...tabs];
+  for (const tab of snapshots) {
     await disconnectTab(tab.id);
   }
+  return snapshots.length;
 }
 
 export function getTerminalState() {

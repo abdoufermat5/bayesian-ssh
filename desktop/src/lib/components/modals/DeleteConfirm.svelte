@@ -1,12 +1,23 @@
 <script lang="ts">
   interface Props {
+    title?: string;
+    confirmLabel?: string;
     label: string;
     subtitle: string;
+    warning?: string;
     onCancel: () => void;
     onConfirm: () => void;
   }
 
-  let { label, subtitle, onCancel, onConfirm }: Props = $props();
+  let {
+    title = "Delete Connection",
+    confirmLabel = "Delete",
+    label,
+    subtitle,
+    warning = "This action cannot be undone.",
+    onCancel,
+    onConfirm,
+  }: Props = $props();
 </script>
 
 <div class="modal-backdrop" onclick={onCancel} role="dialog" aria-modal="true">
@@ -31,10 +42,10 @@
     </div>
 
     <div class="delete-confirm-body">
-      <h3>Delete Connection</h3>
+      <h3>{title}</h3>
       <p class="delete-confirm-name">{label}</p>
       <p class="delete-confirm-subtitle">{subtitle}</p>
-      <p class="delete-confirm-warning">This action cannot be undone.</p>
+      <p class="delete-confirm-warning">{warning}</p>
     </div>
 
     <div class="delete-confirm-actions">
@@ -54,7 +65,7 @@
           <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
           <path d="M10 11v6" /><path d="M14 11v6" />
         </svg>
-        Delete
+        {confirmLabel}
       </button>
     </div>
   </div>

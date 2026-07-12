@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Play, Server, TerminalSquare, X } from "lucide-svelte";
+  import { OctagonX, Play, Server, TerminalSquare, X } from "lucide-svelte";
   import type { Connection } from "$lib/types";
   import { connectSSH, disconnectTab, getTerminalState } from "$lib/stores/terminal.svelte";
 
@@ -7,9 +7,10 @@
     connections: Connection[];
     searchQuery: string;
     onSearchInput: () => void;
+    onCloseAll: () => void;
   }
 
-  let { connections, searchQuery = $bindable(), onSearchInput }: Props = $props();
+  let { connections, searchQuery = $bindable(), onSearchInput, onCloseAll }: Props = $props();
 
   const terminalState = getTerminalState();
 
@@ -52,31 +53,43 @@
 
   <div class="terminals-main-content">
     {#if terminalState.tabs.length > 0}
-      <div class="terminal-tabs">
-        {#each terminalState.tabs as tab (tab.id)}
-          <div
-            class="terminal-tab-btn"
-            class:active={terminalState.activeTabId === tab.id}
-            onclick={() => (terminalState.activeTabId = tab.id)}
-            role="button"
-            tabindex="0"
-            onkeydown={(e) => {
-              if (e.key === "Enter" || e.key === " ") terminalState.activeTabId = tab.id;
-            }}
-          >
-            <Server size={12} />
-            <span>{tab.name}</span>
-            <button
-              class="tab-close-btn"
-              onclick={(e) => {
-                e.stopPropagation();
-                disconnectTab(tab.id);
+      <div class="terminal-tabs-bar">
+        <div class="terminal-tabs">
+          {#each terminalState.tabs as tab (tab.id)}
+            <div
+              class="terminal-tab-btn"
+              class:active={terminalState.activeTabId === tab.id}
+              onclick={() => (terminalState.activeTabId = tab.id)}
+              role="button"
+              tabindex="0"
+              onkeydown={(e) => {
+                if (e.key === "Enter" || e.key === " ") terminalState.activeTabId = tab.id;
               }}
             >
-              <X size={12} />
-            </button>
-          </div>
-        {/each}
+              <Server size={12} />
+              <span>{tab.name}</span>
+              <button
+                class="tab-close-btn"
+                onclick={(e) => {
+                  e.stopPropagation();
+                  disconnectTab(tab.id);
+                }}
+              >
+                <X size={12} />
+              </button>
+            </div>
+          {/each}
+        </div>
+
+        <button
+          type="button"
+          class="close-all-sessions-btn"
+          onclick={onCloseAll}
+          title="Terminate all active SSH sessions"
+        >
+          <OctagonX size={14} />
+          <span>Close all</span>
+        </button>
       </div>
 
       <div class="terminal-viewport-container">
