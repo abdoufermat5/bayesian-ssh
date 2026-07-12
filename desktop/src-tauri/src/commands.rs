@@ -3,6 +3,7 @@ use tauri::{AppHandle, Emitter, State};
 use uuid::Uuid;
 use chrono::Utc;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::collections::HashMap;
 use portable_pty::{native_pty_system, Child, CommandBuilder, PtySize};
 use serde::{Serialize, Deserialize};
@@ -19,6 +20,10 @@ pub struct PtyState {
 pub struct PtySession {
     pub writer: Box<dyn std::io::Write + Send>,
     pub child: Box<dyn Child + Send + Sync>,
+    /// Keeps the PTY master alive for the session's lifetime.
+    pub _master: Box<dyn portable_pty::MasterPty + Send>,
+    /// Set to true by close_pty so the reader thread suppresses the pty-exit event.
+    pub cancelled: Arc<AtomicBool>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -343,12 +348,19 @@ pub fn spawn_pty(
     let reader = pty_pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = pty_pair.master.take_writer().map_err(|e| e.to_string())?;
 
-    // Store in global state
+    // Cancelled flag: set by close_pty so the reader thread won't emit pty-exit
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let cancelled_clone = Arc::clone(&cancelled);
+
+    // Store in global state — _master keeps the PTY master fd alive for the session duration
     let mut sessions = state.sessions.lock().unwrap();
     sessions.insert(session_id.clone(), PtySession {
         writer,
         child,
+        _master: pty_pair.master,
+        cancelled,
     });
+    drop(sessions); // release lock before spawning thread
 
     // Start background thread to read from PTY master and emit to frontend
     let session_id_clone = session_id.clone();
@@ -358,26 +370,29 @@ pub fn spawn_pty(
         let mut reader = reader;
         let mut buf = [0u8; 4096];
         
-        while let Ok(n) = reader.read(&mut buf) {
-            if n == 0 {
-                break;
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    let str_data = String::from_utf8_lossy(&buf[..n]).to_string();
+                    #[derive(Clone, Serialize)]
+                    struct PtyPayload {
+                        session_id: String,
+                        data: String,
+                    }
+                    let _ = app_handle.emit("pty-output", PtyPayload {
+                        session_id: session_id_clone.clone(),
+                        data: str_data,
+                    });
+                }
+                Err(_) => break,
             }
-            let data = &buf[..n];
-            // Send base64 or custom string
-            let str_data = String::from_utf8_lossy(data).to_string();
-            #[derive(Clone, Serialize)]
-            struct PtyPayload {
-                session_id: String,
-                data: String,
-            }
-            let _ = app_handle.emit("pty-output", PtyPayload {
-                session_id: session_id_clone.clone(),
-                data: str_data,
-            });
         }
         
-        // When finished, clean up session
-        let _ = app_handle.emit("pty-exit", session_id_clone.clone());
+        // Only emit pty-exit if this was NOT a manual close (avoids ghost events)
+        if !cancelled_clone.load(Ordering::SeqCst) {
+            let _ = app_handle.emit("pty-exit", session_id_clone.clone());
+        }
     });
 
     Ok(())
@@ -420,10 +435,14 @@ pub fn close_pty(
 ) -> Result<(), String> {
     let mut sessions = state.sessions.lock().unwrap();
     if let Some(mut session) = sessions.remove(&session_id) {
+        // Signal the reader thread NOT to emit pty-exit (we're closing intentionally)
+        session.cancelled.store(true, Ordering::SeqCst);
         let _ = session.child.kill();
+        // _master is dropped here, closing the PTY fd for only this session
         Ok(())
     } else {
-        Err(format!("PTY session '{}' not found", session_id))
+        // Session already gone — not an error
+        Ok(())
     }
 }
 
