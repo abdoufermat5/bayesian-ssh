@@ -83,7 +83,9 @@
               onkeydown={(e) => e.key === "Enter" && onConnect(conn)}
             >
               <div class="col-name">
-                <Server size={14} class="row-icon" />
+                <span class="host-icon-slot">
+                  <Server size={14} class="row-icon" />
+                </span>
                 <span class="host-name">{conn.name}</span>
                 {#if conn.use_kerberos}
                   <span class="row-badge krb" title="Kerberos authentication enabled">krb5</span>
@@ -155,7 +157,7 @@
                   }}
                   title="Connect"
                 >
-                  <Play size={12} fill="currentColor" />
+                  <Play size={14} fill="currentColor" />
                 </button>
               </div>
             </div>
@@ -183,7 +185,7 @@
                   <span class="host-addr font-mono">{conn.user}@{conn.host}:{conn.port}</span>
                 </div>
                 {#if conn.use_kerberos}
-                  <span class="card-krb-badge"><Shield size={10} /> KRB</span>
+                  <span class="card-krb-badge"><Shield size={14} /> KRB</span>
                 {/if}
               </div>
 
@@ -208,9 +210,9 @@
                     title="Copy command"
                   >
                     {#if copiedId === conn.id}
-                      <Check size={12} />
+                      <Check size={14} />
                     {:else}
-                      <Copy size={12} />
+                      <Copy size={14} />
                     {/if}
                   </button>
                   <button
@@ -221,7 +223,7 @@
                     }}
                     title="Edit"
                   >
-                    <Edit2 size={12} />
+                    <Edit2 size={14} />
                   </button>
                   <button
                     class="card-btn-icon"
@@ -231,7 +233,7 @@
                     }}
                     title="Duplicate Connection"
                   >
-                    <CopyPlus size={12} />
+                    <CopyPlus size={14} />
                   </button>
                   <button
                     class="card-btn-icon"
@@ -241,7 +243,7 @@
                     }}
                     title="Delete"
                   >
-                    <Trash2 size={12} />
+                    <Trash2 size={14} />
                   </button>
                   <button
                     class="card-connect-btn-small"
@@ -250,7 +252,7 @@
                       onConnect(conn);
                     }}
                   >
-                    <Play size={10} fill="currentColor" /> Connect
+                    <Play size={14} fill="currentColor" /> Connect
                   </button>
                 </div>
               </div>

@@ -42,6 +42,31 @@ export interface DesktopSettings {
   default_port: number;
   fuzzy_search: boolean;
   default_key_path: string;
+  onboarding_complete?: boolean;
+}
+
+export interface WorkspaceInfo {
+  active_env: string;
+  config_root: string;
+  env_dir: string;
+  config_path: string;
+  database_path: string;
+  ssh_config_path?: string | null;
+  default_user: string;
+  default_port: number;
+  search_mode: string;
+}
+
+export interface OnboardingPayload {
+  profile_name: string;
+  create_profile: boolean;
+  default_user: string;
+  default_port: number;
+  ssh_config_path?: string | null;
+  theme: string;
+  auto_start_agent: boolean;
+  import_ssh_config: boolean;
+  fuzzy_search: boolean;
 }
 
 export type AppTab = "connections" | "terminals" | "history" | "settings";

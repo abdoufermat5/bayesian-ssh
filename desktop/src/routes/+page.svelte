@@ -13,6 +13,7 @@
   import EnvModal from "$lib/components/modals/EnvModal.svelte";
   import AgentModal from "$lib/components/modals/AgentModal.svelte";
   import DeleteConfirm from "$lib/components/modals/DeleteConfirm.svelte";
+  import OnboardingModal from "$lib/components/modals/OnboardingModal.svelte";
   import Toast from "$lib/components/Toast.svelte";
 
   import type {
@@ -21,9 +22,12 @@
     ConnectionStats,
     DesktopSettings,
     EnvInfo,
+    OnboardingPayload,
     SessionHistoryEntry,
+    WorkspaceInfo,
   } from "$lib/types";
   import { notify } from "$lib/stores/notifications.svelte";
+  import { applyTheme } from "$lib/utils/theme";
   import {
     connectSSH,
     fitActiveTerminal,
@@ -79,6 +83,19 @@
   let agentSocket = $state<string | null>(null);
   let agentKeys = $state<string[]>([]);
   let showAgentModal = $state(false);
+  let showOnboarding = $state(false);
+
+  let workspace = $state<WorkspaceInfo>({
+    active_env: "default",
+    config_root: "",
+    env_dir: "",
+    config_path: "",
+    database_path: "",
+    ssh_config_path: "",
+    default_user: "root",
+    default_port: 22,
+    search_mode: "bayesian",
+  });
 
   let settings = $state<DesktopSettings>({
     theme: "zinc",
@@ -109,6 +126,7 @@
     try {
       activeEnv = await invoke("get_active_env");
       environments = await invoke("list_environments");
+      await loadWorkspace();
       await loadConnections();
       await loadStats();
       await loadHistory();
@@ -116,6 +134,89 @@
       await loadAgentStatus();
     } catch (e: unknown) {
       notify(String(e), "error");
+    }
+  }
+
+  async function loadWorkspace() {
+    try {
+      workspace = await invoke("get_workspace_info");
+      activeEnv = workspace.active_env;
+    } catch (e) {
+      console.error("Failed to load workspace info", e);
+    }
+  }
+
+  async function checkOnboarding() {
+    try {
+      const needsSetup = await invoke<boolean>("needs_onboarding");
+      showOnboarding = needsSetup;
+    } catch (e) {
+      console.error("Failed to check onboarding state", e);
+    }
+  }
+
+  async function saveWorkspaceConfig() {
+    try {
+      await invoke("save_workspace_config", {
+        update: {
+          default_user: settings.default_user,
+          default_port: settings.default_port,
+          ssh_config_path: workspace.ssh_config_path || "",
+          search_mode: settings.fuzzy_search ? "fuzzy" : "bayesian",
+        },
+      });
+      await loadWorkspace();
+      notify("Workspace settings saved", "success");
+    } catch (e: unknown) {
+      notify(`Failed to save workspace: ${e}`, "error");
+    }
+  }
+
+  async function browseSshConfig(): Promise<string | null> {
+    try {
+      const selected = await invoke<string | null>("pick_ssh_config_file");
+      if (selected) {
+        workspace = { ...workspace, ssh_config_path: selected };
+        if (!showOnboarding) {
+          await saveWorkspaceConfig();
+        }
+      }
+      return selected;
+    } catch (e: unknown) {
+      notify(String(e), "error");
+      return null;
+    }
+  }
+
+  async function importSshConfig() {
+    try {
+      const count = await invoke<number>("import_ssh_config", {
+        file: workspace.ssh_config_path || null,
+      });
+      await loadConnections();
+      await loadStats();
+      notify(
+        count > 0 ? `Imported ${count} host${count === 1 ? "" : "s"} from OpenSSH config` : "No new hosts to import",
+        count > 0 ? "success" : "info",
+      );
+    } catch (e: unknown) {
+      notify(`Import failed: ${e}`, "error");
+    }
+  }
+
+  async function completeOnboarding(payload: OnboardingPayload) {
+    try {
+      const imported = await invoke<number>("complete_onboarding", { payload });
+      showOnboarding = false;
+      await loadData();
+      applyTheme(settings.theme);
+      if (imported > 0) {
+        notify(`Setup complete — imported ${imported} host${imported === 1 ? "" : "s"}`, "success");
+      } else {
+        notify("Workspace ready. Add your first host whenever you like.", "success");
+      }
+    } catch (e: unknown) {
+      notify(`Setup failed: ${e}`, "error");
     }
   }
 
@@ -142,18 +243,21 @@
   }
 
   async function saveSettings() {
+    applyTheme(settings.theme);
     try {
-      await invoke("save_desktop_settings", { settings });
-      applyTheme(settings.theme);
+      await invoke("save_desktop_settings", {
+        settings: { ...settings, onboarding_complete: true },
+      });
       notify("Settings saved successfully", "success");
     } catch (e: unknown) {
       notify(`Failed to save settings: ${e}`, "error");
     }
   }
 
-  function applyTheme(themeName: string) {
-    document.documentElement.classList.remove("theme-zinc", "theme-cyberpunk", "theme-oled", "theme-slate");
-    document.documentElement.classList.add(`theme-${themeName}`);
+  function handleThemeChange(theme: string) {
+    settings.theme = theme;
+    applyTheme(theme);
+    void saveSettings();
   }
 
   async function loadAgentStatus() {
@@ -211,6 +315,38 @@
     }
   }
 
+  /** Reload list after add/edit/duplicate — clears stale search/tag filters that hide results. */
+  async function reloadConnectionsAfterMutation() {
+    try {
+      const allConnections = await invoke<Connection[]>("get_connections", {
+        query: "",
+        tagFilter: null,
+      });
+
+      if (searchQuery.trim() || selectedTag) {
+        const filtered = await invoke<Connection[]>("get_connections", {
+          query: searchQuery,
+          tagFilter: selectedTag,
+        });
+
+        if (filtered.length === 0 && allConnections.length > 0) {
+          searchQuery = "";
+          selectedTag = null;
+          connections = allConnections;
+          notify("Search cleared — the saved host no longer matches your filter", "info");
+          return;
+        }
+
+        connections = filtered;
+        return;
+      }
+
+      connections = allConnections;
+    } catch (e: unknown) {
+      notify(String(e), "error");
+    }
+  }
+
   async function loadStats() {
     try {
       stats = await invoke("get_stats");
@@ -242,7 +378,7 @@
         tags: [...conn.tags],
       });
 
-      await loadConnections();
+      await reloadConnectionsAfterMutation();
       await loadStats();
 
       const newIdx = connections.findIndex((c) => c.name === copyName && c.host === conn.host);
@@ -382,7 +518,7 @@
         notify("Host added successfully", "success");
       }
       showModal = false;
-      await loadConnections();
+      await reloadConnectionsAfterMutation();
       await loadStats();
     } catch (e: unknown) {
       notify(String(e), "error");
@@ -413,8 +549,8 @@
   }
 
   function handleGlobalKeydown(e: KeyboardEvent) {
-    if (showModal || showEnvModal) {
-      if (e.key === "Escape") {
+    if (showOnboarding || showModal || showEnvModal) {
+      if (e.key === "Escape" && !showOnboarding) {
         showModal = false;
         showEnvModal = false;
       }
@@ -477,7 +613,10 @@
   const showTerminalsPanel = $derived(activeTab === "terminals" || terminalState.count > 0);
 
   onMount(() => {
-    loadData();
+    (async () => {
+      await loadData();
+      await checkOnboarding();
+    })();
     window.addEventListener("keydown", handleGlobalKeydown);
 
     initTerminalListeners(async () => {
@@ -602,7 +741,18 @@
 
         {#if activeTab === "settings"}
           <div class="main-body-panel is-visible">
-            <SettingsView bind:settings onSave={saveSettings} />
+            <SettingsView
+              bind:settings
+              bind:workspace
+              {environments}
+              onSave={saveSettings}
+              onThemeChange={handleThemeChange}
+              onSaveWorkspace={saveWorkspaceConfig}
+              onSwitchEnv={switchEnv}
+              onManageProfiles={() => (showEnvModal = true)}
+              onBrowseSshConfig={browseSshConfig}
+              onImportSshConfig={importSshConfig}
+            />
           </div>
         {/if}
 
@@ -665,6 +815,16 @@
         deleteTarget = null;
       }}
       onConfirm={confirmDelete}
+    />
+  {/if}
+
+  {#if showOnboarding}
+    <OnboardingModal
+      defaultUser={settings.default_user}
+      defaultSshConfigPath={workspace.ssh_config_path || ""}
+      configRoot={workspace.config_root}
+      onBrowseSshConfig={browseSshConfig}
+      onComplete={completeOnboarding}
     />
   {/if}
 

@@ -25,7 +25,7 @@
   --bg-terminal: #0c0d12;
 }
 
-:global(.theme-zinc) {
+html.theme-zinc {
   --bg-app: #09090b;
   --bg-sidebar: #09090b;
   --bg-card: #18181b;
@@ -39,7 +39,7 @@
   --accent-pink: #d946ef;
 }
 
-:global(.theme-cyberpunk) {
+html.theme-cyberpunk {
   --bg-app: #0c0813;
   --bg-sidebar: #06040a;
   --bg-card: #140d24;
@@ -53,7 +53,7 @@
   --accent-pink: #d946ef;
 }
 
-:global(.theme-oled) {
+html.theme-oled {
   --bg-app: #000000;
   --bg-sidebar: #000000;
   --bg-card: #09090b;
@@ -67,7 +67,7 @@
   --accent-pink: #d946ef;
 }
 
-:global(.theme-slate) {
+html.theme-slate {
   --bg-app: #0f172a;
   --bg-sidebar: #0f172a;
   --bg-card: #1e293b;
@@ -81,8 +81,8 @@
   --accent-pink: #f43f5e;
 }
 
-:global(html),
-:global(body) {
+html,
+body {
   margin: 0;
   padding: 0;
   width: 100%;
@@ -92,8 +92,8 @@
   background-color: var(--bg-app);
 }
 
-:global(#app-shell),
-:global(.app-root) {
+#app-shell,
+.app-root {
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -103,23 +103,23 @@
   overflow: hidden;
 }
 
-:global(body) {
+body {
   color: var(--text-primary);
   font-family: 'Outfit', 'Inter', sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
 /* Allow text selection in inputs and terminal output */
-:global(input),
-:global(textarea),
-:global(.xterm),
-:global(.xterm *) {
+input,
+textarea,
+.xterm,
+.xterm * {
   user-select: text;
 }
 
-:global(*),
-:global(*::before),
-:global(*::after) {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
@@ -933,6 +933,41 @@
   color: var(--text-muted);
 }
 
+/* Uniform host list / grid icon sizing */
+.host-icon-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.host-icon-slot svg,
+.row-action-btn svg,
+.card-btn-icon svg,
+.card-krb-badge svg,
+.card-connect-btn-small svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.row-action-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
 .row-badge {
   font-size: 0.7rem;
   padding: 1px 5px;
@@ -953,16 +988,6 @@
   color: var(--text-secondary);
   padding: 1px 6px;
   border-radius: 4px;
-}
-
-.row-action-btn {
-  background: transparent;
-  border: 1px solid transparent;
-  color: var(--text-secondary);
-  padding: 4px;
-  border-radius: 4px;
-  cursor: pointer;
-  display: flex;
 }
 
 .row-action-btn:hover {
@@ -1096,8 +1121,14 @@
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 3px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
   border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .card-btn-icon:hover {
@@ -1203,12 +1234,12 @@
   z-index: 1;
 }
 
-.terminal-viewport :global(.xterm),
-.terminal-viewport :global(.xterm .xterm-screen) {
+.terminal-viewport .xterm,
+.terminal-viewport .xterm .xterm-screen {
   height: 100%;
 }
 
-.terminal-viewport :global(.xterm-viewport) {
+.terminal-viewport .xterm-viewport {
   overflow-y: auto !important;
   width: 100% !important;
 }

@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 use tauri::{AppHandle, Emitter, State};
 use uuid::Uuid;
-use chrono::Utc;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::collections::HashMap;
@@ -205,6 +204,15 @@ pub fn edit_connection(
 
     let uuid = Uuid::parse_str(&id).map_err(|e: uuid::Error| e.to_string())?;
 
+    let existing = db
+        .get_connection(&id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Connection '{}' not found", id))?;
+
+    if existing.id != uuid {
+        return Err("Connection id mismatch.".to_string());
+    }
+
     let mut connection = Connection {
         id: uuid,
         name,
@@ -215,10 +223,10 @@ pub fn edit_connection(
         bastion_user,
         use_kerberos: kerberos,
         key_path,
-        created_at: Utc::now(), // will keep or let update
-        last_used: None,
+        created_at: existing.created_at,
+        last_used: existing.last_used,
         tags: Vec::new(),
-        aliases: Vec::new(),
+        aliases: existing.aliases,
     };
 
     for tag in tags {
@@ -559,6 +567,313 @@ pub struct DesktopSettings {
     pub default_port: u16,
     pub fuzzy_search: bool,
     pub default_key_path: Option<String>,
+    #[serde(default = "default_onboarding_complete")]
+    pub onboarding_complete: bool,
+}
+
+fn default_onboarding_complete() -> bool {
+    true
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct WorkspaceInfo {
+    pub active_env: String,
+    pub config_root: String,
+    pub env_dir: String,
+    pub config_path: String,
+    pub database_path: String,
+    pub ssh_config_path: Option<String>,
+    pub default_user: String,
+    pub default_port: u16,
+    pub search_mode: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct WorkspaceConfigUpdate {
+    pub default_user: Option<String>,
+    pub default_port: Option<u16>,
+    pub ssh_config_path: Option<String>,
+    pub search_mode: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct OnboardingPayload {
+    pub profile_name: String,
+    pub create_profile: bool,
+    pub default_user: String,
+    pub default_port: u16,
+    pub ssh_config_path: Option<String>,
+    pub theme: String,
+    pub auto_start_agent: bool,
+    pub import_ssh_config: bool,
+    pub fuzzy_search: bool,
+}
+
+fn bayesian_config_root() -> PathBuf {
+    dirs::config_dir()
+        .unwrap_or_else(|| PathBuf::from("~/.config"))
+        .join("bayesian-ssh")
+}
+
+fn sync_search_mode_to_config(fuzzy: bool) -> String {
+    if fuzzy {
+        "fuzzy".to_string()
+    } else {
+        "bayesian".to_string()
+    }
+}
+
+#[tauri::command]
+pub fn get_workspace_info() -> Result<WorkspaceInfo, String> {
+    let config = AppConfig::load(None).map_err(|e| e.to_string())?;
+    let config_root = bayesian_config_root();
+    let env_dir = config_root.join("environments").join(&config.environment);
+
+    Ok(WorkspaceInfo {
+        active_env: config.environment.clone(),
+        config_root: config_root.to_string_lossy().to_string(),
+        env_dir: env_dir.to_string_lossy().to_string(),
+        config_path: env_dir.join("config.json").to_string_lossy().to_string(),
+        database_path: config.database_path.to_string_lossy().to_string(),
+        ssh_config_path: config
+            .ssh_config_path
+            .as_ref()
+            .map(|p| p.to_string_lossy().to_string()),
+        default_user: config.default_user.clone(),
+        default_port: config.default_port,
+        search_mode: config.search_mode.clone(),
+    })
+}
+
+#[tauri::command]
+pub fn save_workspace_config(update: WorkspaceConfigUpdate) -> Result<(), String> {
+    let mut config = AppConfig::load(None).map_err(|e| e.to_string())?;
+
+    if let Some(user) = update.default_user {
+        config.default_user = user;
+    }
+    if let Some(port) = update.default_port {
+        config.default_port = port;
+    }
+    if let Some(path) = update.ssh_config_path {
+        config.ssh_config_path = if path.trim().is_empty() {
+            None
+        } else {
+            Some(PathBuf::from(path))
+        };
+    }
+    if let Some(mode) = update.search_mode {
+        if mode == "bayesian" || mode == "fuzzy" {
+            config.search_mode = mode;
+        }
+    }
+
+    config.save().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn needs_onboarding() -> Result<bool, String> {
+    let settings_file = bayesian_config_root().join("desktop_settings.json");
+
+    if !settings_file.exists() {
+        return Ok(true);
+    }
+
+    let content = std::fs::read_to_string(&settings_file).map_err(|e| e.to_string())?;
+    let settings: DesktopSettings = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+    Ok(!settings.onboarding_complete)
+}
+
+#[tauri::command]
+pub fn complete_onboarding(payload: OnboardingPayload) -> Result<usize, String> {
+    let profile = payload.profile_name.trim().to_string();
+    if profile.is_empty() {
+        return Err("Profile name is required.".to_string());
+    }
+
+    if payload.create_profile && profile != "default" {
+        create_environment(profile.clone())?;
+    }
+
+    set_active_env(profile)?;
+
+    let default_user = payload.default_user.clone();
+    let default_port = payload.default_port;
+
+    save_workspace_config(WorkspaceConfigUpdate {
+        default_user: Some(default_user.clone()),
+        default_port: Some(default_port),
+        ssh_config_path: payload.ssh_config_path.clone(),
+        search_mode: Some(sync_search_mode_to_config(payload.fuzzy_search)),
+    })?;
+
+    let mut settings = if bayesian_config_root().join("desktop_settings.json").exists() {
+        load_desktop_settings()?
+    } else {
+        DesktopSettings::default()
+    };
+
+    settings.theme = payload.theme;
+    settings.auto_start_agent = payload.auto_start_agent;
+    settings.default_user = default_user;
+    settings.default_port = default_port;
+    settings.fuzzy_search = payload.fuzzy_search;
+    settings.onboarding_complete = true;
+    save_desktop_settings(settings)?;
+
+    if payload.auto_start_agent {
+        let _ = start_agent();
+    }
+
+    if payload.import_ssh_config {
+        import_ssh_config(payload.ssh_config_path)
+    } else {
+        Ok(0)
+    }
+}
+
+#[tauri::command]
+pub fn import_ssh_config(file: Option<String>) -> Result<usize, String> {
+    let config = AppConfig::load(None).map_err(|e| e.to_string())?;
+    let ssh_config_path = if let Some(file) = file.filter(|f| !f.trim().is_empty()) {
+        PathBuf::from(file)
+    } else {
+        config
+            .ssh_config_path
+            .clone()
+            .or_else(|| dirs::home_dir().map(|h| h.join(".ssh/config")))
+            .ok_or_else(|| "No SSH config path configured.".to_string())?
+    };
+
+    if !ssh_config_path.exists() {
+        return Err(format!(
+            "SSH config file not found: {}",
+            ssh_config_path.display()
+        ));
+    }
+
+    let db = Database::new(&config).map_err(|e| e.to_string())?;
+    let content = std::fs::read_to_string(&ssh_config_path).map_err(|e| e.to_string())?;
+
+    let mut imported_count = 0usize;
+    let mut current_host: Option<String> = None;
+    let mut current_hostname: Option<String> = None;
+    let mut current_user: Option<String> = None;
+    let mut current_port: Option<u16> = None;
+    let mut current_identity_file: Option<String> = None;
+
+    let flush_host = |host: String,
+                      hostname: Option<String>,
+                      user: Option<String>,
+                      port: Option<u16>,
+                      identity: Option<String>,
+                      db: &Database,
+                      cfg: &AppConfig|
+     -> Result<bool, String> {
+        if host.contains('*') || host.contains('?') {
+            return Ok(false);
+        }
+
+        if db
+            .get_connection(&host)
+            .map_err(|e| e.to_string())?
+            .is_some()
+        {
+            return Ok(false);
+        }
+
+        let actual_host = hostname.unwrap_or_else(|| host.clone());
+        let mut connection = Connection::new(
+            host,
+            actual_host,
+            user.unwrap_or_else(|| cfg.default_user.clone()),
+            port.unwrap_or(cfg.default_port),
+            None,
+            None,
+            false,
+            identity,
+        );
+        connection.add_tag("imported".to_string());
+        db.add_connection(&connection).map_err(|e| e.to_string())?;
+        Ok(true)
+    };
+
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        if let Some(host) = line.strip_prefix("Host ") {
+            if let Some(prev) = current_host.take() {
+                if flush_host(
+                    prev,
+                    current_hostname.take(),
+                    current_user.take(),
+                    current_port.take(),
+                    current_identity_file.take(),
+                    &db,
+                    &config,
+                )? {
+                    imported_count += 1;
+                }
+            }
+            current_host = Some(host.trim().to_string());
+            current_hostname = None;
+            current_user = None;
+            current_port = None;
+            current_identity_file = None;
+        } else if let Some(user) = line.strip_prefix("User ") {
+            current_user = Some(user.trim().to_string());
+        } else if let Some(port) = line.strip_prefix("Port ") {
+            if let Ok(port) = port.trim().parse::<u16>() {
+                current_port = Some(port);
+            }
+        } else if let Some(hostname) = line.strip_prefix("HostName ") {
+            current_hostname = Some(hostname.trim().to_string());
+        } else if let Some(identity_file) = line.strip_prefix("IdentityFile ") {
+            current_identity_file = Some(identity_file.trim().to_string());
+        }
+    }
+
+    if let Some(host) = current_host {
+        if flush_host(
+            host,
+            current_hostname,
+            current_user,
+            current_port,
+            current_identity_file,
+            &db,
+            &config,
+        )? {
+            imported_count += 1;
+        }
+    }
+
+    Ok(imported_count)
+}
+
+#[tauri::command]
+pub fn pick_ssh_config_file(window: tauri::WebviewWindow) -> Result<Option<String>, String> {
+    let ssh_dir = dirs::home_dir().map(|h| h.join(".ssh"));
+
+    let mut dialog = rfd::FileDialog::new()
+        .set_title("Select SSH Config File")
+        .add_filter("SSH Config", &["config", "conf"])
+        .set_parent(&window);
+
+    if let Some(ref path) = ssh_dir {
+        if path.exists() {
+            dialog = dialog.set_directory(path);
+        }
+    }
+
+    let _ = window.minimize();
+    let file = dialog.pick_file();
+    let _ = window.unminimize();
+    let _ = window.set_focus();
+
+    Ok(file.map(|p| p.to_string_lossy().to_string()))
 }
 
 impl Default for DesktopSettings {
@@ -573,6 +888,7 @@ impl Default for DesktopSettings {
             default_port: 22,
             fuzzy_search: false,
             default_key_path: None,
+            onboarding_complete: false,
         }
     }
 }
@@ -600,9 +916,10 @@ pub fn load_desktop_settings() -> Result<DesktopSettings, String> {
         
         Ok(settings)
     } else {
-        let default_settings = DesktopSettings::default();
-        let _ = save_desktop_settings(default_settings.clone());
-        Ok(default_settings)
+        Ok(DesktopSettings {
+            onboarding_complete: false,
+            ..DesktopSettings::default()
+        })
     }
 }
 
@@ -617,7 +934,13 @@ pub fn save_desktop_settings(settings: DesktopSettings) -> Result<(), String> {
     
     let content = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
     std::fs::write(&settings_file, content).map_err(|e| e.to_string())?;
-    
+
+    // Keep workspace search mode aligned with desktop fuzzy preference
+    if let Ok(mut config) = AppConfig::load(None) {
+        config.search_mode = sync_search_mode_to_config(settings.fuzzy_search);
+        let _ = config.save();
+    }
+
     // Apply custom agent socket environment variable immediately
     if let Some(ref sock) = settings.custom_agent_socket {
         if !sock.trim().is_empty() {
