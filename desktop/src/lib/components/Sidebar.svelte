@@ -28,6 +28,10 @@
     agentKeys: string[];
     onStartAgent: () => void;
     onShowAgentModal: () => void;
+    kerberosHealth: "missing" | "expired" | "warning" | "valid" | "unavailable";
+    kerberosRemainingLabel: string;
+    kerberosPrincipal: string | null;
+    onShowKerberosModal: () => void;
     onSearchMostUsed: (name: string) => void;
   }
 
@@ -49,6 +53,10 @@
     agentKeys,
     onStartAgent,
     onShowAgentModal,
+    kerberosHealth,
+    kerberosRemainingLabel,
+    kerberosPrincipal,
+    onShowKerberosModal,
     onSearchMostUsed,
   }: Props = $props();
 </script>
@@ -174,6 +182,43 @@
     </div>
   {/if}
 
+  {#if !sidebarCollapsed}
+    <div class="sidebar-stats">
+      <span class="section-title">KERBEROS</span>
+      <div class="stat-row">
+        <span>Ticket:</span>
+        {#if kerberosHealth === "unavailable"}
+          <span class="status-indicator unavailable">Unavailable</span>
+        {:else}
+          <button type="button" class="kerberos-status-btn {kerberosHealth}" onclick={onShowKerberosModal}>
+            <span class="dot"></span>
+            {#if kerberosHealth === "valid"}
+              Valid
+            {:else if kerberosHealth === "warning"}
+              Expiring
+            {:else if kerberosHealth === "missing"}
+              Missing
+            {:else}
+              Expired
+            {/if}
+          </button>
+        {/if}
+      </div>
+      {#if kerberosHealth !== "unavailable" && kerberosHealth !== "missing"}
+        <div class="stat-row clickable" onclick={onShowKerberosModal} style="cursor: pointer;">
+          <span>Remaining:</span>
+          <span class="text-glow kerberos-remaining {kerberosHealth}">{kerberosRemainingLabel}</span>
+        </div>
+      {/if}
+      {#if kerberosPrincipal}
+        <div class="stat-row kerberos-principal-row" title={kerberosPrincipal}>
+          <span>Principal:</span>
+          <span class="kerberos-principal">{kerberosPrincipal}</span>
+        </div>
+      {/if}
+    </div>
+  {/if}
+
   {#if allTags.length > 0 && !sidebarCollapsed}
     <div class="quick-tags">
       <span class="section-title">TAGS</span>
@@ -204,3 +249,86 @@
     {/if}
   </button>
 </aside>
+
+<style>
+  .kerberos-status-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0;
+    font-size: 11px;
+    color: var(--text-secondary);
+  }
+
+  .kerberos-status-btn .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  .kerberos-status-btn.valid {
+    color: #34d399;
+  }
+
+  .kerberos-status-btn.valid .dot {
+    background: #34d399;
+    box-shadow: 0 0 8px rgba(52, 211, 153, 0.8);
+  }
+
+  .kerberos-status-btn.warning {
+    color: #fbbf24;
+  }
+
+  .kerberos-status-btn.warning .dot {
+    background: #fbbf24;
+    box-shadow: 0 0 8px rgba(251, 191, 36, 0.8);
+  }
+
+  .kerberos-status-btn.expired,
+  .kerberos-status-btn.missing {
+    color: #f87171;
+  }
+
+  .kerberos-status-btn.expired .dot,
+  .kerberos-status-btn.missing .dot {
+    background: #f87171;
+    box-shadow: 0 0 8px rgba(248, 113, 113, 0.8);
+  }
+
+  .status-indicator.unavailable {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .kerberos-remaining.valid {
+    color: var(--accent-cyan);
+  }
+
+  .kerberos-remaining.warning {
+    color: #fbbf24;
+  }
+
+  .kerberos-remaining.expired,
+  .kerberos-remaining.missing {
+    color: #f87171;
+  }
+
+  .kerberos-principal-row {
+    align-items: flex-start;
+  }
+
+  .kerberos-principal {
+    font-size: 10px;
+    font-family: monospace;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 120px;
+    text-align: right;
+  }
+</style>

@@ -908,6 +908,10 @@ pub struct DesktopSettings {
     pub theme: String, // "zinc" | "cyberpunk" | "oled" | "slate"
     pub auto_start_agent: bool,
     pub custom_agent_socket: Option<String>,
+    #[serde(default = "default_kerberos_warn_minutes")]
+    pub kerberos_warn_minutes: u32,
+    #[serde(default = "default_monitor_kerberos")]
+    pub monitor_kerberos: bool,
     pub default_user: String,
     pub default_port: u16,
     pub fuzzy_search: bool,
@@ -920,6 +924,14 @@ pub struct DesktopSettings {
 
 fn default_timezone() -> String {
     "system".to_string()
+}
+
+fn default_kerberos_warn_minutes() -> u32 {
+    15
+}
+
+fn default_monitor_kerberos() -> bool {
+    true
 }
 
 fn default_onboarding_complete() -> bool {
@@ -1256,6 +1268,8 @@ impl Default for DesktopSettings {
             theme: "zinc".to_string(),
             auto_start_agent: false,
             custom_agent_socket: current_sock,
+            kerberos_warn_minutes: default_kerberos_warn_minutes(),
+            monitor_kerberos: default_monitor_kerberos(),
             default_user: std::env::var("USER").unwrap_or_else(|_| "root".to_string()),
             default_port: 22,
             fuzzy_search: false,

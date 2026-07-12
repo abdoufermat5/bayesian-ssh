@@ -12,6 +12,7 @@
   import ConnectionModal from "$lib/components/modals/ConnectionModal.svelte";
   import EnvModal from "$lib/components/modals/EnvModal.svelte";
   import AgentModal from "$lib/components/modals/AgentModal.svelte";
+  import KerberosModal from "$lib/components/modals/KerberosModal.svelte";
   import DeleteConfirm from "$lib/components/modals/DeleteConfirm.svelte";
   import OnboardingModal from "$lib/components/modals/OnboardingModal.svelte";
   import Toast from "$lib/components/Toast.svelte";
@@ -37,9 +38,24 @@
     teardownTerminalListeners,
   } from "$lib/stores/terminal.svelte";
   import { getWindowState, initWindowState } from "$lib/stores/window.svelte";
+  import {
+    acquireKerberosTicket,
+    closeKerberosModal,
+    consumePendingConnection,
+    formatKerberosRemaining,
+    getKerberosHealth,
+    getKerberosState,
+    getLiveRemainingSeconds,
+    openKerberosModal,
+    refreshKerberosStatus,
+    renewKerberosTicket,
+    startKerberosMonitoring,
+    stopKerberosMonitoring,
+  } from "$lib/stores/kerberos.svelte";
 
   const terminalState = getTerminalState();
   const windowState = getWindowState();
+  const kerberosState = getKerberosState();
 
   let activeTab = $state<AppTab>("connections");
   let environments = $state<EnvInfo[]>([]);
@@ -87,6 +103,8 @@
   let agentSocket = $state<string | null>(null);
   let agentKeys = $state<string[]>([]);
   let showAgentModal = $state(false);
+  let kerberosLoading = $state(false);
+  let kerberosError = $state<string | null>(null);
   let showOnboarding = $state(false);
 
   let workspace = $state<WorkspaceInfo>({
@@ -108,6 +126,8 @@
     theme: "zinc",
     auto_start_agent: false,
     custom_agent_socket: "",
+    kerberos_warn_minutes: 15,
+    monitor_kerberos: true,
     default_user: "root",
     default_port: 22,
     fuzzy_search: false,
@@ -243,6 +263,8 @@
         theme: (loaded.theme as string) || "zinc",
         auto_start_agent: Boolean(loaded.auto_start_agent),
         custom_agent_socket: (loaded.custom_agent_socket as string) || "",
+        kerberos_warn_minutes: Number(loaded.kerberos_warn_minutes) || 15,
+        monitor_kerberos: loaded.monitor_kerberos !== false,
         default_user: (loaded.default_user as string) || "root",
         default_port: (loaded.default_port as number) || 22,
         fuzzy_search: Boolean(loaded.fuzzy_search),
@@ -253,6 +275,15 @@
 
       if (settings.auto_start_agent && !agentActive) {
         await triggerStartAgent();
+      }
+
+      if (settings.monitor_kerberos) {
+        startKerberosMonitoring({
+          warnMinutes: settings.kerberos_warn_minutes,
+          onWarning: (message) => notify(message, "info"),
+        });
+      } else {
+        stopKerberosMonitoring();
       }
     } catch (e) {
       console.error("Failed to load settings", e);
@@ -265,6 +296,14 @@
       await invoke("save_desktop_settings", {
         settings: { ...settings, onboarding_complete: true },
       });
+      if (settings.monitor_kerberos) {
+        startKerberosMonitoring({
+          warnMinutes: settings.kerberos_warn_minutes,
+          onWarning: (message) => notify(message, "info"),
+        });
+      } else {
+        stopKerberosMonitoring();
+      }
       notify("Settings saved successfully", "success");
     } catch (e: unknown) {
       notify(`Failed to save settings: ${e}`, "error");
@@ -318,6 +357,49 @@
       if (file) await triggerAddKey(file);
     } catch (e) {
       console.error("Failed to pick key file", e);
+    }
+  }
+
+  async function resumePendingKerberosConnection() {
+    const conn = consumePendingConnection();
+    if (!conn) return;
+    activeTab = "terminals";
+    await tick();
+    await connectSSH(conn);
+    requestAnimationFrame(() => fitActiveTerminal());
+  }
+
+  async function handleKerberosRenew(password?: string) {
+    kerberosLoading = true;
+    kerberosError = null;
+    try {
+      const next = await renewKerberosTicket(password);
+      if (next.valid) {
+        notify("Kerberos ticket renewed", "success");
+        await resumePendingKerberosConnection();
+        closeKerberosModal();
+      }
+    } catch (e: unknown) {
+      kerberosError = String(e);
+    } finally {
+      kerberosLoading = false;
+    }
+  }
+
+  async function handleKerberosAcquire(principal: string, password: string) {
+    kerberosLoading = true;
+    kerberosError = null;
+    try {
+      const next = await acquireKerberosTicket(password, principal);
+      if (next.valid) {
+        notify("Kerberos ticket acquired", "success");
+        await resumePendingKerberosConnection();
+        closeKerberosModal();
+      }
+    } catch (e: unknown) {
+      kerberosError = String(e);
+    } finally {
+      kerberosLoading = false;
     }
   }
 
@@ -658,6 +740,11 @@
     return Array.from(tagsSet).sort();
   });
 
+  const kerberosHealth = $derived(
+    getKerberosHealth(getLiveRemainingSeconds(), settings.kerberos_warn_minutes),
+  );
+  const kerberosRemainingLabel = $derived(formatKerberosRemaining(getLiveRemainingSeconds()));
+
   const showTerminalsPanel = $derived(
     activeTab === "terminals" ||
       terminalState.count > 0 ||
@@ -676,6 +763,13 @@
       await loadStats();
     });
 
+    if (settings.monitor_kerberos) {
+      startKerberosMonitoring({
+        warnMinutes: settings.kerberos_warn_minutes,
+        onWarning: (message) => notify(message, "info"),
+      });
+    }
+
     let teardownWindow = () => {};
     initWindowState().then((teardown) => {
       teardownWindow = teardown;
@@ -684,6 +778,7 @@
     return () => {
       window.removeEventListener("keydown", handleGlobalKeydown);
       teardownTerminalListeners();
+      stopKerberosMonitoring();
       teardownWindow();
     };
   });
@@ -714,6 +809,10 @@
       {agentKeys}
       onStartAgent={triggerStartAgent}
       onShowAgentModal={() => (showAgentModal = true)}
+      kerberosHealth={kerberosHealth}
+      kerberosRemainingLabel={kerberosRemainingLabel}
+      kerberosPrincipal={kerberosState.status.principal}
+      onShowKerberosModal={openKerberosModal}
       onSearchMostUsed={(name) => (searchQuery = name)}
     />
 
@@ -867,6 +966,22 @@
       {agentKeys}
       onClose={() => (showAgentModal = false)}
       onAddKey={selectAndAddKey}
+    />
+  {/if}
+
+  {#if kerberosState.showModal}
+    <KerberosModal
+      status={kerberosState.status}
+      remainingSeconds={kerberosState.liveRemainingSeconds}
+      ticketLifetimeSeconds={kerberosState.ticketLifetimeSeconds}
+      loading={kerberosLoading}
+      error={kerberosError}
+      onClose={() => {
+        kerberosError = null;
+        closeKerberosModal();
+      }}
+      onRenew={handleKerberosRenew}
+      onAcquire={handleKerberosAcquire}
     />
   {/if}
 

@@ -4,6 +4,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import type { Connection } from "$lib/types";
+import { ensureKerberosForConnection } from "$lib/stores/kerberos.svelte";
 
 export interface TerminalTab {
   id: string;
@@ -337,6 +338,9 @@ async function mountTerminalTab(
 }
 
 export async function connectSSH(conn: Connection): Promise<void> {
+  const allowed = await ensureKerberosForConnection(conn);
+  if (!allowed) return;
+
   const tabId = crypto.randomUUID().replace(/-/g, "").slice(0, 12);
   const newTab: TerminalTab = { id: tabId, name: conn.name, connectionName: conn.name };
 

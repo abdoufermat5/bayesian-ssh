@@ -38,6 +38,8 @@ export interface DesktopSettings {
   theme: string;
   auto_start_agent: boolean;
   custom_agent_socket: string;
+  kerberos_warn_minutes: number;
+  monitor_kerberos: boolean;
   default_user: string;
   default_port: number;
   fuzzy_search: boolean;

@@ -303,6 +303,39 @@
       </div>
 
       <div class="settings-card">
+        <span class="settings-card-title">KERBEROS INTEGRATION</span>
+
+        <div class="settings-row">
+          <div class="settings-field">
+            <span class="label-style">Monitor ticket expiry</span>
+            <span class="settings-field-hint">Show live countdown and warn before Kerberos tickets expire</span>
+          </div>
+          <input
+            type="checkbox"
+            bind:checked={settings.monitor_kerberos}
+            onchange={onSave}
+            class="settings-checkbox"
+          />
+        </div>
+
+        <div class="settings-field">
+          <label for="settings-kerberos-warn">Warn before expiry (minutes)</label>
+          <input
+            id="settings-kerberos-warn"
+            type="number"
+            min="1"
+            max="1440"
+            bind:value={settings.kerberos_warn_minutes}
+            onchange={onSave}
+            class="cyber-input"
+          />
+          <span class="settings-field-hint">
+            Opens the renew dialog when your ticket has less than this many minutes left.
+          </span>
+        </div>
+      </div>
+
+      <div class="settings-card">
         <span class="settings-card-title">CONNECTION DEFAULTS</span>
 
         <div class="settings-field">
