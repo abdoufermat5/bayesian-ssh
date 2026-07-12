@@ -8,6 +8,8 @@ To launch the desktop GUI app:
 bayesian-ssh-desktop
 ```
 
+![Bayesian SSH Desktop Home](../assets/desktop-home.png)
+
 ---
 
 ## Workspace Navigation
@@ -33,6 +35,9 @@ Browse and search saved connection profiles using a live search input.
 
 ### 2. Terminals
 Spawns interactive terminal viewports powered by Xterm.js and a dedicated Rust PTY session manager backend.
+
+![Bayesian SSH Terminals Tab](../assets/desktop-terminals.png)
+
 - **Multi-host Split View**: Spawns a dedicated left **Quick Connect** sidebar displaying all saved hosts. Click any host in the sidebar to spawn a new interactive tab concurrently next to existing ones, without losing previous sessions.
 - **Popout Terminals**: Move active terminal tabs out of the main desktop app window into standalone windows. Supported via full drag-and-drop/reattachment workflows.
 - **PTY Session Isolation**: Each session runs its own isolated background process loop. Closing one session cleanly disposes of its subprocess without affecting other active connections.
@@ -46,6 +51,9 @@ An audit table displaying complete connection metrics:
 
 ### 5. Settings
 Adjust preferences for the desktop environment:
+
+![Bayesian SSH Settings Tab](../assets/desktop-settings.png)
+
 - **Appearance Theme**: Select from Zinc (Slate Minimalist), Cyberpunk Neon, OLED Pitch Black, or Slate (Sleek Navy).
 - **Fuzzy Search Scoring**: Adjust reachability weight vs pattern matches.
 - **SSH Agent Integration**:
