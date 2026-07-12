@@ -266,7 +266,12 @@ pub fn pick_key_file(window: tauri::WebviewWindow) -> Result<Option<String>, Str
         }
     }
     
+    // Temporarily minimize window to force dialog to the foreground
+    let _ = window.minimize();
     let file = dialog.pick_file();
+    let _ = window.unminimize();
+    let _ = window.set_focus();
+    
     Ok(file.map(|p| p.to_string_lossy().to_string()))
 }
 
@@ -524,4 +529,82 @@ pub fn add_key_to_agent(key_path: String) -> Result<String, String> {
         }
     }
 }
+
+// Desktop App Settings
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub struct DesktopSettings {
+    pub theme: String, // "zinc" | "cyberpunk" | "oled" | "slate"
+    pub auto_start_agent: bool,
+    pub custom_agent_socket: Option<String>,
+    pub default_user: String,
+    pub default_port: u16,
+    pub fuzzy_search: bool,
+}
+
+impl Default for DesktopSettings {
+    fn default() -> Self {
+        Self {
+            theme: "zinc".to_string(),
+            auto_start_agent: false,
+            custom_agent_socket: None,
+            default_user: std::env::var("USER").unwrap_or_else(|_| "root".to_string()),
+            default_port: 22,
+            fuzzy_search: false,
+        }
+    }
+}
+
+#[tauri::command]
+pub fn load_desktop_settings() -> Result<DesktopSettings, String> {
+    let settings_file = dirs::config_dir()
+        .unwrap_or_else(|| PathBuf::from("~/.config"))
+        .join("bayesian-ssh")
+        .join("desktop_settings.json");
+        
+    if settings_file.exists() {
+        let content = std::fs::read_to_string(&settings_file).map_err(|e| e.to_string())?;
+        let settings: DesktopSettings = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+        
+        // Apply custom agent socket if specified on load
+        if let Some(ref sock) = settings.custom_agent_socket {
+            if !sock.trim().is_empty() {
+                std::env::set_var("SSH_AUTH_SOCK", sock);
+            }
+        }
+        
+        Ok(settings)
+    } else {
+        let default_settings = DesktopSettings::default();
+        let _ = save_desktop_settings(default_settings.clone());
+        Ok(default_settings)
+    }
+}
+
+#[tauri::command]
+pub fn save_desktop_settings(settings: DesktopSettings) -> Result<(), String> {
+    let config_dir = dirs::config_dir()
+        .unwrap_or_else(|| PathBuf::from("~/.config"))
+        .join("bayesian-ssh");
+        
+    std::fs::create_dir_all(&config_dir).map_err(|e| e.to_string())?;
+    let settings_file = config_dir.join("desktop_settings.json");
+    
+    let content = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
+    std::fs::write(&settings_file, content).map_err(|e| e.to_string())?;
+    
+    // Apply custom agent socket environment variable immediately
+    if let Some(ref sock) = settings.custom_agent_socket {
+        if !sock.trim().is_empty() {
+            std::env::set_var("SSH_AUTH_SOCK", sock);
+        } else {
+            // Restore original parent agent if any, or remove
+            std::env::remove_var("SSH_AUTH_SOCK");
+        }
+    } else {
+        std::env::remove_var("SSH_AUTH_SOCK");
+    }
+    
+    Ok(())
+}
+
 

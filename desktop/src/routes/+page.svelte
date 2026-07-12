@@ -9,7 +9,7 @@
   import { 
     Plus, Trash2, Edit2, Play, Search, Server, Clock, Activity, 
     FolderPlus, Key, X, Shield, ChevronLeft, ChevronRight, LayoutGrid, List,
-    CheckCircle2, AlertCircle, Copy, Check, TerminalSquare, RefreshCw
+    CheckCircle2, AlertCircle, Copy, Check, TerminalSquare, RefreshCw, Settings
   } from "lucide-svelte";
 
   interface Connection {
@@ -107,6 +107,24 @@
   let agentFeedback = $state<string | null>(null);
   let agentFeedbackType = $state<"success" | "error" | null>(null);
 
+  // Settings states
+  interface DesktopSettings {
+    theme: string;
+    auto_start_agent: boolean;
+    custom_agent_socket: string;
+    default_user: string;
+    default_port: number;
+    fuzzy_search: boolean;
+  }
+  let settings = $state<DesktopSettings>({
+    theme: "zinc",
+    auto_start_agent: false,
+    custom_agent_socket: "",
+    default_user: "root",
+    default_port: 22,
+    fuzzy_search: false
+  });
+
 
   function notify(text: string, type: "success" | "error" | "info" = "info") {
     notificationText = text;
@@ -138,10 +156,48 @@
       await loadConnections();
       await loadStats();
       await loadHistory();
+      await loadSettings();
       await loadAgentStatus();
     } catch (e: any) {
       notify(e.toString(), "error");
     }
+  }
+
+  async function loadSettings() {
+    try {
+      const loaded: any = await invoke("load_desktop_settings");
+      settings = {
+        theme: loaded.theme || "zinc",
+        auto_start_agent: loaded.auto_start_agent || false,
+        custom_agent_socket: loaded.custom_agent_socket || "",
+        default_user: loaded.default_user || "root",
+        default_port: loaded.default_port || 22,
+        fuzzy_search: loaded.fuzzy_search || false
+      };
+      applyTheme(settings.theme);
+      
+      // Auto-start agent if configured and not yet active
+      if (settings.auto_start_agent && !agentActive) {
+        await triggerStartAgent();
+      }
+    } catch (e: any) {
+      console.error("Failed to load settings", e);
+    }
+  }
+
+  async function saveSettings() {
+    try {
+      await invoke("save_desktop_settings", { settings });
+      applyTheme(settings.theme);
+      notify("Settings saved successfully", "success");
+    } catch (e: any) {
+      notify(`Failed to save settings: ${e}`, "error");
+    }
+  }
+
+  function applyTheme(themeName: string) {
+    document.documentElement.classList.remove("theme-zinc", "theme-cyberpunk", "theme-oled", "theme-slate");
+    document.documentElement.classList.add(`theme-${themeName}`);
   }
 
   async function loadAgentStatus() {
@@ -580,6 +636,10 @@
         <Clock size={18} />
         <span class="nav-label">Logs</span>
       </button>
+      <button class="nav-item" class:active={activeTab === 'settings'} onclick={() => activeTab = 'settings'}>
+        <Settings size={18} />
+        <span class="nav-label">Settings</span>
+      </button>
     </nav>
 
     <!-- Sidebar Stats -->
@@ -946,6 +1006,76 @@
           </div>
         </div>
       {/if}
+
+      <!-- 4. Settings Tab -->
+      {#if activeTab === 'settings'}
+        <div class="settings-view" style="padding: 24px; color: var(--text-primary); display: flex; flex-direction: column; gap: 24px; overflow-y: auto; height: 100%;">
+          <div class="view-header" style="border-bottom: 1px solid var(--border-color); padding-bottom: 16px; margin-bottom: 8px;">
+            <div class="title-meta">
+              <h2 style="font-size: 20px; font-weight: 600; margin: 0 0 4px 0;">Desktop Settings</h2>
+              <span class="subtitle" style="color: var(--text-muted); font-size: 12px;">Configure preferences for the desktop application</span>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px;">
+            <!-- Column 1: Appearance & UI -->
+            <div style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; padding: 20px; display: flex; flex-direction: column; gap: 16px;">
+              <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.05em; color: var(--text-muted);">APPEARANCE</span>
+              
+              <div class="form-group" style="display: flex; flex-direction: column; gap: 6px;">
+                <label style="font-size: 12px; font-weight: 500;">Active Theme</label>
+                <select class="cyber-select" bind:value={settings.theme} onchange={saveSettings} style="width: 100%; box-sizing: border-box; background: var(--bg-app); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); padding: 8px 12px; font-size: 13px;">
+                  <option value="zinc">Slate Minimalist (Zinc)</option>
+                  <option value="cyberpunk">Cyberpunk Neon (Dark Glow)</option>
+                  <option value="oled">OLED Pitch Black</option>
+                  <option value="slate">Sleek Navy (Slate)</option>
+                </select>
+              </div>
+
+              <div class="form-group" style="display: flex; align-items: center; justify-content: space-between; margin-top: 12px;">
+                <div style="display: flex; flex-direction: column; gap: 2px;">
+                  <label style="font-size: 12px; font-weight: 500;">Fuzzy Search Scoring</label>
+                  <span style="font-size: 10px; color: var(--text-muted);">Prioritize query match over Bayesian connect frequency</span>
+                </div>
+                <input type="checkbox" bind:checked={settings.fuzzy_search} onchange={saveSettings} style="width: 16px; height: 16px; accent-color: var(--accent-cyan);" />
+              </div>
+            </div>
+
+            <!-- Column 2: SSH Agent Config -->
+            <div style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; padding: 20px; display: flex; flex-direction: column; gap: 16px;">
+              <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.05em; color: var(--text-muted);">SSH AGENT INTEGRATION</span>
+
+              <div class="form-group" style="display: flex; align-items: center; justify-content: space-between;">
+                <div style="display: flex; flex-direction: column; gap: 2px;">
+                  <label style="font-size: 12px; font-weight: 500;">Auto-start SSH Agent</label>
+                  <span style="font-size: 10px; color: var(--text-muted);">Start agent automatically on desktop app startup</span>
+                </div>
+                <input type="checkbox" bind:checked={settings.auto_start_agent} onchange={saveSettings} style="width: 16px; height: 16px; accent-color: var(--accent-cyan);" />
+              </div>
+
+              <div class="form-group" style="display: flex; flex-direction: column; gap: 6px;">
+                <label style="font-size: 12px; font-weight: 500;">Custom Agent Socket Path</label>
+                <input type="text" placeholder="e.g. /tmp/custom-agent.sock (blank to use default)" bind:value={settings.custom_agent_socket} onchange={saveSettings} class="cyber-input" style="width: 100%; box-sizing: border-box;" />
+              </div>
+            </div>
+
+            <!-- Column 3: Defaults -->
+            <div style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; padding: 20px; display: flex; flex-direction: column; gap: 16px;">
+              <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.05em; color: var(--text-muted);">CONNECTION DEFAULTS</span>
+
+              <div class="form-group" style="display: flex; flex-direction: column; gap: 6px;">
+                <label style="font-size: 12px; font-weight: 500;">Default SSH User</label>
+                <input type="text" bind:value={settings.default_user} onchange={saveSettings} class="cyber-input" style="width: 100%; box-sizing: border-box;" />
+              </div>
+
+              <div class="form-group" style="display: flex; flex-direction: column; gap: 6px;">
+                <label style="font-size: 12px; font-weight: 500;">Default SSH Port</label>
+                <input type="number" bind:value={settings.default_port} onchange={saveSettings} class="cyber-input" style="width: 100%; box-sizing: border-box;" />
+              </div>
+            </div>
+          </div>
+        </div>
+      {/if}
     </div>
   </main>
 </div>
@@ -1146,6 +1276,62 @@
     
     --green-emerald: #10b981;
     --red-rose: #f43f5e;
+  }
+
+  :global(.theme-zinc) {
+    --bg-app: #09090b;
+    --bg-sidebar: #09090b;
+    --bg-card: #18181b;
+    --bg-card-hover: #27272a;
+    --border-color: rgba(255, 255, 255, 0.06);
+    --border-color-hover: rgba(255, 255, 255, 0.15);
+    --text-primary: #f4f4f5;
+    --text-secondary: #a1a1aa;
+    --text-muted: #71717a;
+    --accent-cyan: #00f0ff;
+    --accent-pink: #d946ef;
+  }
+
+  :global(.theme-cyberpunk) {
+    --bg-app: #0c0813;
+    --bg-sidebar: #06040a;
+    --bg-card: #140d24;
+    --bg-card-hover: #21153b;
+    --border-color: rgba(0, 240, 255, 0.15);
+    --border-color-hover: rgba(217, 70, 239, 0.3);
+    --text-primary: #f8fafc;
+    --text-secondary: #c084fc;
+    --text-muted: #7a1a75;
+    --accent-cyan: #00f0ff;
+    --accent-pink: #d946ef;
+  }
+
+  :global(.theme-oled) {
+    --bg-app: #000000;
+    --bg-sidebar: #000000;
+    --bg-card: #09090b;
+    --bg-card-hover: #18181b;
+    --border-color: rgba(255, 255, 255, 0.04);
+    --border-color-hover: rgba(255, 255, 255, 0.12);
+    --text-primary: #ffffff;
+    --text-secondary: #d4d4d8;
+    --text-muted: #52525b;
+    --accent-cyan: #00f0ff;
+    --accent-pink: #d946ef;
+  }
+
+  :global(.theme-slate) {
+    --bg-app: #0f172a;
+    --bg-sidebar: #0f172a;
+    --bg-card: #1e293b;
+    --bg-card-hover: #334155;
+    --border-color: rgba(255, 255, 255, 0.05);
+    --border-color-hover: rgba(255, 255, 255, 0.12);
+    --text-primary: #f8fafc;
+    --text-secondary: #cbd5e1;
+    --text-muted: #64748b;
+    --accent-cyan: #38bdf8;
+    --accent-pink: #f43f5e;
   }
 
   :global(body) {
