@@ -131,6 +131,25 @@
   let copiedId = $state<string | null>(null);
   let justDuplicatedId = $state<string | null>(null);
 
+  // Delete Confirm Modal States
+  let showDeleteConfirm = $state(false);
+  let deleteTarget = $state<{ label: string; subtitle: string; onConfirm: () => Promise<void> } | null>(null);
+
+  function promptDelete(label: string, subtitle: string, onConfirm: () => Promise<void>) {
+    deleteTarget = { label, subtitle, onConfirm };
+    showDeleteConfirm = true;
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    showDeleteConfirm = false;
+    try {
+      await deleteTarget.onConfirm();
+    } finally {
+      deleteTarget = null;
+    }
+  }
+
   // SSH Agent states
   let agentActive = $state(false);
   let agentSocket = $state<string | null>(null);
@@ -147,6 +166,7 @@
     default_user: string;
     default_port: number;
     fuzzy_search: boolean;
+    default_key_path: string;
   }
   let settings = $state<DesktopSettings>({
     theme: "zinc",
@@ -154,7 +174,8 @@
     custom_agent_socket: "",
     default_user: "root",
     default_port: 22,
-    fuzzy_search: false
+    fuzzy_search: false,
+    default_key_path: ""
   });
 
 
@@ -214,15 +235,17 @@
       await loadConnections();
       await loadStats();
 
-      // Highlight the newly created copy
+      // Find the new copy, highlight it, and open edit modal immediately
       const newIdx = connections.findIndex(c => c.name === copyName && c.host === conn.host);
       if (newIdx !== -1) {
         selectedHostIndex = newIdx;
         justDuplicatedId = connections[newIdx].id;
         setTimeout(() => { justDuplicatedId = null; }, 2000);
+        // Open edit modal so user can rename/adjust the copy right away
+        openEditModal(connections[newIdx]);
       }
 
-      notify("Connection duplicated", "success");
+      notify("Connection duplicated — update values below", "info");
     } catch (e: any) {
       notify(`Failed to duplicate: ${e}`, "error");
     }
@@ -237,7 +260,8 @@
         custom_agent_socket: loaded.custom_agent_socket || "",
         default_user: loaded.default_user || "root",
         default_port: loaded.default_port || 22,
-        fuzzy_search: loaded.fuzzy_search || false
+        fuzzy_search: loaded.fuzzy_search || false,
+        default_key_path: loaded.default_key_path || ""
       };
       applyTheme(settings.theme);
       
@@ -373,15 +397,15 @@
   }
 
   async function deleteEnv(envName: string) {
-    if (confirm(`Are you sure you want to delete profile '${envName}'? All hosts in it will be lost.`)) {
-      try {
+    promptDelete(
+      envName,
+      "All hosts in this profile will be permanently removed.",
+      async () => {
         await invoke("remove_environment", { name: envName });
         await loadData();
         notify(`Profile '${envName}' deleted`, "success");
-      } catch (e: any) {
-        notify(e.toString(), "error");
       }
-    }
+    );
   }
 
   // File Picker
@@ -467,16 +491,16 @@
   }
 
   async function deleteConnection(conn: Connection) {
-    if (confirm(`Are you sure you want to remove connection '${conn.name}'?`)) {
-      try {
+    promptDelete(
+      conn.name,
+      `${conn.user}@${conn.host}:${conn.port}`,
+      async () => {
         await invoke("remove_connection", { idOrName: conn.id });
-        notify(`Host '${conn.name}' removed`, "success");
+        notify(`'${conn.name}' removed`, "success");
         await loadConnections();
         await loadStats();
-      } catch (e: any) {
-        notify(e.toString(), "error");
       }
-    }
+    );
   }
 
   // Interactive Terminal Connections (PTY Integration)
@@ -1395,6 +1419,54 @@
 
       <div class="modal-footer">
         <button class="cancel-btn" onclick={() => showAgentModal = false}>Close</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- DELETE CONFIRM DIALOG -->
+{#if showDeleteConfirm && deleteTarget}
+  <div
+    class="modal-backdrop"
+    onclick={() => { showDeleteConfirm = false; deleteTarget = null; }}
+    role="dialog"
+    aria-modal="true"
+  >
+    <div class="delete-confirm-dialog" onclick={(e) => e.stopPropagation()}>
+      <!-- Danger icon ring -->
+      <div class="delete-icon-ring">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="3 6 5 6 21 6"/>
+          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+          <path d="M10 11v6"/>
+          <path d="M14 11v6"/>
+          <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+        </svg>
+      </div>
+
+      <div class="delete-confirm-body">
+        <h3>Delete Connection</h3>
+        <p class="delete-confirm-name">{deleteTarget.label}</p>
+        <p class="delete-confirm-subtitle">{deleteTarget.subtitle}</p>
+        <p class="delete-confirm-warning">This action cannot be undone.</p>
+      </div>
+
+      <div class="delete-confirm-actions">
+        <button
+          class="delete-cancel-btn"
+          onclick={() => { showDeleteConfirm = false; deleteTarget = null; }}
+        >Cancel</button>
+        <button
+          class="delete-confirm-btn"
+          onclick={confirmDelete}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6"/>
+            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+            <path d="M10 11v6"/><path d="M14 11v6"/>
+          </svg>
+          Delete
+        </button>
       </div>
     </div>
   </div>
@@ -2655,5 +2727,131 @@
     .badge {
       display: none;
     }
+  }
+
+  /* ---- DELETE CONFIRM DIALOG ---- */
+  .delete-confirm-dialog {
+    background: var(--bg-app);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    border-radius: 16px;
+    width: 380px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 36px 32px 28px;
+    gap: 0;
+    box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.08), 0 24px 60px rgba(0, 0, 0, 0.7), 0 0 80px rgba(239, 68, 68, 0.06);
+    animation: slideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    text-align: center;
+  }
+
+  .delete-icon-ring {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #ef4444;
+    margin-bottom: 20px;
+    box-shadow: 0 0 24px rgba(239, 68, 68, 0.15);
+    animation: danger-pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes danger-pulse {
+    0%, 100% { box-shadow: 0 0 24px rgba(239, 68, 68, 0.15); }
+    50%       { box-shadow: 0 0 36px rgba(239, 68, 68, 0.3); }
+  }
+
+  .delete-confirm-body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 28px;
+  }
+
+  .delete-confirm-body h3 {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0;
+    letter-spacing: -0.3px;
+  }
+
+  .delete-confirm-name {
+    font-size: 15px;
+    font-weight: 600;
+    color: #ef4444;
+    margin: 4px 0 0;
+    word-break: break-all;
+  }
+
+  .delete-confirm-subtitle {
+    font-size: 11px;
+    font-family: monospace;
+    color: var(--text-muted);
+    margin: 2px 0 0;
+  }
+
+  .delete-confirm-warning {
+    font-size: 11px;
+    color: rgba(239, 68, 68, 0.7);
+    margin: 10px 0 0;
+    padding: 6px 14px;
+    border-radius: 20px;
+    background: rgba(239, 68, 68, 0.07);
+    border: 1px solid rgba(239, 68, 68, 0.15);
+  }
+
+  .delete-confirm-actions {
+    display: flex;
+    gap: 10px;
+    width: 100%;
+  }
+
+  .delete-cancel-btn {
+    flex: 1;
+    padding: 10px 0;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .delete-cancel-btn:hover {
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border-color: var(--border-color-hover);
+  }
+
+  .delete-confirm-btn {
+    flex: 1;
+    padding: 10px 0;
+    border-radius: 8px;
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    background: rgba(239, 68, 68, 0.12);
+    color: #f87171;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: all 0.15s;
+  }
+
+  .delete-confirm-btn:hover {
+    background: rgba(239, 68, 68, 0.22);
+    color: #fca5a5;
+    border-color: rgba(239, 68, 68, 0.6);
+    box-shadow: 0 0 16px rgba(239, 68, 68, 0.2);
   }
 </style>

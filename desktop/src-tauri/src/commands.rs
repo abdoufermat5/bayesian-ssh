@@ -539,17 +539,21 @@ pub struct DesktopSettings {
     pub default_user: String,
     pub default_port: u16,
     pub fuzzy_search: bool,
+    pub default_key_path: Option<String>,
 }
 
 impl Default for DesktopSettings {
     fn default() -> Self {
+        // Try to detect current SSH_AUTH_SOCK from environment
+        let current_sock = std::env::var("SSH_AUTH_SOCK").ok().filter(|s| !s.is_empty());
         Self {
             theme: "zinc".to_string(),
             auto_start_agent: false,
-            custom_agent_socket: None,
+            custom_agent_socket: current_sock,
             default_user: std::env::var("USER").unwrap_or_else(|_| "root".to_string()),
             default_port: 22,
             fuzzy_search: false,
+            default_key_path: None,
         }
     }
 }
@@ -563,13 +567,16 @@ pub fn load_desktop_settings() -> Result<DesktopSettings, String> {
         
     if settings_file.exists() {
         let content = std::fs::read_to_string(&settings_file).map_err(|e| e.to_string())?;
-        let settings: DesktopSettings = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+        let mut settings: DesktopSettings = serde_json::from_str(&content).map_err(|e| e.to_string())?;
         
         // Apply custom agent socket if specified on load
         if let Some(ref sock) = settings.custom_agent_socket {
             if !sock.trim().is_empty() {
                 std::env::set_var("SSH_AUTH_SOCK", sock);
             }
+        } else {
+            // Pre-fill from running environment so settings panel shows the live socket
+            settings.custom_agent_socket = std::env::var("SSH_AUTH_SOCK").ok().filter(|s| !s.is_empty());
         }
         
         Ok(settings)
