@@ -129,6 +129,7 @@
   let notificationType = $state<"success" | "error" | "info">("info");
   let showNotification = $state(false);
   let copiedId = $state<string | null>(null);
+  let justDuplicatedId = $state<string | null>(null);
 
   // SSH Agent states
   let agentActive = $state(false);
@@ -196,22 +197,32 @@
 
   async function duplicateConnection(conn: Connection) {
     try {
-      const duplicated = {
-        name: `${conn.name} (Copy)`,
+      const copyName = `${conn.name} (Copy)`;
+      // Backend expects flat params matching the Rust command signature
+      await invoke("add_connection", {
+        name: copyName,
         host: conn.host,
         user: conn.user,
         port: conn.port,
-        use_kerberos: conn.use_kerberos,
-        bastion_host: conn.bastion_host || "",
-        bastion_user: conn.bastion_user || "",
-        key_path: conn.key_path || "",
+        kerberos: conn.use_kerberos,
+        bastion: conn.bastion || null,
+        bastionUser: conn.bastion_user || null,
+        keyPath: conn.key_path || null,
         tags: [...conn.tags]
-      };
+      });
 
-      await invoke("add_connection", { connection: duplicated });
-      notify("Connection duplicated successfully", "success");
       await loadConnections();
       await loadStats();
+
+      // Highlight the newly created copy
+      const newIdx = connections.findIndex(c => c.name === copyName && c.host === conn.host);
+      if (newIdx !== -1) {
+        selectedHostIndex = newIdx;
+        justDuplicatedId = connections[newIdx].id;
+        setTimeout(() => { justDuplicatedId = null; }, 2000);
+      }
+
+      notify("Connection duplicated", "success");
     } catch (e: any) {
       notify(`Failed to duplicate: ${e}`, "error");
     }
@@ -869,6 +880,7 @@
                     <div 
                       class="list-row" 
                       class:selected={selectedHostIndex === index}
+                      class:just-duplicated={justDuplicatedId === conn.id}
                       onclick={() => selectedHostIndex = index}
                       ondblclick={() => connectSSH(conn)}
                       role="row"
@@ -936,6 +948,7 @@
                   <div 
                     class="host-card" 
                     class:selected={selectedHostIndex === index}
+                    class:just-duplicated={justDuplicatedId === conn.id}
                     onclick={() => selectedHostIndex = index}
                     ondblclick={() => connectSSH(conn)}
                     role="presentation"
@@ -1003,46 +1016,90 @@
 
       <!-- 2. Terminals Tab -->
       {#if activeTab === 'terminals'}
-        <div class="terminals-view">
-          {#if terminalTabs.length > 0}
-            <!-- Tabs -->
-            <div class="terminal-tabs">
-              {#each terminalTabs as tab}
-                <div 
-                  class="terminal-tab-btn" 
-                  class:active={activeTerminalTabId === tab.id}
-                  onclick={() => activeTerminalTabId = tab.id}
-                  role="button"
-                  tabindex="0"
-                  onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') activeTerminalTabId = tab.id; }}
-                >
-                  <Server size={12} />
-                  <span>{tab.name}</span>
-                  <button class="tab-close-btn" onclick={(e) => { e.stopPropagation(); disconnectTab(tab.id); }}>
-                    <X size={12} />
-                  </button>
+        <div class="terminals-split-view" style="display: flex; height: 100%; width: 100%; overflow: hidden; background: var(--bg-app);">
+          <!-- Left Sidebar: Hosts Quick-Connect list -->
+          <div class="terminals-hosts-sidebar" style="width: 250px; min-width: 250px; border-right: 1px solid var(--border-color); background: var(--bg-sidebar); display: flex; flex-direction: column; height: 100%; box-sizing: border-box;">
+            <!-- Sidebar Header & Search -->
+            <div style="padding: 16px; border-bottom: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 8px;">
+              <span style="font-size: 10px; font-weight: 700; letter-spacing: 0.05em; color: var(--text-muted); display: block;">QUICK CONNECT</span>
+              <input 
+                type="text" 
+                placeholder="Search hosts..." 
+                bind:value={searchQuery} 
+                oninput={loadConnections}
+                class="cyber-input" 
+                style="width: 100%; box-sizing: border-box; font-size: 12px; padding: 6px 10px;"
+              />
+            </div>
+            
+            <!-- Sidebar Scrollable Hosts List -->
+            <div style="flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px;">
+              {#if connections.length === 0}
+                <div style="padding: 24px; text-align: center; color: var(--text-muted); font-size: 11px;">
+                  No hosts found.
                 </div>
-              {/each}
+              {:else}
+                {#each connections as conn}
+                  <button 
+                    onclick={() => connectSSH(conn)}
+                    style="text-align: left; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-card); cursor: pointer; transition: all 0.15s; display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; box-sizing: border-box;"
+                    onmouseenter={(e) => (e.currentTarget.style.borderColor = 'var(--accent-cyan)')}
+                    onmouseleave={(e) => (e.currentTarget.style.borderColor = 'var(--border-color)')}
+                  >
+                    <div style="display: flex; flex-direction: column; min-width: 0;">
+                      <span style="font-size: 12px; font-weight: 600; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 2px;">{conn.name}</span>
+                      <span style="font-size: 10px; color: var(--text-secondary); font-family: monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{conn.user}@{conn.host}</span>
+                    </div>
+                    <span style="color: var(--accent-cyan); display: flex; align-items: center; justify-content: center; opacity: 0.7;">
+                      <Play size={10} fill="currentColor" />
+                    </span>
+                  </button>
+                {/each}
+              {/if}
             </div>
+          </div>
 
-            <!-- Viewports -->
-            <div class="terminal-viewport-container">
-              {#each terminalTabs as tab}
-                <div 
-                  id="terminal-{tab.id}" 
-                  class="terminal-viewport" 
-                  class:hidden={activeTerminalTabId !== tab.id}
-                ></div>
-              {/each}
-            </div>
-          {:else}
-            <div class="empty-state">
-              <TerminalSquare size={36} class="empty-icon" />
-              <h3>No terminal sessions</h3>
-              <p>Spawn an interactive SSH session from your list of hosts</p>
-              <button class="cyber-btn" onclick={() => activeTab = 'connections'}>Back to Hosts</button>
-            </div>
-          {/if}
+          <!-- Right Content: Tabs and active Viewports -->
+          <div class="terminals-main-content" style="flex: 1; display: flex; flex-direction: column; height: 100%; overflow: hidden; background: var(--bg-app); position: relative;">
+            {#if terminalTabs.length > 0}
+              <!-- Tabs -->
+              <div class="terminal-tabs">
+                {#each terminalTabs as tab}
+                  <div 
+                    class="terminal-tab-btn" 
+                    class:active={activeTerminalTabId === tab.id}
+                    onclick={() => activeTerminalTabId = tab.id}
+                    role="button"
+                    tabindex="0"
+                    onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') activeTerminalTabId = tab.id; }}
+                  >
+                    <Server size={12} />
+                    <span>{tab.name}</span>
+                    <button class="tab-close-btn" onclick={(e) => { e.stopPropagation(); disconnectTab(tab.id); }}>
+                      <X size={12} />
+                    </button>
+                  </div>
+                {/each}
+              </div>
+
+              <!-- Viewports -->
+              <div class="terminal-viewport-container" style="flex: 1; position: relative;">
+                {#each terminalTabs as tab}
+                  <div 
+                    id="terminal-{tab.id}" 
+                    class="terminal-viewport" 
+                    class:hidden={activeTerminalTabId !== tab.id}
+                  ></div>
+                {/each}
+              </div>
+            {:else}
+              <div class="empty-state" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 48px; text-align: center; height: 100%;">
+                <TerminalSquare size={48} class="empty-icon" style="color: var(--text-muted); margin-bottom: 16px;" />
+                <h3 style="font-size: 16px; font-weight: 600; margin: 0 0 6px 0; color: var(--text-primary);">No active sessions</h3>
+                <p style="font-size: 12px; color: var(--text-muted); margin: 0; max-width: 280px;">Select a host connection from the left sidebar to spawn a new interactive SSH session.</p>
+              </div>
+            {/if}
+          </div>
         </div>
       {/if}
 
@@ -1944,6 +2001,17 @@
 
   .list-row.selected {
     background: rgba(255, 255, 255, 0.04);
+  }
+
+  @keyframes flash-highlight {
+    0%   { background: rgba(0, 240, 255, 0.22); box-shadow: 0 0 0 1px var(--accent-cyan); }
+    60%  { background: rgba(0, 240, 255, 0.08); }
+    100% { background: transparent; box-shadow: none; }
+  }
+
+  .list-row.just-duplicated,
+  .host-card.just-duplicated {
+    animation: flash-highlight 2s ease-out forwards;
   }
 
   /* Column widths */
