@@ -15,7 +15,9 @@
         "title": "Bayesian SSH",
         "width": 1100,
         "height": 750,
-        "decorations": false
+        "decorations": false,
+        "shadow": false,
+        "backgroundColor": "#09090b"
       }
     ],
     "security": {
