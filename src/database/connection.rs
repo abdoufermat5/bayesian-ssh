@@ -116,7 +116,10 @@ impl Database {
         )?;
 
         if self.conn.changes() == 0 {
-            anyhow::bail!("Connection '{}' was not found or could not be updated", connection.name);
+            anyhow::bail!(
+                "Connection '{}' was not found or could not be updated",
+                connection.name
+            );
         }
 
         info!("Connection '{}' updated in database", connection.name);

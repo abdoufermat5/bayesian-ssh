@@ -1259,6 +1259,7 @@ impl App {
 /// Recursively download a remote directory to a local directory.
 ///
 /// Returns `(files_transferred, total_bytes)`.
+#[allow(clippy::type_complexity)]
 fn download_dir_recursive<'a>(
     sftp: &'a dyn SftpSession,
     remote_dir: &'a str,
@@ -1322,6 +1323,7 @@ fn download_dir_recursive<'a>(
 /// Recursively upload a local directory to a remote directory.
 ///
 /// Returns `(files_transferred, total_bytes)`.
+#[allow(clippy::type_complexity)]
 fn upload_dir_recursive<'a>(
     sftp: &'a dyn SftpSession,
     local_dir: &'a std::path::Path,

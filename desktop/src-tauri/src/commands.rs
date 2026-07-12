@@ -1,12 +1,12 @@
+use portable_pty::{native_pty_system, Child, CommandBuilder, PtySize};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use uuid::Uuid;
-use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::collections::HashMap;
-use portable_pty::{native_pty_system, Child, CommandBuilder, PtySize};
-use serde::{Serialize, Deserialize};
 
 use bayesian_ssh::config::AppConfig;
 use bayesian_ssh::database::Database;
@@ -132,10 +132,9 @@ fn take_full_replay(session: &PtySession) -> String {
 }
 
 fn seal_replay_offset(session: &PtySession) {
-    if let (Ok(buffer), Ok(mut offset)) = (
-        session.output_buffer.lock(),
-        session.replay_offset.lock(),
-    ) {
+    if let (Ok(buffer), Ok(mut offset)) =
+        (session.output_buffer.lock(), session.replay_offset.lock())
+    {
         *offset = buffer.len();
     }
 }
@@ -171,7 +170,7 @@ pub fn set_active_env(name: String) -> Result<(), String> {
         .unwrap_or_else(|| PathBuf::from("~/.config"))
         .join("bayesian-ssh")
         .join("environments");
-    
+
     let env_dir = envs_dir.join(&name);
     if !env_dir.exists() && name != "default" {
         return Err(format!("Environment '{}' does not exist.", name));
@@ -186,7 +185,7 @@ pub fn list_environments() -> Result<Vec<EnvInfo>, String> {
         .unwrap_or_else(|| PathBuf::from("~/.config"))
         .join("bayesian-ssh")
         .join("environments");
-    
+
     let active_env = AppConfig::get_active_env();
     let mut envs = vec![EnvInfo {
         name: "default".to_string(),
@@ -222,7 +221,7 @@ pub fn create_environment(name: String) -> Result<(), String> {
         .unwrap_or_else(|| PathBuf::from("~/.config"))
         .join("bayesian-ssh")
         .join("environments");
-    
+
     let env_dir = envs_dir.join(&name);
     if env_dir.exists() {
         return Err(format!("Environment '{}' already exists.", name));
@@ -250,7 +249,7 @@ pub fn remove_environment(name: String) -> Result<(), String> {
         .unwrap_or_else(|| PathBuf::from("~/.config"))
         .join("bayesian-ssh")
         .join("environments");
-    
+
     let env_dir = envs_dir.join(&name);
     if !env_dir.exists() {
         return Err(format!("Environment '{}' does not exist.", name));
@@ -263,20 +262,27 @@ pub fn remove_environment(name: String) -> Result<(), String> {
 // Connection Management Commands
 
 #[tauri::command]
-pub fn get_connections(query: Option<String>, tag_filter: Option<String>) -> Result<Vec<Connection>, String> {
+pub fn get_connections(
+    query: Option<String>,
+    tag_filter: Option<String>,
+) -> Result<Vec<Connection>, String> {
     let config = AppConfig::load(None).map_err(|e| e.to_string())?;
     let db = Database::new(&config).map_err(|e| e.to_string())?;
 
     if let Some(q) = query {
         if !q.trim().is_empty() {
-            return db.search_connections(&q, 100, &config.search_mode).map_err(|e| e.to_string());
+            return db
+                .search_connections(&q, 100, &config.search_mode)
+                .map_err(|e| e.to_string());
         }
     }
 
-    db.list_connections(tag_filter.as_deref(), false).map_err(|e| e.to_string())
+    db.list_connections(tag_filter.as_deref(), false)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn add_connection(
     name: String,
     host: String,
@@ -286,7 +292,7 @@ pub fn add_connection(
     bastion: Option<String>,
     bastion_user: Option<String>,
     key_path: Option<String>,
-    tags: Vec<String>
+    tags: Vec<String>,
 ) -> Result<(), String> {
     let config = AppConfig::load(None).map_err(|e| e.to_string())?;
     let db = Database::new(&config).map_err(|e| e.to_string())?;
@@ -314,6 +320,7 @@ pub fn add_connection(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn edit_connection(
     id: String,
     name: String,
@@ -324,7 +331,7 @@ pub fn edit_connection(
     bastion: Option<String>,
     bastion_user: Option<String>,
     key_path: Option<String>,
-    tags: Vec<String>
+    tags: Vec<String>,
 ) -> Result<(), String> {
     let config = AppConfig::load(None).map_err(|e| e.to_string())?;
     let db = Database::new(&config).map_err(|e| e.to_string())?;
@@ -368,7 +375,8 @@ pub fn remove_connection(id_or_name: String) -> Result<(), String> {
     let config = AppConfig::load(None).map_err(|e| e.to_string())?;
     let db = Database::new(&config).map_err(|e| e.to_string())?;
 
-    db.remove_connection(&id_or_name).map_err(|e| e.to_string())?;
+    db.remove_connection(&id_or_name)
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -388,7 +396,8 @@ pub fn get_history(limit: Option<usize>) -> Result<Vec<SessionHistoryEntry>, Str
     let db = Database::new(&config).map_err(|e| e.to_string())?;
 
     let effective_limit = limit.unwrap_or(config.max_history_size.max(1));
-    db.get_session_history(None, effective_limit, None, false).map_err(|e| e.to_string())
+    db.get_session_history(None, effective_limit, None, false)
+        .map_err(|e| e.to_string())
 }
 
 // Native Dialogs
@@ -396,23 +405,23 @@ pub fn get_history(limit: Option<usize>) -> Result<Vec<SessionHistoryEntry>, Str
 #[tauri::command]
 pub fn pick_key_file(window: tauri::WebviewWindow) -> Result<Option<String>, String> {
     let ssh_dir = dirs::home_dir().map(|h| h.join(".ssh"));
-    
+
     let mut dialog = rfd::FileDialog::new()
         .set_title("Select SSH Private Key")
         .set_parent(&window);
-        
+
     if let Some(ref path) = ssh_dir {
         if path.exists() {
             dialog = dialog.set_directory(path);
         }
     }
-    
+
     // Temporarily minimize window to force dialog to the foreground
     let _ = window.minimize();
     let file = dialog.pick_file();
     let _ = window.unminimize();
     let _ = window.set_focus();
-    
+
     Ok(file.map(|p| p.to_string_lossy().to_string()))
 }
 
@@ -428,7 +437,8 @@ pub fn spawn_pty(
     let config = AppConfig::load(None).map_err(|e| e.to_string())?;
     let db = Database::new(&config).map_err(|e| e.to_string())?;
 
-    let connection = db.get_connection(&connection_name)
+    let connection = db
+        .get_connection(&connection_name)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Connection '{}' not found", connection_name))?;
 
@@ -439,28 +449,31 @@ pub fn spawn_pty(
 
     // Build the SSH command arguments
     let pty_system = native_pty_system();
-    
+
     // We will build shell execution: e.g. "ssh" with args
     let mut cmd_builder = CommandBuilder::new("ssh");
-    
+
     // Inherit env vars so Kerberos tickets (KRB5CCNAME) and ssh-agent (SSH_AUTH_SOCK) are passed down
     for (key, val) in std::env::vars() {
         cmd_builder.env(key, val);
     }
-    
+
     if connection.use_kerberos {
         cmd_builder.arg("-t");
         cmd_builder.arg("-A");
         cmd_builder.arg("-K");
     }
-    
+
     if let Some(key) = &connection.key_path {
         cmd_builder.arg("-i");
         cmd_builder.arg(key);
     }
-    
+
     if let Some(bastion) = &connection.bastion {
-        let bastion_user = connection.bastion_user.as_deref().unwrap_or(&connection.user);
+        let bastion_user = connection
+            .bastion_user
+            .as_deref()
+            .unwrap_or(&connection.user);
         cmd_builder.arg("-p");
         cmd_builder.arg("22");
         cmd_builder.arg(format!("{}@{}", bastion_user, bastion));
@@ -472,14 +485,19 @@ pub fn spawn_pty(
     }
 
     // Open PTY Pair
-    let pty_pair = pty_system.openpty(PtySize {
-        rows: 24,
-        cols: 80,
-        pixel_width: 0,
-        pixel_height: 0,
-    }).map_err(|e| e.to_string())?;
+    let pty_pair = pty_system
+        .openpty(PtySize {
+            rows: 24,
+            cols: 80,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .map_err(|e| e.to_string())?;
 
-    let child = pty_pair.slave.spawn_command(cmd_builder).map_err(|e| e.to_string())?;
+    let child = pty_pair
+        .slave
+        .spawn_command(cmd_builder)
+        .map_err(|e| e.to_string())?;
 
     let mut db_session_id: Option<Uuid> = None;
     if config.auto_save_history {
@@ -497,7 +515,10 @@ pub fn spawn_pty(
         }
     }
 
-    let reader = pty_pair.master.try_clone_reader().map_err(|e| e.to_string())?;
+    let reader = pty_pair
+        .master
+        .try_clone_reader()
+        .map_err(|e| e.to_string())?;
     let writer = pty_pair.master.take_writer().map_err(|e| e.to_string())?;
 
     // Cancelled flag: set by close_pty so the reader thread won't emit pty-exit
@@ -512,38 +533,37 @@ pub fn spawn_pty(
 
     // Store in global state — _master keeps the PTY master fd alive for the session duration
     let mut sessions = state.sessions.lock().unwrap();
-    sessions.insert(session_id.clone(), PtySession {
-        writer,
-        child,
-        _master: pty_pair.master,
-        cancelled,
-        db_session_id,
-        connection_name: connection.name.clone(),
-        detached,
-        output_buffer,
-        replay_offset,
-        popout_window: None,
-    });
+    sessions.insert(
+        session_id.clone(),
+        PtySession {
+            writer,
+            child,
+            _master: pty_pair.master,
+            cancelled,
+            db_session_id,
+            connection_name: connection.name.clone(),
+            detached,
+            output_buffer,
+            replay_offset,
+            popout_window: None,
+        },
+    );
     drop(sessions); // release lock before spawning thread
 
     // Start background thread to read from PTY master and emit to frontend
     let session_id_clone = session_id.clone();
     let app_handle = app.clone();
-    
+
     std::thread::spawn(move || {
         let mut reader = reader;
         let mut buf = [0u8; 4096];
-        
+
         loop {
             match reader.read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => {
                     let str_data = String::from_utf8_lossy(&buf[..n]).to_string();
-                    append_to_output_buffer(
-                        &output_buffer_clone,
-                        &replay_offset_clone,
-                        &str_data,
-                    );
+                    append_to_output_buffer(&output_buffer_clone, &replay_offset_clone, &str_data);
 
                     if !detached_clone.load(Ordering::SeqCst) {
                         #[derive(Clone, Serialize)]
@@ -551,16 +571,19 @@ pub fn spawn_pty(
                             session_id: String,
                             data: String,
                         }
-                        let _ = app_handle.emit("pty-output", PtyPayload {
-                            session_id: session_id_clone.clone(),
-                            data: str_data,
-                        });
+                        let _ = app_handle.emit(
+                            "pty-output",
+                            PtyPayload {
+                                session_id: session_id_clone.clone(),
+                                data: str_data,
+                            },
+                        );
                     }
                 }
                 Err(_) => break,
             }
         }
-        
+
         // Only emit pty-exit if this was NOT a manual close (avoids ghost events)
         if !cancelled_clone.load(Ordering::SeqCst) {
             let _ = app_handle.emit("pty-exit", session_id_clone.clone());
@@ -578,7 +601,10 @@ pub fn write_pty(
 ) -> Result<(), String> {
     let mut sessions = state.sessions.lock().unwrap();
     if let Some(session) = sessions.get_mut(&session_id) {
-        session.writer.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
+        session
+            .writer
+            .write_all(data.as_bytes())
+            .map_err(|e| e.to_string())?;
         session.writer.flush().map_err(|e| e.to_string())?;
         Ok(())
     } else {
@@ -698,7 +724,9 @@ pub fn claim_popout_session(
 }
 
 #[tauri::command]
-pub fn list_detached_sessions(state: State<'_, PtyState>) -> Result<Vec<DetachedSessionInfo>, String> {
+pub fn list_detached_sessions(
+    state: State<'_, PtyState>,
+) -> Result<Vec<DetachedSessionInfo>, String> {
     let sessions = state.sessions.lock().unwrap();
     Ok(sessions
         .iter()
@@ -718,11 +746,14 @@ pub fn list_popout_sessions(state: State<'_, PtyState>) -> Result<Vec<PopoutSess
     Ok(sessions
         .iter()
         .filter_map(|(session_id, session)| {
-            session.popout_window.as_ref().map(|window_label| PopoutSessionInfo {
-                session_id: session_id.clone(),
-                connection_name: session.connection_name.clone(),
-                window_label: window_label.clone(),
-            })
+            session
+                .popout_window
+                .as_ref()
+                .map(|window_label| PopoutSessionInfo {
+                    session_id: session_id.clone(),
+                    connection_name: session.connection_name.clone(),
+                    window_label: window_label.clone(),
+                })
         })
         .collect())
 }
@@ -816,9 +847,7 @@ pub fn focus_terminal_window(
     let window = app
         .get_webview_window(&label)
         .ok_or_else(|| format!("Window '{label}' not found"))?;
-    window
-        .set_focus()
-        .map_err(|e| e.to_string())
+    window.set_focus().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -921,14 +950,12 @@ pub struct AgentStatus {
 pub fn get_agent_status() -> Result<AgentStatus, String> {
     let socket = std::env::var("SSH_AUTH_SOCK").ok();
     let active = socket.is_some();
-    
+
     let mut keys = Vec::new();
     if active {
         // Run ssh-add -l to list loaded keys
-        let output = Command::new("ssh-add")
-            .arg("-l")
-            .output();
-            
+        let output = Command::new("ssh-add").arg("-l").output();
+
         if let Ok(out) = output {
             if out.status.success() {
                 let stdout = String::from_utf8_lossy(&out.stdout);
@@ -940,7 +967,7 @@ pub fn get_agent_status() -> Result<AgentStatus, String> {
             }
         }
     }
-    
+
     Ok(AgentStatus {
         active,
         socket_path: socket,
@@ -953,19 +980,19 @@ pub fn start_agent() -> Result<AgentStatus, String> {
     if std::env::var("SSH_AUTH_SOCK").is_ok() {
         return get_agent_status();
     }
-    
+
     let output = Command::new("ssh-agent")
         .arg("-s")
         .output()
         .map_err(|e| format!("Failed to start ssh-agent: {}", e))?;
-        
+
     if !output.status.success() {
         return Err(String::from_utf8_lossy(&output.stderr).to_string());
     }
-    
+
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut socket_path = None;
-    
+
     for line in stdout.lines() {
         // e.g. SSH_AUTH_SOCK=/tmp/ssh-XXXXXX/agent.XXXX; export SSH_AUTH_SOCK;
         if line.starts_with("SSH_AUTH_SOCK=") {
@@ -983,11 +1010,11 @@ pub fn start_agent() -> Result<AgentStatus, String> {
             }
         }
     }
-    
+
     if socket_path.is_none() {
         return Err("Failed to parse ssh-agent environment variables".to_string());
     }
-    
+
     get_agent_status()
 }
 
@@ -997,7 +1024,7 @@ pub fn add_key_to_agent(key_path: String) -> Result<String, String> {
         .arg(&key_path)
         .output()
         .map_err(|e| format!("Failed to execute ssh-add: {}", e))?;
-        
+
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     } else {
@@ -1199,7 +1226,10 @@ pub fn complete_onboarding(payload: OnboardingPayload) -> Result<usize, String> 
         max_history_size: None,
     })?;
 
-    let mut settings = if bayesian_config_root().join("desktop_settings.json").exists() {
+    let mut settings = if bayesian_config_root()
+        .join("desktop_settings.json")
+        .exists()
+    {
         load_desktop_settings()?
     } else {
         DesktopSettings::default()
@@ -1371,7 +1401,9 @@ pub fn pick_ssh_config_file(window: tauri::WebviewWindow) -> Result<Option<Strin
 impl Default for DesktopSettings {
     fn default() -> Self {
         // Try to detect current SSH_AUTH_SOCK from environment
-        let current_sock = std::env::var("SSH_AUTH_SOCK").ok().filter(|s| !s.is_empty());
+        let current_sock = std::env::var("SSH_AUTH_SOCK")
+            .ok()
+            .filter(|s| !s.is_empty());
         Self {
             theme: "zinc".to_string(),
             auto_start_agent: false,
@@ -1394,11 +1426,12 @@ pub fn load_desktop_settings() -> Result<DesktopSettings, String> {
         .unwrap_or_else(|| PathBuf::from("~/.config"))
         .join("bayesian-ssh")
         .join("desktop_settings.json");
-        
+
     if settings_file.exists() {
         let content = std::fs::read_to_string(&settings_file).map_err(|e| e.to_string())?;
-        let mut settings: DesktopSettings = serde_json::from_str(&content).map_err(|e| e.to_string())?;
-        
+        let mut settings: DesktopSettings =
+            serde_json::from_str(&content).map_err(|e| e.to_string())?;
+
         // Apply custom agent socket if specified on load
         if let Some(ref sock) = settings.custom_agent_socket {
             if !sock.trim().is_empty() {
@@ -1406,9 +1439,11 @@ pub fn load_desktop_settings() -> Result<DesktopSettings, String> {
             }
         } else {
             // Pre-fill from running environment so settings panel shows the live socket
-            settings.custom_agent_socket = std::env::var("SSH_AUTH_SOCK").ok().filter(|s| !s.is_empty());
+            settings.custom_agent_socket = std::env::var("SSH_AUTH_SOCK")
+                .ok()
+                .filter(|s| !s.is_empty());
         }
-        
+
         Ok(settings)
     } else {
         Ok(DesktopSettings {
@@ -1423,10 +1458,10 @@ pub fn save_desktop_settings(settings: DesktopSettings) -> Result<(), String> {
     let config_dir = dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("~/.config"))
         .join("bayesian-ssh");
-        
+
     std::fs::create_dir_all(&config_dir).map_err(|e| e.to_string())?;
     let settings_file = config_dir.join("desktop_settings.json");
-    
+
     let content = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
     std::fs::write(&settings_file, content).map_err(|e| e.to_string())?;
 
@@ -1447,8 +1482,6 @@ pub fn save_desktop_settings(settings: DesktopSettings) -> Result<(), String> {
     } else {
         std::env::remove_var("SSH_AUTH_SOCK");
     }
-    
+
     Ok(())
 }
-
-
