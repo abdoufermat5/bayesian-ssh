@@ -198,17 +198,37 @@ async function mountReattachedSession(info: ReattachSessionPayload): Promise<voi
     connectionName: info.connection_name,
   };
 
-  const term = await mountTerminalTab(tab);
+  tabs = [...tabs, tab];
+  activeTabId = tab.id;
 
-  if (term) {
-    restoreTerminalOutput(term, info.buffered_output || undefined);
+  const container = await waitForTerminalContainer(tab.id);
+  if (!container) {
+    cleanupTabUi(tab.id);
+    throw new Error("Terminal view is not ready. Try again.");
+  }
+
+  const term = openTerminalInstance(tab.id, container);
+  const replay = info.buffered_output;
+
+  if (replay) {
+    await new Promise<void>((resolve) => {
+      term.write(replay, () => {
+        term.scrollToBottom();
+        resolve();
+      });
+    });
+  }
+
+  await tick();
+  requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       const mounted = findTab(tab.id);
       if (mounted?.term && mounted.fitAddon) {
         fitTerminal(tab.id, mounted.term, mounted.fitAddon);
+        mounted.term.scrollToBottom();
       }
     });
-  }
+  });
 }
 
 function removeDetachedSession(sessionId: string) {

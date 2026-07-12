@@ -6,6 +6,7 @@
   import { page } from "$app/state";
   import TerminalWindowTitleBar from "$lib/components/TerminalWindowTitleBar.svelte";
   import {
+    checkPopoutMainOverlap,
     dockPopoutToMain,
     initPopoutTerminal,
     type PopoutTerminalHandle,
@@ -13,15 +14,48 @@
 
   let connectionName = $state("Terminal");
   let loadError = $state<string | null>(null);
+  let dockHintActive = $state(false);
 
   const sessionId = $derived(page.params.sessionId ?? "");
 
   let closing = false;
   let unlistenClose: (() => void) | undefined;
   let unlistenDocked: (() => void) | undefined;
+  let unlistenMoved: (() => void) | undefined;
   let handle: PopoutTerminalHandle | null = null;
   let initPromise: Promise<void> | null = null;
+  let overlapCheckTimer: ReturnType<typeof setTimeout> | undefined;
+  let overlapCheckInFlight = false;
   const win = getCurrentWindow();
+
+  async function checkDragDock() {
+    if (closing || !handle || !sessionId || overlapCheckInFlight) return;
+
+    overlapCheckInFlight = true;
+    try {
+      const overlap = await checkPopoutMainOverlap(win.label);
+      if (closing) return;
+
+      dockHintActive = overlap.overlaps && !overlap.should_dock;
+
+      if (overlap.should_dock) {
+        dockHintActive = false;
+        await dockToMain();
+      }
+    } catch {
+      dockHintActive = false;
+    } finally {
+      overlapCheckInFlight = false;
+    }
+  }
+
+  function scheduleDragDockCheck() {
+    if (closing || overlapCheckTimer) return;
+    overlapCheckTimer = setTimeout(() => {
+      overlapCheckTimer = undefined;
+      void checkDragDock();
+    }, 80);
+  }
 
   async function shutdownAndDestroy() {
     if (closing) return;
@@ -30,6 +64,12 @@
     unlistenClose = undefined;
     unlistenDocked?.();
     unlistenDocked = undefined;
+    unlistenMoved?.();
+    unlistenMoved = undefined;
+    if (overlapCheckTimer) {
+      clearTimeout(overlapCheckTimer);
+      overlapCheckTimer = undefined;
+    }
 
     if (initPromise) {
       await initPromise.catch(() => {});
@@ -49,6 +89,12 @@
     unlistenClose = undefined;
     unlistenDocked?.();
     unlistenDocked = undefined;
+    unlistenMoved?.();
+    unlistenMoved = undefined;
+    if (overlapCheckTimer) {
+      clearTimeout(overlapCheckTimer);
+      overlapCheckTimer = undefined;
+    }
 
     try {
       await invoke("seal_session_ui", { sessionId });
@@ -85,6 +131,19 @@
       })
       .catch(() => {});
 
+    void win
+      .onMoved(() => {
+        scheduleDragDockCheck();
+      })
+      .then((unlisten) => {
+        if (closing) {
+          unlisten();
+          return;
+        }
+        unlistenMoved = unlisten;
+      })
+      .catch(() => {});
+
     initPromise = (async () => {
       if (!sessionId) {
         loadError = "Missing session id.";
@@ -101,6 +160,8 @@
         unlistenClose = undefined;
         unlistenDocked?.();
         unlistenDocked = undefined;
+        unlistenMoved?.();
+        unlistenMoved = undefined;
       });
 
       try {
@@ -119,16 +180,20 @@
       cancelled = true;
       if (!closing) {
         unlistenClose?.();
-        unlistenDocked?.();
+        unlistenMoved?.();
+        if (overlapCheckTimer) {
+          clearTimeout(overlapCheckTimer);
+        }
         void handle?.shutdown({ closeWindow: false });
       }
     };
   });
 </script>
 
-<div class="terminal-window-root">
+<div class="terminal-window-root" class:dock-ready={dockHintActive}>
   <TerminalWindowTitleBar
     title={connectionName}
+    dockHintActive={dockHintActive}
     onDock={dockToMain}
     onClose={() => getCurrentWindow().close()}
   />
@@ -158,6 +223,11 @@
     flex-direction: column;
     overflow: hidden;
     background: var(--bg-terminal);
+    transition: box-shadow 0.15s ease;
+  }
+
+  .terminal-window-root.dock-ready {
+    box-shadow: inset 0 0 0 2px rgba(0, 240, 255, 0.45);
   }
 
   .terminal-window-body {

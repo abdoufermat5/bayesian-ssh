@@ -1,7 +1,9 @@
 <script lang="ts">
   import {
     AppWindow,
+    GripVertical,
     Layers,
+    Link2,
     OctagonX,
     Play,
     Server,
@@ -12,11 +14,19 @@
   import type { Connection } from "$lib/types";
   import { tabPopOutDrag } from "$lib/actions/tabPopOutDrag";
   import {
+    encodeSessionDrag,
+    SESSION_DRAG_MIME,
+    type SessionDragPayload,
+    tabBarReattachDrop,
+  } from "$lib/actions/tabBarReattachDrop";
+  import {
     connectSSH,
     detachTab,
     disconnectTab,
+    dockPopoutSession,
     getTerminalState,
     popOutTab,
+    reattachSession,
   } from "$lib/stores/terminal.svelte";
 
   interface Props {
@@ -32,8 +42,41 @@
 
   const terminalState = getTerminalState();
 
+  const awaySessions = $derived.by((): SessionDragPayload[] => [
+    ...terminalState.popoutSessions.map((session) => ({
+      sessionId: session.id,
+      kind: "popout" as const,
+      name: session.name,
+    })),
+    ...terminalState.detachedSessions.map((session) => ({
+      sessionId: session.id,
+      kind: "detached" as const,
+      name: session.name,
+    })),
+  ]);
+
   async function handleConnect(conn: Connection) {
     await connectSSH(conn);
+  }
+
+  async function handleDropReattach(payload: SessionDragPayload) {
+    if (payload.kind === "popout") {
+      await dockPopoutSession(payload.sessionId);
+    } else {
+      await reattachSession(payload.sessionId);
+    }
+  }
+
+  function handleAwayDragStart(event: DragEvent, payload: SessionDragPayload) {
+    event.dataTransfer?.setData(SESSION_DRAG_MIME, encodeSessionDrag(payload));
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = "move";
+    }
+    (event.target as HTMLElement).classList.add("away-chip-dragging");
+  }
+
+  function handleAwayDragEnd(event: DragEvent) {
+    (event.target as HTMLElement).classList.remove("away-chip-dragging");
   }
 </script>
 
@@ -79,8 +122,11 @@
   </aside>
 
   <div class="terminals-main-content">
-    {#if terminalState.tabs.length > 0}
-      <div class="terminal-tabs-bar">
+    {#if terminalState.tabs.length > 0 || terminalState.externalSessionCount > 0}
+      <div
+        class="terminal-tabs-bar"
+        use:tabBarReattachDrop={handleDropReattach}
+      >
         <div class="terminal-tabs">
           {#each terminalState.tabs as tab (tab.id)}
             <div
@@ -129,21 +175,48 @@
               </button>
             </div>
           {/each}
+
+          {#each awaySessions as session (session.sessionId)}
+            <div
+              class="away-session-chip"
+              draggable="true"
+              title="Drag to tab bar to reattach, or double-click"
+              ondragstart={(event) => handleAwayDragStart(event, session)}
+              ondragend={handleAwayDragEnd}
+              ondblclick={() => void handleDropReattach(session)}
+              role="button"
+              tabindex="0"
+            >
+              <GripVertical size={11} />
+              {#if session.kind === "popout"}
+                <AppWindow size={12} />
+              {:else}
+                <Link2 size={12} />
+              {/if}
+              <span>{session.name}</span>
+            </div>
+          {/each}
         </div>
 
-        {#if terminalState.totalSessionCount > 0}
-          <button
-            type="button"
-            class="close-all-sessions-btn"
-            onclick={onCloseAll}
-            title="Terminate all active and detached SSH sessions"
-          >
-            <OctagonX size={14} />
-            <span>Close all</span>
-          </button>
-        {/if}
+        <div class="terminal-tabs-bar-actions">
+          {#if terminalState.externalSessionCount > 0}
+            <span class="tab-bar-drop-hint">Drop here to reattach</span>
+          {/if}
+          {#if terminalState.totalSessionCount > 0}
+            <button
+              type="button"
+              class="close-all-sessions-btn"
+              onclick={onCloseAll}
+              title="Terminate all active and detached SSH sessions"
+            >
+              <OctagonX size={14} />
+              <span>Close all</span>
+            </button>
+          {/if}
+        </div>
       </div>
 
+      {#if terminalState.tabs.length > 0}
       <div class="terminal-viewport-container">
         {#each terminalState.tabs as tab (tab.id)}
           <div
@@ -154,19 +227,43 @@
           </div>
         {/each}
       </div>
-    {:else if terminalState.externalSessionCount > 0}
-      <div class="terminals-empty-state">
+      {:else}
+      <div
+        class="terminals-empty-state reattach-drop-zone"
+        use:tabBarReattachDrop={handleDropReattach}
+      >
         <TerminalSquare size={48} class="empty-icon" />
         <h3>Sessions running elsewhere</h3>
         <p>
-          {terminalState.externalSessionCount} session{terminalState.externalSessionCount === 1 ? "" : "s"} are in pop-out windows or running in the background.
-          Programs keep running — reattach or dock to see live output again.
+          Drag a session chip from below onto this area to reattach, or use the session manager.
         </p>
+        <div class="away-chip-row">
+          {#each awaySessions as session (session.sessionId)}
+            <div
+              class="away-session-chip large"
+              draggable="true"
+              title="Drag to reattach"
+              ondragstart={(event) => handleAwayDragStart(event, session)}
+              ondragend={handleAwayDragEnd}
+              role="button"
+              tabindex="0"
+            >
+              <GripVertical size={12} />
+              {#if session.kind === "popout"}
+                <AppWindow size={14} />
+              {:else}
+                <Link2 size={14} />
+              {/if}
+              <span>{session.name}</span>
+            </div>
+          {/each}
+        </div>
         <button type="button" class="reattach-primary-btn" onclick={onManageSessions}>
           <Layers size={14} />
           Manage sessions
         </button>
       </div>
+      {/if}
     {:else}
       <div class="terminals-empty-state">
         <TerminalSquare size={48} class="empty-icon" />
@@ -309,5 +406,76 @@
     color: var(--text-muted);
     margin: 0;
     max-width: 320px;
+  }
+
+  .terminal-tabs-bar-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+
+  .tab-bar-drop-hint {
+    font-size: 10px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  .away-session-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0.45rem 0.7rem;
+    border-radius: 6px 6px 0 0;
+    border: 1px dashed rgba(0, 240, 255, 0.35);
+    border-bottom: none;
+    background: rgba(0, 240, 255, 0.06);
+    color: var(--accent-cyan);
+    font-size: 0.78rem;
+    cursor: grab;
+    user-select: none;
+    max-width: 180px;
+  }
+
+  .away-session-chip.large {
+    border-radius: 8px;
+    border-bottom: 1px dashed rgba(0, 240, 255, 0.35);
+    padding: 0.55rem 0.85rem;
+    max-width: 240px;
+  }
+
+  .away-session-chip span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .away-session-chip:hover {
+    background: rgba(0, 240, 255, 0.12);
+  }
+
+  .away-session-chip.away-chip-dragging {
+    opacity: 0.55;
+    cursor: grabbing;
+  }
+
+  .away-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    margin-top: 16px;
+    margin-bottom: 4px;
+  }
+
+  .reattach-drop-zone {
+    border: 1px dashed transparent;
+    border-radius: 12px;
+    transition: border-color 0.2s, background 0.2s;
+  }
+
+  .reattach-drop-zone.tab-bar-drop-active {
+    border-color: rgba(0, 240, 255, 0.35);
+    background: rgba(0, 240, 255, 0.04);
   }
 </style>

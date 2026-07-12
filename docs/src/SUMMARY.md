@@ -21,6 +21,7 @@
 - [Remote Execution & Transfer](./user-guide/remote-execution.md)
 - [Environments](./user-guide/environments.md)
 - [TUI Mode](./user-guide/tui.md)
+- [Desktop GUI Mode](./user-guide/desktop.md)
 - [Import & Export](./user-guide/import-export.md)
 
 ---

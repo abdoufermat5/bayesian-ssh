@@ -5,11 +5,12 @@
 
   interface Props {
     title: string;
+    dockHintActive?: boolean;
     onClose?: () => void | Promise<void>;
     onDock?: () => void | Promise<void>;
   }
 
-  let { title, onClose, onDock }: Props = $props();
+  let { title, dockHintActive = false, onClose, onDock }: Props = $props();
 
   const appWindow = getCurrentWindow();
 
@@ -47,10 +48,13 @@
   }
 </script>
 
-<header class="terminal-window-titlebar">
+<header class="terminal-window-titlebar" class:dock-ready={dockHintActive}>
   <div class="titlebar-left" data-tauri-drag-region>
     <Server size={14} />
     <span class="titlebar-host">{title}</span>
+    {#if dockHintActive}
+      <span class="dock-hint">Drop onto main window to dock</span>
+    {/if}
   </div>
 
   <div class="titlebar-right">
@@ -83,6 +87,12 @@
     border-bottom: 1px solid var(--border-color);
     user-select: none;
     flex-shrink: 0;
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+
+  .terminal-window-titlebar.dock-ready {
+    background: rgba(0, 240, 255, 0.08);
+    border-bottom-color: rgba(0, 240, 255, 0.35);
   }
 
   .titlebar-left {
@@ -101,6 +111,14 @@
     color: var(--text-primary);
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .dock-hint {
+    margin-left: 8px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--accent-cyan);
     white-space: nowrap;
   }
 

@@ -55,8 +55,12 @@ export async function initPopoutTerminal(sessionId: string): Promise<PopoutTermi
   term.open(container);
 
   if (info.buffered_output && term) {
-    term.write(info.buffered_output, () => {
-      term?.scrollToBottom();
+    const activeTerm = term;
+    await new Promise<void>((resolve) => {
+      activeTerm.write(info.buffered_output, () => {
+        activeTerm.scrollToBottom();
+        resolve();
+      });
     });
   } else if (term) {
     const activeTerm = term;
@@ -128,6 +132,21 @@ export async function initPopoutTerminal(sessionId: string): Promise<PopoutTermi
 export async function dockPopoutToMain(sessionId: string): Promise<void> {
   const windowLabel = getCurrentWindow().label;
   await invoke("dock_popout_session", { sessionId, windowLabel });
+}
+
+export interface PopoutMainOverlap {
+  overlaps: boolean;
+  overlap_ratio: number;
+  center_over_main: boolean;
+  should_dock: boolean;
+}
+
+export async function checkPopoutMainOverlap(
+  windowLabel: string,
+): Promise<PopoutMainOverlap> {
+  return invoke<PopoutMainOverlap>("check_popout_main_overlap", {
+    popoutWindowLabel: windowLabel,
+  });
 }
 
 async function waitForContainer(elementId: string): Promise<HTMLElement | null> {

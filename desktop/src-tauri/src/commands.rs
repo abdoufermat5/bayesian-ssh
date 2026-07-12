@@ -55,6 +55,52 @@ pub struct ReattachSessionInfo {
     pub buffered_output: String,
 }
 
+#[derive(Serialize, Clone, Debug)]
+pub struct PopoutMainOverlap {
+    pub overlaps: bool,
+    pub overlap_ratio: f64,
+    pub center_over_main: bool,
+    pub should_dock: bool,
+}
+
+struct WindowRect {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+}
+
+fn window_outer_rect(window: &tauri::WebviewWindow) -> Result<WindowRect, String> {
+    let position = window.outer_position().map_err(|e| e.to_string())?;
+    let size = window.outer_size().map_err(|e| e.to_string())?;
+    Ok(WindowRect {
+        x: position.x,
+        y: position.y,
+        width: size.width,
+        height: size.height,
+    })
+}
+
+fn rect_intersection_area(a: &WindowRect, b: &WindowRect) -> i64 {
+    let left = a.x.max(b.x);
+    let top = a.y.max(b.y);
+    let right = (a.x + a.width as i32).min(b.x + b.width as i32);
+    let bottom = (a.y + a.height as i32).min(b.y + b.height as i32);
+    if right <= left || bottom <= top {
+        return 0;
+    }
+    (right - left) as i64 * (bottom - top) as i64
+}
+
+fn rect_center_over(a: &WindowRect, container: &WindowRect) -> bool {
+    let center_x = a.x + a.width as i32 / 2;
+    let center_y = a.y + a.height as i32 / 2;
+    center_x >= container.x
+        && center_x <= container.x + container.width as i32
+        && center_y >= container.y
+        && center_y <= container.y + container.height as i32
+}
+
 fn append_to_output_buffer(
     buffer: &Arc<Mutex<String>>,
     replay_offset: &Arc<Mutex<usize>>,
@@ -73,15 +119,16 @@ fn append_to_output_buffer(
     }
 }
 
-fn take_replay_slice(session: &PtySession) -> String {
-    let buffer = session.output_buffer.lock().map(|b| b.clone()).unwrap_or_default();
-    let mut offset = session.replay_offset.lock().map(|o| *o).unwrap_or(0);
-    offset = offset.min(buffer.len());
-    let replay = buffer[offset..].to_string();
-    if let Ok(mut offset_guard) = session.replay_offset.lock() {
-        *offset_guard = buffer.len();
+fn take_full_replay(session: &PtySession) -> String {
+    let buffer = session
+        .output_buffer
+        .lock()
+        .map(|b| b.clone())
+        .unwrap_or_default();
+    if let Ok(mut offset) = session.replay_offset.lock() {
+        *offset = buffer.len();
     }
-    replay
+    buffer
 }
 
 fn seal_replay_offset(session: &PtySession) {
@@ -641,7 +688,7 @@ pub fn claim_popout_session(
     }
 
     session.detached.store(false, Ordering::SeqCst);
-    let buffered_output = take_replay_slice(session);
+    let buffered_output = take_full_replay(session);
 
     Ok(ReattachSessionInfo {
         session_id: session_id.clone(),
@@ -699,7 +746,7 @@ pub fn dock_popout_session(
 
         session.popout_window = None;
         session.detached.store(false, Ordering::SeqCst);
-        let buffered_output = take_replay_slice(session);
+        let buffered_output = take_full_replay(session);
 
         ReattachSessionInfo {
             session_id: session_id.clone(),
@@ -715,6 +762,41 @@ pub fn dock_popout_session(
     }
 
     Ok(info)
+}
+
+#[tauri::command]
+pub fn check_popout_main_overlap(
+    app: AppHandle,
+    popout_window_label: String,
+) -> Result<PopoutMainOverlap, String> {
+    const DOCK_OVERLAP_RATIO: f64 = 0.3;
+
+    let popout = app
+        .get_webview_window(&popout_window_label)
+        .ok_or_else(|| format!("Window '{popout_window_label}' not found"))?;
+    let main = app
+        .get_webview_window("main")
+        .ok_or_else(|| "Main window not found".to_string())?;
+
+    let popout_rect = window_outer_rect(&popout)?;
+    let main_rect = window_outer_rect(&main)?;
+    let popout_area = popout_rect.width as i64 * popout_rect.height as i64;
+    let overlap_area = rect_intersection_area(&popout_rect, &main_rect);
+    let overlap_ratio = if popout_area > 0 {
+        overlap_area as f64 / popout_area as f64
+    } else {
+        0.0
+    };
+    let center_over_main = rect_center_over(&popout_rect, &main_rect);
+    let overlaps = overlap_area > 0;
+    let should_dock = overlaps && (overlap_ratio >= DOCK_OVERLAP_RATIO || center_over_main);
+
+    Ok(PopoutMainOverlap {
+        overlaps,
+        overlap_ratio,
+        center_over_main,
+        should_dock,
+    })
 }
 
 #[tauri::command]
@@ -755,7 +837,7 @@ pub fn reattach_pty(
 
     session.detached.store(false, Ordering::SeqCst);
     session.popout_window = None;
-    let buffered_output = take_replay_slice(session);
+    let buffered_output = take_full_replay(session);
 
     Ok(ReattachSessionInfo {
         session_id: session_id.clone(),

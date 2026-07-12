@@ -1306,6 +1306,12 @@ textarea,
   padding-bottom: 2px;
   border-bottom: 1px solid var(--border-color);
   flex-shrink: 0;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+
+.terminal-tabs-bar.tab-bar-drop-active {
+  background: rgba(0, 240, 255, 0.06);
+  box-shadow: inset 0 -2px 0 var(--accent-cyan);
 }
 
 .close-all-sessions-btn {

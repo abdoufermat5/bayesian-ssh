@@ -5,6 +5,32 @@ All notable changes to Bayesian SSH will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-07-13
+
+### Added
+- **Multi-host Split View and Session Management**: Connect to multiple hosts concurrently without closing current terminal sessions. Features a sidebar for quickly searching and spawning terminal sessions in tabs.
+- **Popout Terminals & Detached Session Management**: 
+  - Move active terminal sessions into standalone windows with full drag-and-drop / tab reattachment support.
+  - Custom `DetachedSessionsModal` lists all background/popped-out terminal processes with close, reattach, and kill actions.
+- **Kerberos Ticket Management**:
+  - Implemented real-time ticket checks, acquisition, and renewal scripts (`kerberos.rs`).
+  - Added warning thresholds on ticket expiry and a dedicated interactive `KerberosModal` for quick credential refreshes.
+- **App Onboarding Process**: Guided start workflow using an `OnboardingModal` setting up default users, workspace profiles, paths, and themes on first run.
+- **Session Logging**: Capture and audit stdout/stderr terminal session logs securely in sqlite history database.
+- **SSH Agent & Configuration Defaults**:
+  - Automatically detect and pre-fill the custom SSH agent socket from the live `SSH_AUTH_SOCK` environment variable.
+  - Option to set a default identity file (SSH private key) globally in Settings.
+- **Premium Custom Modals**: Beautiful dialog overlays replacing ugly browser native `confirm()` prompts for connection or profile deletions. Features high-fidelity pulsing warning animations and full dark mode compatibility.
+- **Frictionless Connection Cloning**:
+  - Fixed arguments parsing issue with `add_connection` on duplicate.
+  - Automatically highlights newly duplicated connections using a brief cyan flash animation.
+  - Immediately opens the Connection edit drawer upon duplication to prompt for value updates.
+- **Aesthetics & Accessibility**: Enhanced sidebar toggle navigation, custom titlebar controls, responsive grid/list styling, and refactored overall project component modularity.
+
+### Fixed
+- **PTY Session Isolation**: Kept master PTY descriptor alive in `PtySession` state to prevent closing one tab from triggering EOF and closing all active SSH connections.
+- **Manual Close Race**: Suppressed duplicate exit signals when manually closing terminal windows or PTY processes via `close_pty`.
+
 ## [1.6.0] - 2026-07-12
 
 ### Added
