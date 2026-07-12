@@ -99,6 +99,15 @@
   let showNotification = $state(false);
   let copiedId = $state<string | null>(null);
 
+  // SSH Agent states
+  let agentActive = $state(false);
+  let agentSocket = $state<string | null>(null);
+  let agentKeys = $state<string[]>([]);
+  let showAgentModal = $state(false);
+  let agentFeedback = $state<string | null>(null);
+  let agentFeedbackType = $state<"success" | "error" | null>(null);
+
+
   function notify(text: string, type: "success" | "error" | "info" = "info") {
     notificationText = text;
     notificationType = type;
@@ -129,8 +138,53 @@
       await loadConnections();
       await loadStats();
       await loadHistory();
+      await loadAgentStatus();
     } catch (e: any) {
       notify(e.toString(), "error");
+    }
+  }
+
+  async function loadAgentStatus() {
+    try {
+      const status: any = await invoke("get_agent_status");
+      agentActive = status.active;
+      agentSocket = status.socket_path;
+      agentKeys = status.keys;
+    } catch (e) {
+      console.error("Failed to load agent status", e);
+    }
+  }
+
+  async function triggerStartAgent() {
+    try {
+      const status: any = await invoke("start_agent");
+      agentActive = status.active;
+      agentSocket = status.socket_path;
+      agentKeys = status.keys;
+      notify("SSH Agent started successfully", "success");
+    } catch (e: any) {
+      notify(`Failed to start agent: ${e}`, "error");
+    }
+  }
+
+  async function triggerAddKey(keyPath: string) {
+    try {
+      const result: string = await invoke("add_key_to_agent", { keyPath });
+      await loadAgentStatus();
+      notify("Key added to SSH Agent successfully", "success");
+    } catch (e: any) {
+      notify(`Failed to add key: ${e}`, "error");
+    }
+  }
+
+  async function selectAndAddKey() {
+    try {
+      const file = await invoke<string | null>("pick_key_file");
+      if (file) {
+        await triggerAddKey(file);
+      }
+    } catch (e) {
+      console.error("Failed to pick key file", e);
     }
   }
 
@@ -540,6 +594,31 @@
           <div class="stat-row" onclick={() => searchQuery = stats?.most_used?.name || ""}>
             <span>Frequent:</span>
             <span class="text-glow">{stats.most_used.name}</span>
+          </div>
+        {/if}
+      </div>
+    {/if}
+
+    <!-- SSH Agent Manager -->
+    {#if !sidebarCollapsed}
+      <div class="sidebar-stats">
+        <span class="section-title">SSH AGENT</span>
+        <div class="stat-row">
+          <span>Status:</span>
+          {#if agentActive}
+            <span class="status-indicator active" onclick={() => showAgentModal = true} style="cursor: pointer; display: flex; align-items: center; gap: 6px;">
+              <span class="dot" style="width: 8px; height: 8px; border-radius: 50%; background-color: var(--accent-cyan); display: inline-block; box-shadow: 0 0 8px var(--accent-cyan);"></span> Active
+            </span>
+          {:else}
+            <button class="agent-start-btn" onclick={triggerStartAgent} style="background: none; border: none; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; gap: 6px; padding: 0; font-size: 11px;">
+              <span class="dot" style="width: 8px; height: 8px; border-radius: 50%; background-color: var(--text-muted); display: inline-block;"></span> Start Agent
+            </button>
+          {/if}
+        </div>
+        {#if agentActive}
+          <div class="stat-row clickable" onclick={() => showAgentModal = true} style="cursor: pointer;">
+            <span>Loaded Keys:</span>
+            <span class="text-glow" style="color: var(--accent-cyan);">{agentKeys.length} keys</span>
           </div>
         {/if}
       </div>
@@ -980,6 +1059,59 @@
       <div class="modal-footer">
         <button class="cancel-btn" onclick={() => showEnvModal = false}>Close</button>
         <button class="save-btn" onclick={createEnv}>Add Profile</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- SSH AGENT MODAL -->
+{#if showAgentModal}
+  <div class="modal-backdrop" onclick={() => showAgentModal = false}>
+    <div class="modal-dialog" onclick={(e) => e.stopPropagation()}>
+      <div class="modal-header">
+        <h2>SSH Agent Manager</h2>
+        <button class="close-btn" onclick={() => showAgentModal = false}><X size={18} /></button>
+      </div>
+
+      <div class="modal-body">
+        <div class="agent-info-box" style="background: var(--bg-card); padding: 12px; border: 1px solid var(--border-color); border-radius: 6px; margin-bottom: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span style="font-weight: 500; font-size: 13px; color: var(--text-color);">AGENT STATUS</span>
+            <span style="font-size: 11px; font-weight: 600; color: var(--accent-cyan);">ACTIVE</span>
+          </div>
+          {#if agentSocket}
+            <div style="font-size: 11px; color: var(--text-muted); word-break: break-all; font-family: monospace;">
+              Socket: {agentSocket}
+            </div>
+          {/if}
+        </div>
+
+        <div class="agent-keys-section">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span class="section-title" style="margin: 0;">LOADED KEYS ({agentKeys.length})</span>
+            <button class="cyber-btn mini" onclick={selectAndAddKey} style="padding: 4px 8px; font-size: 11px; display: flex; align-items: center; gap: 4px;">
+              <Plus size={12} /> Add Key File
+            </button>
+          </div>
+
+          <div class="keys-list-container" style="max-height: 200px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-card);">
+            {#if agentKeys.length === 0}
+              <div style="padding: 24px; text-align: center; color: var(--text-muted); font-size: 12px;">
+                No keys currently loaded in the SSH Agent.
+              </div>
+            {:else}
+              {#each agentKeys as key}
+                <div class="key-item" style="padding: 10px 12px; border-bottom: 1px solid var(--border-color); font-family: monospace; font-size: 11px; color: var(--text-color); display: flex; justify-content: space-between; align-items: center;">
+                  <span style="word-break: break-all; margin-right: 8px;">{key}</span>
+                </div>
+              {/each}
+            {/if}
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="cancel-btn" onclick={() => showAgentModal = false}>Close</button>
       </div>
     </div>
   </div>
