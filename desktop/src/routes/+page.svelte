@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import { Plus, Search, List, LayoutGrid, OctagonX } from "lucide-svelte";
+  import { Plus, Search, List, LayoutGrid, OctagonX, Layers, ShieldCheck, KeyRound, TerminalSquare } from "lucide-svelte";
 
   import TitleBar from "$lib/components/TitleBar.svelte";
   import Sidebar from "$lib/components/Sidebar.svelte";
@@ -13,6 +13,7 @@
   import EnvModal from "$lib/components/modals/EnvModal.svelte";
   import AgentModal from "$lib/components/modals/AgentModal.svelte";
   import KerberosModal from "$lib/components/modals/KerberosModal.svelte";
+  import DetachedSessionsModal from "$lib/components/modals/DetachedSessionsModal.svelte";
   import DeleteConfirm from "$lib/components/modals/DeleteConfirm.svelte";
   import OnboardingModal from "$lib/components/modals/OnboardingModal.svelte";
   import Toast from "$lib/components/Toast.svelte";
@@ -32,9 +33,16 @@
   import {
     closeAllTabs,
     connectSSH,
+    dockPopoutSession,
     fitActiveTerminal,
+    focusPopoutSession,
     getTerminalState,
     initTerminalListeners,
+    popOutDetachedSession,
+    reattachSession,
+    terminateAllDetachedSessions,
+    terminateDetachedSession,
+    terminatePopoutSession,
     teardownTerminalListeners,
   } from "$lib/stores/terminal.svelte";
   import { getWindowState, initWindowState } from "$lib/stores/window.svelte";
@@ -103,6 +111,7 @@
   let agentSocket = $state<string | null>(null);
   let agentKeys = $state<string[]>([]);
   let showAgentModal = $state(false);
+  let showSessionManager = $state(false);
   let kerberosLoading = $state(false);
   let kerberosError = $state<string | null>(null);
   let showOnboarding = $state(false);
@@ -549,6 +558,34 @@
     }
   }
 
+  function openSessionManager() {
+    showSessionManager = true;
+  }
+
+  function goToTerminals() {
+    activeTab = "terminals";
+    requestAnimationFrame(() => fitActiveTerminal());
+  }
+
+  async function handleSessionReattach(sessionId: string) {
+    await reattachSession(sessionId);
+    showSessionManager = false;
+    goToTerminals();
+  }
+
+  async function handleSessionDock(sessionId: string) {
+    await dockPopoutSession(sessionId);
+    showSessionManager = false;
+    goToTerminals();
+  }
+
+  async function handleTerminateAllSessions() {
+    await terminateAllDetachedSessions();
+    for (const session of [...terminalState.popoutSessions]) {
+      await terminatePopoutSession(session.id);
+    }
+  }
+
   function openAddModal() {
     isEditing = false;
     modalConnectionId = "";
@@ -799,6 +836,8 @@
       {sidebarCollapsed}
       onToggleSidebar={() => (sidebarCollapsed = !sidebarCollapsed)}
       terminalCount={terminalState.totalSessionCount}
+      tabCount={terminalState.count}
+      externalSessionCount={terminalState.externalSessionCount}
       {allTags}
       {selectedTag}
       onTagSelect={(tag) => {
@@ -813,6 +852,8 @@
       kerberosRemainingLabel={kerberosRemainingLabel}
       kerberosPrincipal={kerberosState.status.principal}
       onShowKerberosModal={openKerberosModal}
+      onShowSessionManager={openSessionManager}
+      onGoToTerminals={goToTerminals}
       onSearchMostUsed={(name) => (searchQuery = name)}
     />
 
@@ -852,6 +893,70 @@
             {/if}
           {:else}
             <span class="topbar-context-label">Active SSH Sessions</span>
+            {#if terminalState.externalSessionCount > 0}
+              <button type="button" class="topbar-inline-chip alert" onclick={openSessionManager}>
+                <Layers size={13} />
+                {terminalState.externalSessionCount} away
+              </button>
+            {/if}
+          {/if}
+        </div>
+
+        <div class="topbar-quick-actions">
+          {#if terminalState.totalSessionCount > 0}
+            <button
+              type="button"
+              class="quick-chip"
+              class:highlight={activeTab !== "terminals"}
+              onclick={goToTerminals}
+              title="Open terminal tabs"
+            >
+              <TerminalSquare size={14} />
+              <span>Tabs ({terminalState.count})</span>
+            </button>
+          {/if}
+
+          {#if terminalState.externalSessionCount > 0}
+            <button
+              type="button"
+              class="quick-chip alert"
+              onclick={openSessionManager}
+              title="Manage background and pop-out sessions"
+            >
+              <Layers size={14} />
+              <span>Sessions ({terminalState.externalSessionCount})</span>
+            </button>
+          {/if}
+
+          <button
+            type="button"
+            class="quick-chip"
+            class:active={agentActive}
+            onclick={() => (agentActive ? (showAgentModal = true) : triggerStartAgent())}
+            title="SSH Agent"
+          >
+            <KeyRound size={14} />
+            <span>{agentActive ? `Agent (${agentKeys.length})` : "Agent"}</span>
+          </button>
+
+          {#if kerberosHealth !== "unavailable"}
+            <button
+              type="button"
+              class="quick-chip kerberos {kerberosHealth}"
+              onclick={openKerberosModal}
+              title="Kerberos ticket"
+            >
+              <ShieldCheck size={14} />
+              <span>
+                {#if kerberosHealth === "valid" || kerberosHealth === "warning"}
+                  {kerberosRemainingLabel}
+                {:else if kerberosHealth === "missing"}
+                  krb: missing
+                {:else}
+                  krb: expired
+                {/if}
+              </span>
+            </button>
           {/if}
         </div>
 
@@ -925,6 +1030,7 @@
               bind:searchQuery
               onSearchInput={loadConnections}
               onCloseAll={requestCloseAllSessions}
+              onManageSessions={openSessionManager}
             />
           </div>
         {/if}
@@ -966,6 +1072,21 @@
       {agentKeys}
       onClose={() => (showAgentModal = false)}
       onAddKey={selectAndAddKey}
+    />
+  {/if}
+
+  {#if showSessionManager}
+    <DetachedSessionsModal
+      detachedSessions={terminalState.detachedSessions}
+      popoutSessions={terminalState.popoutSessions}
+      onClose={() => (showSessionManager = false)}
+      onReattach={handleSessionReattach}
+      onPopOut={popOutDetachedSession}
+      onDock={handleSessionDock}
+      onFocusPopout={focusPopoutSession}
+      onTerminateDetached={terminateDetachedSession}
+      onTerminatePopout={terminatePopoutSession}
+      onTerminateAll={handleTerminateAllSessions}
     />
   {/if}
 

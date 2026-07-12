@@ -7,6 +7,10 @@
     FolderPlus,
     ChevronLeft,
     ChevronRight,
+    Layers,
+    KeyRound,
+    ShieldCheck,
+    AppWindow,
   } from "lucide-svelte";
   import type { AppTab, ConnectionStats, EnvInfo } from "$lib/types";
 
@@ -21,6 +25,8 @@
     sidebarCollapsed: boolean;
     onToggleSidebar: () => void;
     terminalCount: number;
+    tabCount: number;
+    externalSessionCount: number;
     allTags: string[];
     selectedTag: string | null;
     onTagSelect: (tag: string | null) => void;
@@ -32,6 +38,8 @@
     kerberosRemainingLabel: string;
     kerberosPrincipal: string | null;
     onShowKerberosModal: () => void;
+    onShowSessionManager: () => void;
+    onGoToTerminals: () => void;
     onSearchMostUsed: (name: string) => void;
   }
 
@@ -46,6 +54,8 @@
     sidebarCollapsed,
     onToggleSidebar,
     terminalCount,
+    tabCount,
+    externalSessionCount,
     allTags,
     selectedTag,
     onTagSelect,
@@ -57,8 +67,17 @@
     kerberosRemainingLabel,
     kerberosPrincipal,
     onShowKerberosModal,
+    onShowSessionManager,
+    onGoToTerminals,
     onSearchMostUsed,
   }: Props = $props();
+
+  function handleSessionsCardClick() {
+    onGoToTerminals();
+    if (externalSessionCount > 0) {
+      onShowSessionManager();
+    }
+  }
 </script>
 
 <aside class="sidebar">
@@ -93,6 +112,7 @@
         class="nav-item"
         class:active={activeTab === "connections"}
         onclick={() => onTabChange("connections")}
+        title="Hosts"
       >
         <Server size={18} />
         <span class="nav-label">Hosts</span>
@@ -101,6 +121,7 @@
         class="nav-item"
         class:active={activeTab === "terminals"}
         onclick={() => onTabChange("terminals")}
+        title="Terminals"
       >
         <TerminalSquare size={18} />
         <span class="nav-label">Terminals</span>
@@ -112,6 +133,7 @@
         class="nav-item"
         class:active={activeTab === "history"}
         onclick={() => onTabChange("history")}
+        title="Session logs"
       >
         <Clock size={18} />
         <span class="nav-label">Logs</span>
@@ -120,120 +142,147 @@
         class="nav-item"
         class:active={activeTab === "settings"}
         onclick={() => onTabChange("settings")}
+        title="Settings"
       >
         <Settings size={18} />
         <span class="nav-label">Settings</span>
       </button>
+
+      {#if sidebarCollapsed && externalSessionCount > 0}
+        <button
+          class="nav-item session-alert-nav"
+          onclick={onShowSessionManager}
+          title="{externalSessionCount} session(s) running elsewhere"
+        >
+          <Layers size={18} />
+          <span class="badge alert">{externalSessionCount}</span>
+        </button>
+      {/if}
     </nav>
   </div>
 
   <div class="sidebar-scroll">
-  {#if stats && !sidebarCollapsed}
-    <div class="sidebar-stats">
-      <span class="section-title">METRICS</span>
-      <div class="stat-row">
-        <span>Registered:</span>
-        <span>{stats.total_connections} hosts</span>
-      </div>
-      {#if stats.most_used}
-        <div class="stat-row" onclick={() => onSearchMostUsed(stats?.most_used?.name || "")}>
-          <span>Frequent:</span>
-          <span class="text-glow">{stats.most_used.name}</span>
-        </div>
-      {/if}
-    </div>
-  {/if}
+    {#if !sidebarCollapsed}
+      <div class="runtime-panel">
+        <span class="section-title">RUNTIME</span>
 
-  {#if !sidebarCollapsed}
-    <div class="sidebar-stats">
-      <span class="section-title">SSH AGENT</span>
-      <div class="stat-row">
-        <span>Status:</span>
-        {#if agentActive}
-          <span
-            class="status-indicator active"
-            onclick={onShowAgentModal}
-            style="cursor: pointer; display: flex; align-items: center; gap: 6px;"
-          >
-            <span
-              class="dot"
-              style="width: 8px; height: 8px; border-radius: 50%; background-color: var(--accent-cyan); display: inline-block; box-shadow: 0 0 8px var(--accent-cyan);"
-            ></span> Active
-          </span>
-        {:else}
-          <button
-            class="agent-start-btn"
-            onclick={onStartAgent}
-            style="background: none; border: none; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; gap: 6px; padding: 0; font-size: 11px;"
-          >
-            <span
-              class="dot"
-              style="width: 8px; height: 8px; border-radius: 50%; background-color: var(--text-muted); display: inline-block;"
-            ></span> Start Agent
-          </button>
-        {/if}
-      </div>
-      {#if agentActive}
-        <div class="stat-row clickable" onclick={onShowAgentModal} style="cursor: pointer;">
-          <span>Loaded Keys:</span>
-          <span class="text-glow" style="color: var(--accent-cyan);">{agentKeys.length} keys</span>
-        </div>
-      {/if}
-    </div>
-  {/if}
-
-  {#if !sidebarCollapsed}
-    <div class="sidebar-stats">
-      <span class="section-title">KERBEROS</span>
-      <div class="stat-row">
-        <span>Ticket:</span>
-        {#if kerberosHealth === "unavailable"}
-          <span class="status-indicator unavailable">Unavailable</span>
-        {:else}
-          <button type="button" class="kerberos-status-btn {kerberosHealth}" onclick={onShowKerberosModal}>
-            <span class="dot"></span>
-            {#if kerberosHealth === "valid"}
-              Valid
-            {:else if kerberosHealth === "warning"}
-              Expiring
-            {:else if kerberosHealth === "missing"}
-              Missing
-            {:else}
-              Expired
+        <button
+          type="button"
+          class="runtime-card sessions-card"
+          class:has-away={externalSessionCount > 0}
+          onclick={handleSessionsCardClick}
+        >
+          <div class="runtime-card-top">
+            <TerminalSquare size={16} />
+            <span>Sessions</span>
+            {#if externalSessionCount > 0}
+              <span class="runtime-pill alert">{externalSessionCount} away</span>
             {/if}
+          </div>
+          <div class="runtime-card-stats">
+            <span><strong>{tabCount}</strong> tabs</span>
+            <span><strong>{terminalCount}</strong> total</span>
+          </div>
+          <span class="runtime-card-hint">
+            {#if externalSessionCount > 0}
+              Click to manage background & pop-out sessions
+            {:else if tabCount > 0}
+              Click to jump to terminal tabs
+            {:else}
+              Open a host to start a session
+            {/if}
+          </span>
+        </button>
+
+        <div class="runtime-actions">
+          <button
+            type="button"
+            class="runtime-action-btn"
+            class:active={agentActive}
+            onclick={() => (agentActive ? onShowAgentModal() : onStartAgent())}
+            title={agentActive ? "SSH Agent active" : "Start SSH Agent"}
+          >
+            <KeyRound size={14} />
+            <span class="runtime-action-label">Agent</span>
+            <span class="runtime-action-meta">
+              {#if agentActive}
+                {agentKeys.length} keys
+              {:else}
+                Off
+              {/if}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            class="runtime-action-btn kerberos {kerberosHealth}"
+            onclick={onShowKerberosModal}
+            title="Kerberos ticket"
+            disabled={kerberosHealth === "unavailable"}
+          >
+            <ShieldCheck size={14} />
+            <span class="runtime-action-label">Kerberos</span>
+            <span class="runtime-action-meta">
+              {#if kerberosHealth === "unavailable"}
+                N/A
+              {:else if kerberosHealth === "valid" || kerberosHealth === "warning"}
+                {kerberosRemainingLabel}
+              {:else if kerberosHealth === "missing"}
+                Missing
+              {:else}
+                Expired
+              {/if}
+            </span>
+          </button>
+        </div>
+
+        {#if externalSessionCount > 0}
+          <button type="button" class="runtime-manage-btn" onclick={onShowSessionManager}>
+            <Layers size={14} />
+            <span>Manage running sessions</span>
+            <AppWindow size={13} />
+          </button>
+        {/if}
+
+        {#if kerberosPrincipal && kerberosHealth !== "unavailable"}
+          <div class="runtime-footnote" title={kerberosPrincipal}>
+            {kerberosPrincipal}
+          </div>
+        {/if}
+      </div>
+    {/if}
+
+    {#if stats && !sidebarCollapsed}
+      <div class="sidebar-stats compact-metrics">
+        <span class="section-title">METRICS</span>
+        <div class="stat-row">
+          <span>Hosts</span>
+          <span>{stats.total_connections}</span>
+        </div>
+        {#if stats.most_used}
+          <button type="button" class="stat-row stat-link" onclick={() => onSearchMostUsed(stats?.most_used?.name || "")}>
+            <span>Top host</span>
+            <span class="text-glow">{stats.most_used.name}</span>
           </button>
         {/if}
       </div>
-      {#if kerberosHealth !== "unavailable" && kerberosHealth !== "missing"}
-        <div class="stat-row clickable" onclick={onShowKerberosModal} style="cursor: pointer;">
-          <span>Remaining:</span>
-          <span class="text-glow kerberos-remaining {kerberosHealth}">{kerberosRemainingLabel}</span>
-        </div>
-      {/if}
-      {#if kerberosPrincipal}
-        <div class="stat-row kerberos-principal-row" title={kerberosPrincipal}>
-          <span>Principal:</span>
-          <span class="kerberos-principal">{kerberosPrincipal}</span>
-        </div>
-      {/if}
-    </div>
-  {/if}
+    {/if}
 
-  {#if allTags.length > 0 && !sidebarCollapsed}
-    <div class="quick-tags">
-      <span class="section-title">TAGS</span>
-      <div class="tags-list">
-        <button class="tag-btn" class:active={selectedTag === null} onclick={() => onTagSelect(null)}>
-          All
-        </button>
-        {#each allTags as tag}
-          <button class="tag-btn" class:active={selectedTag === tag} onclick={() => onTagSelect(tag)}>
-            #{tag}
+    {#if allTags.length > 0 && !sidebarCollapsed}
+      <div class="quick-tags">
+        <span class="section-title">TAGS</span>
+        <div class="tags-list">
+          <button class="tag-btn" class:active={selectedTag === null} onclick={() => onTagSelect(null)}>
+            All
           </button>
-        {/each}
+          {#each allTags as tag}
+            <button class="tag-btn" class:active={selectedTag === tag} onclick={() => onTagSelect(tag)}>
+              #{tag}
+            </button>
+          {/each}
+        </div>
       </div>
-    </div>
-  {/if}
+    {/if}
   </div>
 
   <button
@@ -251,84 +300,206 @@
 </aside>
 
 <style>
-  .kerberos-status-btn {
-    background: none;
-    border: none;
+  .runtime-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 1.25rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .runtime-card {
+    width: 100%;
+    text-align: left;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.02);
+    padding: 10px 12px;
     cursor: pointer;
-    display: inline-flex;
+    color: inherit;
+    transition: border-color 0.2s, background 0.2s;
+  }
+
+  .runtime-card:hover {
+    border-color: rgba(0, 240, 255, 0.3);
+    background: rgba(0, 240, 255, 0.04);
+  }
+
+  .runtime-card.has-away {
+    border-color: rgba(0, 240, 255, 0.25);
+    background: rgba(0, 240, 255, 0.05);
+  }
+
+  .runtime-card-top {
+    display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 0;
-    font-size: 11px;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+  }
+
+  .runtime-pill {
+    margin-left: auto;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
     color: var(--text-secondary);
   }
 
-  .kerberos-status-btn .dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    display: inline-block;
-  }
-
-  .kerberos-status-btn.valid {
-    color: #34d399;
-  }
-
-  .kerberos-status-btn.valid .dot {
-    background: #34d399;
-    box-shadow: 0 0 8px rgba(52, 211, 153, 0.8);
-  }
-
-  .kerberos-status-btn.warning {
-    color: #fbbf24;
-  }
-
-  .kerberos-status-btn.warning .dot {
-    background: #fbbf24;
-    box-shadow: 0 0 8px rgba(251, 191, 36, 0.8);
-  }
-
-  .kerberos-status-btn.expired,
-  .kerberos-status-btn.missing {
-    color: #f87171;
-  }
-
-  .kerberos-status-btn.expired .dot,
-  .kerberos-status-btn.missing .dot {
-    background: #f87171;
-    box-shadow: 0 0 8px rgba(248, 113, 113, 0.8);
-  }
-
-  .status-indicator.unavailable {
-    font-size: 11px;
-    color: var(--text-muted);
-  }
-
-  .kerberos-remaining.valid {
+  .runtime-pill.alert {
+    background: rgba(0, 240, 255, 0.12);
     color: var(--accent-cyan);
   }
 
-  .kerberos-remaining.warning {
+  .runtime-card-stats {
+    display: flex;
+    gap: 12px;
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+  }
+
+  .runtime-card-stats strong {
+    color: var(--accent-cyan);
+    font-weight: 700;
+  }
+
+  .runtime-card-hint {
+    font-size: 10px;
+    color: var(--text-muted);
+    line-height: 1.4;
+  }
+
+  .runtime-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  .runtime-action-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: rgba(255, 255, 255, 0.02);
+    cursor: pointer;
+    color: var(--text-secondary);
+    min-width: 0;
+  }
+
+  .runtime-action-btn:hover:not(:disabled) {
+    border-color: rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-primary);
+  }
+
+  .runtime-action-btn.active {
+    border-color: rgba(0, 240, 255, 0.25);
+    color: var(--accent-cyan);
+  }
+
+  .runtime-action-btn.kerberos.valid {
+    border-color: rgba(52, 211, 153, 0.25);
+    color: #34d399;
+  }
+
+  .runtime-action-btn.kerberos.warning {
+    border-color: rgba(251, 191, 36, 0.35);
     color: #fbbf24;
   }
 
-  .kerberos-remaining.expired,
-  .kerberos-remaining.missing {
+  .runtime-action-btn.kerberos.expired,
+  .runtime-action-btn.kerberos.missing {
+    border-color: rgba(248, 113, 113, 0.35);
     color: #f87171;
   }
 
-  .kerberos-principal-row {
-    align-items: flex-start;
+  .runtime-action-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
-  .kerberos-principal {
+  .runtime-action-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .runtime-action-meta {
+    font-size: 11px;
+    font-weight: 600;
+    font-family: monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+  }
+
+  .runtime-manage-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px dashed rgba(0, 240, 255, 0.3);
+    background: rgba(0, 240, 255, 0.06);
+    color: var(--accent-cyan);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .runtime-manage-btn:hover {
+    background: rgba(0, 240, 255, 0.1);
+  }
+
+  .runtime-footnote {
     font-size: 10px;
     font-family: monospace;
     color: var(--text-muted);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    max-width: 120px;
-    text-align: right;
+    padding: 0 2px;
+  }
+
+  .compact-metrics {
+    margin-bottom: 1rem;
+  }
+
+  .stat-link {
+    width: 100%;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    font: inherit;
+    color: inherit;
+    text-align: inherit;
+  }
+
+  .stat-link:hover .text-glow {
+    color: var(--accent-cyan);
+  }
+
+  .session-alert-nav {
+    margin-top: 4px;
+    border: 1px solid rgba(0, 240, 255, 0.25);
+  }
+
+  .badge.alert {
+    background: rgba(0, 240, 255, 0.15);
+    color: var(--accent-cyan);
   }
 </style>

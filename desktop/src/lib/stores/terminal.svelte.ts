@@ -5,6 +5,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import type { Connection } from "$lib/types";
 import { ensureKerberosForConnection } from "$lib/stores/kerberos.svelte";
+import { notify } from "$lib/stores/notifications.svelte";
 
 export interface TerminalTab {
   id: string;
@@ -120,10 +121,30 @@ function openTerminalInstance(
     term.writeln(options.banner);
   }
   if (options?.replay) {
-    term.write(options.replay);
+    term.write(options.replay, () => {
+      term.scrollToBottom();
+    });
   }
 
   return term;
+}
+
+async function sealSessionUi(sessionId: string): Promise<void> {
+  try {
+    await invoke("seal_session_ui", { sessionId });
+  } catch {
+    // Non-fatal if the backend session is already gone.
+  }
+}
+
+function restoreTerminalOutput(term: Terminal, replay?: string) {
+  if (!replay) {
+    term.scrollToBottom();
+    return;
+  }
+  term.write(replay, () => {
+    term.scrollToBottom();
+  });
 }
 
 function attachResizeObserver(tabId: string, container: HTMLElement, term: Terminal, fitAddon: FitAddon) {
@@ -165,10 +186,7 @@ async function syncPopoutSessions() {
   }
 }
 
-async function mountReattachedSession(
-  info: ReattachSessionPayload,
-  banner: string,
-): Promise<void> {
+async function mountReattachedSession(info: ReattachSessionPayload): Promise<void> {
   if (findTab(info.session_id)) {
     activeTabId = info.session_id;
     return;
@@ -180,12 +198,17 @@ async function mountReattachedSession(
     connectionName: info.connection_name,
   };
 
-  const term = await mountTerminalTab(tab, {
-    banner,
-    replay: info.buffered_output,
-  });
+  const term = await mountTerminalTab(tab);
 
-  term?.scrollToBottom();
+  if (term) {
+    restoreTerminalOutput(term, info.buffered_output || undefined);
+    requestAnimationFrame(() => {
+      const mounted = findTab(tab.id);
+      if (mounted?.term && mounted.fitAddon) {
+        fitTerminal(tab.id, mounted.term, mounted.fitAddon);
+      }
+    });
+  }
 }
 
 function removeDetachedSession(sessionId: string) {
@@ -292,10 +315,8 @@ export async function initTerminalListeners(onExit?: ExitCallback) {
   unlistenSessionDocked = await listen("session-docked", async (event) => {
     const info = event.payload as ReattachSessionPayload;
     removePopoutSession(info.session_id);
-    await mountReattachedSession(
-      info,
-      `\x1b[1;36mDocked ${info.connection_name} to main window\x1b[0m`,
-    );
+    await mountReattachedSession(info);
+    notify(`"${info.connection_name}" docked — output restored`, "success");
     await syncActiveSessionCount();
   });
 }
@@ -360,6 +381,7 @@ export async function detachTab(tabId: string): Promise<void> {
   const tab = findTab(tabId);
   if (!tab) return;
 
+  await sealSessionUi(tabId);
   await invoke("detach_pty", { sessionId: tabId });
 
   cleanupTabUi(tabId);
@@ -372,6 +394,7 @@ export async function detachTab(tabId: string): Promise<void> {
       connectionName: tab.connectionName,
     },
   ];
+  notify(`"${tab.name}" is running in the background — your program is still active`, "info");
   await syncActiveSessionCount();
 }
 
@@ -379,8 +402,10 @@ export async function popOutTab(tabId: string): Promise<void> {
   const tab = findTab(tabId);
   if (!tab) return;
 
+  await sealSessionUi(tabId);
   await invoke("open_terminal_window", { sessionId: tabId, title: tab.name });
   cleanupTabUi(tabId);
+  notify(`"${tab.name}" opened in a separate window — session continues`, "info");
   await syncPopoutSessions();
   await syncActiveSessionCount();
 }
@@ -417,10 +442,8 @@ export async function reattachSession(sessionId: string): Promise<void> {
 
   removeDetachedSession(sessionId);
 
-  await mountReattachedSession(
-    info,
-    `\x1b[1;36mReattached to ${info.connection_name}\x1b[0m`,
-  );
+  await mountReattachedSession(info);
+  notify(`"${info.connection_name}" reattached — output restored`, "success");
   await syncActiveSessionCount();
 }
 

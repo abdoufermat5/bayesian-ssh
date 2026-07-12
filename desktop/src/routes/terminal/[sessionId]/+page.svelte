@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { listen } from "@tauri-apps/api/event";
+  import { invoke } from "@tauri-apps/api/core";
   import { page } from "$app/state";
   import TerminalWindowTitleBar from "$lib/components/TerminalWindowTitleBar.svelte";
   import {
@@ -48,6 +49,12 @@
     unlistenClose = undefined;
     unlistenDocked?.();
     unlistenDocked = undefined;
+
+    try {
+      await invoke("seal_session_ui", { sessionId });
+    } catch {
+      // Continue docking even if seal fails.
+    }
 
     handle.releaseUi();
     handle = null;

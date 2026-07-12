@@ -10,21 +10,13 @@
     X,
   } from "lucide-svelte";
   import type { Connection } from "$lib/types";
-  import DetachedSessionsModal from "$lib/components/modals/DetachedSessionsModal.svelte";
   import { tabPopOutDrag } from "$lib/actions/tabPopOutDrag";
   import {
     connectSSH,
     detachTab,
     disconnectTab,
-    dockPopoutSession,
-    focusPopoutSession,
     getTerminalState,
-    popOutDetachedSession,
     popOutTab,
-    reattachSession,
-    terminateAllDetachedSessions,
-    terminateDetachedSession,
-    terminatePopoutSession,
   } from "$lib/stores/terminal.svelte";
 
   interface Props {
@@ -32,12 +24,13 @@
     searchQuery: string;
     onSearchInput: () => void;
     onCloseAll: () => void;
+    onManageSessions: () => void;
   }
 
-  let { connections, searchQuery = $bindable(), onSearchInput, onCloseAll }: Props = $props();
+  let { connections, searchQuery = $bindable(), onSearchInput, onCloseAll, onManageSessions }: Props =
+    $props();
 
   const terminalState = getTerminalState();
-  let showDetachedManager = $state(false);
 
   async function handleConnect(conn: Connection) {
     await connectSSH(conn);
@@ -77,9 +70,9 @@
 
     {#if terminalState.externalSessionCount > 0}
       <div class="detached-compact-bar">
-        <button type="button" class="detached-manage-btn" onclick={() => (showDetachedManager = true)}>
+        <button type="button" class="detached-manage-btn" onclick={onManageSessions}>
           <Layers size={14} />
-          <span>{terminalState.externalSessionCount} external</span>
+          <span>{terminalState.externalSessionCount} away</span>
         </button>
       </div>
     {/if}
@@ -97,7 +90,7 @@
               onclick={() => (terminalState.activeTabId = tab.id)}
               role="button"
               tabindex="0"
-              title="Drag away to pop out"
+              title="Drag tab out to open in a separate window"
               onkeydown={(e) => {
                 if (e.key === "Enter" || e.key === " ") terminalState.activeTabId = tab.id;
               }}
@@ -106,7 +99,7 @@
               <span>{tab.name}</span>
               <button
                 class="tab-action-btn popout"
-                title="Pop out to new window"
+                title="Pop out to separate window (session keeps running)"
                 onclick={(e) => {
                   e.stopPropagation();
                   void popOutTab(tab.id);
@@ -116,7 +109,7 @@
               </button>
               <button
                 class="tab-action-btn detach"
-                title="Detach to background"
+                title="Run in background (hide tab, program keeps running)"
                 onclick={(e) => {
                   e.stopPropagation();
                   void detachTab(tab.id);
@@ -164,12 +157,12 @@
     {:else if terminalState.externalSessionCount > 0}
       <div class="terminals-empty-state">
         <TerminalSquare size={48} class="empty-icon" />
-        <h3>Sessions elsewhere</h3>
+        <h3>Sessions running elsewhere</h3>
         <p>
-          {terminalState.externalSessionCount} session{terminalState.externalSessionCount === 1 ? "" : "s"} are detached or in pop-out windows.
-          Reattach or dock them from the session manager.
+          {terminalState.externalSessionCount} session{terminalState.externalSessionCount === 1 ? "" : "s"} are in pop-out windows or running in the background.
+          Programs keep running — reattach or dock to see live output again.
         </p>
-        <button type="button" class="reattach-primary-btn" onclick={() => (showDetachedManager = true)}>
+        <button type="button" class="reattach-primary-btn" onclick={onManageSessions}>
           <Layers size={14} />
           Manage sessions
         </button>
@@ -183,34 +176,6 @@
     {/if}
   </div>
 </div>
-
-{#if showDetachedManager}
-  <DetachedSessionsModal
-    detachedSessions={terminalState.detachedSessions}
-    popoutSessions={terminalState.popoutSessions}
-    onClose={() => (showDetachedManager = false)}
-    onReattach={async (sessionId) => {
-      await reattachSession(sessionId);
-      showDetachedManager = false;
-    }}
-    onPopOut={async (sessionId) => {
-      await popOutDetachedSession(sessionId);
-    }}
-    onDock={async (sessionId) => {
-      await dockPopoutSession(sessionId);
-      showDetachedManager = false;
-    }}
-    onFocusPopout={focusPopoutSession}
-    onTerminateDetached={terminateDetachedSession}
-    onTerminatePopout={terminatePopoutSession}
-    onTerminateAll={async () => {
-      await terminateAllDetachedSessions();
-      for (const session of [...terminalState.popoutSessions]) {
-        await terminatePopoutSession(session.id);
-      }
-    }}
-  />
-{/if}
 
 <style>
   .terminals-search-input {

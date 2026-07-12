@@ -31,6 +31,7 @@ pub struct PtySession {
     pub connection_name: String,
     pub detached: Arc<AtomicBool>,
     pub output_buffer: Arc<Mutex<String>>,
+    pub replay_offset: Arc<Mutex<usize>>,
     pub popout_window: Option<String>,
 }
 
@@ -52,6 +53,44 @@ pub struct ReattachSessionInfo {
     pub session_id: String,
     pub connection_name: String,
     pub buffered_output: String,
+}
+
+fn append_to_output_buffer(
+    buffer: &Arc<Mutex<String>>,
+    replay_offset: &Arc<Mutex<usize>>,
+    data: &str,
+) {
+    let Ok(mut buffer) = buffer.lock() else {
+        return;
+    };
+    buffer.push_str(data);
+    if buffer.len() > MAX_DETACHED_BUFFER_BYTES {
+        let overflow = buffer.len() - MAX_DETACHED_BUFFER_BYTES;
+        buffer.drain(..overflow);
+        if let Ok(mut offset) = replay_offset.lock() {
+            *offset = offset.saturating_sub(overflow);
+        }
+    }
+}
+
+fn take_replay_slice(session: &PtySession) -> String {
+    let buffer = session.output_buffer.lock().map(|b| b.clone()).unwrap_or_default();
+    let mut offset = session.replay_offset.lock().map(|o| *o).unwrap_or(0);
+    offset = offset.min(buffer.len());
+    let replay = buffer[offset..].to_string();
+    if let Ok(mut offset_guard) = session.replay_offset.lock() {
+        *offset_guard = buffer.len();
+    }
+    replay
+}
+
+fn seal_replay_offset(session: &PtySession) {
+    if let (Ok(buffer), Ok(mut offset)) = (
+        session.output_buffer.lock(),
+        session.replay_offset.lock(),
+    ) {
+        *offset = buffer.len();
+    }
 }
 
 fn finalize_db_session(db_session_id: Option<Uuid>, exit_code: i32) {
@@ -421,6 +460,8 @@ pub fn spawn_pty(
     let detached_clone = Arc::clone(&detached);
     let output_buffer = Arc::new(Mutex::new(String::new()));
     let output_buffer_clone = Arc::clone(&output_buffer);
+    let replay_offset = Arc::new(Mutex::new(0));
+    let replay_offset_clone = Arc::clone(&replay_offset);
 
     // Store in global state — _master keeps the PTY master fd alive for the session duration
     let mut sessions = state.sessions.lock().unwrap();
@@ -433,6 +474,7 @@ pub fn spawn_pty(
         connection_name: connection.name.clone(),
         detached,
         output_buffer,
+        replay_offset,
         popout_window: None,
     });
     drop(sessions); // release lock before spawning thread
@@ -450,15 +492,13 @@ pub fn spawn_pty(
                 Ok(0) => break,
                 Ok(n) => {
                     let str_data = String::from_utf8_lossy(&buf[..n]).to_string();
-                    if detached_clone.load(Ordering::SeqCst) {
-                        if let Ok(mut buffer) = output_buffer_clone.lock() {
-                            buffer.push_str(&str_data);
-                            if buffer.len() > MAX_DETACHED_BUFFER_BYTES {
-                                let overflow = buffer.len() - MAX_DETACHED_BUFFER_BYTES;
-                                buffer.drain(..overflow);
-                            }
-                        }
-                    } else {
+                    append_to_output_buffer(
+                        &output_buffer_clone,
+                        &replay_offset_clone,
+                        &str_data,
+                    );
+
+                    if !detached_clone.load(Ordering::SeqCst) {
                         #[derive(Clone, Serialize)]
                         struct PtyPayload {
                             session_id: String,
@@ -510,6 +550,16 @@ pub fn resize_pty(
     // but in Unix we can adjust terminal size using standard ioctls if supported.
     // For standard window resize, we can omit or run a resize command if supported by the pty_system.
     // We'll keep this as a stub that returns Ok since Xterm.js handles visual resizing natively.
+    Ok(())
+}
+
+#[tauri::command]
+pub fn seal_session_ui(state: State<'_, PtyState>, session_id: String) -> Result<(), String> {
+    let sessions = state.sessions.lock().unwrap();
+    let session = sessions
+        .get(&session_id)
+        .ok_or_else(|| format!("PTY session '{session_id}' not found"))?;
+    seal_replay_offset(session);
     Ok(())
 }
 
@@ -591,15 +641,7 @@ pub fn claim_popout_session(
     }
 
     session.detached.store(false, Ordering::SeqCst);
-    let buffered_output = session
-        .output_buffer
-        .lock()
-        .map(|mut buffer| {
-            let replay = buffer.clone();
-            buffer.clear();
-            replay
-        })
-        .unwrap_or_default();
+    let buffered_output = take_replay_slice(session);
 
     Ok(ReattachSessionInfo {
         session_id: session_id.clone(),
@@ -657,15 +699,7 @@ pub fn dock_popout_session(
 
         session.popout_window = None;
         session.detached.store(false, Ordering::SeqCst);
-        let buffered_output = session
-            .output_buffer
-            .lock()
-            .map(|mut buffer| {
-                let replay = buffer.clone();
-                buffer.clear();
-                replay
-            })
-            .unwrap_or_default();
+        let buffered_output = take_replay_slice(session);
 
         ReattachSessionInfo {
             session_id: session_id.clone(),
@@ -721,15 +755,7 @@ pub fn reattach_pty(
 
     session.detached.store(false, Ordering::SeqCst);
     session.popout_window = None;
-    let buffered_output = session
-        .output_buffer
-        .lock()
-        .map(|mut buffer| {
-            let replay = buffer.clone();
-            buffer.clear();
-            replay
-        })
-        .unwrap_or_default();
+    let buffered_output = take_replay_slice(session);
 
     Ok(ReattachSessionInfo {
         session_id: session_id.clone(),

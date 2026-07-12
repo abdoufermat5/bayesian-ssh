@@ -54,8 +54,13 @@ export async function initPopoutTerminal(sessionId: string): Promise<PopoutTermi
   term.loadAddon(fitAddon);
   term.open(container);
 
-  if (info.buffered_output) {
-    term.write(info.buffered_output);
+  if (info.buffered_output && term) {
+    term.write(info.buffered_output, () => {
+      term?.scrollToBottom();
+    });
+  } else if (term) {
+    const activeTerm = term;
+    requestAnimationFrame(() => activeTerm.scrollToBottom());
   }
 
   term.onData((data) => {

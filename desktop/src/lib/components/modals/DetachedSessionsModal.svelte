@@ -57,8 +57,8 @@
   <div class="detached-manager-dialog" onclick={(e) => e.stopPropagation()}>
     <div class="detached-manager-header">
       <div>
-        <h3 id="session-manager-title">Session Manager</h3>
-        <p>{totalCount} session{totalCount === 1 ? "" : "s"} outside the main tab bar</p>
+        <h3 id="session-manager-title">Running Sessions</h3>
+        <p>Programs keep running when hidden. Reattach or dock to restore the terminal view.</p>
       </div>
       <button type="button" class="icon-btn" onclick={onClose} aria-label="Close">
         <X size={16} />
@@ -84,14 +84,14 @@
               <AppWindow size={14} />
               <div>
                 <span class="session-name">{session.name}</span>
-                <span class="session-hint">Open in separate window</span>
+                <span class="session-hint">Running in separate window</span>
               </div>
             </div>
             <div class="detached-manager-item-actions">
-              <button type="button" class="action-btn" title="Dock back to main window" onclick={() => onDock(session.id)}>
-                <Link2 size={14} />
-                <span>Dock</span>
-              </button>
+            <button type="button" class="action-btn" title="Bring back to main tab bar" onclick={() => onDock(session.id)}>
+              <Link2 size={14} />
+              <span>Dock here</span>
+            </button>
               <button type="button" class="action-btn" title="Focus pop-out window" onclick={() => onFocusPopout(session.id)}>
                 <ExternalLink size={14} />
                 <span>Focus</span>
@@ -112,14 +112,14 @@
               <Server size={14} />
               <div>
                 <span class="session-name">{session.name}</span>
-                <span class="session-hint">Running in background</span>
+                <span class="session-hint">Hidden tab — SSH process still active</span>
               </div>
             </div>
             <div class="detached-manager-item-actions">
-              <button type="button" class="action-btn" title="Reattach here" onclick={() => onReattach(session.id)}>
-                <Link2 size={14} />
-                <span>Reattach</span>
-              </button>
+            <button type="button" class="action-btn" title="Restore tab in main window" onclick={() => onReattach(session.id)}>
+              <Link2 size={14} />
+              <span>Reattach</span>
+            </button>
               <button type="button" class="action-btn" title="Open in new window" onclick={() => onPopOut(session.id)}>
                 <AppWindow size={14} />
                 <span>Pop out</span>
