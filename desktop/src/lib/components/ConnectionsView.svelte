@@ -13,6 +13,7 @@
   } from "lucide-svelte";
   import type { Connection } from "$lib/types";
   import { toSshCommand } from "$lib/utils/sshCommand";
+  import { formatDate } from "$lib/utils/timezone";
 
   interface Props {
     connections: Connection[];
@@ -20,6 +21,7 @@
     selectedHostIndex: number;
     copiedId: string | null;
     justDuplicatedId: string | null;
+    timezone: string;
     onSelectHost: (index: number) => void;
     onConnect: (conn: Connection) => void;
     onEdit: (conn: Connection) => void;
@@ -36,6 +38,7 @@
     selectedHostIndex,
     copiedId,
     justDuplicatedId,
+    timezone,
     onSelectHost,
     onConnect,
     onEdit,
@@ -101,7 +104,7 @@
               </div>
 
               <div class="col-last text-muted">
-                {conn.last_used ? new Date(conn.last_used).toLocaleDateString() : "Never"}
+                {conn.last_used ? formatDate(conn.last_used, timezone) : "Never"}
               </div>
 
               <div class="col-actions">
@@ -197,7 +200,7 @@
 
               <div class="card-footer">
                 <span class="last-used">
-                  {conn.last_used ? `Used ${new Date(conn.last_used).toLocaleDateString()}` : "Unused"}
+                  {conn.last_used ? `Used ${formatDate(conn.last_used, timezone)}` : "Unused"}
                 </span>
 
                 <div class="card-btns">

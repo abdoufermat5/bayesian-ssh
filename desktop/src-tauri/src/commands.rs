@@ -9,7 +9,7 @@ use serde::{Serialize, Deserialize};
 
 use bayesian_ssh::config::AppConfig;
 use bayesian_ssh::database::Database;
-use bayesian_ssh::models::{Connection, ConnectionStats, SessionHistoryEntry};
+use bayesian_ssh::models::{Connection, ConnectionStats, Session, SessionHistoryEntry};
 
 // State for active PTY sessions
 pub struct PtyState {
@@ -23,6 +23,20 @@ pub struct PtySession {
     pub _master: Box<dyn portable_pty::MasterPty + Send>,
     /// Set to true by close_pty so the reader thread suppresses the pty-exit event.
     pub cancelled: Arc<AtomicBool>,
+    /// Database session id when session logging is enabled.
+    pub db_session_id: Option<Uuid>,
+}
+
+fn finalize_db_session(db_session_id: Option<Uuid>, exit_code: i32) {
+    let Some(session_id) = db_session_id else {
+        return;
+    };
+
+    if let Ok(config) = AppConfig::load(None) {
+        if let Ok(db) = Database::new(&config) {
+            let _ = db.mark_session_terminated(&session_id.to_string(), exit_code);
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -260,7 +274,8 @@ pub fn get_history(limit: Option<usize>) -> Result<Vec<SessionHistoryEntry>, Str
     let config = AppConfig::load(None).map_err(|e| e.to_string())?;
     let db = Database::new(&config).map_err(|e| e.to_string())?;
 
-    db.get_session_history(None, limit.unwrap_or(50), None, false).map_err(|e| e.to_string())
+    let effective_limit = limit.unwrap_or(config.max_history_size.max(1));
+    db.get_session_history(None, effective_limit, None, false).map_err(|e| e.to_string())
 }
 
 // Native Dialogs
@@ -353,6 +368,22 @@ pub fn spawn_pty(
 
     let child = pty_pair.slave.spawn_command(cmd_builder).map_err(|e| e.to_string())?;
 
+    let mut db_session_id: Option<Uuid> = None;
+    if config.auto_save_history {
+        let mut session = Session::new(connection.clone());
+        session.transport = Some("subprocess".to_string());
+        if let Err(e) = db.add_session(&session) {
+            eprintln!("Failed to record session start: {e}");
+        } else {
+            db_session_id = Some(session.id);
+            if let Some(pid) = child.process_id() {
+                let mut active_session = session;
+                active_session.mark_active(pid);
+                let _ = db.update_session(&active_session);
+            }
+        }
+    }
+
     let reader = pty_pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = pty_pair.master.take_writer().map_err(|e| e.to_string())?;
 
@@ -367,6 +398,7 @@ pub fn spawn_pty(
         child,
         _master: pty_pair.master,
         cancelled,
+        db_session_id,
     });
     drop(sessions); // release lock before spawning thread
 
@@ -445,8 +477,16 @@ pub fn close_pty(
     if let Some(mut session) = sessions.remove(&session_id) {
         // Signal the reader thread NOT to emit pty-exit (we're closing intentionally)
         session.cancelled.store(true, Ordering::SeqCst);
-        let _ = session.child.kill();
-        // _master is dropped here, closing the PTY fd for only this session
+
+        let exit_code = match session.child.wait() {
+            Ok(status) => status.exit_code() as i32,
+            Err(_) => {
+                let _ = session.child.kill();
+                -1
+            }
+        };
+
+        finalize_db_session(session.db_session_id, exit_code);
         Ok(())
     } else {
         // Session already gone — not an error
@@ -567,8 +607,14 @@ pub struct DesktopSettings {
     pub default_port: u16,
     pub fuzzy_search: bool,
     pub default_key_path: Option<String>,
+    #[serde(default = "default_timezone")]
+    pub timezone: String,
     #[serde(default = "default_onboarding_complete")]
     pub onboarding_complete: bool,
+}
+
+fn default_timezone() -> String {
+    "system".to_string()
 }
 
 fn default_onboarding_complete() -> bool {
@@ -586,6 +632,9 @@ pub struct WorkspaceInfo {
     pub default_user: String,
     pub default_port: u16,
     pub search_mode: String,
+    pub log_level: String,
+    pub auto_save_history: bool,
+    pub max_history_size: usize,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -594,6 +643,9 @@ pub struct WorkspaceConfigUpdate {
     pub default_port: Option<u16>,
     pub ssh_config_path: Option<String>,
     pub search_mode: Option<String>,
+    pub log_level: Option<String>,
+    pub auto_save_history: Option<bool>,
+    pub max_history_size: Option<usize>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -642,6 +694,9 @@ pub fn get_workspace_info() -> Result<WorkspaceInfo, String> {
         default_user: config.default_user.clone(),
         default_port: config.default_port,
         search_mode: config.search_mode.clone(),
+        log_level: config.log_level.clone(),
+        auto_save_history: config.auto_save_history,
+        max_history_size: config.max_history_size,
     })
 }
 
@@ -666,6 +721,15 @@ pub fn save_workspace_config(update: WorkspaceConfigUpdate) -> Result<(), String
         if mode == "bayesian" || mode == "fuzzy" {
             config.search_mode = mode;
         }
+    }
+    if let Some(log_level) = update.log_level {
+        config.log_level = log_level;
+    }
+    if let Some(auto_save) = update.auto_save_history {
+        config.auto_save_history = auto_save;
+    }
+    if let Some(max_size) = update.max_history_size {
+        config.max_history_size = max_size.clamp(50, 100_000);
     }
 
     config.save().map_err(|e| e.to_string())
@@ -705,6 +769,9 @@ pub fn complete_onboarding(payload: OnboardingPayload) -> Result<usize, String> 
         default_port: Some(default_port),
         ssh_config_path: payload.ssh_config_path.clone(),
         search_mode: Some(sync_search_mode_to_config(payload.fuzzy_search)),
+        log_level: None,
+        auto_save_history: None,
+        max_history_size: None,
     })?;
 
     let mut settings = if bayesian_config_root().join("desktop_settings.json").exists() {
@@ -888,6 +955,7 @@ impl Default for DesktopSettings {
             default_port: 22,
             fuzzy_search: false,
             default_key_path: None,
+            timezone: default_timezone(),
             onboarding_complete: false,
         }
     }

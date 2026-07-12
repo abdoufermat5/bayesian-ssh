@@ -1,6 +1,11 @@
 <script lang="ts">
   import { FolderOpen, FolderPlus, RefreshCw } from "lucide-svelte";
   import type { DesktopSettings, EnvInfo, WorkspaceInfo } from "$lib/types";
+  import {
+    SYSTEM_TIMEZONE,
+    getSupportedTimezones,
+    getSystemTimezone,
+  } from "$lib/utils/timezone";
 
   interface Props {
     settings: DesktopSettings;
@@ -29,6 +34,23 @@
   }: Props = $props();
 
   let sshConfigPath = $state(workspace.ssh_config_path || "");
+  const systemTimezone = getSystemTimezone();
+  const timezoneOptions = getSupportedTimezones();
+  let timezoneFilter = $state("");
+
+  const filteredTimezoneOptions = $derived.by(() => {
+    const query = timezoneFilter.trim().toLowerCase();
+    const selected = settings.timezone;
+    const base = !query
+      ? timezoneOptions
+      : timezoneOptions.filter((tz) => tz.toLowerCase().includes(query));
+
+    if (selected && selected !== SYSTEM_TIMEZONE && !base.includes(selected)) {
+      return [selected, ...base];
+    }
+
+    return base;
+  });
 
   $effect(() => {
     sshConfigPath = workspace.ssh_config_path || "";
@@ -150,6 +172,64 @@
       </div>
 
       <div class="settings-card">
+        <span class="settings-card-title">SESSION LOGS</span>
+
+        <div class="settings-row">
+          <div class="settings-field">
+            <span class="label-style">Record session history</span>
+            <span class="settings-field-hint">
+              Save SSH session start/end events to the workspace database
+            </span>
+          </div>
+          <input
+            type="checkbox"
+            checked={workspace.auto_save_history}
+            onchange={(e) => {
+              workspace = {
+                ...workspace,
+                auto_save_history: (e.target as HTMLInputElement).checked,
+              };
+              handleWorkspaceSave();
+            }}
+            class="settings-checkbox"
+          />
+        </div>
+
+        <div class="settings-field">
+          <label for="settings-max-history">Maximum log entries</label>
+          <input
+            id="settings-max-history"
+            type="number"
+            min="50"
+            max="100000"
+            step="50"
+            bind:value={workspace.max_history_size}
+            onchange={handleWorkspaceSave}
+            class="cyber-input"
+          />
+          <span class="settings-field-hint">Shown in Logs tab and stored in {workspace.database_path || "history.db"}</span>
+        </div>
+
+        <div class="settings-field">
+          <label for="settings-log-level">Application log level</label>
+          <select
+            id="settings-log-level"
+            class="cyber-select"
+            bind:value={workspace.log_level}
+            onchange={handleWorkspaceSave}
+          >
+            <option value="trace">Trace</option>
+            <option value="debug">Debug</option>
+            <option value="info">Info</option>
+            <option value="warn">Warn</option>
+            <option value="error">Error</option>
+            <option value="off">Off</option>
+          </select>
+          <span class="settings-field-hint">Controls backend diagnostic verbosity</span>
+        </div>
+      </div>
+
+      <div class="settings-card">
         <span class="settings-card-title">APPEARANCE</span>
 
         <div class="settings-field">
@@ -165,6 +245,31 @@
             <option value="oled">OLED Pitch Black</option>
             <option value="slate">Sleek Navy (Slate)</option>
           </select>
+        </div>
+
+        <div class="settings-field">
+          <label for="settings-timezone-filter">Timezone</label>
+          <input
+            id="settings-timezone-filter"
+            type="text"
+            placeholder="Filter timezones..."
+            bind:value={timezoneFilter}
+            class="cyber-input"
+          />
+          <select
+            id="settings-timezone"
+            class="cyber-select"
+            bind:value={settings.timezone}
+            onchange={onSave}
+          >
+            <option value={SYSTEM_TIMEZONE}>System default ({systemTimezone})</option>
+            {#each filteredTimezoneOptions as tz}
+              <option value={tz}>{tz}</option>
+            {/each}
+          </select>
+          <span class="settings-field-hint">
+            Dates and times across the app use this timezone. Default follows your OS setting.
+          </span>
         </div>
       </div>
 

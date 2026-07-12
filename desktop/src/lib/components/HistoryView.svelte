@@ -1,12 +1,38 @@
 <script lang="ts">
   import { CheckCircle2, AlertCircle } from "lucide-svelte";
   import type { SessionHistoryEntry } from "$lib/types";
+  import { formatDateTime } from "$lib/utils/timezone";
 
   interface Props {
     history: SessionHistoryEntry[];
+    timezone: string;
   }
 
-  let { history }: Props = $props();
+  let { history, timezone }: Props = $props();
+
+  function statusLabel(status: SessionHistoryEntry["status"]): string {
+    if (typeof status === "string") return status;
+    if (status && typeof status === "object" && "Error" in status) {
+      return `Error: ${status.Error}`;
+    }
+    return "Unknown";
+  }
+
+  function isSuccessEntry(entry: SessionHistoryEntry): boolean {
+    if (typeof entry.status === "object" && entry.status !== null && "Error" in entry.status) {
+      return false;
+    }
+
+    if (typeof entry.status === "string") {
+      if (entry.status === "Active" || entry.status === "Starting") return true;
+      if (entry.status === "Disconnected") return true;
+      if (entry.status === "Terminated") {
+        return entry.exit_code === undefined || entry.exit_code === 0;
+      }
+    }
+
+    return false;
+  }
 </script>
 
 <div class="page-view history-view">
@@ -32,17 +58,17 @@
         <tbody>
           {#each history as entry}
             <tr>
-              <td class="font-semibold text-white">{entry.name}</td>
-              <td>{new Date(entry.started_at).toLocaleString()}</td>
-              <td>{entry.ended_at ? new Date(entry.ended_at).toLocaleString() : "Active/Stale"}</td>
+              <td class="font-semibold text-white">{entry.connection_name}</td>
+              <td>{formatDateTime(entry.started_at, timezone)}</td>
+              <td>{entry.ended_at ? formatDateTime(entry.ended_at, timezone) : "Active/Stale"}</td>
               <td>
-                {#if entry.status.includes("Connected") || entry.status.includes("Completed") || entry.status.includes("Active")}
+                {#if isSuccessEntry(entry)}
                   <span class="status-badge success">
-                    <CheckCircle2 size={12} /> Active
+                    <CheckCircle2 size={12} /> {statusLabel(entry.status)}
                   </span>
                 {:else}
                   <span class="status-badge error">
-                    <AlertCircle size={12} /> Failed
+                    <AlertCircle size={12} /> {statusLabel(entry.status)}
                   </span>
                 {/if}
               </td>

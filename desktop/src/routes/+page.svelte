@@ -95,6 +95,9 @@
     default_user: "root",
     default_port: 22,
     search_mode: "bayesian",
+    log_level: "info",
+    auto_save_history: true,
+    max_history_size: 1000,
   });
 
   let settings = $state<DesktopSettings>({
@@ -105,6 +108,7 @@
     default_port: 22,
     fuzzy_search: false,
     default_key_path: "",
+    timezone: "system",
   });
 
   function promptDelete(label: string, subtitle: string, onConfirm: () => Promise<void>) {
@@ -163,6 +167,9 @@
           default_port: settings.default_port,
           ssh_config_path: workspace.ssh_config_path || "",
           search_mode: settings.fuzzy_search ? "fuzzy" : "bayesian",
+          log_level: workspace.log_level,
+          auto_save_history: workspace.auto_save_history,
+          max_history_size: workspace.max_history_size,
         },
       });
       await loadWorkspace();
@@ -231,6 +238,7 @@
         default_port: (loaded.default_port as number) || 22,
         fuzzy_search: Boolean(loaded.fuzzy_search),
         default_key_path: (loaded.default_key_path as string) || "",
+        timezone: (loaded.timezone as string) || "system",
       };
       applyTheme(settings.theme);
 
@@ -550,6 +558,9 @@
     if (tab === "terminals") {
       requestAnimationFrame(() => fitActiveTerminal());
     }
+    if (tab === "history") {
+      void loadHistory();
+    }
   }
 
   function handleGlobalKeydown(e: KeyboardEvent) {
@@ -719,6 +730,7 @@
               {selectedHostIndex}
               {copiedId}
               {justDuplicatedId}
+              timezone={settings.timezone}
               onSelectHost={(i) => (selectedHostIndex = i)}
               onConnect={handleConnect}
               onEdit={openEditModal}
@@ -733,7 +745,7 @@
 
         {#if activeTab === "history"}
           <div class="main-body-panel is-visible">
-            <HistoryView {history} />
+            <HistoryView {history} timezone={settings.timezone} />
           </div>
         {/if}
 

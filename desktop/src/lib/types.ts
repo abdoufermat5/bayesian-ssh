@@ -19,12 +19,12 @@ export interface EnvInfo {
 }
 
 export interface SessionHistoryEntry {
-  id: string;
-  name: string;
+  connection_name: string;
   started_at: string;
   ended_at?: string;
-  status: string;
+  status: string | { Error: string };
   exit_code?: number;
+  duration?: number;
 }
 
 export interface ConnectionStats {
@@ -42,6 +42,7 @@ export interface DesktopSettings {
   default_port: number;
   fuzzy_search: boolean;
   default_key_path: string;
+  timezone: string;
   onboarding_complete?: boolean;
 }
 
@@ -55,6 +56,9 @@ export interface WorkspaceInfo {
   default_user: string;
   default_port: number;
   search_mode: string;
+  log_level: string;
+  auto_save_history: boolean;
+  max_history_size: number;
 }
 
 export interface OnboardingPayload {
