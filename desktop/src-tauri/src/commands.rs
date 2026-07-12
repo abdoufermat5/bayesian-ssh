@@ -253,11 +253,20 @@ pub fn get_history(limit: Option<usize>) -> Result<Vec<SessionHistoryEntry>, Str
 // Native Dialogs
 
 #[tauri::command]
-pub fn pick_key_file() -> Result<Option<String>, String> {
-    let file = rfd::FileDialog::new()
+pub fn pick_key_file(window: tauri::WebviewWindow) -> Result<Option<String>, String> {
+    let ssh_dir = dirs::home_dir().map(|h| h.join(".ssh"));
+    
+    let mut dialog = rfd::FileDialog::new()
         .set_title("Select SSH Private Key")
-        .pick_file();
-
+        .set_parent(&window);
+        
+    if let Some(ref path) = ssh_dir {
+        if path.exists() {
+            dialog = dialog.set_directory(path);
+        }
+    }
+    
+    let file = dialog.pick_file();
     Ok(file.map(|p| p.to_string_lossy().to_string()))
 }
 
