@@ -84,7 +84,7 @@ pub struct SessionStats {
 }
 
 /// Session history entry for display purposes
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionHistoryEntry {
     pub connection_name: String,
     pub started_at: DateTime<Utc>,

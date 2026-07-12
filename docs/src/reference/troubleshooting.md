@@ -1,5 +1,16 @@
 # Troubleshooting
 
+## Quick Diagnostic
+
+Run `bssh doctor` before changing connection settings. It checks the active environment, configuration, SQLite database, SSH client, SSH config, ssh-agent socket, and Kerberos helper tools.
+
+```bash
+bssh doctor
+bssh --env staging doctor
+```
+
+Use any `FAILED` entry as the first fix target. `WARN` entries are non-blocking, but they explain why features such as ssh-agent, SSH config import, or Kerberos may not work in the current environment.
+
 ## Kerberos Authentication Problems
 
 ### No Valid Kerberos Ticket Found

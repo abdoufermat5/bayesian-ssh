@@ -1,11 +1,18 @@
 [package]
 name = "bayesian-ssh"
-version = "1.5.0"
+version = "1.6.0"
 edition = "2021"
 authors = ["Abdoufermat5"]
 description = "A fast and lightweight SSH session manager with Kerberos support"
 license = "MIT"
 repository = "https://github.com/abdoufermat5/bayesian-ssh"
+[lib]
+name = "bayesian_ssh"
+path = "src/lib.rs"
+
+[[bin]]
+name = "bayesian-ssh"
+path = "src/main.rs"
 
 [dependencies]
 # Async runtime

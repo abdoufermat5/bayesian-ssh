@@ -5,6 +5,22 @@ All notable changes to Bayesian SSH will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-07-12
+
+### Added
+- **Tauri Desktop Application**: A beautiful, performance-oriented standalone desktop GUI built using SvelteKit, TypeScript, and Rust. Features:
+  - Vercel/Linear-inspired sleek dark mode layout with Grid and List views.
+  - Collapsible drawer sidebar with tags and profiles selection.
+  - Interactive tabbed inline terminals powered by Xterm.js and a backend PTY process broker.
+  - Connection logs audit table and system metrics monitoring.
+  - Global keyboard shortcuts and search bar navigation.
+  - Agnostic build and installation system integrated via Makefile and install.sh scripts.
+- **Refactored core shared library**: Modularized `bayesian-ssh` into a reusable Rust library target.
+- **`doctor` command**: Diagnose the active environment, configuration, SQLite database, SSH client, SSH config, ssh-agent socket, and Kerberos helper tools from the CLI.
+
+### Changed
+- **Actionable CLI errors**: Command failures now print a stable `Error:` line and targeted `Suggestion:` hints for common recovery paths.
+
 ## [1.5.0] - 2026-04-18
 
 ### Added

@@ -2,16 +2,9 @@ use clap::Parser;
 use tracing::{error, info};
 use tracing_subscriber::filter::LevelFilter;
 
-mod cli;
-mod config;
-mod database;
-pub mod errors;
-mod models;
-mod services;
-mod tui;
-
-use cli::{Cli, Commands};
-use config::AppConfig;
+use bayesian_ssh::cli::{Cli, Commands};
+use bayesian_ssh::config::AppConfig;
+use bayesian_ssh::errors;
 
 /// Convert log level string to tracing LevelFilter
 fn parse_log_level(level: &str) -> LevelFilter {
@@ -89,6 +82,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Execute CLI command
     if let Err(e) = cli.execute(config).await {
+        errors::report_cli_error(&e);
         if !is_completions {
             error!("Error executing command: {}", e);
         }

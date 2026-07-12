@@ -20,6 +20,7 @@ BINARY_NAME="bayesian-ssh"
 INSTALL_DIR="/usr/local/bin"
 TEMP_DIR="/tmp/bayesian-ssh-install"
 INTERACTIVE=false
+INSTALL_DESKTOP=false
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -28,9 +29,14 @@ while [[ $# -gt 0 ]]; do
             INTERACTIVE=true
             shift
             ;;
+        --desktop)
+            INSTALL_DESKTOP=true
+            BINARY_NAME="bayesian-ssh-desktop"
+            shift
+            ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--interactive]"
+            echo "Usage: $0 [--interactive] [--desktop]"
             exit 1
             ;;
     esac
@@ -154,7 +160,11 @@ download_binary() {
     cd "$TEMP_DIR"
     
     # Construct download URL
-    DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${LATEST_TAG}/bayesian-ssh-${OS}-${ARCH}"
+    if [ "$INSTALL_DESKTOP" = true ]; then
+        DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${LATEST_TAG}/bayesian-ssh-desktop-${OS}-${ARCH}"
+    else
+        DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${LATEST_TAG}/bayesian-ssh-${OS}-${ARCH}"
+    fi
     
     echo -e "${BLUE}📡 Downloading from: ${DOWNLOAD_URL}${NC}"
     
@@ -170,7 +180,12 @@ download_binary() {
         echo -e "${YELLOW}Trying alternative download method...${NC}"
         
         # Try alternative URL format
-        ALT_URL="https://github.com/${REPO}/releases/download/${LATEST_TAG}/bayesian-ssh"
+        if [ "$INSTALL_DESKTOP" = true ]; then
+            ALT_URL="https://github.com/${REPO}/releases/download/${LATEST_TAG}/bayesian-ssh-desktop"
+        else
+            ALT_URL="https://github.com/${REPO}/releases/download/${LATEST_TAG}/bayesian-ssh"
+        fi
+        
         if command -v curl &> /dev/null; then
             curl -fsSL -o "$BINARY_NAME" "$ALT_URL"
         else
@@ -194,6 +209,12 @@ verify_binary() {
     # Make executable
     chmod +x "$BINARY_NAME"
     
+    # Skip execution test for desktop binary in headless environment
+    if [ "$INSTALL_DESKTOP" = true ]; then
+        echo -e "${YELLOW}⚠️  Skipping execution test for desktop binary (requires graphical session)${NC}"
+        return 0
+    fi
+
     # Test if binary works
     if ! ./"$BINARY_NAME" --help &> /dev/null; then
         echo -e "${RED}❌ Binary verification failed${NC}"
@@ -271,12 +292,17 @@ build_from_source() {
     cd "$TEMP_DIR"
     
     # Build using Makefile
-    echo -e "${BLUE}🔨 Building with Makefile...${NC}"
-    make release
-    
-    # Install using Makefile
-    echo -e "${BLUE}📦 Installing with Makefile...${NC}"
-    make install
+    if [ "$INSTALL_DESKTOP" = true ]; then
+        echo -e "${BLUE}🔨 Building desktop version with Makefile...${NC}"
+        make release-desktop
+        echo -e "${BLUE}📦 Installing desktop version with Makefile...${NC}"
+        make install-desktop
+    else
+        echo -e "${BLUE}🔨 Building CLI version with Makefile...${NC}"
+        make release
+        echo -e "${BLUE}📦 Installing CLI version with Makefile...${NC}"
+        make install
+    fi
     
     echo -e "${GREEN}✅ Build from source completed successfully!${NC}"
 }
@@ -349,19 +375,38 @@ main() {
     if [ "$INTERACTIVE" = true ]; then
         # Ask user preference
         echo -e "${BLUE}📋 Installation Options:${NC}"
-        echo -e "  1. Download pre-built binary (recommended)"
-        echo -e "  2. Build from source"
+        echo -e "  1. Download pre-built CLI binary (recommended)"
+        echo -e "  2. Download pre-built Desktop app (GUI)"
+        echo -e "  3. Build CLI binary from source"
+        echo -e "  4. Build Desktop app from source"
         echo ""
-        read -p "Choose option (1 or 2): " -n 1 -r
+        read -p "Choose option (1-4): " -n 1 -r
         echo
         
         if [[ $REPLY =~ ^[2]$ ]]; then
-            # Build from source
+            # Download pre-built Desktop binary
+            INSTALL_DESKTOP=true
+            BINARY_NAME="bayesian-ssh-desktop"
+            get_latest_release
+            download_binary
+            verify_binary
+            install_binary
+            cleanup
+            show_success
+        elif [[ $REPLY =~ ^[3]$ ]]; then
+            # Build CLI from source
+            build_from_source
+            cleanup
+            show_build_success
+        elif [[ $REPLY =~ ^[4]$ ]]; then
+            # Build Desktop from source
+            INSTALL_DESKTOP=true
+            BINARY_NAME="bayesian-ssh-desktop"
             build_from_source
             cleanup
             show_build_success
         else
-            # Download pre-built binary
+            # Default/Option 1: Download pre-built CLI binary
             get_latest_release
             download_binary
             verify_binary
@@ -371,7 +416,11 @@ main() {
         fi
     else
         # Non-interactive mode - use default option
-        echo -e "${BLUE}📋 Using default option: Download pre-built binary${NC}"
+        if [ "$INSTALL_DESKTOP" = true ]; then
+            echo -e "${BLUE}📋 Installing pre-built desktop application...${NC}"
+        else
+            echo -e "${BLUE}📋 Installing pre-built CLI binary...${NC}"
+        fi
         get_latest_release
         download_binary
         verify_binary

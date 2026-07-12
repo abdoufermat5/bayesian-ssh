@@ -5,6 +5,7 @@ pub mod close;
 pub mod completions;
 pub mod config;
 pub mod connect;
+pub mod doctor;
 pub mod duplicate;
 pub mod edit;
 pub mod env;

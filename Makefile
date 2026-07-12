@@ -88,6 +88,36 @@ install: release ## Install binary to system
 		exit 1; \
 	fi
 
+# Desktop app targets
+build-desktop: ## Build debug version of the desktop app
+	@echo "🔨 Building debug version of the desktop app..."
+	@cd desktop && npm run tauri build -- --debug --no-bundle
+	@echo "✅ Desktop debug build completed"
+
+release-desktop: ## Build release version of the desktop app
+	@echo "🔨 Building release version of the desktop app..."
+	@cd desktop && npm run tauri build -- --no-bundle
+	@echo "✅ Desktop release build completed"
+
+install-desktop: release-desktop ## Install desktop app binary to system
+	@echo "📦 Installing bayesian-ssh-desktop..."
+	@if [ -f "desktop/src-tauri/target/release/desktop" ]; then \
+		sudo cp "desktop/src-tauri/target/release/desktop" "$(INSTALL_DIR)/bayesian-ssh-desktop"; \
+		echo "✅ bayesian-ssh-desktop installed to $(INSTALL_DIR)/bayesian-ssh-desktop"; \
+	else \
+		echo "❌ Desktop release binary not found."; \
+		exit 1; \
+	fi
+
+uninstall-desktop: ## Remove desktop binary from system
+	@echo "🗑️  Uninstalling bayesian-ssh-desktop..."
+	@if [ -f "$(INSTALL_DIR)/bayesian-ssh-desktop" ]; then \
+		sudo rm "$(INSTALL_DIR)/bayesian-ssh-desktop"; \
+		echo "✅ bayesian-ssh-desktop uninstalled from $(INSTALL_DIR)"; \
+	else \
+		echo "ℹ️  bayesian-ssh-desktop not found in $(INSTALL_DIR)"; \
+	fi
+
 uninstall: ## Remove binary from system
 	@echo "🗑️  Uninstalling $(BINARY_NAME)..."
 	@if [ -f "$(INSTALL_DIR)/$(BINARY_NAME)" ]; then \

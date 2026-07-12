@@ -29,12 +29,13 @@
 
 #### Option 1: One-liner Install (Recommended)
 ```bash
-# Install latest release automatically (non-interactive)
+# Install latest CLI release automatically (non-interactive)
 curl -fsSL https://raw.githubusercontent.com/abdoufermat5/bayesian-ssh/main/install.sh | bash
-```
 
-```
-# Interactive installation (choose options)
+# Install latest Desktop GUI release automatically (non-interactive)
+curl -fsSL https://raw.githubusercontent.com/abdoufermat5/bayesian-ssh/main/install.sh | bash -s -- --desktop
+
+# Interactive installation (choose CLI or Desktop)
 curl -fsSL https://raw.githubusercontent.com/abdoufermat5/bayesian-ssh/main/install.sh | bash -s -- --interactive
 ```
 
@@ -44,13 +45,12 @@ curl -fsSL https://raw.githubusercontent.com/abdoufermat5/bayesian-ssh/main/inst
 git clone https://github.com/abdoufermat5/bayesian-ssh.git
 cd bayesian-ssh
 
-# Build and install using Makefile
+# Build and install CLI version using Makefile
 make release
 make install
 
-# Or use the script
-./scripts/build_and_push.sh --release
-sudo cp target/release/bayesian-ssh /usr/local/bin/
+# Build and install Desktop GUI version using Makefile
+make install-desktop
 ```
 
 ### First Connection
@@ -87,6 +87,9 @@ bayesian-ssh import
 
 # Interactive TUI mode
 bayesian-ssh tui                          # Full-screen connection browser
+
+# Interactive Desktop GUI mode
+bayesian-ssh-desktop                      # Launches the desktop GUI client
 ```
 
 ### Session Management

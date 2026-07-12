@@ -277,6 +277,15 @@ pub enum Commands {
         output: Option<String>,
     },
 
+    /// Diagnose local bssh configuration, database, and SSH prerequisites
+    #[command(long_about = "Run local health checks for bssh.\n\n\
+            Verifies the active configuration, database initialization, SSH client availability,\n\
+            optional SSH config path, ssh-agent environment, and Kerberos helper commands.\n\n\
+            Examples:\n\
+              bssh doctor\n\
+              bssh --env staging doctor")]
+    Doctor,
+
     /// Restore the connection database from a previous backup
     Restore {
         /// Path to the backup file to restore
@@ -689,6 +698,7 @@ impl Cli {
                 tag,
             } => commands::export::execute(format, output, tag, config).await,
             Commands::Backup { output } => commands::backup::execute(output, config).await,
+            Commands::Doctor => commands::doctor::execute(config).await,
             Commands::Restore { file, force } => {
                 commands::restore::execute(file, force, config).await
             }

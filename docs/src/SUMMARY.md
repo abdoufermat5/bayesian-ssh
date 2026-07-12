@@ -38,5 +38,5 @@
 # Reference
 
 - [Technical Architecture](./reference/architecture.md)
-- [Troubleshooting](./reference/troubleshooting.md)
+- [Diagnostics & Troubleshooting](./reference/troubleshooting.md)
 - [Changelog](./reference/changelog.md)
