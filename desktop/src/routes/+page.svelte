@@ -40,7 +40,7 @@
   import { 
     Plus, Trash2, Edit2, Play, Search, Server, Clock, Activity, 
     FolderPlus, Key, X, Shield, ChevronLeft, ChevronRight, LayoutGrid, List,
-    CheckCircle2, AlertCircle, Copy, Check, TerminalSquare, RefreshCw, Settings
+    CheckCircle2, AlertCircle, Copy, Check, TerminalSquare, RefreshCw, Settings, CopyPlus
   } from "lucide-svelte";
 
   interface Connection {
@@ -191,6 +191,29 @@
       await loadAgentStatus();
     } catch (e: any) {
       notify(e.toString(), "error");
+    }
+  }
+
+  async function duplicateConnection(conn: Connection) {
+    try {
+      const duplicated = {
+        name: `${conn.name} (Copy)`,
+        host: conn.host,
+        user: conn.user,
+        port: conn.port,
+        use_kerberos: conn.use_kerberos,
+        bastion_host: conn.bastion_host || "",
+        bastion_user: conn.bastion_user || "",
+        key_path: conn.key_path || "",
+        tags: [...conn.tags]
+      };
+
+      await invoke("add_connection", { connection: duplicated });
+      notify("Connection duplicated successfully", "success");
+      await loadConnections();
+      await loadStats();
+    } catch (e: any) {
+      notify(`Failed to duplicate: ${e}`, "error");
     }
   }
 
@@ -890,6 +913,9 @@
                         <button class="row-action-btn edit" onclick={(e) => { e.stopPropagation(); openEditModal(conn); }} title="Edit">
                           <Edit2 size={14} />
                         </button>
+                        <button class="row-action-btn duplicate" onclick={(e) => { e.stopPropagation(); duplicateConnection(conn); }} title="Duplicate Connection">
+                          <CopyPlus size={14} />
+                        </button>
                         <button class="row-action-btn delete" onclick={(e) => { e.stopPropagation(); deleteConnection(conn); }} title="Delete">
                           <Trash2 size={14} />
                         </button>
@@ -947,6 +973,9 @@
                           </button>
                           <button class="card-btn-icon" onclick={(e) => { e.stopPropagation(); openEditModal(conn); }} title="Edit">
                             <Edit2 size={12} />
+                          </button>
+                          <button class="card-btn-icon" onclick={(e) => { e.stopPropagation(); duplicateConnection(conn); }} title="Duplicate Connection">
+                            <CopyPlus size={12} />
                           </button>
                           <button class="card-btn-icon" onclick={(e) => { e.stopPropagation(); deleteConnection(conn); }} title="Delete">
                             <Trash2 size={12} />
