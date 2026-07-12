@@ -65,7 +65,7 @@ function createTerminal(tabId: string, container: HTMLElement, conn: Connection)
     cursorBlink: true,
     fontFamily: "JetBrains Mono, Courier New, monospace",
     fontSize: 13,
-    lineHeight: 1.25,
+    lineHeight: 1,
     scrollback: 5000,
     theme: XTERM_THEME,
   });
@@ -116,8 +116,17 @@ export async function initTerminalListeners(onExit?: ExitCallback) {
   onSessionExit = onExit ?? null;
 
   unlistenOutput = await listen("pty-output", (event) => {
-    const payload = event.payload as { session_id: string; data: string };
-    findTab(payload.session_id)?.term?.write(payload.data);
+    const payload = event.payload as { session_id?: string; sessionId?: string; data: string };
+    const sessionId = payload.session_id ?? payload.sessionId;
+    if (!sessionId) return;
+    const term = findTab(sessionId)?.term;
+    if (!term) return;
+    const wasAtBottom = term.buffer.active.baseY + term.rows >= term.buffer.active.length;
+    term.write(payload.data, () => {
+      if (wasAtBottom) {
+        term.scrollToBottom();
+      }
+    });
   });
 
   unlistenExit = await listen("pty-exit", (event) => {
@@ -141,6 +150,15 @@ export async function teardownTerminalListeners() {
   listenersReady = false;
 }
 
+async function waitForTerminalContainer(tabId: string): Promise<HTMLElement | null> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const container = document.getElementById(`terminal-${tabId}`);
+    if (container) return container;
+    await tick();
+  }
+  return null;
+}
+
 export async function connectSSH(conn: Connection): Promise<void> {
   const tabId = crypto.randomUUID().replace(/-/g, "").slice(0, 12);
   const newTab: TerminalTab = { id: tabId, name: conn.name, connectionName: conn.name };
@@ -148,10 +166,12 @@ export async function connectSSH(conn: Connection): Promise<void> {
   tabs = [...tabs, newTab];
   activeTabId = tabId;
 
-  await tick();
-
-  const container = document.getElementById(`terminal-${tabId}`);
-  if (!container) return;
+  const container = await waitForTerminalContainer(tabId);
+  if (!container) {
+    tabs = tabs.filter((t) => t.id !== tabId);
+    activeTabId = tabs.length > 0 ? tabs[0].id : null;
+    throw new Error("Terminal view is not ready. Try again.");
+  }
 
   const term = createTerminal(tabId, container, conn);
 

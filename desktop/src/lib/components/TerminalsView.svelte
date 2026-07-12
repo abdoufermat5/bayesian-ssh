@@ -82,10 +82,11 @@
       <div class="terminal-viewport-container">
         {#each terminalState.tabs as tab (tab.id)}
           <div
-            id="terminal-{tab.id}"
             class="terminal-viewport"
             class:hidden={terminalState.activeTabId !== tab.id}
-          ></div>
+          >
+            <div id="terminal-{tab.id}" class="terminal-fit-target"></div>
+          </div>
         {/each}
       </div>
     {:else}

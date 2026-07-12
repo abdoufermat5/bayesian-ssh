@@ -191,7 +191,12 @@
   {/if}
   </div>
 
-  <button class="sidebar-toggle-btn" onclick={onToggleSidebar}>
+  <button
+    class="sidebar-toggle-btn"
+    onclick={onToggleSidebar}
+    title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+    aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+  >
     {#if sidebarCollapsed}
       <ChevronRight size={16} />
     {:else}

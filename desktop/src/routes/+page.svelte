@@ -537,8 +537,12 @@
   async function handleConnect(conn: Connection) {
     activeTab = "terminals";
     await tick();
-    await connectSSH(conn);
-    requestAnimationFrame(() => fitActiveTerminal());
+    try {
+      await connectSSH(conn);
+      requestAnimationFrame(() => fitActiveTerminal());
+    } catch (e: unknown) {
+      notify(String(e), "error");
+    }
   }
 
   function handleTabChange(tab: AppTab) {
@@ -595,12 +599,6 @@
   $effect(() => {
     if (activeTab === "terminals") {
       requestAnimationFrame(() => fitActiveTerminal());
-    }
-  });
-
-  $effect(() => {
-    if (terminalState.count === 0 && activeTab === "terminals") {
-      activeTab = "connections";
     }
   });
 
