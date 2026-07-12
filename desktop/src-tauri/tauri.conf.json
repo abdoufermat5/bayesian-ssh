@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Bayesian SSH",
         "width": 1100,
         "height": 750,

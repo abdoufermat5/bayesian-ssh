@@ -582,7 +582,7 @@
   }
 
   function requestCloseAllSessions() {
-    const count = terminalState.count;
+    const count = terminalState.totalSessionCount;
     if (count === 0) return;
 
     if (count === 1) {
@@ -591,7 +591,7 @@
     }
 
     promptDelete(
-      `${count} active sessions`,
+      `${count} active or detached sessions`,
       "Every open SSH terminal will be disconnected immediately.",
       terminateAllSessions,
       {
@@ -658,7 +658,11 @@
     return Array.from(tagsSet).sort();
   });
 
-  const showTerminalsPanel = $derived(activeTab === "terminals" || terminalState.count > 0);
+  const showTerminalsPanel = $derived(
+    activeTab === "terminals" ||
+      terminalState.count > 0 ||
+      terminalState.externalSessionCount > 0,
+  );
 
   onMount(() => {
     (async () => {
@@ -699,7 +703,7 @@
       {stats}
       {sidebarCollapsed}
       onToggleSidebar={() => (sidebarCollapsed = !sidebarCollapsed)}
-      terminalCount={terminalState.count}
+      terminalCount={terminalState.totalSessionCount}
       {allTags}
       {selectedTag}
       onTagSelect={(tag) => {
@@ -753,10 +757,10 @@
         </div>
 
         <div class="topbar-actions">
-          {#if terminalState.count > 0}
+          {#if terminalState.totalSessionCount > 0}
             <button class="cyber-btn ghost danger" onclick={requestCloseAllSessions}>
               <OctagonX size={16} />
-              <span>Close all ({terminalState.count})</span>
+              <span>Close all ({terminalState.totalSessionCount})</span>
             </button>
           {/if}
           <button class="cyber-btn" onclick={openAddModal}>

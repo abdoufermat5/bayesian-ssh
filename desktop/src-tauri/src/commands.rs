@@ -1,5 +1,6 @@
+use std::io::Write;
 use std::path::PathBuf;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use uuid::Uuid;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -16,8 +17,10 @@ pub struct PtyState {
     pub sessions: Arc<Mutex<HashMap<String, PtySession>>>,
 }
 
+const MAX_DETACHED_BUFFER_BYTES: usize = 512 * 1024;
+
 pub struct PtySession {
-    pub writer: Box<dyn std::io::Write + Send>,
+    pub writer: Box<dyn Write + Send>,
     pub child: Box<dyn Child + Send + Sync>,
     /// Keeps the PTY master alive for the session's lifetime.
     pub _master: Box<dyn portable_pty::MasterPty + Send>,
@@ -25,6 +28,30 @@ pub struct PtySession {
     pub cancelled: Arc<AtomicBool>,
     /// Database session id when session logging is enabled.
     pub db_session_id: Option<Uuid>,
+    pub connection_name: String,
+    pub detached: Arc<AtomicBool>,
+    pub output_buffer: Arc<Mutex<String>>,
+    pub popout_window: Option<String>,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct DetachedSessionInfo {
+    pub session_id: String,
+    pub connection_name: String,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct PopoutSessionInfo {
+    pub session_id: String,
+    pub connection_name: String,
+    pub window_label: String,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct ReattachSessionInfo {
+    pub session_id: String,
+    pub connection_name: String,
+    pub buffered_output: String,
 }
 
 fn finalize_db_session(db_session_id: Option<Uuid>, exit_code: i32) {
@@ -390,6 +417,10 @@ pub fn spawn_pty(
     // Cancelled flag: set by close_pty so the reader thread won't emit pty-exit
     let cancelled = Arc::new(AtomicBool::new(false));
     let cancelled_clone = Arc::clone(&cancelled);
+    let detached = Arc::new(AtomicBool::new(false));
+    let detached_clone = Arc::clone(&detached);
+    let output_buffer = Arc::new(Mutex::new(String::new()));
+    let output_buffer_clone = Arc::clone(&output_buffer);
 
     // Store in global state — _master keeps the PTY master fd alive for the session duration
     let mut sessions = state.sessions.lock().unwrap();
@@ -399,6 +430,10 @@ pub fn spawn_pty(
         _master: pty_pair.master,
         cancelled,
         db_session_id,
+        connection_name: connection.name.clone(),
+        detached,
+        output_buffer,
+        popout_window: None,
     });
     drop(sessions); // release lock before spawning thread
 
@@ -415,15 +450,25 @@ pub fn spawn_pty(
                 Ok(0) => break,
                 Ok(n) => {
                     let str_data = String::from_utf8_lossy(&buf[..n]).to_string();
-                    #[derive(Clone, Serialize)]
-                    struct PtyPayload {
-                        session_id: String,
-                        data: String,
+                    if detached_clone.load(Ordering::SeqCst) {
+                        if let Ok(mut buffer) = output_buffer_clone.lock() {
+                            buffer.push_str(&str_data);
+                            if buffer.len() > MAX_DETACHED_BUFFER_BYTES {
+                                let overflow = buffer.len() - MAX_DETACHED_BUFFER_BYTES;
+                                buffer.drain(..overflow);
+                            }
+                        }
+                    } else {
+                        #[derive(Clone, Serialize)]
+                        struct PtyPayload {
+                            session_id: String,
+                            data: String,
+                        }
+                        let _ = app_handle.emit("pty-output", PtyPayload {
+                            session_id: session_id_clone.clone(),
+                            data: str_data,
+                        });
                     }
-                    let _ = app_handle.emit("pty-output", PtyPayload {
-                        session_id: session_id_clone.clone(),
-                        data: str_data,
-                    });
                 }
                 Err(_) => break,
             }
@@ -469,9 +514,241 @@ pub fn resize_pty(
 }
 
 #[tauri::command]
-pub fn close_pty(
+pub fn detach_pty(state: State<'_, PtyState>, session_id: String) -> Result<(), String> {
+    let mut sessions = state.sessions.lock().unwrap();
+    let session = sessions
+        .get_mut(&session_id)
+        .ok_or_else(|| format!("PTY session '{}' not found", session_id))?;
+
+    if session.detached.load(Ordering::SeqCst) {
+        return Err(format!("PTY session '{}' is already detached", session_id));
+    }
+
+    session.detached.store(true, Ordering::SeqCst);
+    session.popout_window = None;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn open_terminal_window(
+    app: AppHandle,
     state: State<'_, PtyState>,
     session_id: String,
+    title: String,
+) -> Result<(), String> {
+    let label = format!("terminal-{session_id}");
+
+    if let Some(existing) = app.get_webview_window(&label) {
+        let _ = existing.set_focus();
+        return Ok(());
+    }
+
+    {
+        let mut sessions = state.sessions.lock().unwrap();
+        let session = sessions
+            .get_mut(&session_id)
+            .ok_or_else(|| format!("PTY session '{session_id}' not found"))?;
+        session.detached.store(false, Ordering::SeqCst);
+        session.popout_window = Some(label.clone());
+    }
+
+    let window_title = format!("{title} — Bayesian SSH");
+    WebviewWindowBuilder::new(
+        &app,
+        label,
+        WebviewUrl::App(format!("/terminal/{session_id}").into()),
+    )
+    .title(window_title)
+    .inner_size(960.0, 640.0)
+    .min_inner_size(480.0, 320.0)
+    .decorations(false)
+    .background_color(tauri::window::Color::from((12, 13, 18, 255)))
+    .build()
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn claim_popout_session(
+    state: State<'_, PtyState>,
+    session_id: String,
+    window_label: String,
+) -> Result<ReattachSessionInfo, String> {
+    let mut sessions = state.sessions.lock().unwrap();
+    let session = sessions
+        .get_mut(&session_id)
+        .ok_or_else(|| format!("PTY session '{session_id}' not found"))?;
+
+    match session.popout_window.as_deref() {
+        Some(existing) if existing != window_label.as_str() => {
+            return Err(format!(
+                "PTY session '{session_id}' is attached to another window"
+            ));
+        }
+        None => session.popout_window = Some(window_label),
+        _ => {}
+    }
+
+    session.detached.store(false, Ordering::SeqCst);
+    let buffered_output = session
+        .output_buffer
+        .lock()
+        .map(|mut buffer| {
+            let replay = buffer.clone();
+            buffer.clear();
+            replay
+        })
+        .unwrap_or_default();
+
+    Ok(ReattachSessionInfo {
+        session_id: session_id.clone(),
+        connection_name: session.connection_name.clone(),
+        buffered_output,
+    })
+}
+
+#[tauri::command]
+pub fn list_detached_sessions(state: State<'_, PtyState>) -> Result<Vec<DetachedSessionInfo>, String> {
+    let sessions = state.sessions.lock().unwrap();
+    Ok(sessions
+        .iter()
+        .filter(|(_, session)| {
+            session.detached.load(Ordering::SeqCst) && session.popout_window.is_none()
+        })
+        .map(|(session_id, session)| DetachedSessionInfo {
+            session_id: session_id.clone(),
+            connection_name: session.connection_name.clone(),
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub fn list_popout_sessions(state: State<'_, PtyState>) -> Result<Vec<PopoutSessionInfo>, String> {
+    let sessions = state.sessions.lock().unwrap();
+    Ok(sessions
+        .iter()
+        .filter_map(|(session_id, session)| {
+            session.popout_window.as_ref().map(|window_label| PopoutSessionInfo {
+                session_id: session_id.clone(),
+                connection_name: session.connection_name.clone(),
+                window_label: window_label.clone(),
+            })
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub fn dock_popout_session(
+    app: AppHandle,
+    state: State<'_, PtyState>,
+    session_id: String,
+    window_label: String,
+) -> Result<ReattachSessionInfo, String> {
+    let info = {
+        let mut sessions = state.sessions.lock().unwrap();
+        let session = sessions
+            .get_mut(&session_id)
+            .ok_or_else(|| format!("PTY session '{session_id}' not found"))?;
+
+        if session.popout_window.as_deref() != Some(window_label.as_str()) {
+            return Err(format!("PTY session '{session_id}' is not in this window"));
+        }
+
+        session.popout_window = None;
+        session.detached.store(false, Ordering::SeqCst);
+        let buffered_output = session
+            .output_buffer
+            .lock()
+            .map(|mut buffer| {
+                let replay = buffer.clone();
+                buffer.clear();
+                replay
+            })
+            .unwrap_or_default();
+
+        ReattachSessionInfo {
+            session_id: session_id.clone(),
+            connection_name: session.connection_name.clone(),
+            buffered_output,
+        }
+    };
+
+    let _ = app.emit("session-docked", info.clone());
+
+    if let Some(window) = app.get_webview_window(&window_label) {
+        let _ = window.destroy();
+    }
+
+    Ok(info)
+}
+
+#[tauri::command]
+pub fn focus_terminal_window(
+    app: AppHandle,
+    state: State<'_, PtyState>,
+    session_id: String,
+) -> Result<(), String> {
+    let label = {
+        let sessions = state.sessions.lock().unwrap();
+        sessions
+            .get(&session_id)
+            .and_then(|session| session.popout_window.clone())
+            .ok_or_else(|| format!("PTY session '{session_id}' is not popped out"))?
+    };
+
+    let window = app
+        .get_webview_window(&label)
+        .ok_or_else(|| format!("Window '{label}' not found"))?;
+    window
+        .set_focus()
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn reattach_pty(
+    state: State<'_, PtyState>,
+    session_id: String,
+) -> Result<ReattachSessionInfo, String> {
+    let mut sessions = state.sessions.lock().unwrap();
+    let session = sessions
+        .get_mut(&session_id)
+        .ok_or_else(|| format!("PTY session '{}' not found", session_id))?;
+
+    if !session.detached.load(Ordering::SeqCst) {
+        return Err(format!("PTY session '{}' is not detached", session_id));
+    }
+
+    session.detached.store(false, Ordering::SeqCst);
+    session.popout_window = None;
+    let buffered_output = session
+        .output_buffer
+        .lock()
+        .map(|mut buffer| {
+            let replay = buffer.clone();
+            buffer.clear();
+            replay
+        })
+        .unwrap_or_default();
+
+    Ok(ReattachSessionInfo {
+        session_id: session_id.clone(),
+        connection_name: session.connection_name.clone(),
+        buffered_output,
+    })
+}
+
+#[tauri::command]
+pub fn count_active_sessions(state: State<'_, PtyState>) -> Result<usize, String> {
+    Ok(state.sessions.lock().unwrap().len())
+}
+
+#[tauri::command]
+pub fn close_pty(
+    app: AppHandle,
+    state: State<'_, PtyState>,
+    session_id: String,
+    close_window: Option<bool>,
 ) -> Result<(), String> {
     let session = {
         let mut sessions = state.sessions.lock().unwrap();
@@ -479,10 +756,16 @@ pub fn close_pty(
     };
 
     if let Some(mut session) = session {
-        // Signal the reader thread NOT to emit pty-exit (we're closing intentionally)
         session.cancelled.store(true, Ordering::SeqCst);
 
-        // Never wait on a live SSH process on the Tauri command thread — that freezes the UI.
+        if close_window.unwrap_or(true) {
+            if let Some(label) = session.popout_window.clone() {
+                if let Some(window) = app.get_webview_window(&label) {
+                    let _ = window.close();
+                }
+            }
+        }
+
         let _ = session.child.kill();
 
         let db_session_id = session.db_session_id;
@@ -494,9 +777,26 @@ pub fn close_pty(
                 .unwrap_or(-1);
             finalize_db_session(db_session_id, exit_code);
         });
+
+        let _ = app.emit("session-closed", session_id);
     }
 
     Ok(())
+}
+
+#[tauri::command]
+pub fn close_all_ptys(app: AppHandle, state: State<'_, PtyState>) -> Result<usize, String> {
+    let session_ids: Vec<String> = {
+        let sessions = state.sessions.lock().unwrap();
+        sessions.keys().cloned().collect()
+    };
+
+    let count = session_ids.len();
+    for session_id in session_ids {
+        let _ = close_pty(app.clone(), state.clone(), session_id, None);
+    }
+
+    Ok(count)
 }
 
 // SSH Agent Integration Commands

@@ -1,7 +1,31 @@
 <script lang="ts">
-  import { OctagonX, Play, Server, TerminalSquare, X } from "lucide-svelte";
+  import {
+    AppWindow,
+    Layers,
+    OctagonX,
+    Play,
+    Server,
+    TerminalSquare,
+    Unlink,
+    X,
+  } from "lucide-svelte";
   import type { Connection } from "$lib/types";
-  import { connectSSH, disconnectTab, getTerminalState } from "$lib/stores/terminal.svelte";
+  import DetachedSessionsModal from "$lib/components/modals/DetachedSessionsModal.svelte";
+  import { tabPopOutDrag } from "$lib/actions/tabPopOutDrag";
+  import {
+    connectSSH,
+    detachTab,
+    disconnectTab,
+    dockPopoutSession,
+    focusPopoutSession,
+    getTerminalState,
+    popOutDetachedSession,
+    popOutTab,
+    reattachSession,
+    terminateAllDetachedSessions,
+    terminateDetachedSession,
+    terminatePopoutSession,
+  } from "$lib/stores/terminal.svelte";
 
   interface Props {
     connections: Connection[];
@@ -13,6 +37,7 @@
   let { connections, searchQuery = $bindable(), onSearchInput, onCloseAll }: Props = $props();
 
   const terminalState = getTerminalState();
+  let showDetachedManager = $state(false);
 
   async function handleConnect(conn: Connection) {
     await connectSSH(conn);
@@ -49,6 +74,15 @@
         {/each}
       {/if}
     </div>
+
+    {#if terminalState.externalSessionCount > 0}
+      <div class="detached-compact-bar">
+        <button type="button" class="detached-manage-btn" onclick={() => (showDetachedManager = true)}>
+          <Layers size={14} />
+          <span>{terminalState.externalSessionCount} external</span>
+        </button>
+      </div>
+    {/if}
   </aside>
 
   <div class="terminals-main-content">
@@ -59,9 +93,11 @@
             <div
               class="terminal-tab-btn"
               class:active={terminalState.activeTabId === tab.id}
+              use:tabPopOutDrag={tab.id}
               onclick={() => (terminalState.activeTabId = tab.id)}
               role="button"
               tabindex="0"
+              title="Drag away to pop out"
               onkeydown={(e) => {
                 if (e.key === "Enter" || e.key === " ") terminalState.activeTabId = tab.id;
               }}
@@ -69,7 +105,28 @@
               <Server size={12} />
               <span>{tab.name}</span>
               <button
+                class="tab-action-btn popout"
+                title="Pop out to new window"
+                onclick={(e) => {
+                  e.stopPropagation();
+                  void popOutTab(tab.id);
+                }}
+              >
+                <AppWindow size={11} />
+              </button>
+              <button
+                class="tab-action-btn detach"
+                title="Detach to background"
+                onclick={(e) => {
+                  e.stopPropagation();
+                  void detachTab(tab.id);
+                }}
+              >
+                <Unlink size={11} />
+              </button>
+              <button
                 class="tab-close-btn"
+                title="Terminate session"
                 onclick={(e) => {
                   e.stopPropagation();
                   disconnectTab(tab.id);
@@ -81,15 +138,17 @@
           {/each}
         </div>
 
-        <button
-          type="button"
-          class="close-all-sessions-btn"
-          onclick={onCloseAll}
-          title="Terminate all active SSH sessions"
-        >
-          <OctagonX size={14} />
-          <span>Close all</span>
-        </button>
+        {#if terminalState.totalSessionCount > 0}
+          <button
+            type="button"
+            class="close-all-sessions-btn"
+            onclick={onCloseAll}
+            title="Terminate all active and detached SSH sessions"
+          >
+            <OctagonX size={14} />
+            <span>Close all</span>
+          </button>
+        {/if}
       </div>
 
       <div class="terminal-viewport-container">
@@ -102,6 +161,19 @@
           </div>
         {/each}
       </div>
+    {:else if terminalState.externalSessionCount > 0}
+      <div class="terminals-empty-state">
+        <TerminalSquare size={48} class="empty-icon" />
+        <h3>Sessions elsewhere</h3>
+        <p>
+          {terminalState.externalSessionCount} session{terminalState.externalSessionCount === 1 ? "" : "s"} are detached or in pop-out windows.
+          Reattach or dock them from the session manager.
+        </p>
+        <button type="button" class="reattach-primary-btn" onclick={() => (showDetachedManager = true)}>
+          <Layers size={14} />
+          Manage sessions
+        </button>
+      </div>
     {:else}
       <div class="terminals-empty-state">
         <TerminalSquare size={48} class="empty-icon" />
@@ -111,6 +183,34 @@
     {/if}
   </div>
 </div>
+
+{#if showDetachedManager}
+  <DetachedSessionsModal
+    detachedSessions={terminalState.detachedSessions}
+    popoutSessions={terminalState.popoutSessions}
+    onClose={() => (showDetachedManager = false)}
+    onReattach={async (sessionId) => {
+      await reattachSession(sessionId);
+      showDetachedManager = false;
+    }}
+    onPopOut={async (sessionId) => {
+      await popOutDetachedSession(sessionId);
+    }}
+    onDock={async (sessionId) => {
+      await dockPopoutSession(sessionId);
+      showDetachedManager = false;
+    }}
+    onFocusPopout={focusPopoutSession}
+    onTerminateDetached={terminateDetachedSession}
+    onTerminatePopout={terminatePopoutSession}
+    onTerminateAll={async () => {
+      await terminateAllDetachedSessions();
+      for (const session of [...terminalState.popoutSessions]) {
+        await terminatePopoutSession(session.id);
+      }
+    }}
+  />
+{/if}
 
 <style>
   .terminals-search-input {
@@ -161,6 +261,72 @@
     flex-shrink: 0;
   }
 
+  .detached-compact-bar {
+    padding: 10px 12px 12px;
+    border-top: 1px solid var(--border-color);
+    flex-shrink: 0;
+  }
+
+  .detached-manage-btn {
+    width: 100%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(0, 240, 255, 0.25);
+    background: rgba(0, 240, 255, 0.06);
+    color: var(--accent-cyan);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .detached-manage-btn:hover {
+    background: rgba(0, 240, 255, 0.12);
+  }
+
+  .tab-action-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 1px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+  }
+
+  .tab-action-btn.popout:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .tab-action-btn.detach:hover {
+    color: var(--accent-cyan);
+    background: rgba(0, 240, 255, 0.08);
+  }
+
+  .reattach-primary-btn {
+    margin-top: 16px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0.55rem 1rem;
+    border-radius: 6px;
+    border: 1px solid rgba(0, 240, 255, 0.35);
+    background: rgba(0, 240, 255, 0.08);
+    color: var(--accent-cyan);
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .reattach-primary-btn:hover {
+    background: rgba(0, 240, 255, 0.14);
+  }
+
   .terminals-empty-state :global(.empty-icon) {
     color: var(--text-muted);
     margin-bottom: 16px;
@@ -177,6 +343,6 @@
     font-size: 12px;
     color: var(--text-muted);
     margin: 0;
-    max-width: 280px;
+    max-width: 320px;
   }
 </style>
