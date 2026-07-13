@@ -64,6 +64,49 @@ export async function initPopoutTerminal(sessionId: string): Promise<PopoutTermi
     invoke("write_pty", { sessionId, data }).catch(() => {});
   });
 
+  // Intercept standard and custom clipboard keybindings for popout windows
+  term.attachCustomKeyEventHandler((event) => {
+    const key = event.key.toLowerCase();
+
+    // Copy: Ctrl + C (if selection exists) or Ctrl + Shift + C
+    if (
+      (event.ctrlKey && key === "c" && term!.hasSelection()) ||
+      (event.ctrlKey && event.shiftKey && key === "c")
+    ) {
+      if (event.type === "keydown") {
+        const selection = term!.getSelection();
+        if (selection) {
+          navigator.clipboard.writeText(selection).then(() => {
+            term!.clearSelection();
+          }).catch((err) => {
+            console.error("Failed to copy to clipboard", err);
+          });
+        }
+      }
+      return false; // Intercept event and prevent forwarding to PTY
+    }
+
+    // Paste: Ctrl + V or Ctrl + Shift + V or Shift + Insert
+    if (
+      (event.ctrlKey && key === "v") ||
+      (event.ctrlKey && event.shiftKey && key === "v") ||
+      (event.shiftKey && event.key === "insert")
+    ) {
+      if (event.type === "keydown") {
+        navigator.clipboard.readText().then((text) => {
+          if (text) {
+            invoke("write_pty", { sessionId, data: text }).catch(() => {});
+          }
+        }).catch((err) => {
+          console.error("Failed to read from clipboard", err);
+        });
+      }
+      return false; // Intercept event and prevent forwarding to PTY
+    }
+
+    return true;
+  });
+
   const fit = () => {
     if (!term || !fitAddon) return;
     try {

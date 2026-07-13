@@ -151,6 +151,49 @@ function openTerminalInstance(
   attachResizeObserver(tabId, container, term, fitAddon);
   attachTerminalIo(tabId, term);
 
+  // Custom copy/paste key event interceptor to prevent SIGINT on copy and duplicate paste inputs
+  term.attachCustomKeyEventHandler((event) => {
+    const key = event.key.toLowerCase();
+
+    // Copy: Ctrl + C (if selection exists) or Ctrl + Shift + C
+    if (
+      (event.ctrlKey && key === "c" && term.hasSelection()) ||
+      (event.ctrlKey && event.shiftKey && key === "c")
+    ) {
+      if (event.type === "keydown") {
+        const selection = term.getSelection();
+        if (selection) {
+          navigator.clipboard.writeText(selection).then(() => {
+            term.clearSelection();
+          }).catch((err) => {
+            console.error("Failed to copy to clipboard", err);
+          });
+        }
+      }
+      return false; // Intercept event and prevent forwarding to PTY
+    }
+
+    // Paste: Ctrl + V or Ctrl + Shift + V or Shift + Insert
+    if (
+      (event.ctrlKey && key === "v") ||
+      (event.ctrlKey && event.shiftKey && key === "v") ||
+      (event.shiftKey && event.key === "insert")
+    ) {
+      if (event.type === "keydown") {
+        navigator.clipboard.readText().then((text) => {
+          if (text) {
+            invoke("write_pty", { sessionId: tabId, data: text }).catch(() => {});
+          }
+        }).catch((err) => {
+          console.error("Failed to read from clipboard", err);
+        });
+      }
+      return false; // Intercept event and prevent forwarding to PTY
+    }
+
+    return true;
+  });
+
   // Ctrl + Mouse Wheel zoom event listener
   container.addEventListener("wheel", (e) => {
     if (e.ctrlKey) {
