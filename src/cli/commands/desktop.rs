@@ -19,12 +19,12 @@ pub async fn execute(_config: AppConfig) -> Result<()> {
     if command_to_run.is_none() {
         if let Ok(mut exe_path) = std::env::current_exe() {
             exe_path.pop(); // Remove target name
-            
+
             // Check debug target folder
             let debug_desktop = exe_path.join("desktop");
             // Check release target folder
             let release_desktop = exe_path.join("release").join("desktop");
-            
+
             if debug_desktop.exists() {
                 command_to_run = Some(debug_desktop.to_string_lossy().into_owned());
             } else if release_desktop.exists() {
@@ -63,15 +63,15 @@ pub async fn execute(_config: AppConfig) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
-        
+
         let mut cmd = Command::new(&bin_path);
         cmd.stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .stdin(std::process::Stdio::null());
-            
+
         // Detach the child process group so closing terminal does not kill the child
         cmd.process_group(0);
-        
+
         cmd.spawn()?;
     }
 
