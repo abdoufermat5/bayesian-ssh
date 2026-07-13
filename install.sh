@@ -262,6 +262,38 @@ install_binary() {
     # Verify installation
     if [ -f "${INSTALL_DIR}/${BINARY_NAME}" ]; then
         echo -e "${GREEN}✅ Binary installed successfully${NC}"
+        
+        # Install desktop menu shortcut and icon if installing desktop version
+        if [ "$INSTALL_DESKTOP" = true ]; then
+            echo -e "${BLUE}🎨 Installing desktop menu shortcut and icon...${NC}"
+            
+            # Determine sudo prefix
+            SUDO_CMD=""
+            if [ "$EUID" -ne 0 ]; then
+                if command -v sudo &> /dev/null; then
+                    SUDO_CMD="sudo"
+                fi
+            fi
+
+            # Download icon from raw GitHub
+            ICON_URL="https://raw.githubusercontent.com/${REPO}/main/desktop/src-tauri/icons/128x128.png"
+            ICON_DIR="/usr/share/icons/hicolor/128x128/apps"
+            
+            $SUDO_CMD mkdir -p "$ICON_DIR"
+            if command -v curl &> /dev/null; then
+                $SUDO_CMD curl -fsSL -o "${ICON_DIR}/bayesian-ssh-desktop.png" "$ICON_URL"
+            else
+                $SUDO_CMD wget -q -O "${ICON_DIR}/bayesian-ssh-desktop.png" "$ICON_URL"
+            fi
+
+            # Create desktop shortcut
+            DESKTOP_FILE="/usr/share/applications/bayesian-ssh-desktop.desktop"
+            echo -e "[Desktop Entry]\nName=Bayesian SSH\nComment=A fast and lightweight SSH session manager with Kerberos support\nExec=${INSTALL_DIR}/bayesian-ssh-desktop\nIcon=bayesian-ssh-desktop\nTerminal=false\nType=Application\nCategories=Development;Network;\nStartupNotify=true" | $SUDO_CMD tee "$DESKTOP_FILE" >/dev/null
+
+            # Update icon cache
+            $SUDO_CMD gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
+            echo -e "${GREEN}✅ Desktop menu shortcut and icon installed successfully!${NC}"
+        fi
     else
         echo -e "${RED}❌ Installation failed${NC}"
         exit 1

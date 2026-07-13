@@ -79,7 +79,7 @@ jobs:
       - name: Build desktop release binary
         run: |
           cd desktop
-          npm run tauri build -- --target ${{ matrix.target }} --no-bundle
+          npm run tauri build -- --target ${{ matrix.target }}
 
       - name: Stage artifacts
         id: stage
@@ -96,11 +96,23 @@ jobs:
           chmod +x "dist/${DESKTOP_ASSET}"
           tar -C dist -czf "dist/${DESKTOP_ASSET}.tar.gz" "${DESKTOP_ASSET}"
 
+          # Stage Debian (.deb) package
+          DEB_FILE=$(find desktop/src-tauri/target/${{ matrix.target }}/release/bundle/deb/ -name "*.deb" | head -n 1)
+          if [ -n "$DEB_FILE" ]; then
+            cp "$DEB_FILE" "dist/${DESKTOP_ASSET}.deb"
+          fi
+
+          # Stage AppImage package
+          APPIMAGE_FILE=$(find desktop/src-tauri/target/${{ matrix.target }}/release/bundle/appimage/ -name "*.AppImage" | head -n 1)
+          if [ -n "$APPIMAGE_FILE" ]; then
+            cp "$APPIMAGE_FILE" "dist/${DESKTOP_ASSET}.AppImage"
+          fi
+
           # Per-asset checksum (combined SHA256SUMS is built in the release job)
           if command -v sha256sum >/dev/null 2>&1; then
-            (cd dist && sha256sum "${ASSET}" "${ASSET}.tar.gz" "${DESKTOP_ASSET}" "${DESKTOP_ASSET}.tar.gz") > "dist/${ASSET}.sha256"
+            (cd dist && sha256sum $(ls -1 | grep -v "\.sha256")) > "dist/${ASSET}.sha256"
           else
-            (cd dist && shasum -a 256 "${ASSET}" "${ASSET}.tar.gz" "${DESKTOP_ASSET}" "${DESKTOP_ASSET}.tar.gz") > "dist/${ASSET}.sha256"
+            (cd dist && shasum -a 256 $(ls -1 | grep -v "\.sha256")) > "dist/${ASSET}.sha256"
           fi
 
           echo "asset=${ASSET}" >> "$GITHUB_OUTPUT"
