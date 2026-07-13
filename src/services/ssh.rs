@@ -103,28 +103,16 @@ impl SshService {
         session.mark_active(std::process::id());
         self.database.update_session(&session)?;
 
-        let result: Result<i32, crate::services::transport::TransportError> = match kind {
-            crate::services::transport::TransportKind::Native => {
-                let t = crate::services::transport::RusshTransport::new(self.config.clone());
-                match t.run_interactive(connection).await {
-                    // Permanent failure — propagate as-is
-                    Err(e @ crate::services::transport::TransportError::Permanent(_)) => Err(e),
-                    // Fallback requested — retry with subprocess
-                    Err(crate::services::transport::TransportError::Fallback(e)) => {
-                        warn!("Native transport fallback ({e}), retrying with subprocess");
-                        crate::services::transport::SubprocessTransport::new(self.config.clone())
-                            .run_interactive(connection)
-                            .await
-                    }
-                    Ok(code) => Ok(code),
-                }
-            }
-            crate::services::transport::TransportKind::Subprocess => {
-                crate::services::transport::SubprocessTransport::new(self.config.clone())
-                    .run_interactive(connection)
-                    .await
-            }
-        };
+        let conn = connection.clone();
+        let result = crate::services::transport::execute_with_fallback(
+            connection,
+            &self.config,
+            |transport| {
+                let conn_clone = conn.clone();
+                Box::pin(async move { transport.run_interactive(&conn_clone).await })
+            },
+        )
+        .await;
 
         match result {
             Ok(0) => {

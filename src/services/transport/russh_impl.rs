@@ -505,24 +505,8 @@ impl SshTransport for RusshTransport {
             task, cancel_tx,
         ))
     }
-}
 
-/// Bidirectionally proxy bytes between a local `TcpStream` and an SSH `direct-tcpip` channel.
-async fn proxy_tcp_channel(
-    stream: tokio::net::TcpStream,
-    channel: russh::Channel<russh::client::Msg>,
-) {
-    use tokio::io::copy_bidirectional;
-    let mut tcp = stream;
-    let mut ssh = channel.into_stream();
-    let _ = copy_bidirectional(&mut tcp, &mut ssh).await;
-}
-
-impl RusshTransport {
-    /// Drive an interactive shell session directly on the calling terminal (CLI path).
-    /// Sets the terminal to raw mode, bridges stdin/stdout to the SSH channel, then
-    /// restores the terminal on exit.  Returns the remote exit code.
-    pub async fn run_interactive(&self, conn: &Connection) -> Result<i32, TransportError> {
+    async fn run_interactive(&self, conn: &Connection) -> Result<i32, TransportError> {
         use crossterm::terminal::{disable_raw_mode, enable_raw_mode, size};
         use tokio::io::AsyncWriteExt;
 
@@ -593,4 +577,15 @@ impl RusshTransport {
             .await;
         Ok(exit_code)
     }
+}
+
+/// Bidirectionally proxy bytes between a local `TcpStream` and an SSH `direct-tcpip` channel.
+async fn proxy_tcp_channel(
+    stream: tokio::net::TcpStream,
+    channel: russh::Channel<russh::client::Msg>,
+) {
+    use tokio::io::copy_bidirectional;
+    let mut tcp = stream;
+    let mut ssh = channel.into_stream();
+    let _ = copy_bidirectional(&mut tcp, &mut ssh).await;
 }

@@ -355,3 +355,25 @@ pub fn show_connection_details(connection: &Connection) -> Result<()> {
 
     Ok(())
 }
+
+/// Resolve a connection by exact lookup or interactive fuzzy search.
+///
+/// Bails with "No connection selected" if the search is cancelled or no matches are found.
+pub async fn resolve_connection(
+    ssh_service: &SshService,
+    target: &str,
+    action: &str,
+    auto_select_single: bool,
+) -> Result<Connection> {
+    if let Some(conn) = ssh_service.get_connection(target).await.unwrap_or_default() {
+        return Ok(conn);
+    }
+
+    if let Some(conn) =
+        fuzzy_select_connection(ssh_service, target, action, auto_select_single).await?
+    {
+        Ok(conn)
+    } else {
+        anyhow::bail!("No connection selected")
+    }
+}

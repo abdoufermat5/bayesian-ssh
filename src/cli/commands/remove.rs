@@ -1,4 +1,4 @@
-use crate::cli::utils::{confirm, fuzzy_select_connection};
+use crate::cli::utils::{confirm, resolve_connection};
 use crate::config::AppConfig;
 use crate::services::SshService;
 use anyhow::Result;
@@ -8,31 +8,8 @@ pub async fn execute(target: String, force: bool, config: AppConfig) -> Result<(
     info!("Removing connection: {}", target);
 
     let ssh_service = SshService::new(config)?;
-
-    // First try exact match
-    if let Some(connection) = ssh_service.get_connection(&target).await? {
-        return remove_connection_with_confirmation(&ssh_service, &connection, force).await;
-    }
-
-    // No exact match, try fuzzy search
-    info!(
-        "No exact match found for '{}', attempting fuzzy search",
-        target
-    );
-
-    // Use shared fuzzy selection (without auto-select for remove operations)
-    if let Some(connection) = fuzzy_select_connection(
-        &ssh_service,
-        &target,
-        "remove",
-        false, // Don't auto-select - require confirmation for deletions
-    )
-    .await?
-    {
-        return remove_connection_with_confirmation(&ssh_service, &connection, force).await;
-    }
-
-    Ok(())
+    let connection = resolve_connection(&ssh_service, &target, "remove", false).await?;
+    remove_connection_with_confirmation(&ssh_service, &connection, force).await
 }
 
 async fn remove_connection_with_confirmation(

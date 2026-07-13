@@ -149,5 +149,8 @@ pub trait SshTransport: Send + Sync {
         bind_port: u16,
     ) -> Result<ForwardHandle, TransportError>;
 
+    /// Drive an interactive shell session directly on the calling terminal.
+    async fn run_interactive(&self, conn: &Connection) -> Result<i32, TransportError>;
+
     fn name(&self) -> &'static str;
 }

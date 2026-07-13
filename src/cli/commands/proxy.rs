@@ -10,27 +10,16 @@
 //! Uses the native russh transport when possible (no Kerberos, no bastion).
 //! Falls back to `ssh -D` for Kerberos connections and bastion-hopped targets.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 
 use crate::config::AppConfig;
-use crate::services::transport::types::SshTransport;
-use crate::services::transport::{pick_kind, RusshTransport, SubprocessTransport, TransportKind};
+use crate::services::transport::{execute_with_fallback, pick_kind, TransportKind};
 use crate::services::SshService;
 
 pub async fn execute(target: String, port: u16, bind: String, config: AppConfig) -> Result<()> {
     let ssh_service = SshService::new(config.clone())?;
-    let mut conn_opt = ssh_service
-        .get_connection(&target)
-        .await
-        .unwrap_or_default();
-    if conn_opt.is_none() {
-        conn_opt = crate::cli::utils::fuzzy_select_connection(&ssh_service, &target, "proxy", true)
-            .await?;
-    }
-    let connection = match conn_opt {
-        Some(c) => c,
-        None => bail!("no connection selected"),
-    };
+    let connection =
+        crate::cli::utils::resolve_connection(&ssh_service, &target, "proxy", true).await?;
 
     let kind = pick_kind(&connection, &config);
 
@@ -47,16 +36,12 @@ pub async fn execute(target: String, port: u16, bind: String, config: AppConfig)
     eprintln!("   Configure your client: socks5://{}:{}", bind, port);
     eprintln!("   Press Ctrl+C to stop.\n");
 
-    let handle = match kind {
-        TransportKind::Native => {
-            let t = RusshTransport::new(config);
-            t.forward_dynamic(&connection, &bind, port).await
-        }
-        TransportKind::Subprocess => {
-            let t = SubprocessTransport::new(config);
-            t.forward_dynamic(&connection, &bind, port).await
-        }
-    }
+    let handle = execute_with_fallback(&connection, &config, |transport| {
+        let conn = connection.clone();
+        let b = bind.clone();
+        Box::pin(async move { transport.forward_dynamic(&conn, &b, port).await })
+    })
+    .await
     .map_err(|e| anyhow::anyhow!("{e}"))?;
 
     tokio::signal::ctrl_c()

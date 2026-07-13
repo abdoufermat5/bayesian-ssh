@@ -16,8 +16,7 @@ use crate::config::AppConfig;
 use crate::database::Database;
 use crate::models::Connection;
 use crate::services::transport::scp_impl;
-use crate::services::transport::types::{SshTransport, TransportError};
-use crate::services::transport::{pick_kind, RusshTransport, SubprocessTransport, TransportKind};
+use crate::services::transport::{pick_kind, TransportKind};
 
 const CHUNK_SIZE: usize = 256 * 1024; // 256 KiB
 const CHANNEL_CAP: usize = 16; // outstanding chunks in flight
@@ -463,29 +462,12 @@ impl TransferService {
         &self,
         connection: &Connection,
     ) -> Result<Box<dyn crate::services::transport::types::SftpSession>> {
-        let kind = pick_kind(connection, &self.config);
-        let result: Result<_, TransportError> = match kind {
-            TransportKind::Native => {
-                let t = RusshTransport::new(self.config.clone());
-                match t.open_sftp(connection).await {
-                    Err(TransportError::Fallback(e)) => {
-                        tracing::warn!("native SFTP fallback ({e}), subprocess has no SFTP");
-                        return Err(anyhow::anyhow!(
-                            "SFTP requires native transport; force_subprocess is set"
-                        ));
-                    }
-                    other => other,
-                }
-            }
-            TransportKind::Subprocess => {
-                // SubprocessTransport always returns Fallback for SFTP.
-                let t = SubprocessTransport::new(self.config.clone());
-                match t.open_sftp(connection).await {
-                    Err(e) => return Err(anyhow::anyhow!("SFTP unavailable via subprocess: {e}")),
-                    Ok(s) => Ok(s),
-                }
-            }
-        };
-        result.map_err(|e| anyhow::anyhow!("{e}"))
+        let conn = connection.clone();
+        crate::services::transport::execute_with_fallback(connection, &self.config, |transport| {
+            let conn_clone = conn.clone();
+            Box::pin(async move { transport.open_sftp(&conn_clone).await })
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("{e}"))
     }
 }

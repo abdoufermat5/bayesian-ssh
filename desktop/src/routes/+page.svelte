@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from "svelte";
-  import { invoke } from "@tauri-apps/api/core";
+  import { onMount } from "svelte";
   import { Plus, Search, List, LayoutGrid, OctagonX, Layers, ShieldCheck, KeyRound, TerminalSquare } from "lucide-svelte";
 
   import TitleBar from "$lib/components/TitleBar.svelte";
@@ -18,791 +17,60 @@
   import OnboardingModal from "$lib/components/modals/OnboardingModal.svelte";
   import Toast from "$lib/components/Toast.svelte";
 
-  import type {
-    AppTab,
-    Connection,
-    ConnectionStats,
-    DesktopSettings,
-    EnvInfo,
-    OnboardingPayload,
-    SessionHistoryEntry,
-    WorkspaceInfo,
-  } from "$lib/types";
   import { notify } from "$lib/stores/notifications.svelte";
-  import { applyTheme } from "$lib/utils/theme";
   import {
-    closeAllTabs,
-    connectSSH,
-    dockPopoutSession,
-    fitActiveTerminal,
-    focusPopoutSession,
     getTerminalState,
     initTerminalListeners,
+    teardownTerminalListeners,
     popOutDetachedSession,
-    reattachSession,
-    terminateAllDetachedSessions,
     terminateDetachedSession,
     terminatePopoutSession,
-    teardownTerminalListeners,
   } from "$lib/stores/terminal.svelte";
   import { getWindowState, initWindowState } from "$lib/stores/window.svelte";
   import {
-    acquireKerberosTicket,
-    closeKerberosModal,
-    consumePendingConnection,
-    formatKerberosRemaining,
-    getKerberosHealth,
     getKerberosState,
-    getLiveRemainingSeconds,
     openKerberosModal,
-    refreshKerberosStatus,
-    renewKerberosTicket,
+    closeKerberosModal,
     startKerberosMonitoring,
     stopKerberosMonitoring,
   } from "$lib/stores/kerberos.svelte";
+  import { appState } from "$lib/stores/appState.svelte";
 
   const terminalState = getTerminalState();
   const windowState = getWindowState();
   const kerberosState = getKerberosState();
 
-  let activeTab = $state<AppTab>("connections");
-  let environments = $state<EnvInfo[]>([]);
-  let activeEnv = $state("default");
-  let connections = $state<Connection[]>([]);
-  let searchQuery = $state("");
-  let selectedTag = $state<string | null>(null);
-  let stats = $state<ConnectionStats | null>(null);
-  let history = $state<SessionHistoryEntry[]>([]);
-
-  let viewMode = $state<"list" | "grid">("list");
-  let sidebarCollapsed = $state(false);
-  let selectedHostIndex = $state(0);
-
-  let showModal = $state(false);
-  let isEditing = $state(false);
-  let modalConnectionId = $state("");
-  let modalName = $state("");
-  let modalHost = $state("");
-  let modalUser = $state("");
-  let modalPort = $state(22);
-  let modalUseKerberos = $state(false);
-  let modalBastion = $state("");
-  let modalBastionUser = $state("");
-  let modalKeyPath = $state("");
-  let modalTagsString = $state("");
-
-  let showEnvModal = $state(false);
-  let newEnvName = $state("");
-
-  let copiedId = $state<string | null>(null);
-  let justDuplicatedId = $state<string | null>(null);
-
-  let showDeleteConfirm = $state(false);
-  let deleteTarget = $state<{
-    title?: string;
-    confirmLabel?: string;
-    warning?: string;
-    label: string;
-    subtitle: string;
-    onConfirm: () => Promise<void>;
-  } | null>(null);
-
-  let agentActive = $state(false);
-  let agentSocket = $state<string | null>(null);
-  let agentKeys = $state<string[]>([]);
-  let showAgentModal = $state(false);
-  let showSessionManager = $state(false);
-  let kerberosLoading = $state(false);
-  let kerberosError = $state<string | null>(null);
-  let showOnboarding = $state(false);
-
-  let workspace = $state<WorkspaceInfo>({
-    active_env: "default",
-    config_root: "",
-    env_dir: "",
-    config_path: "",
-    database_path: "",
-    ssh_config_path: "",
-    default_user: "root",
-    default_port: 22,
-    search_mode: "bayesian",
-    log_level: "info",
-    auto_save_history: true,
-    max_history_size: 1000,
-  });
-
-  let settings = $state<DesktopSettings>({
-    theme: "zinc",
-    auto_start_agent: false,
-    custom_agent_socket: "",
-    kerberos_warn_minutes: 15,
-    monitor_kerberos: true,
-    default_user: "root",
-    default_port: 22,
-    fuzzy_search: false,
-    default_key_path: "",
-    timezone: "system",
-  });
-
-  function promptDelete(
-    label: string,
-    subtitle: string,
-    onConfirm: () => Promise<void>,
-    options?: { title?: string; confirmLabel?: string; warning?: string },
-  ) {
-    deleteTarget = { label, subtitle, onConfirm, ...options };
-    showDeleteConfirm = true;
-  }
-
-  async function confirmDelete() {
-    if (!deleteTarget) return;
-    showDeleteConfirm = false;
-    try {
-      await deleteTarget.onConfirm();
-    } finally {
-      deleteTarget = null;
-    }
-  }
-
-  async function loadData() {
-    try {
-      activeEnv = await invoke("get_active_env");
-      environments = await invoke("list_environments");
-      await loadWorkspace();
-      await loadConnections();
-      await loadStats();
-      await loadHistory();
-      await loadSettings();
-      await loadAgentStatus();
-    } catch (e: unknown) {
-      notify(String(e), "error");
-    }
-  }
-
-  async function loadWorkspace() {
-    try {
-      workspace = await invoke("get_workspace_info");
-      activeEnv = workspace.active_env;
-    } catch (e) {
-      console.error("Failed to load workspace info", e);
-    }
-  }
-
-  async function checkOnboarding() {
-    try {
-      const needsSetup = await invoke<boolean>("needs_onboarding");
-      showOnboarding = needsSetup;
-    } catch (e) {
-      console.error("Failed to check onboarding state", e);
-    }
-  }
-
-  async function saveWorkspaceConfig() {
-    try {
-      await invoke("save_workspace_config", {
-        update: {
-          default_user: settings.default_user,
-          default_port: settings.default_port,
-          ssh_config_path: workspace.ssh_config_path || "",
-          search_mode: settings.fuzzy_search ? "fuzzy" : "bayesian",
-          log_level: workspace.log_level,
-          auto_save_history: workspace.auto_save_history,
-          max_history_size: workspace.max_history_size,
-        },
-      });
-      await loadWorkspace();
-      notify("Workspace settings saved", "success");
-    } catch (e: unknown) {
-      notify(`Failed to save workspace: ${e}`, "error");
-    }
-  }
-
-  async function browseSshConfig(): Promise<string | null> {
-    try {
-      const selected = await invoke<string | null>("pick_ssh_config_file");
-      if (selected) {
-        workspace = { ...workspace, ssh_config_path: selected };
-        if (!showOnboarding) {
-          await saveWorkspaceConfig();
-        }
-      }
-      return selected;
-    } catch (e: unknown) {
-      notify(String(e), "error");
-      return null;
-    }
-  }
-
-  async function importSshConfig() {
-    try {
-      const count = await invoke<number>("import_ssh_config", {
-        file: workspace.ssh_config_path || null,
-      });
-      await loadConnections();
-      await loadStats();
-      notify(
-        count > 0 ? `Imported ${count} host${count === 1 ? "" : "s"} from OpenSSH config` : "No new hosts to import",
-        count > 0 ? "success" : "info",
-      );
-    } catch (e: unknown) {
-      notify(`Import failed: ${e}`, "error");
-    }
-  }
-
-  async function completeOnboarding(payload: OnboardingPayload) {
-    try {
-      const imported = await invoke<number>("complete_onboarding", { payload });
-      showOnboarding = false;
-      await loadData();
-      applyTheme(settings.theme);
-      if (imported > 0) {
-        notify(`Setup complete — imported ${imported} host${imported === 1 ? "" : "s"}`, "success");
-      } else {
-        notify("Workspace ready. Add your first host whenever you like.", "success");
-      }
-    } catch (e: unknown) {
-      notify(`Setup failed: ${e}`, "error");
-    }
-  }
-
-  async function loadSettings() {
-    try {
-      const loaded: Record<string, unknown> = await invoke("load_desktop_settings");
-      settings = {
-        theme: (loaded.theme as string) || "zinc",
-        auto_start_agent: Boolean(loaded.auto_start_agent),
-        custom_agent_socket: (loaded.custom_agent_socket as string) || "",
-        kerberos_warn_minutes: Number(loaded.kerberos_warn_minutes) || 15,
-        monitor_kerberos: loaded.monitor_kerberos !== false,
-        default_user: (loaded.default_user as string) || "root",
-        default_port: (loaded.default_port as number) || 22,
-        fuzzy_search: Boolean(loaded.fuzzy_search),
-        default_key_path: (loaded.default_key_path as string) || "",
-        timezone: (loaded.timezone as string) || "system",
-      };
-      applyTheme(settings.theme);
-
-      if (settings.auto_start_agent && !agentActive) {
-        await triggerStartAgent();
-      }
-
-      if (settings.monitor_kerberos) {
-        startKerberosMonitoring({
-          warnMinutes: settings.kerberos_warn_minutes,
-          onWarning: (message) => notify(message, "info"),
-        });
-      } else {
-        stopKerberosMonitoring();
-      }
-    } catch (e) {
-      console.error("Failed to load settings", e);
-    }
-  }
-
-  async function saveSettings() {
-    applyTheme(settings.theme);
-    try {
-      await invoke("save_desktop_settings", {
-        settings: { ...settings, onboarding_complete: true },
-      });
-      if (settings.monitor_kerberos) {
-        startKerberosMonitoring({
-          warnMinutes: settings.kerberos_warn_minutes,
-          onWarning: (message) => notify(message, "info"),
-        });
-      } else {
-        stopKerberosMonitoring();
-      }
-      notify("Settings saved successfully", "success");
-    } catch (e: unknown) {
-      notify(`Failed to save settings: ${e}`, "error");
-    }
-  }
-
-  function handleThemeChange(theme: string) {
-    settings.theme = theme;
-    applyTheme(theme);
-    void saveSettings();
-  }
-
-  async function loadAgentStatus() {
-    try {
-      const status: { active: boolean; socket_path: string | null; keys: string[] } =
-        await invoke("get_agent_status");
-      agentActive = status.active;
-      agentSocket = status.socket_path;
-      agentKeys = status.keys;
-    } catch (e) {
-      console.error("Failed to load agent status", e);
-    }
-  }
-
-  async function triggerStartAgent() {
-    try {
-      const status: { active: boolean; socket_path: string | null; keys: string[] } =
-        await invoke("start_agent");
-      agentActive = status.active;
-      agentSocket = status.socket_path;
-      agentKeys = status.keys;
-      notify("SSH Agent started successfully", "success");
-    } catch (e: unknown) {
-      notify(`Failed to start agent: ${e}`, "error");
-    }
-  }
-
-  async function triggerAddKey(keyPath: string) {
-    try {
-      await invoke("add_key_to_agent", { keyPath });
-      await loadAgentStatus();
-      notify("Key added to SSH Agent successfully", "success");
-    } catch (e: unknown) {
-      notify(`Failed to add key: ${e}`, "error");
-    }
-  }
-
-  async function selectAndAddKey() {
-    try {
-      const file = await invoke<string | null>("pick_key_file");
-      if (file) await triggerAddKey(file);
-    } catch (e) {
-      console.error("Failed to pick key file", e);
-    }
-  }
-
-  async function resumePendingKerberosConnection() {
-    const conn = consumePendingConnection();
-    if (!conn) return;
-    activeTab = "terminals";
-    await tick();
-    await connectSSH(conn);
-    requestAnimationFrame(() => fitActiveTerminal());
-  }
-
-  async function handleKerberosRenew(password?: string) {
-    kerberosLoading = true;
-    kerberosError = null;
-    try {
-      const next = await renewKerberosTicket(password);
-      if (next.valid) {
-        notify("Kerberos ticket renewed", "success");
-        await resumePendingKerberosConnection();
-        closeKerberosModal();
-      }
-    } catch (e: unknown) {
-      kerberosError = String(e);
-    } finally {
-      kerberosLoading = false;
-    }
-  }
-
-  async function handleKerberosAcquire(principal: string, password: string) {
-    kerberosLoading = true;
-    kerberosError = null;
-    try {
-      const next = await acquireKerberosTicket(password, principal);
-      if (next.valid) {
-        notify("Kerberos ticket acquired", "success");
-        await resumePendingKerberosConnection();
-        closeKerberosModal();
-      }
-    } catch (e: unknown) {
-      kerberosError = String(e);
-    } finally {
-      kerberosLoading = false;
-    }
-  }
-
-  async function loadConnections() {
-    try {
-      connections = await invoke("get_connections", {
-        query: searchQuery,
-        tagFilter: selectedTag,
-      });
-    } catch (e: unknown) {
-      notify(String(e), "error");
-    }
-  }
-
-  /** Reload list after add/edit/duplicate — clears stale search/tag filters that hide results. */
-  async function reloadConnectionsAfterMutation() {
-    try {
-      const allConnections = await invoke<Connection[]>("get_connections", {
-        query: "",
-        tagFilter: null,
-      });
-
-      if (searchQuery.trim() || selectedTag) {
-        const filtered = await invoke<Connection[]>("get_connections", {
-          query: searchQuery,
-          tagFilter: selectedTag,
-        });
-
-        if (filtered.length === 0 && allConnections.length > 0) {
-          searchQuery = "";
-          selectedTag = null;
-          connections = allConnections;
-          notify("Search cleared — the saved host no longer matches your filter", "info");
-          return;
-        }
-
-        connections = filtered;
-        return;
-      }
-
-      connections = allConnections;
-    } catch (e: unknown) {
-      notify(String(e), "error");
-    }
-  }
-
-  async function loadStats() {
-    try {
-      stats = await invoke("get_stats");
-    } catch {
-      // optional
-    }
-  }
-
-  async function loadHistory() {
-    try {
-      history = await invoke("get_history", { limit: 50 });
-    } catch (e: unknown) {
-      notify(String(e), "error");
-    }
-  }
-
-  async function duplicateConnection(conn: Connection) {
-    try {
-      const copyName = `${conn.name} (Copy)`;
-      await invoke("add_connection", {
-        name: copyName,
-        host: conn.host,
-        user: conn.user,
-        port: conn.port,
-        kerberos: conn.use_kerberos,
-        bastion: conn.bastion || null,
-        bastionUser: conn.bastion_user || null,
-        keyPath: conn.key_path || null,
-        tags: [...conn.tags],
-      });
-
-      await reloadConnectionsAfterMutation();
-      await loadStats();
-
-      const newIdx = connections.findIndex((c) => c.name === copyName && c.host === conn.host);
-      if (newIdx !== -1) {
-        selectedHostIndex = newIdx;
-        justDuplicatedId = connections[newIdx].id;
-        setTimeout(() => {
-          justDuplicatedId = null;
-        }, 2000);
-        openEditModal(connections[newIdx]);
-      }
-
-      notify("Connection duplicated — update values below", "info");
-    } catch (e: unknown) {
-      notify(`Failed to duplicate: ${e}`, "error");
-    }
-  }
-
-  async function copyToClipboard(text: string, id: string) {
-    try {
-      await navigator.clipboard.writeText(text);
-      copiedId = id;
-      setTimeout(() => {
-        if (copiedId === id) copiedId = null;
-      }, 1500);
-      notify("SSH command copied to clipboard", "success");
-    } catch {
-      notify("Failed to copy", "error");
-    }
-  }
-
-  async function switchEnv(envName: string) {
-    try {
-      await invoke("set_active_env", { name: envName });
-      await loadData();
-      notify(`Switched to profile '${envName}'`, "success");
-    } catch (e: unknown) {
-      notify(String(e), "error");
-    }
-  }
-
-  async function createEnv() {
-    if (!newEnvName.trim()) return;
-    try {
-      await invoke("create_environment", { name: newEnvName.trim() });
-      newEnvName = "";
-      showEnvModal = false;
-      await loadData();
-      notify("Profile created successfully", "success");
-    } catch (e: unknown) {
-      notify(String(e), "error");
-    }
-  }
-
-  async function deleteEnv(envName: string) {
-    promptDelete(envName, "All hosts in this profile will be permanently removed.", async () => {
-      await invoke("remove_environment", { name: envName });
-      await loadData();
-      notify(`Profile '${envName}' deleted`, "success");
-    });
-  }
-
-  async function browseKey() {
-    try {
-      const selected = await invoke<string | null>("pick_key_file");
-      if (selected) modalKeyPath = selected;
-    } catch (e: unknown) {
-      notify(String(e), "error");
-    }
-  }
-
-  function openSessionManager() {
-    showSessionManager = true;
-  }
-
-  function goToTerminals() {
-    activeTab = "terminals";
-    requestAnimationFrame(() => fitActiveTerminal());
-  }
-
-  async function handleSessionReattach(sessionId: string) {
-    await reattachSession(sessionId);
-    showSessionManager = false;
-    goToTerminals();
-  }
-
-  async function handleSessionDock(sessionId: string) {
-    await dockPopoutSession(sessionId);
-    showSessionManager = false;
-    goToTerminals();
-  }
-
-  async function handleTerminateAllSessions() {
-    await terminateAllDetachedSessions();
-    for (const session of [...terminalState.popoutSessions]) {
-      await terminatePopoutSession(session.id);
-    }
-  }
-
-  function openAddModal() {
-    isEditing = false;
-    modalConnectionId = "";
-    modalName = "";
-    modalHost = "";
-    modalUser = "";
-    modalPort = 22;
-    modalUseKerberos = false;
-    modalBastion = "";
-    modalBastionUser = "";
-    modalKeyPath = "";
-    modalTagsString = "";
-    showModal = true;
-  }
-
-  function openEditModal(conn: Connection) {
-    isEditing = true;
-    modalConnectionId = conn.id;
-    modalName = conn.name;
-    modalHost = conn.host;
-    modalUser = conn.user;
-    modalPort = conn.port;
-    modalUseKerberos = conn.use_kerberos;
-    modalBastion = conn.bastion || "";
-    modalBastionUser = conn.bastion_user || "";
-    modalKeyPath = conn.key_path || "";
-    modalTagsString = conn.tags.join(", ");
-    showModal = true;
-  }
-
-  async function saveConnection() {
-    if (!modalName.trim() || !modalHost.trim()) {
-      notify("Name and Host are required.", "error");
-      return;
-    }
-
-    const tags = modalTagsString
-      .split(",")
-      .map((t) => t.trim())
-      .filter((t) => t.length > 0);
-
-    const payload = {
-      name: modalName.trim(),
-      host: modalHost.trim(),
-      user: modalUser.trim() || null,
-      port: modalPort || null,
-      kerberos: modalUseKerberos || null,
-      bastion: modalBastion.trim() || null,
-      bastionUser: modalBastionUser.trim() || null,
-      keyPath: modalKeyPath.trim() || null,
-      tags,
-    };
-
-    try {
-      if (isEditing) {
-        await invoke("edit_connection", {
-          id: modalConnectionId,
-          ...payload,
-          user: modalUser,
-          port: modalPort,
-          kerberos: modalUseKerberos,
-        });
-        notify("Host updated successfully", "success");
-      } else {
-        await invoke("add_connection", payload);
-        notify("Host added successfully", "success");
-      }
-      showModal = false;
-      await reloadConnectionsAfterMutation();
-      await loadStats();
-    } catch (e: unknown) {
-      notify(String(e), "error");
-    }
-  }
-
-  async function deleteConnection(conn: Connection) {
-    promptDelete(conn.name, `${conn.user}@${conn.host}:${conn.port}`, async () => {
-      await invoke("remove_connection", { idOrName: conn.id });
-      notify(`'${conn.name}' removed`, "success");
-      await loadConnections();
-      await loadStats();
-    });
-  }
-
-  async function handleConnect(conn: Connection) {
-    activeTab = "terminals";
-    await tick();
-    try {
-      await connectSSH(conn);
-      requestAnimationFrame(() => fitActiveTerminal());
-    } catch (e: unknown) {
-      notify(String(e), "error");
-    }
-  }
-
-  function handleTabChange(tab: AppTab) {
-    activeTab = tab;
-    if (tab === "terminals") {
-      requestAnimationFrame(() => fitActiveTerminal());
-    }
-    if (tab === "history") {
-      void loadHistory();
-    }
-  }
-
-  async function terminateAllSessions() {
-    const count = await closeAllTabs();
-    if (count === 0) return;
-
-    await loadHistory();
-    await loadStats();
-    notify(`Closed ${count} active session${count === 1 ? "" : "s"}`, "success");
-  }
-
-  function requestCloseAllSessions() {
-    const count = terminalState.totalSessionCount;
-    if (count === 0) return;
-
-    if (count === 1) {
-      void terminateAllSessions();
-      return;
-    }
-
-    promptDelete(
-      `${count} active or detached sessions`,
-      "Every open SSH terminal will be disconnected immediately.",
-      terminateAllSessions,
-      {
-        title: "Close all sessions",
-        confirmLabel: "Close all",
-        warning: "Unsaved work in remote shells may be lost.",
-      },
-    );
-  }
-
-  function handleGlobalKeydown(e: KeyboardEvent) {
-    if (showOnboarding || showModal || showEnvModal) {
-      if (e.key === "Escape" && !showOnboarding) {
-        showModal = false;
-        showEnvModal = false;
-      }
-      return;
-    }
-
-    if ((e.ctrlKey && e.key === "k") || (e.key === "/" && document.activeElement?.tagName !== "INPUT")) {
-      e.preventDefault();
-      const searchInput = document.querySelector(".search-input") as HTMLInputElement;
-      searchInput?.focus();
-      searchInput?.select();
-      return;
-    }
-
-    if (activeTab === "connections" && connections.length > 0) {
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        selectedHostIndex = (selectedHostIndex + 1) % connections.length;
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        selectedHostIndex = (selectedHostIndex - 1 + connections.length) % connections.length;
-      } else if (e.key === "Enter") {
-        e.preventDefault();
-        if (connections[selectedHostIndex]) handleConnect(connections[selectedHostIndex]);
-      } else if (e.key === "e" && e.ctrlKey) {
-        e.preventDefault();
-        if (connections[selectedHostIndex]) openEditModal(connections[selectedHostIndex]);
-      }
-    }
-  }
-
   $effect(() => {
-    if (connections) selectedHostIndex = 0;
+    if (appState.connections) appState.selectedHostIndex = 0;
   });
 
   $effect(() => {
-    searchQuery;
-    selectedTag;
-    loadConnections();
+    appState.searchQuery;
+    appState.selectedTag;
+    appState.loadConnections();
   });
 
   $effect(() => {
-    if (activeTab === "terminals") {
-      requestAnimationFrame(() => fitActiveTerminal());
+    if (appState.activeTab === "terminals") {
+      requestAnimationFrame(() => appState.goToTerminals());
     }
   });
-
-  const allTags = $derived.by(() => {
-    const tagsSet = new Set<string>();
-    connections.forEach((c) => c.tags.forEach((t) => tagsSet.add(t)));
-    return Array.from(tagsSet).sort();
-  });
-
-  const kerberosHealth = $derived(
-    getKerberosHealth(getLiveRemainingSeconds(), settings.kerberos_warn_minutes),
-  );
-  const kerberosRemainingLabel = $derived(formatKerberosRemaining(getLiveRemainingSeconds()));
-
-  const showTerminalsPanel = $derived(
-    activeTab === "terminals" ||
-      terminalState.count > 0 ||
-      terminalState.externalSessionCount > 0,
-  );
 
   onMount(() => {
     (async () => {
-      await loadData();
-      await checkOnboarding();
+      await appState.loadData();
+      await appState.checkOnboarding();
     })();
-    window.addEventListener("keydown", handleGlobalKeydown);
+    window.addEventListener("keydown", appState.handleGlobalKeydown);
 
     initTerminalListeners(async () => {
-      await loadHistory();
-      await loadStats();
+      await appState.loadHistory();
+      await appState.loadStats();
     });
 
-    if (settings.monitor_kerberos) {
+    if (appState.settings.monitor_kerberos) {
       startKerberosMonitoring({
-        warnMinutes: settings.kerberos_warn_minutes,
+        warnMinutes: appState.settings.kerberos_warn_minutes,
         onWarning: (message) => notify(message, "info"),
       });
     }
@@ -813,7 +81,7 @@
     });
 
     return () => {
-      window.removeEventListener("keydown", handleGlobalKeydown);
+      window.removeEventListener("keydown", appState.handleGlobalKeydown);
       teardownTerminalListeners();
       stopKerberosMonitoring();
       teardownWindow();
@@ -822,69 +90,69 @@
 </script>
 
 <div class="window-container" class:is-fullscreen={windowState.isFullscreen}>
-  <TitleBar {activeEnv} />
+  <TitleBar activeEnv={appState.activeEnv} />
 
-  <div class="app-layout" class:collapsed={sidebarCollapsed}>
+  <div class="app-layout" class:collapsed={appState.sidebarCollapsed}>
     <Sidebar
-      {activeTab}
-      onTabChange={handleTabChange}
-      {environments}
-      {activeEnv}
-      onSwitchEnv={switchEnv}
-      onShowEnvModal={() => (showEnvModal = true)}
-      {stats}
-      {sidebarCollapsed}
-      onToggleSidebar={() => (sidebarCollapsed = !sidebarCollapsed)}
+      activeTab={appState.activeTab}
+      onTabChange={appState.handleTabChange}
+      environments={appState.environments}
+      activeEnv={appState.activeEnv}
+      onSwitchEnv={appState.switchEnv}
+      onShowEnvModal={() => (appState.showEnvModal = true)}
+      stats={appState.stats}
+      sidebarCollapsed={appState.sidebarCollapsed}
+      onToggleSidebar={() => (appState.sidebarCollapsed = !appState.sidebarCollapsed)}
       terminalCount={terminalState.totalSessionCount}
       tabCount={terminalState.count}
       externalSessionCount={terminalState.externalSessionCount}
-      {allTags}
-      {selectedTag}
+      allTags={appState.allTags}
+      selectedTag={appState.selectedTag}
       onTagSelect={(tag) => {
-        selectedTag = tag;
-        loadConnections();
+        appState.selectedTag = tag;
+        appState.loadConnections();
       }}
-      {agentActive}
-      {agentKeys}
-      onStartAgent={triggerStartAgent}
-      onShowAgentModal={() => (showAgentModal = true)}
-      kerberosHealth={kerberosHealth}
-      kerberosRemainingLabel={kerberosRemainingLabel}
+      agentActive={appState.agentActive}
+      agentKeys={appState.agentKeys}
+      onStartAgent={appState.triggerStartAgent}
+      onShowAgentModal={() => (appState.showAgentModal = true)}
+      kerberosHealth={appState.kerberosHealth}
+      kerberosRemainingLabel={appState.kerberosRemainingLabel}
       kerberosPrincipal={kerberosState.status.principal}
       onShowKerberosModal={openKerberosModal}
-      onShowSessionManager={openSessionManager}
-      onGoToTerminals={goToTerminals}
-      onSearchMostUsed={(name) => (searchQuery = name)}
+      onShowSessionManager={appState.openSessionManager}
+      onGoToTerminals={appState.goToTerminals}
+      onSearchMostUsed={(name) => (appState.searchQuery = name)}
     />
 
     <main class="main-panel">
       <header class="topbar">
         <div class="search-section">
-          {#if activeTab !== "terminals"}
+          {#if appState.activeTab !== "terminals"}
             <div class="search-container">
               <Search class="search-icon" size={16} />
               <input
                 type="text"
                 placeholder="Search host, alias, or tag... (Press '/' to focus)"
-                bind:value={searchQuery}
+                bind:value={appState.searchQuery}
                 class="search-input"
               />
             </div>
 
-            {#if activeTab === "connections"}
+            {#if appState.activeTab === "connections"}
               <div class="view-mode-toggle">
                 <button
                   class="toggle-btn"
-                  class:active={viewMode === "list"}
-                  onclick={() => (viewMode = "list")}
+                  class:active={appState.viewMode === "list"}
+                  onclick={() => (appState.viewMode = "list")}
                   title="List View"
                 >
                   <List size={16} />
                 </button>
                 <button
                   class="toggle-btn"
-                  class:active={viewMode === "grid"}
-                  onclick={() => (viewMode = "grid")}
+                  class:active={appState.viewMode === "grid"}
+                  onclick={() => (appState.viewMode = "grid")}
                   title="Grid View"
                 >
                   <LayoutGrid size={16} />
@@ -894,7 +162,7 @@
           {:else}
             <span class="topbar-context-label">Active SSH Sessions</span>
             {#if terminalState.externalSessionCount > 0}
-              <button type="button" class="topbar-inline-chip alert" onclick={openSessionManager}>
+              <button type="button" class="topbar-inline-chip alert" onclick={appState.openSessionManager}>
                 <Layers size={13} />
                 {terminalState.externalSessionCount} away
               </button>
@@ -907,8 +175,8 @@
             <button
               type="button"
               class="quick-chip"
-              class:highlight={activeTab !== "terminals"}
-              onclick={goToTerminals}
+              class:highlight={appState.activeTab !== "terminals"}
+              onclick={appState.goToTerminals}
               title="Open terminal tabs"
             >
               <TerminalSquare size={14} />
@@ -920,7 +188,7 @@
             <button
               type="button"
               class="quick-chip alert"
-              onclick={openSessionManager}
+              onclick={appState.openSessionManager}
               title="Manage background and pop-out sessions"
             >
               <Layers size={14} />
@@ -931,26 +199,26 @@
           <button
             type="button"
             class="quick-chip"
-            class:active={agentActive}
-            onclick={() => (agentActive ? (showAgentModal = true) : triggerStartAgent())}
+            class:active={appState.agentActive}
+            onclick={() => (appState.agentActive ? (appState.showAgentModal = true) : appState.triggerStartAgent())}
             title="SSH Agent"
           >
             <KeyRound size={14} />
-            <span>{agentActive ? `Agent (${agentKeys.length})` : "Agent"}</span>
+            <span>{appState.agentActive ? `Agent (${appState.agentKeys.length})` : "Agent"}</span>
           </button>
 
-          {#if kerberosHealth !== "unavailable"}
+          {#if appState.kerberosHealth !== "unavailable"}
             <button
               type="button"
-              class="quick-chip kerberos {kerberosHealth}"
+              class="quick-chip kerberos {appState.kerberosHealth}"
               onclick={openKerberosModal}
               title="Kerberos ticket"
             >
               <ShieldCheck size={14} />
               <span>
-                {#if kerberosHealth === "valid" || kerberosHealth === "warning"}
-                  {kerberosRemainingLabel}
-                {:else if kerberosHealth === "missing"}
+                {#if appState.kerberosHealth === "valid" || appState.kerberosHealth === "warning"}
+                  {appState.kerberosRemainingLabel}
+                {:else if appState.kerberosHealth === "missing"}
                   krb: missing
                 {:else}
                   krb: expired
@@ -962,12 +230,12 @@
 
         <div class="topbar-actions">
           {#if terminalState.totalSessionCount > 0}
-            <button class="cyber-btn ghost danger" onclick={requestCloseAllSessions}>
+            <button class="cyber-btn ghost danger" onclick={appState.requestCloseAllSessions}>
               <OctagonX size={16} />
               <span>Close all ({terminalState.totalSessionCount})</span>
             </button>
           {/if}
-          <button class="cyber-btn" onclick={openAddModal}>
+          <button class="cyber-btn" onclick={appState.openAddModal}>
             <Plus size={16} />
             <span>New Server</span>
           </button>
@@ -975,62 +243,62 @@
       </header>
 
       <div class="main-body">
-        {#if activeTab === "connections"}
+        {#if appState.activeTab === "connections"}
           <div class="main-body-panel is-visible">
             <ConnectionsView
-              {connections}
-              {viewMode}
-              {selectedHostIndex}
-              {copiedId}
-              {justDuplicatedId}
-              timezone={settings.timezone}
-              onSelectHost={(i) => (selectedHostIndex = i)}
-              onConnect={handleConnect}
-              onEdit={openEditModal}
-              onDelete={deleteConnection}
-              onDuplicate={duplicateConnection}
-              onCopyCommand={copyToClipboard}
-              onRefresh={loadConnections}
-              onAddHost={openAddModal}
+              connections={appState.connections}
+              viewMode={appState.viewMode}
+              selectedHostIndex={appState.selectedHostIndex}
+              copiedId={appState.copiedId}
+              justDuplicatedId={appState.justDuplicatedId}
+              timezone={appState.settings.timezone}
+              onSelectHost={(i) => (appState.selectedHostIndex = i)}
+              onConnect={appState.handleConnect}
+              onEdit={appState.openEditModal}
+              onDelete={appState.deleteConnection}
+              onDuplicate={appState.duplicateConnection}
+              onCopyCommand={appState.copyToClipboard}
+              onRefresh={appState.loadConnections}
+              onAddHost={appState.openAddModal}
             />
           </div>
         {/if}
 
-        {#if activeTab === "history"}
+        {#if appState.activeTab === "history"}
           <div class="main-body-panel is-visible">
-            <HistoryView {history} timezone={settings.timezone} />
+            <HistoryView history={appState.history} timezone={appState.settings.timezone} />
           </div>
         {/if}
 
-        {#if activeTab === "settings"}
+        {#if appState.activeTab === "settings"}
           <div class="main-body-panel is-visible">
             <SettingsView
-              bind:settings
-              bind:workspace
-              {environments}
-              onSave={saveSettings}
-              onThemeChange={handleThemeChange}
-              onSaveWorkspace={saveWorkspaceConfig}
-              onSwitchEnv={switchEnv}
-              onManageProfiles={() => (showEnvModal = true)}
-              onBrowseSshConfig={browseSshConfig}
-              onImportSshConfig={importSshConfig}
+              bind:settings={appState.settings}
+              bind:workspace={appState.workspace}
+              environments={appState.environments}
+              onSave={appState.saveSettings}
+              onThemeChange={appState.handleThemeChange}
+              onSaveWorkspace={appState.saveWorkspaceConfig}
+              onSwitchEnv={appState.switchEnv}
+              onManageProfiles={() => (appState.showEnvModal = true)}
+              onBrowseSshConfig={appState.browseSshConfig}
+              onImportSshConfig={appState.importSshConfig}
             />
           </div>
         {/if}
 
-        {#if showTerminalsPanel}
+        {#if appState.showTerminalsPanel}
           <div
             class="main-body-panel"
-            class:is-visible={activeTab === "terminals"}
-            class:is-docked={activeTab !== "terminals"}
+            class:is-visible={appState.activeTab === "terminals"}
+            class:is-docked={appState.activeTab !== "terminals"}
           >
             <TerminalsView
-              {connections}
-              bind:searchQuery
-              onSearchInput={loadConnections}
-              onCloseAll={requestCloseAllSessions}
-              onManageSessions={openSessionManager}
+              connections={appState.connections}
+              bind:searchQuery={appState.searchQuery}
+              onSearchInput={appState.loadConnections}
+              onCloseAll={appState.requestCloseAllSessions}
+              onManageSessions={appState.openSessionManager}
             />
           </div>
         {/if}
@@ -1038,55 +306,55 @@
     </main>
   </div>
 
-  {#if showModal}
+  {#if appState.showModal}
     <ConnectionModal
-      {isEditing}
-      bind:modalName
-      bind:modalHost
-      bind:modalUser
-      bind:modalPort
-      bind:modalUseKerberos
-      bind:modalBastion
-      bind:modalBastionUser
-      bind:modalKeyPath
-      bind:modalTagsString
-      onClose={() => (showModal = false)}
-      onSave={saveConnection}
-      onBrowseKey={browseKey}
+      isEditing={appState.isEditing}
+      bind:modalName={appState.modalName}
+      bind:modalHost={appState.modalHost}
+      bind:modalUser={appState.modalUser}
+      bind:modalPort={appState.modalPort}
+      bind:modalUseKerberos={appState.modalUseKerberos}
+      bind:modalBastion={appState.modalBastion}
+      bind:modalBastionUser={appState.modalBastionUser}
+      bind:modalKeyPath={appState.modalKeyPath}
+      bind:modalTagsString={appState.modalTagsString}
+      onClose={() => (appState.showModal = false)}
+      onSave={appState.saveConnection}
+      onBrowseKey={appState.browseKey}
     />
   {/if}
 
-  {#if showEnvModal}
+  {#if appState.showEnvModal}
     <EnvModal
-      {environments}
-      bind:newEnvName
-      onClose={() => (showEnvModal = false)}
-      onCreate={createEnv}
-      onDelete={deleteEnv}
+      environments={appState.environments}
+      bind:newEnvName={appState.newEnvName}
+      onClose={() => (appState.showEnvModal = false)}
+      onCreate={appState.createEnv}
+      onDelete={appState.deleteEnv}
     />
   {/if}
 
-  {#if showAgentModal}
+  {#if appState.showAgentModal}
     <AgentModal
-      {agentSocket}
-      {agentKeys}
-      onClose={() => (showAgentModal = false)}
-      onAddKey={selectAndAddKey}
+      agentSocket={appState.agentSocket}
+      agentKeys={appState.agentKeys}
+      onClose={() => (appState.showAgentModal = false)}
+      onAddKey={appState.selectAndAddKey}
     />
   {/if}
 
-  {#if showSessionManager}
+  {#if appState.showSessionManager}
     <DetachedSessionsModal
       detachedSessions={terminalState.detachedSessions}
       popoutSessions={terminalState.popoutSessions}
-      onClose={() => (showSessionManager = false)}
-      onReattach={handleSessionReattach}
+      onClose={() => (appState.showSessionManager = false)}
+      onReattach={appState.handleSessionReattach}
       onPopOut={popOutDetachedSession}
-      onDock={handleSessionDock}
+      onDock={appState.handleSessionDock}
       onFocusPopout={focusPopoutSession}
       onTerminateDetached={terminateDetachedSession}
       onTerminatePopout={terminatePopoutSession}
-      onTerminateAll={handleTerminateAllSessions}
+      onTerminateAll={appState.handleTerminateAllSessions}
     />
   {/if}
 
@@ -1095,39 +363,39 @@
       status={kerberosState.status}
       remainingSeconds={kerberosState.liveRemainingSeconds}
       ticketLifetimeSeconds={kerberosState.ticketLifetimeSeconds}
-      loading={kerberosLoading}
-      error={kerberosError}
+      loading={appState.kerberosLoading}
+      error={appState.kerberosError}
       onClose={() => {
-        kerberosError = null;
+        appState.kerberosError = null;
         closeKerberosModal();
       }}
-      onRenew={handleKerberosRenew}
-      onAcquire={handleKerberosAcquire}
+      onRenew={appState.handleKerberosRenew}
+      onAcquire={appState.handleKerberosAcquire}
     />
   {/if}
 
-  {#if showDeleteConfirm && deleteTarget}
+  {#if appState.showDeleteConfirm && appState.deleteTarget}
     <DeleteConfirm
-      title={deleteTarget.title}
-      confirmLabel={deleteTarget.confirmLabel}
-      warning={deleteTarget.warning}
-      label={deleteTarget.label}
-      subtitle={deleteTarget.subtitle}
+      title={appState.deleteTarget.title}
+      confirmLabel={appState.deleteTarget.confirmLabel}
+      warning={appState.deleteTarget.warning}
+      label={appState.deleteTarget.label}
+      subtitle={appState.deleteTarget.subtitle}
       onCancel={() => {
-        showDeleteConfirm = false;
-        deleteTarget = null;
+        appState.showDeleteConfirm = false;
+        appState.deleteTarget = null;
       }}
-      onConfirm={confirmDelete}
+      onConfirm={appState.confirmDelete}
     />
   {/if}
 
-  {#if showOnboarding}
+  {#if appState.showOnboarding}
     <OnboardingModal
-      defaultUser={settings.default_user}
-      defaultSshConfigPath={workspace.ssh_config_path || ""}
-      configRoot={workspace.config_root}
-      onBrowseSshConfig={browseSshConfig}
-      onComplete={completeOnboarding}
+      defaultUser={appState.settings.default_user}
+      defaultSshConfigPath={appState.workspace.ssh_config_path || ""}
+      configRoot={appState.workspace.config_root}
+      onBrowseSshConfig={appState.browseSshConfig}
+      onComplete={appState.completeOnboarding}
     />
   {/if}
 

@@ -81,3 +81,4 @@ coverage/
 .local/
 local/
 .docs/
+.omo/

@@ -1,3 +1,6 @@
+use super::russh_impl::RusshTransport;
+use super::subprocess_impl::SubprocessTransport;
+use super::types::{SshTransport, TransportError};
 use crate::config::AppConfig;
 use crate::models::Connection;
 
@@ -17,6 +20,39 @@ pub fn pick_kind(conn: &Connection, cfg: &AppConfig) -> TransportKind {
         TransportKind::Subprocess
     } else {
         TransportKind::Native
+    }
+}
+
+/// Helper to execute an SSH operation with fallback handling.
+pub async fn execute_with_fallback<F, T>(
+    conn: &Connection,
+    cfg: &AppConfig,
+    f: F,
+) -> Result<T, TransportError>
+where
+    F: for<'a> Fn(
+        &'a dyn SshTransport,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<T, TransportError>> + Send + 'a>,
+    >,
+{
+    let kind = pick_kind(conn, cfg);
+    match kind {
+        TransportKind::Native => {
+            let native = RusshTransport::new(cfg.clone());
+            match f(&native).await {
+                Err(TransportError::Fallback(e)) => {
+                    tracing::warn!("Native transport fallback ({e}), retrying with subprocess");
+                    let sub = SubprocessTransport::new(cfg.clone());
+                    f(&sub).await
+                }
+                other => other,
+            }
+        }
+        TransportKind::Subprocess => {
+            let sub = SubprocessTransport::new(cfg.clone());
+            f(&sub).await
+        }
     }
 }
 

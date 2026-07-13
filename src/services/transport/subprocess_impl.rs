@@ -59,7 +59,7 @@ impl SubprocessTransport {
     /// When Kerberos + bastion are both active the bastion is an *interactive*
     /// bastion: we SSH into it and pass `target_user@target` as argument.
     /// Without Kerberos the bastion is a classic jump host and `-J` is used.
-    pub(crate) fn build_shell_argv(conn: &Connection) -> Vec<String> {
+    pub fn build_shell_argv(conn: &Connection) -> Vec<String> {
         let mut argv: Vec<String> = vec!["ssh".into()];
         if conn.use_kerberos {
             argv.push("-t".into());
@@ -125,28 +125,6 @@ impl SubprocessTransport {
         argv.push("-N".into());
         argv.push(format!("{}@{}", conn.user, conn.host));
         argv
-    }
-
-    /// Run an interactive SSH session that takes over the current terminal.
-    /// Returns the exit code of the ssh process.
-    pub async fn run_interactive(&self, conn: &Connection) -> Result<i32, TransportError> {
-        let argv = Self::build_shell_argv(conn);
-        let (cmd_name, args) = argv.split_first().expect("argv non-empty");
-
-        let mut child = TokioCommand::new(cmd_name)
-            .args(args)
-            .stdin(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .map_err(|e| TransportError::permanent(anyhow::Error::from(e)))?;
-
-        let status = child
-            .wait()
-            .await
-            .map_err(|e| TransportError::permanent(anyhow::Error::from(e)))?;
-
-        Ok(status.code().unwrap_or(-1))
     }
 
     /// Execute a command through an interactive bastion.
@@ -385,6 +363,26 @@ impl SshTransport for SubprocessTransport {
         Ok(crate::services::transport::types::ForwardHandle::new(
             task, cancel_tx,
         ))
+    }
+
+    async fn run_interactive(&self, conn: &Connection) -> Result<i32, TransportError> {
+        let argv = Self::build_shell_argv(conn);
+        let (cmd_name, args) = argv.split_first().expect("argv non-empty");
+
+        let mut child = TokioCommand::new(cmd_name)
+            .args(args)
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .map_err(|e| TransportError::permanent(anyhow::Error::from(e)))?;
+
+        let status = child
+            .wait()
+            .await
+            .map_err(|e| TransportError::permanent(anyhow::Error::from(e)))?;
+
+        Ok(status.code().unwrap_or(-1))
     }
 
     fn name(&self) -> &'static str {

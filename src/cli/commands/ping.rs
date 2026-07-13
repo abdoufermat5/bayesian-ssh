@@ -1,4 +1,4 @@
-use crate::cli::utils::fuzzy_select_connection;
+use crate::cli::utils::resolve_connection;
 use crate::config::AppConfig;
 use crate::services::SshService;
 use anyhow::{Context, Result};
@@ -9,19 +9,9 @@ use tracing::info;
 pub async fn execute(target: String, timeout: Option<u64>, config: AppConfig) -> Result<()> {
     let ssh_service = SshService::new(config)?;
 
-    let mut target_conn = ssh_service
-        .get_connection(&target)
-        .await
-        .unwrap_or_default();
-
-    if target_conn.is_none() {
-        println!("🔍 Connection '{}' not found, searching...", target);
-        target_conn = fuzzy_select_connection(&ssh_service, &target, "ping", true).await?;
-    }
-
-    let connection = match target_conn {
-        Some(c) => c,
-        None => {
+    let connection = match resolve_connection(&ssh_service, &target, "ping", true).await {
+        Ok(c) => c,
+        Err(_) => {
             println!("❌ No connection selected.");
             return Ok(());
         }

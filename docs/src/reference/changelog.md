@@ -5,6 +5,13 @@ All notable changes to Bayesian SSH will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-07-13
+
+### Added
+- **Core Modularization and Refactoring**: Comprehensive codebase-wide refactoring of the CLI parser, TUI state management, and TUI keyboard input dispatcher. Splits monolithic modules into clear, domain-scoped files (`sftp.rs`, `tunnels.rs`, `tabs.rs`, `modals.rs`).
+- **Tauri Backend Commands Modularization**: Restructured the monolithic `commands.rs` into a dedicated domain-scoped `commands/` directory resolving connections, PTY terminal spawning, settings, env, ssh-agent, native file dialogues, and configuration imports.
+- **Svelte 5 App State custom store**: Extracted reactive UI states, properties, and async Tauri IPC invocations from the presentation page component (`+page.svelte`) into a custom store (`appState.svelte.ts`).
+
 ## [2.0.0] - 2026-07-13
 
 ### Added

@@ -1,10 +1,9 @@
 use anyhow::{bail, Result};
 use tracing::info;
 
-use crate::cli::utils::fuzzy_select_connection;
+use crate::cli::utils::resolve_connection;
 use crate::config::AppConfig;
-use crate::services::transport::types::SshTransport;
-use crate::services::transport::{pick_kind, RusshTransport, SubprocessTransport, TransportKind};
+use crate::services::transport::execute_with_fallback;
 use crate::services::SshService;
 
 pub async fn execute(target: String, command: Vec<String>, config: AppConfig) -> Result<()> {
@@ -13,43 +12,17 @@ pub async fn execute(target: String, command: Vec<String>, config: AppConfig) ->
     }
 
     let ssh_service = SshService::new(config.clone())?;
-    let mut conn_opt = ssh_service
-        .get_connection(&target)
-        .await
-        .unwrap_or_default();
-
-    if conn_opt.is_none() {
-        conn_opt = fuzzy_select_connection(&ssh_service, &target, "exec", true).await?;
-    }
-
-    let connection = match conn_opt {
-        Some(c) => c,
-        None => bail!("no connection selected"),
-    };
+    let connection = resolve_connection(&ssh_service, &target, "exec", true).await?;
 
     let cmd_str = command.join(" ");
     info!("exec '{}' on {}", cmd_str, connection.host);
 
-    let kind = pick_kind(&connection, &config);
-    let output = match kind {
-        TransportKind::Native => {
-            let t = RusshTransport::new(config.clone());
-            match t.exec(&connection, &cmd_str).await {
-                Err(crate::services::transport::TransportError::Fallback(e)) => {
-                    tracing::warn!("native exec fallback ({e}), retrying with subprocess");
-                    SubprocessTransport::new(config)
-                        .exec(&connection, &cmd_str)
-                        .await
-                }
-                other => other,
-            }
-        }
-        TransportKind::Subprocess => {
-            SubprocessTransport::new(config)
-                .exec(&connection, &cmd_str)
-                .await
-        }
-    }
+    let output = execute_with_fallback(&connection, &config, |transport| {
+        let conn = connection.clone();
+        let cmd = cmd_str.clone();
+        Box::pin(async move { transport.exec(&conn, &cmd).await })
+    })
+    .await
     .map_err(|e| anyhow::anyhow!("{e}"))?;
 
     // Write stdout to stdout, stderr to stderr.

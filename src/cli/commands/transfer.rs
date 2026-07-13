@@ -149,13 +149,5 @@ async fn resolve_connection(
     target: &str,
     action: &str,
 ) -> Result<crate::models::Connection> {
-    let mut conn_opt = ssh_service.get_connection(target).await.unwrap_or_default();
-    if conn_opt.is_none() {
-        conn_opt =
-            crate::cli::utils::fuzzy_select_connection(ssh_service, target, action, true).await?;
-    }
-    match conn_opt {
-        Some(c) => Ok(c),
-        None => bail!("no connection selected"),
-    }
+    crate::cli::utils::resolve_connection(ssh_service, target, action, true).await
 }

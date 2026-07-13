@@ -1,4 +1,4 @@
-use crate::cli::utils::fuzzy_select_connection;
+use crate::cli::utils::resolve_connection;
 use crate::config::AppConfig;
 use crate::services::SshService;
 use anyhow::Result;
@@ -23,61 +23,23 @@ pub async fn execute(
     info!("Editing connection: {}", target);
 
     let ssh_service = SshService::new(config)?;
-
-    // First try exact match
-    if let Some(connection) = ssh_service.get_connection(&target).await? {
-        return update_connection(
-            ssh_service,
-            connection,
-            name,
-            host,
-            user,
-            port,
-            kerberos,
-            bastion,
-            no_bastion,
-            bastion_user,
-            key,
-            add_tags,
-            remove_tags,
-        )
-        .await;
-    }
-
-    // No exact match, try fuzzy search
-    info!(
-        "No exact match found for '{}', attempting fuzzy search",
-        target
-    );
-
-    // Use shared fuzzy selection (without auto-select for edit operations)
-    if let Some(connection) = fuzzy_select_connection(
-        &ssh_service,
-        &target,
-        "edit",
-        false, // Don't auto-select - require confirmation for edits
+    let connection = resolve_connection(&ssh_service, &target, "edit", false).await?;
+    update_connection(
+        ssh_service,
+        connection,
+        name,
+        host,
+        user,
+        port,
+        kerberos,
+        bastion,
+        no_bastion,
+        bastion_user,
+        key,
+        add_tags,
+        remove_tags,
     )
-    .await?
-    {
-        return update_connection(
-            ssh_service,
-            connection,
-            name,
-            host,
-            user,
-            port,
-            kerberos,
-            bastion,
-            no_bastion,
-            bastion_user,
-            key,
-            add_tags,
-            remove_tags,
-        )
-        .await;
-    }
-
-    Ok(())
+    .await
 }
 
 #[allow(clippy::too_many_arguments)]
