@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Core Modularization and Refactoring**: Comprehensive codebase-wide refactoring of the CLI parser, TUI state management, and TUI keyboard input dispatcher. Splits monolithic modules into clear, domain-scoped files (`sftp.rs`, `tunnels.rs`, `tabs.rs`, `modals.rs`).
 - **Tauri Backend Commands Modularization**: Restructured the monolithic `commands.rs` into a dedicated domain-scoped `commands/` directory resolving connections, PTY terminal spawning, settings, env, ssh-agent, native file dialogues, and configuration imports.
 - **Svelte 5 App State custom store**: Extracted reactive UI states, properties, and async Tauri IPC invocations from the presentation page component (`+page.svelte`) into a custom store (`appState.svelte.ts`).
+- **Terminal UI/UX Improvements**: Dynamic computed-style terminal themes matching Zinc/OLED/Slate/Cyberpunk backgrounds, auto-retheming on settings update using MutationObservers, keyboard and mouse-wheel font size zoom shortcuts (`Ctrl` + `+` / `-` / `0`), extra viewport padding, custom scrollbars, and active tab glows.
+- **Detached GUI Subcommand**: Added `bssh desktop` (and `bssh gui`) command to spawn the Tauri desktop client detached in the background and release prompt control instantly.
+
+### Fixed
+- **Terminal Clipboard Handling**: Custom event handlers intercepting copy/paste shortcuts to resolve character scrambling, duplicate pasting, and SIGINT conflicts when copying active selections.
 
 ## [2.0.0] - 2026-07-13
 
