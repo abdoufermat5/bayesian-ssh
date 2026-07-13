@@ -83,23 +83,20 @@ pub fn run() {
 
 #[cfg(unix)]
 fn init_shell_env() {
-    // Only fetch if one of these critical environment variables is missing
-    if std::env::var("SSH_AUTH_SOCK").is_err() || std::env::var("KRB5CCNAME").is_err() {
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
-        // Run a login shell and output its environment
-        if let Ok(output) = std::process::Command::new(&shell)
-            .args(["-l", "-c", "env"])
-            .output()
-        {
-            if output.status.success() {
-                let env_str = String::from_utf8_lossy(&output.stdout);
-                for line in env_str.lines() {
-                    if let Some(pos) = line.find('=') {
-                        let key = &line[..pos];
-                        let val = &line[pos + 1..];
-                        if key == "SSH_AUTH_SOCK" || key == "KRB5CCNAME" || key == "PATH" {
-                            std::env::set_var(key, val);
-                        }
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
+    // Run a login shell and output its environment to override desktop session defaults
+    if let Ok(output) = std::process::Command::new(&shell)
+        .args(["-l", "-c", "env"])
+        .output()
+    {
+        if output.status.success() {
+            let env_str = String::from_utf8_lossy(&output.stdout);
+            for line in env_str.lines() {
+                if let Some(pos) = line.find('=') {
+                    let key = &line[..pos];
+                    let val = &line[pos + 1..];
+                    if key == "SSH_AUTH_SOCK" || key == "KRB5CCNAME" || key == "PATH" {
+                        std::env::set_var(key, val);
                     }
                 }
             }
