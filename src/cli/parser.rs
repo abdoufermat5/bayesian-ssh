@@ -390,6 +390,13 @@ pub enum Commands {
     )]
     Tui,
 
+    /// Launch the Tauri desktop GUI (runs detached in the background)
+    #[command(
+        alias = "gui",
+        long_about = "Launch the bayesian-ssh desktop GUI application in the background (detached from terminal)."
+    )]
+    Desktop,
+
     /// Run a command on a remote host and print its output locally
     #[command(
         alias = "run",

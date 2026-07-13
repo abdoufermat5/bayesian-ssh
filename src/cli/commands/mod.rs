@@ -24,3 +24,4 @@ pub mod show;
 pub mod stats;
 pub mod transfer;
 pub mod tui;
+pub mod desktop;
