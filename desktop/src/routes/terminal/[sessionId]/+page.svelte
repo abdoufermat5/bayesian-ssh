@@ -11,6 +11,7 @@
     initPopoutTerminal,
     type PopoutTerminalHandle,
   } from "$lib/stores/popout-terminal";
+  import { applyTheme } from "$lib/utils/theme";
 
   let connectionName = $state("Terminal");
   let loadError = $state<string | null>(null);
@@ -116,6 +117,13 @@
 
   onMount(() => {
     let cancelled = false;
+
+    // Load and apply the theme for the popout window
+    invoke("load_desktop_settings").then((settings: any) => {
+      if (settings && settings.theme) {
+        applyTheme(settings.theme);
+      }
+    });
 
     void win
       .onCloseRequested((event) => {

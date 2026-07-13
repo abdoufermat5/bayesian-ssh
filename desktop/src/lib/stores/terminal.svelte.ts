@@ -34,16 +34,50 @@ interface ReattachSessionPayload {
   buffered_output: string;
 }
 
-const XTERM_THEME = {
-  background: "#0c0d12",
-  foreground: "#cbd5e1",
-  cursor: "#00f0ff",
-  cursorAccent: "#0c0d12",
-  cyan: "#00f0ff",
-  magenta: "#d946ef",
-  green: "#10b981",
-  red: "#ef4444",
-};
+import { getCurrentXtermTheme } from "$lib/utils/theme";
+
+let terminalFontSize = $state(13);
+let themeSyncInitialized = false;
+
+export function initThemeSyncForTerminals() {
+  if (themeSyncInitialized || typeof window === "undefined") return;
+  themeSyncInitialized = true;
+
+  const observer = new MutationObserver(() => {
+    applyThemeToAllTerminals();
+  });
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+}
+
+export function applyThemeToAllTerminals() {
+  const currentTheme = getCurrentXtermTheme();
+  tabs.forEach((tab) => {
+    if (tab.term) {
+      tab.term.options.theme = currentTheme;
+    }
+  });
+}
+
+export function getTerminalFontSize(): number {
+  return terminalFontSize;
+}
+
+export function updateTerminalFontSize(newSize: number) {
+  terminalFontSize = Math.max(8, Math.min(32, newSize));
+  tabs.forEach((tab) => {
+    if (tab.term && tab.fitAddon) {
+      tab.term.options.fontSize = terminalFontSize;
+      try {
+        tab.fitAddon.fit();
+        invoke("resize_pty", {
+          sessionId: tab.id,
+          cols: tab.term.cols,
+          rows: tab.term.rows,
+        }).catch(() => {});
+      } catch {}
+    }
+  });
+}
 
 let tabs = $state<TerminalTab[]>([]);
 let detachedSessions = $state<DetachedSession[]>([]);
@@ -104,10 +138,10 @@ function openTerminalInstance(
   const term = new Terminal({
     cursorBlink: true,
     fontFamily: "JetBrains Mono, Courier New, monospace",
-    fontSize: 13,
-    lineHeight: 1,
+    fontSize: terminalFontSize,
+    lineHeight: 1.15,
     scrollback: 5000,
-    theme: XTERM_THEME,
+    theme: getCurrentXtermTheme(),
   });
 
   const fitAddon = new FitAddon();
@@ -116,6 +150,18 @@ function openTerminalInstance(
   linkTerminal(tabId, term, fitAddon);
   attachResizeObserver(tabId, container, term, fitAddon);
   attachTerminalIo(tabId, term);
+
+  // Ctrl + Mouse Wheel zoom event listener
+  container.addEventListener("wheel", (e) => {
+    if (e.ctrlKey) {
+      e.preventDefault();
+      if (e.deltaY < 0) {
+        updateTerminalFontSize(terminalFontSize + 1);
+      } else {
+        updateTerminalFontSize(terminalFontSize - 1);
+      }
+    }
+  }, { passive: false });
 
   if (options?.banner) {
     term.writeln(options.banner);
@@ -282,6 +328,8 @@ export async function initTerminalListeners(onExit?: ExitCallback) {
   if (listenersReady) return;
   listenersReady = true;
   onSessionExit = onExit ?? null;
+
+  initThemeSyncForTerminals();
 
   await syncDetachedSessions();
   await syncPopoutSessions();

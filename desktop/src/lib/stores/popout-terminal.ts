@@ -5,16 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 
-const XTERM_THEME = {
-  background: "#0c0d12",
-  foreground: "#cbd5e1",
-  cursor: "#00f0ff",
-  cursorAccent: "#0c0d12",
-  cyan: "#00f0ff",
-  magenta: "#d946ef",
-  green: "#10b981",
-  red: "#ef4444",
-};
+import { getCurrentXtermTheme } from "$lib/utils/theme";
 
 export interface PopoutTerminalHandle {
   connectionName: string;
@@ -34,7 +25,9 @@ export async function initPopoutTerminal(sessionId: string): Promise<PopoutTermi
   let fitAddon: FitAddon | null = null;
   let resizeObserver: ResizeObserver | null = null;
   let unlistenOutput: UnlistenFn | null = null;
+  let themeObserver: MutationObserver | null = null;
   let closing = false;
+  let popoutFontSize = 13;
 
   const container = await waitForContainer("terminal-popout-root");
   if (!container) {
@@ -44,10 +37,10 @@ export async function initPopoutTerminal(sessionId: string): Promise<PopoutTermi
   term = new Terminal({
     cursorBlink: true,
     fontFamily: "JetBrains Mono, Courier New, monospace",
-    fontSize: 13,
-    lineHeight: 1,
+    fontSize: popoutFontSize,
+    lineHeight: 1.15,
     scrollback: 5000,
-    theme: XTERM_THEME,
+    theme: getCurrentXtermTheme(),
   });
 
   fitAddon = new FitAddon();
@@ -85,6 +78,54 @@ export async function initPopoutTerminal(sessionId: string): Promise<PopoutTermi
     }
   };
 
+  // Dynamic theme mutation observer
+  themeObserver = new MutationObserver(() => {
+    if (term) {
+      term.options.theme = getCurrentXtermTheme();
+    }
+  });
+  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+
+  // Ctrl + Mouse Wheel zoom
+  container.addEventListener("wheel", (e) => {
+    if (e.ctrlKey) {
+      e.preventDefault();
+      const nextSize = e.deltaY < 0 ? popoutFontSize + 1 : popoutFontSize - 1;
+      popoutFontSize = Math.max(8, Math.min(32, nextSize));
+      if (term) {
+        term.options.fontSize = popoutFontSize;
+        fit();
+      }
+    }
+  }, { passive: false });
+
+  // Keyboard shortcut zoom
+  const handleKeydown = (e: KeyboardEvent) => {
+    if (e.ctrlKey && (e.key === "=" || e.key === "+")) {
+      e.preventDefault();
+      popoutFontSize = Math.max(8, Math.min(32, popoutFontSize + 1));
+      if (term) {
+        term.options.fontSize = popoutFontSize;
+        fit();
+      }
+    } else if (e.ctrlKey && e.key === "-") {
+      e.preventDefault();
+      popoutFontSize = Math.max(8, Math.min(32, popoutFontSize - 1));
+      if (term) {
+        term.options.fontSize = popoutFontSize;
+        fit();
+      }
+    } else if (e.ctrlKey && e.key === "0") {
+      e.preventDefault();
+      popoutFontSize = 13;
+      if (term) {
+        term.options.fontSize = popoutFontSize;
+        fit();
+      }
+    }
+  };
+  window.addEventListener("keydown", handleKeydown);
+
   resizeObserver = new ResizeObserver(() => fit());
   resizeObserver.observe(container);
   requestAnimationFrame(() => requestAnimationFrame(fit));
@@ -100,6 +141,9 @@ export async function initPopoutTerminal(sessionId: string): Promise<PopoutTermi
   });
 
   const releaseUi = () => {
+    window.removeEventListener("keydown", handleKeydown);
+    themeObserver?.disconnect();
+    themeObserver = null;
     unlistenOutput?.();
     unlistenOutput = null;
     resizeObserver?.disconnect();

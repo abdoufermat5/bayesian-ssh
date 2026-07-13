@@ -25,6 +25,8 @@ import {
   terminateAllDetachedSessions,
   terminateDetachedSession,
   terminatePopoutSession,
+  updateTerminalFontSize,
+  getTerminalFontSize,
 } from "$lib/stores/terminal.svelte";
 import { getWindowState } from "$lib/stores/window.svelte";
 import {
@@ -725,6 +727,24 @@ export class AppStateStore {
         this.showEnvModal = false;
       }
       return;
+    }
+
+    if (this.activeTab === "terminals") {
+      if (e.ctrlKey && (e.key === "=" || e.key === "+")) {
+        e.preventDefault();
+        updateTerminalFontSize(getTerminalFontSize() + 1);
+        return;
+      }
+      if (e.ctrlKey && e.key === "-") {
+        e.preventDefault();
+        updateTerminalFontSize(getTerminalFontSize() - 1);
+        return;
+      }
+      if (e.ctrlKey && e.key === "0") {
+        e.preventDefault();
+        updateTerminalFontSize(13);
+        return;
+      }
     }
 
     if ((e.ctrlKey && e.key === "k") || (e.key === "/" && document.activeElement?.tagName !== "INPUT")) {

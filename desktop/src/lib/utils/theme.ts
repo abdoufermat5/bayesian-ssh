@@ -38,3 +38,48 @@ async function updateWindowBackground(theme: AppTheme) {
     // Browser preview / non-Tauri context
   }
 }
+
+export interface XtermTheme {
+  background: string;
+  foreground: string;
+  cursor: string;
+  cursorAccent: string;
+  cyan: string;
+  magenta: string;
+  green: string;
+  red: string;
+}
+
+export function getCurrentXtermTheme(): XtermTheme {
+  if (typeof window === "undefined") {
+    return {
+      background: "#0c0d12",
+      foreground: "#cbd5e1",
+      cursor: "#00f0ff",
+      cursorAccent: "#0c0d12",
+      cyan: "#00f0ff",
+      magenta: "#d946ef",
+      green: "#10b981",
+      red: "#ef4444",
+    };
+  }
+
+  const style = getComputedStyle(document.documentElement);
+  const bg = style.getPropertyValue("--bg-terminal").trim() || "#0c0d12";
+  const fg = style.getPropertyValue("--text-primary").trim() || "#cbd5e1";
+  const accent = style.getPropertyValue("--accent-cyan").trim() || "#00f0ff";
+  const pink = style.getPropertyValue("--accent-pink").trim() || "#d946ef";
+  const green = style.getPropertyValue("--green-emerald").trim() || "#10b981";
+  const red = style.getPropertyValue("--red-rose").trim() || "#ef4444";
+
+  return {
+    background: bg,
+    foreground: fg,
+    cursor: accent,
+    cursorAccent: bg,
+    cyan: accent,
+    magenta: pink,
+    green,
+    red,
+  };
+}
