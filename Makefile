@@ -99,24 +99,47 @@ release-desktop: ## Build release version of the desktop app
 	@cd desktop && npm run tauri build -- --no-bundle
 	@echo "✅ Desktop release build completed"
 
-install-desktop: release-desktop ## Install desktop app binary to system
+bundle-desktop: ## Build desktop app Debian (.deb) and AppImage packages
+	@echo "📦 Packaging desktop app (.deb, .AppImage)..."
+	@cd desktop && npm run tauri build
+	@echo "✅ Desktop app packaging completed!"
+
+install-desktop: release-desktop ## Install desktop app binary, icon, and menu launcher shortcut
 	@echo "📦 Installing bayesian-ssh-desktop..."
 	@if [ -f "desktop/src-tauri/target/release/desktop" ]; then \
 		sudo cp "desktop/src-tauri/target/release/desktop" "$(INSTALL_DIR)/bayesian-ssh-desktop"; \
-		echo "✅ bayesian-ssh-desktop installed to $(INSTALL_DIR)/bayesian-ssh-desktop"; \
+		sudo chmod +x "$(INSTALL_DIR)/bayesian-ssh-desktop"; \
+		sudo mkdir -p /usr/share/icons/hicolor/128x128/apps; \
+		sudo cp "desktop/src-tauri/icons/128x128.png" "/usr/share/icons/hicolor/128x128/apps/bayesian-ssh-desktop.png"; \
+		echo "[Desktop Entry]" | sudo tee /usr/share/applications/bayesian-ssh-desktop.desktop >/dev/null; \
+		echo "Name=Bayesian SSH" | sudo tee -a /usr/share/applications/bayesian-ssh-desktop.desktop >/dev/null; \
+		echo "Comment=A fast and lightweight SSH session manager with Kerberos support" | sudo tee -a /usr/share/applications/bayesian-ssh-desktop.desktop >/dev/null; \
+		echo "Exec=/usr/local/bin/bayesian-ssh-desktop" | sudo tee -a /usr/share/applications/bayesian-ssh-desktop.desktop >/dev/null; \
+		echo "Icon=bayesian-ssh-desktop" | sudo tee -a /usr/share/applications/bayesian-ssh-desktop.desktop >/dev/null; \
+		echo "Terminal=false" | sudo tee -a /usr/share/applications/bayesian-ssh-desktop.desktop >/dev/null; \
+		echo "Type=Application" | sudo tee -a /usr/share/applications/bayesian-ssh-desktop.desktop >/dev/null; \
+		echo "Categories=Development;Network;" | sudo tee -a /usr/share/applications/bayesian-ssh-desktop.desktop >/dev/null; \
+		echo "StartupNotify=true" | sudo tee -a /usr/share/applications/bayesian-ssh-desktop.desktop >/dev/null; \
+		sudo gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true; \
+		echo "✅ bayesian-ssh-desktop and system launcher icon installed successfully!"; \
 	else \
 		echo "❌ Desktop release binary not found."; \
 		exit 1; \
 	fi
 
-uninstall-desktop: ## Remove desktop binary from system
+uninstall-desktop: ## Remove desktop binary, icon, and menu launcher shortcut
 	@echo "🗑️  Uninstalling bayesian-ssh-desktop..."
 	@if [ -f "$(INSTALL_DIR)/bayesian-ssh-desktop" ]; then \
 		sudo rm "$(INSTALL_DIR)/bayesian-ssh-desktop"; \
-		echo "✅ bayesian-ssh-desktop uninstalled from $(INSTALL_DIR)"; \
-	else \
-		echo "ℹ️  bayesian-ssh-desktop not found in $(INSTALL_DIR)"; \
 	fi
+	@if [ -f "/usr/share/applications/bayesian-ssh-desktop.desktop" ]; then \
+		sudo rm "/usr/share/applications/bayesian-ssh-desktop.desktop"; \
+	fi
+	@if [ -f "/usr/share/icons/hicolor/128x128/apps/bayesian-ssh-desktop.png" ]; then \
+		sudo rm "/usr/share/icons/hicolor/128x128/apps/bayesian-ssh-desktop.png"; \
+	fi
+	@sudo gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
+	@echo "✅ bayesian-ssh-desktop uninstalled successfully"
 
 uninstall: ## Remove binary from system
 	@echo "🗑️  Uninstalling $(BINARY_NAME)..."

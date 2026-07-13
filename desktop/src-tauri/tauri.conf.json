@@ -34,6 +34,11 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "publisher": "Abdoufermat5",
+    "category": "Development",
+    "copyright": "Copyright 2026 Abdoufermat5",
+    "shortDescription": "Fast and Easy SSH Session Manager",
+    "longDescription": "A fast and lightweight SSH session manager with Bayesian-ranked search, Kerberos, and bastion support."
   }
 }
