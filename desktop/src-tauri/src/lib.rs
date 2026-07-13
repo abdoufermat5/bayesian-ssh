@@ -19,6 +19,9 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(unix)]
+    init_shell_env();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(PtyState {
@@ -76,4 +79,30 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(unix)]
+fn init_shell_env() {
+    // Only fetch if one of these critical environment variables is missing
+    if std::env::var("SSH_AUTH_SOCK").is_err() || std::env::var("KRB5CCNAME").is_err() {
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
+        // Run a login shell and output its environment
+        if let Ok(output) = std::process::Command::new(&shell)
+            .args(["-l", "-c", "env"])
+            .output()
+        {
+            if output.status.success() {
+                let env_str = String::from_utf8_lossy(&output.stdout);
+                for line in env_str.lines() {
+                    if let Some(pos) = line.find('=') {
+                        let key = &line[..pos];
+                        let val = &line[pos + 1..];
+                        if key == "SSH_AUTH_SOCK" || key == "KRB5CCNAME" || key == "PATH" {
+                            std::env::set_var(key, val);
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
