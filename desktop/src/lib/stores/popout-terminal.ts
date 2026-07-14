@@ -6,6 +6,12 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 
 import { getCurrentXtermTheme } from "$lib/utils/theme";
+import { isTerminalFocused } from "$lib/utils/terminal-focus";
+import {
+  attachXtermIo,
+  attachXtermKeyHandler,
+  attachXtermLinuxInputFix,
+} from "$lib/utils/terminal-xterm";
 
 export interface PopoutTerminalHandle {
   connectionName: string;
@@ -26,6 +32,7 @@ export async function initPopoutTerminal(sessionId: string): Promise<PopoutTermi
   let resizeObserver: ResizeObserver | null = null;
   let unlistenOutput: UnlistenFn | null = null;
   let themeObserver: MutationObserver | null = null;
+  let compositionGuardCleanup: (() => void) | null = null;
   let closing = false;
   let popoutFontSize = 13;
 
@@ -46,6 +53,10 @@ export async function initPopoutTerminal(sessionId: string): Promise<PopoutTermi
   fitAddon = new FitAddon();
   term.loadAddon(fitAddon);
   term.open(container);
+  compositionGuardCleanup = attachXtermLinuxInputFix(container, term);
+  term.focus();
+
+  container.addEventListener("mousedown", () => term!.focus());
 
   if (info.buffered_output && term) {
     const activeTerm = term;
@@ -60,52 +71,8 @@ export async function initPopoutTerminal(sessionId: string): Promise<PopoutTermi
     requestAnimationFrame(() => activeTerm.scrollToBottom());
   }
 
-  term.onData((data) => {
-    invoke("write_pty", { sessionId, data }).catch(() => {});
-  });
-
-  // Intercept standard and custom clipboard keybindings for popout windows
-  term.attachCustomKeyEventHandler((event) => {
-    const key = event.key.toLowerCase();
-
-    // Copy: Ctrl + C (if selection exists) or Ctrl + Shift + C
-    if (
-      (event.ctrlKey && key === "c" && term!.hasSelection()) ||
-      (event.ctrlKey && event.shiftKey && key === "c")
-    ) {
-      if (event.type === "keydown") {
-        const selection = term!.getSelection();
-        if (selection) {
-          navigator.clipboard.writeText(selection).then(() => {
-            term!.clearSelection();
-          }).catch((err) => {
-            console.error("Failed to copy to clipboard", err);
-          });
-        }
-      }
-      return false; // Intercept event and prevent forwarding to PTY
-    }
-
-    // Paste: Ctrl + V or Ctrl + Shift + V or Shift + Insert
-    if (
-      (event.ctrlKey && key === "v") ||
-      (event.ctrlKey && event.shiftKey && key === "v") ||
-      (event.shiftKey && event.key === "insert")
-    ) {
-      if (event.type === "keydown") {
-        navigator.clipboard.readText().then((text) => {
-          if (text) {
-            invoke("write_pty", { sessionId, data: text }).catch(() => {});
-          }
-        }).catch((err) => {
-          console.error("Failed to read from clipboard", err);
-        });
-      }
-      return false; // Intercept event and prevent forwarding to PTY
-    }
-
-    return true;
-  });
+  attachXtermIo(sessionId, term);
+  attachXtermKeyHandler(term);
 
   const fit = () => {
     if (!term || !fitAddon) return;
@@ -142,8 +109,9 @@ export async function initPopoutTerminal(sessionId: string): Promise<PopoutTermi
     }
   }, { passive: false });
 
-  // Keyboard shortcut zoom
+  // Keyboard shortcut zoom — skip when xterm has focus so vim/nano keys aren't stolen
   const handleKeydown = (e: KeyboardEvent) => {
+    if (isTerminalFocused()) return;
     if (e.ctrlKey && (e.key === "=" || e.key === "+")) {
       e.preventDefault();
       popoutFontSize = Math.max(8, Math.min(32, popoutFontSize + 1));
@@ -185,6 +153,8 @@ export async function initPopoutTerminal(sessionId: string): Promise<PopoutTermi
 
   const releaseUi = () => {
     window.removeEventListener("keydown", handleKeydown);
+    compositionGuardCleanup?.();
+    compositionGuardCleanup = null;
     themeObserver?.disconnect();
     themeObserver = null;
     unlistenOutput?.();

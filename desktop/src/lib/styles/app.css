@@ -212,6 +212,11 @@ textarea,
 }
 
 .win-ctrl-btn.close:hover {
+  background-color: var(--bg-card-hover) !important;
+  color: var(--text-primary) !important;
+}
+
+.win-ctrl-btn.quit:hover {
   background-color: var(--red-rose) !important;
   color: white !important;
 }

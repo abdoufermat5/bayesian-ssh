@@ -1,13 +1,15 @@
 <script lang="ts">
+  import { invoke } from "@tauri-apps/api/core";
   import { getCurrentWindow } from "@tauri-apps/api/window";
-  import { Server } from "lucide-svelte";
+  import { LogOut, Server } from "lucide-svelte";
   import { refreshWindowState } from "$lib/stores/window.svelte";
 
   interface Props {
     activeEnv: string;
+    onQuit?: () => void;
   }
 
-  let { activeEnv }: Props = $props();
+  let { activeEnv, onQuit }: Props = $props();
 
   const appWindow = getCurrentWindow();
 
@@ -32,9 +34,21 @@
     }
   }
 
-  async function handleWindowClose() {
+  async function handleHideToTray() {
     try {
-      await appWindow.close();
+      await appWindow.hide();
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async function handleQuit() {
+    if (onQuit) {
+      onQuit();
+      return;
+    }
+    try {
+      await invoke("quit_app");
     } catch (e) {
       console.error(e);
     }
@@ -90,6 +104,14 @@
     style="display: flex; align-items: center; justify-content: flex-end; flex: 1; height: 100%;"
   >
     <button
+      class="win-ctrl-btn quit"
+      onclick={handleQuit}
+      title="Quit Bayesian SSH"
+      style="position: relative; z-index: 9999; display: flex; align-items: center; justify-content: center; width: 36px; height: 32px; background: none; border: none; color: var(--text-secondary); cursor: pointer;"
+    >
+      <LogOut size={13} />
+    </button>
+    <button
       class="win-ctrl-btn minimize"
       onclick={handleWindowMinimize}
       title="Minimize"
@@ -111,8 +133,8 @@
     </button>
     <button
       class="win-ctrl-btn close"
-      onclick={handleWindowClose}
-      title="Close"
+      onclick={handleHideToTray}
+      title="Hide to tray"
       style="position: relative; z-index: 9999; display: flex; align-items: center; justify-content: center; width: 46px; height: 32px; background: none; border: none; color: var(--text-secondary); cursor: pointer;"
     >
       <svg viewBox="0 0 10 10" style="width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.2;"

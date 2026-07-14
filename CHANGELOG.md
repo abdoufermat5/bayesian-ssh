@@ -5,6 +5,18 @@ All notable changes to Bayesian SSH will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.1] - 2026-07-14
+
+### Added
+- **System Tray Support**: Desktop app minimizes to the system tray instead of quitting on close; tray menu provides Open and Quit actions.
+- **Graceful Quit Flow**: Dedicated quit button and confirmation dialog when active terminal sessions are open.
+- **Shared Terminal Utilities**: Extracted xterm I/O, clipboard key handling, and Linux IME composition guard into reusable helpers.
+
+### Fixed
+- **PTY Terminal Rendering**: Set `TERM=xterm-256color` for spawned PTY sessions so vim, nano, and htop render correctly.
+- **PTY Resize**: Implemented `resize_pty` to propagate terminal dimensions to the backend PTY master.
+- **Terminal Focus Handling**: Global keyboard shortcuts no longer steal keys when the xterm terminal has focus; active tab auto-focuses on switch.
+
 ## [2.1.0] - 2026-07-13
 
 ### Added

@@ -13,6 +13,7 @@ export interface TerminalTab {
   connectionName: string;
   term?: Terminal;
   fitAddon?: FitAddon;
+  compositionGuardCleanup?: () => void;
 }
 
 export interface DetachedSession {
@@ -35,6 +36,11 @@ interface ReattachSessionPayload {
 }
 
 import { getCurrentXtermTheme } from "$lib/utils/theme";
+import {
+  attachXtermIo,
+  attachXtermKeyHandler,
+  attachXtermLinuxInputFix,
+} from "$lib/utils/terminal-xterm";
 
 let terminalFontSize = $state(13);
 let themeSyncInitialized = false;
@@ -103,11 +109,17 @@ function findDetachedSession(sessionId: string): DetachedSession | undefined {
   return detachedSessions.find((s) => s.id === sessionId);
 }
 
-function linkTerminal(tabId: string, term: Terminal, fitAddon: FitAddon) {
+function linkTerminal(
+  tabId: string,
+  term: Terminal,
+  fitAddon: FitAddon,
+  compositionGuardCleanup?: () => void,
+) {
   const index = tabs.findIndex((t) => t.id === tabId);
   if (index !== -1) {
     tabs[index].term = term;
     tabs[index].fitAddon = fitAddon;
+    tabs[index].compositionGuardCleanup = compositionGuardCleanup;
   }
 }
 
@@ -125,9 +137,7 @@ function fitTerminal(tabId: string, term: Terminal, fitAddon: FitAddon) {
 }
 
 function attachTerminalIo(tabId: string, term: Terminal) {
-  term.onData((data) => {
-    invoke("write_pty", { sessionId: tabId, data }).catch(() => {});
-  });
+  attachXtermIo(tabId, term);
 }
 
 function openTerminalInstance(
@@ -147,52 +157,14 @@ function openTerminalInstance(
   const fitAddon = new FitAddon();
   term.loadAddon(fitAddon);
   term.open(container);
-  linkTerminal(tabId, term, fitAddon);
+  const compositionGuardCleanup = attachXtermLinuxInputFix(container, term);
+  linkTerminal(tabId, term, fitAddon, compositionGuardCleanup);
   attachResizeObserver(tabId, container, term, fitAddon);
   attachTerminalIo(tabId, term);
 
-  // Custom copy/paste key event interceptor to prevent SIGINT on copy and duplicate paste inputs
-  term.attachCustomKeyEventHandler((event) => {
-    const key = event.key.toLowerCase();
+  container.addEventListener("mousedown", () => term.focus());
 
-    // Copy: Ctrl + C (if selection exists) or Ctrl + Shift + C
-    if (
-      (event.ctrlKey && key === "c" && term.hasSelection()) ||
-      (event.ctrlKey && event.shiftKey && key === "c")
-    ) {
-      if (event.type === "keydown") {
-        const selection = term.getSelection();
-        if (selection) {
-          navigator.clipboard.writeText(selection).then(() => {
-            term.clearSelection();
-          }).catch((err) => {
-            console.error("Failed to copy to clipboard", err);
-          });
-        }
-      }
-      return false; // Intercept event and prevent forwarding to PTY
-    }
-
-    // Paste: Ctrl + V or Ctrl + Shift + V or Shift + Insert
-    if (
-      (event.ctrlKey && key === "v") ||
-      (event.ctrlKey && event.shiftKey && key === "v") ||
-      (event.shiftKey && event.key === "insert")
-    ) {
-      if (event.type === "keydown") {
-        navigator.clipboard.readText().then((text) => {
-          if (text) {
-            invoke("write_pty", { sessionId: tabId, data: text }).catch(() => {});
-          }
-        }).catch((err) => {
-          console.error("Failed to read from clipboard", err);
-        });
-      }
-      return false; // Intercept event and prevent forwarding to PTY
-    }
-
-    return true;
-  });
+  attachXtermKeyHandler(term);
 
   // Ctrl + Mouse Wheel zoom event listener
   container.addEventListener("wheel", (e) => {
@@ -214,6 +186,8 @@ function openTerminalInstance(
       term.scrollToBottom();
     });
   }
+
+  requestAnimationFrame(() => term.focus());
 
   return term;
 }
@@ -326,6 +300,7 @@ function removeDetachedSession(sessionId: string) {
 
 function cleanupTabUi(tabId: string) {
   const tab = findTab(tabId);
+  tab?.compositionGuardCleanup?.();
   tab?.term?.dispose();
   detachResizeObserver(tabId);
   tabs = tabs.filter((t) => t.id !== tabId);
@@ -341,6 +316,17 @@ export function fitActiveTerminal() {
     if (tab.term && tab.fitAddon) {
       fitTerminal(tab.id, tab.term, tab.fitAddon);
     }
+  }
+}
+
+/** Focus the active terminal tab's xterm instance. */
+export function focusActiveTerminal() {
+  if (!activeTabId) return;
+  const tab = findTab(activeTabId);
+  if (!tab?.term) return;
+  tab.term.focus();
+  if (tab.fitAddon) {
+    fitTerminal(activeTabId, tab.term, tab.fitAddon);
   }
 }
 
@@ -609,6 +595,7 @@ export async function disconnectTab(tabId: string): Promise<void> {
 export async function closeAllTabs(): Promise<number> {
   const count = await invoke<number>("close_all_ptys");
   for (const tab of [...tabs]) {
+    tab.compositionGuardCleanup?.();
     tab.term?.dispose();
     detachResizeObserver(tab.id);
   }
@@ -636,6 +623,9 @@ export function getTerminalState() {
     },
     set activeTabId(value: string | null) {
       activeTabId = value;
+      if (value) {
+        requestAnimationFrame(() => focusActiveTerminal());
+      }
     },
     get count() {
       return tabs.length;

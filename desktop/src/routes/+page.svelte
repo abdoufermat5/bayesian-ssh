@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
   import { Plus, Search, List, LayoutGrid, OctagonX, Layers, ShieldCheck, KeyRound, TerminalSquare } from "lucide-svelte";
 
   import TitleBar from "$lib/components/TitleBar.svelte";
@@ -23,6 +24,7 @@
     initTerminalListeners,
     teardownTerminalListeners,
     popOutDetachedSession,
+    focusPopoutSession,
     terminateDetachedSession,
     terminatePopoutSession,
   } from "$lib/stores/terminal.svelte";
@@ -80,6 +82,12 @@
       teardownWindow = teardown;
     });
 
+    const appWindow = getCurrentWindow();
+    void appWindow.onCloseRequested((event) => {
+      event.preventDefault();
+      void appWindow.hide();
+    });
+
     return () => {
       window.removeEventListener("keydown", appState.handleGlobalKeydown);
       teardownTerminalListeners();
@@ -90,7 +98,7 @@
 </script>
 
 <div class="window-container" class:is-fullscreen={windowState.isFullscreen}>
-  <TitleBar activeEnv={appState.activeEnv} />
+  <TitleBar activeEnv={appState.activeEnv} onQuit={appState.requestQuitApp} />
 
   <div class="app-layout" class:collapsed={appState.sidebarCollapsed}>
     <Sidebar

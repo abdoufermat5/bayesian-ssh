@@ -8,6 +8,15 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => ({
   plugins: [sveltekit()],
 
+  // xterm.js 6.0.0 ships pre-minified ESM; Vite's esbuild pass can break
+  // InputHandler.requestMode and kill vim/nano input in production builds.
+  build: {
+    target: "es2022",
+  },
+  esbuild: {
+    minifySyntax: false,
+  },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors

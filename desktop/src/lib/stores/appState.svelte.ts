@@ -12,11 +12,13 @@ import type {
 } from "$lib/types";
 import { notify } from "$lib/stores/notifications.svelte";
 import { applyTheme } from "$lib/utils/theme";
+import { isTerminalFocused } from "$lib/utils/terminal-focus";
 import {
   closeAllTabs,
   connectSSH,
   dockPopoutSession,
   fitActiveTerminal,
+  focusActiveTerminal,
   focusPopoutSession,
   getTerminalState,
   initTerminalListeners,
@@ -563,7 +565,10 @@ export class AppStateStore {
 
   goToTerminals = () => {
     this.activeTab = "terminals";
-    requestAnimationFrame(() => fitActiveTerminal());
+    requestAnimationFrame(() => {
+      fitActiveTerminal();
+      focusActiveTerminal();
+    });
   }
 
   handleSessionReattach = async (sessionId: string) => {
@@ -720,6 +725,31 @@ export class AppStateStore {
     );
   }
 
+  requestQuitApp = () => {
+    const count = terminalState.totalSessionCount;
+    const quit = async () => {
+      await invoke("quit_app");
+    };
+
+    if (count === 0) {
+      void quit();
+      return;
+    }
+
+    this.promptDelete(
+      "Bayesian SSH",
+      count === 1
+        ? "1 active session will be closed and the application will exit."
+        : `${count} active sessions will be closed and the application will exit.`,
+      quit,
+      {
+        title: "Quit application",
+        confirmLabel: "Quit",
+        warning: "Unsaved work in remote shells may be lost.",
+      },
+    );
+  }
+
   handleGlobalKeydown = (e: KeyboardEvent) => {
     if (this.showOnboarding || this.showModal || this.showEnvModal) {
       if (e.key === "Escape" && !this.showOnboarding) {
@@ -729,7 +759,7 @@ export class AppStateStore {
       return;
     }
 
-    if (this.activeTab === "terminals") {
+    if (this.activeTab === "terminals" && !isTerminalFocused()) {
       if (e.ctrlKey && (e.key === "=" || e.key === "+")) {
         e.preventDefault();
         updateTerminalFontSize(getTerminalFontSize() + 1);
@@ -747,7 +777,10 @@ export class AppStateStore {
       }
     }
 
-    if ((e.ctrlKey && e.key === "k") || (e.key === "/" && document.activeElement?.tagName !== "INPUT")) {
+    if (
+      !isTerminalFocused() &&
+      ((e.ctrlKey && e.key === "k") || (e.key === "/" && document.activeElement?.tagName !== "INPUT"))
+    ) {
       e.preventDefault();
       const searchInput = document.querySelector(".search-input") as HTMLInputElement;
       searchInput?.focus();

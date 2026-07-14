@@ -139,6 +139,9 @@ pub fn spawn_pty(
         cmd_builder.env(key, val);
     }
 
+    // Ensure TERM is set for xterm.js compatibility — without this, vim/nano/htop won't render.
+    cmd_builder.env("TERM", "xterm-256color");
+
     // Open PTY Pair
     let pty_pair = pty_system
         .openpty(PtySize {
@@ -269,11 +272,24 @@ pub fn write_pty(
 
 #[tauri::command]
 pub fn resize_pty(
-    _state: State<'_, PtyState>,
-    _session_id: String,
-    _cols: u16,
-    _rows: u16,
+    state: State<'_, PtyState>,
+    session_id: String,
+    cols: u16,
+    rows: u16,
 ) -> Result<(), String> {
+    let sessions = state.sessions.lock().unwrap();
+    let session = sessions
+        .get(&session_id)
+        .ok_or_else(|| format!("PTY session '{}' not found", session_id))?;
+    session
+        ._master
+        .resize(PtySize {
+            rows,
+            cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 

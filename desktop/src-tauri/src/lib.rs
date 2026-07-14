@@ -1,5 +1,6 @@
 mod commands;
 mod kerberos;
+mod tray;
 
 use commands::{
     add_connection, add_key_to_agent, check_popout_main_overlap, claim_popout_session,
@@ -8,14 +9,14 @@ use commands::{
     get_agent_status, get_connections, get_history, get_stats, get_workspace_info,
     import_ssh_config, list_detached_sessions, list_environments, list_popout_sessions,
     load_desktop_settings, needs_onboarding, open_terminal_window, pick_key_file,
-    pick_ssh_config_file, reattach_pty, remove_connection, remove_environment, resize_pty,
-    save_desktop_settings, save_workspace_config, seal_session_ui, set_active_env, spawn_pty,
-    start_agent, write_pty, PtyState,
+    pick_ssh_config_file, quit_app, reattach_pty, remove_connection, remove_environment,
+    resize_pty, save_desktop_settings, save_workspace_config, seal_session_ui, set_active_env,
+    spawn_pty, start_agent, write_pty, PtyState,
 };
 use kerberos::{acquire_kerberos_ticket, get_kerberos_status, renew_kerberos_ticket};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use tauri::Manager;
+use tauri::{Manager, WindowEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -31,7 +32,17 @@ pub fn run() {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_background_color(Some(tauri::window::Color(9, 9, 11, 255)));
             }
+            tray::setup_tray(app.handle())?;
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if window.label() != "main" {
+                return;
+            }
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             get_active_env,
@@ -75,7 +86,8 @@ pub fn run() {
             needs_onboarding,
             complete_onboarding,
             import_ssh_config,
-            pick_ssh_config_file
+            pick_ssh_config_file,
+            quit_app
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

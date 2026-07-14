@@ -61,8 +61,9 @@ impl SubprocessTransport {
     /// Without Kerberos the bastion is a classic jump host and `-J` is used.
     pub fn build_shell_argv(conn: &Connection) -> Vec<String> {
         let mut argv: Vec<String> = vec!["ssh".into()];
+        // Force remote TTY allocation so vim/nano/htop work even when ssh config sets RequestTTY=no
+        argv.push("-tt".into());
         if conn.use_kerberos {
-            argv.push("-t".into());
             argv.push("-A".into());
             argv.push("-K".into());
         }
@@ -151,7 +152,7 @@ impl SubprocessTransport {
         let marker_end = format!("{marker}_END");
 
         let mut argv = Self::build_shell_argv(conn);
-        if let Some(pos) = argv.iter().position(|a| a == "-t") {
+        if let Some(pos) = argv.iter().position(|a| a == "-t" || a == "-tt") {
             argv[pos] = "-tt".into();
         }
         let (cmd_name, args) = argv.split_first().expect("argv non-empty");
@@ -503,7 +504,7 @@ mod tests {
     #[test]
     fn shell_argv_kerberos_adds_flags() {
         let argv = SubprocessTransport::build_shell_argv(&c(true, None, None));
-        assert!(argv.contains(&"-t".to_string()));
+        assert!(argv.contains(&"-tt".to_string()));
         assert!(argv.contains(&"-K".to_string()));
     }
 }
