@@ -1,15 +1,12 @@
 <script lang="ts">
-  import { invoke } from "@tauri-apps/api/core";
   import { getCurrentWindow } from "@tauri-apps/api/window";
-  import { LogOut, Server } from "lucide-svelte";
   import { refreshWindowState } from "$lib/stores/window.svelte";
 
   interface Props {
     activeEnv: string;
-    onQuit?: () => void;
   }
 
-  let { activeEnv, onQuit }: Props = $props();
+  let { activeEnv }: Props = $props();
 
   const appWindow = getCurrentWindow();
 
@@ -34,21 +31,9 @@
     }
   }
 
-  async function handleHideToTray() {
+  async function handleWindowClose() {
     try {
-      await appWindow.hide();
-    } catch (e) {
-      console.error(e);
-    }
-  }
-
-  async function handleQuit() {
-    if (onQuit) {
-      onQuit();
-      return;
-    }
-    try {
-      await invoke("quit_app");
+      await appWindow.close();
     } catch (e) {
       console.error(e);
     }
@@ -56,90 +41,58 @@
 </script>
 
 <header
-  class="custom-titlebar"
-  style="display: flex; align-items: center; justify-content: space-between; padding: 0 12px; height: 32px; background-color: var(--bg-sidebar); border-bottom: 1px solid var(--border-color); user-select: none;"
+  class="flex shrink-0 items-center justify-between h-[var(--titlebar-h)] bg-surface border-b border-border px-3 select-none z-50"
 >
   <div
-    class="titlebar-left"
+    class="flex items-center flex-1 h-full cursor-default gap-2"
     data-tauri-drag-region
-    style="display: flex; align-items: center; flex: 1; height: 100%; cursor: default;"
   >
-    <div
-      class="app-logo"
-      style="display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; margin-right: 8px; pointer-events: none;"
-    >
-      <svg
-        viewBox="0 0 1024 1024"
-        style="width: 16px; height: 16px; fill: none; stroke: var(--accent-cyan); stroke-width: 80;"
-      >
-        <path d="M100 800 C300 800, 400 200, 512 200 C624 200, 724 800, 924 800" />
-        <line x1="512" y1="200" x2="512" y2="800" stroke="var(--accent-pink)" />
-      </svg>
+    <div class="flex items-center justify-center w-6 h-6 pointer-events-none shrink-0">
+      <img src="/favicon.png" alt="" class="w-4 h-4 rounded-sm" draggable="false" />
     </div>
-    <span
-      class="titlebar-app-name"
-      style="font-size: 12px; font-weight: 500; color: var(--text-primary); user-select: none; pointer-events: none;"
-      >Bayesian SSH</span
-    >
+    <span class="text-xs font-medium text-secondary select-none pointer-events-none">
+      Bayesian SSH
+    </span>
   </div>
 
   <div
-    class="titlebar-center"
+    class="flex justify-center items-center flex-1 h-full cursor-default"
     data-tauri-drag-region
-    style="display: flex; justify-content: center; align-items: center; flex: 1; height: 100%; cursor: default;"
   >
     <div
-      class="titlebar-search-bar"
-      style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 4px; padding: 4px 16px; font-size: 11px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; user-select: none; pointer-events: none;"
+      class="bg-surface-raised border border-border rounded-md px-3.5 py-0.5 text-[11px] text-secondary flex items-center gap-1.5 select-none pointer-events-none"
     >
-      <Server size={10} style="color: var(--accent-cyan);" />
-      <span
-        >Bayesian SSH &mdash; Profile: <strong style="color: var(--text-primary);">{activeEnv}</strong></span
-      >
+      <span>Profile: <strong class="text-primary font-semibold">{activeEnv}</strong></span>
     </div>
   </div>
 
-  <div
-    class="titlebar-right"
-    style="display: flex; align-items: center; justify-content: flex-end; flex: 1; height: 100%;"
-  >
+  <div class="flex items-center justify-end flex-1 h-full">
     <button
-      class="win-ctrl-btn quit"
-      onclick={handleQuit}
-      title="Quit Bayesian SSH"
-      style="position: relative; z-index: 9999; display: flex; align-items: center; justify-content: center; width: 36px; height: 32px; background: none; border: none; color: var(--text-secondary); cursor: pointer;"
-    >
-      <LogOut size={13} />
-    </button>
-    <button
-      class="win-ctrl-btn minimize"
+      class="flex items-center justify-center w-[46px] h-[var(--titlebar-h)] bg-transparent border-none text-muted cursor-pointer transition-colors duration-100 hover:bg-white/5 hover:text-primary"
       onclick={handleWindowMinimize}
       title="Minimize"
-      style="position: relative; z-index: 9999; display: flex; align-items: center; justify-content: center; width: 46px; height: 32px; background: none; border: none; color: var(--text-secondary); cursor: pointer;"
     >
-      <svg viewBox="0 0 10 1" style="width: 10px; height: 1px; fill: none; stroke: currentColor; stroke-width: 1.5;"
-        ><line x1="0" y1="0.5" x2="10" y2="0.5" /></svg
-      >
+      <svg viewBox="0 0 10 1" class="w-2.5 h-px fill-none stroke-current" style="stroke-width: 1.5;">
+        <line x1="0" y1="0.5" x2="10" y2="0.5" />
+      </svg>
     </button>
     <button
-      class="win-ctrl-btn maximize"
+      class="flex items-center justify-center w-[46px] h-[var(--titlebar-h)] bg-transparent border-none text-muted cursor-pointer transition-colors duration-100 hover:bg-white/5 hover:text-primary"
       onclick={handleWindowMaximize}
       title="Maximize/Restore"
-      style="position: relative; z-index: 9999; display: flex; align-items: center; justify-content: center; width: 46px; height: 32px; background: none; border: none; color: var(--text-secondary); cursor: pointer;"
     >
-      <svg viewBox="0 0 10 10" style="width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.2;"
-        ><rect x="1" y="1" width="8" height="8" /></svg
-      >
+      <svg viewBox="0 0 10 10" class="w-2.5 h-2.5 fill-none stroke-current" style="stroke-width: 1.2;">
+        <rect x="1" y="1" width="8" height="8" />
+      </svg>
     </button>
     <button
-      class="win-ctrl-btn close"
-      onclick={handleHideToTray}
-      title="Hide to tray"
-      style="position: relative; z-index: 9999; display: flex; align-items: center; justify-content: center; width: 46px; height: 32px; background: none; border: none; color: var(--text-secondary); cursor: pointer;"
+      class="flex items-center justify-center w-[46px] h-[var(--titlebar-h)] bg-transparent border-none text-muted cursor-pointer transition-colors duration-100 hover:bg-red-500 hover:!text-white"
+      onclick={handleWindowClose}
+      title="Close"
     >
-      <svg viewBox="0 0 10 10" style="width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.2;"
-        ><path d="M1 1 L9 9 M9 1 L1 9" /></svg
-      >
+      <svg viewBox="0 0 10 10" class="w-2.5 h-2.5 fill-none stroke-current" style="stroke-width: 1.2;">
+        <path d="M1 1 L9 9 M9 1 L1 9" />
+      </svg>
     </button>
   </div>
 </header>

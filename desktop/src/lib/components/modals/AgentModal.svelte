@@ -11,56 +11,59 @@
   let { agentSocket, agentKeys, onClose, onAddKey }: Props = $props();
 </script>
 
-<div class="modal-backdrop" onclick={onClose}>
-  <div class="modal-dialog" onclick={(e) => e.stopPropagation()}>
-    <div class="modal-header">
-      <h2>SSH Agent Manager</h2>
-      <button class="close-btn" onclick={onClose}><X size={18} /></button>
+<div
+  class="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-[100]"
+  onclick={onClose}
+  role="presentation"
+>
+  <div
+    class="bg-surface border border-border rounded-2xl w-[520px] shadow-xl flex flex-col animate-[modal-enter_0.25s_cubic-bezier(0.16,1,0.3,1)_forwards]"
+    onclick={(e) => e.stopPropagation()}
+    role="presentation"
+  >
+    <div class="flex justify-between items-center px-6 py-5 border-b border-border">
+      <h2 class="text-base font-semibold tracking-tight m-0 text-primary">SSH Agent Manager</h2>
+      <button
+        class="bg-transparent border-none text-muted cursor-pointer flex p-1 rounded-md transition-all duration-100 hover:text-primary hover:bg-white/5"
+        onclick={onClose}
+      >
+        <X size={18} />
+      </button>
     </div>
 
-    <div class="modal-body">
-      <div
-        class="agent-info-box"
-        style="background: var(--bg-card); padding: 12px; border: 1px solid var(--border-color); border-radius: 6px; margin-bottom: 16px;"
-      >
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-          <span style="font-weight: 500; font-size: 13px; color: var(--text-color);">AGENT STATUS</span>
-          <span style="font-size: 11px; font-weight: 600; color: var(--accent-cyan);">ACTIVE</span>
+    <div class="px-6 py-5 flex flex-col gap-4 max-h-[60vh] overflow-y-auto">
+      <div class="bg-surface-raised border border-border rounded-xl p-4 flex flex-col gap-2">
+        <div class="flex justify-between items-center">
+          <span class="text-[10px] font-bold tracking-wider text-secondary uppercase">Agent Status</span>
+          <span class="text-xs font-semibold text-accent">ACTIVE</span>
         </div>
         {#if agentSocket}
-          <div style="font-size: 11px; color: var(--text-muted); word-break: break-all; font-family: monospace;">
+          <div class="text-[11px] text-muted break-all font-mono">
             Socket: {agentSocket}
           </div>
         {/if}
       </div>
 
-      <div class="agent-keys-section">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-          <span class="section-title" style="margin: 0;">LOADED KEYS ({agentKeys.length})</span>
+      <div class="flex flex-col">
+        <div class="flex justify-between items-center mb-2">
+          <span class="text-[10px] font-bold tracking-wider text-secondary uppercase">LOADED KEYS ({agentKeys.length})</span>
           <button
-            class="cyber-btn mini"
+            class="bg-accent border-none text-white py-1.5 px-3 rounded-lg font-semibold cursor-pointer inline-flex items-center gap-1.5 text-xs transition-colors duration-150 hover:bg-accent-hover"
             onclick={onAddKey}
-            style="padding: 4px 8px; font-size: 11px; display: flex; align-items: center; gap: 4px;"
           >
             <Plus size={12} /> Add Key File
           </button>
         </div>
 
-        <div
-          class="keys-list-container"
-          style="max-height: 200px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-card);"
-        >
+        <div class="max-h-[200px] overflow-y-auto border border-border rounded-lg bg-surface-input divide-y divide-border">
           {#if agentKeys.length === 0}
-            <div style="padding: 24px; text-align: center; color: var(--text-muted); font-size: 12px;">
+            <div class="p-6 text-center text-muted text-xs">
               No keys currently loaded in the SSH Agent.
             </div>
           {:else}
             {#each agentKeys as key}
-              <div
-                class="key-item"
-                style="padding: 10px 12px; border-bottom: 1px solid var(--border-color); font-family: monospace; font-size: 11px; color: var(--text-color); display: flex; justify-content: space-between; align-items: center;"
-              >
-                <span style="word-break: break-all; margin-right: 8px;">{key}</span>
+              <div class="p-2.5 px-3.5 font-mono text-[11px] text-secondary break-all">
+                {key}
               </div>
             {/each}
           {/if}
@@ -68,8 +71,13 @@
       </div>
     </div>
 
-    <div class="modal-footer">
-      <button class="cancel-btn" onclick={onClose}>Close</button>
+    <div class="flex justify-end gap-2 px-6 py-4 border-t border-border">
+      <button
+        class="py-2 px-4 rounded-lg text-[13px] font-semibold cursor-pointer bg-transparent border border-border text-secondary transition-all duration-100 hover:border-border-hover hover:text-primary hover:bg-white/[0.03]"
+        onclick={onClose}
+      >
+        Close
+      </button>
     </div>
   </div>
 </div>

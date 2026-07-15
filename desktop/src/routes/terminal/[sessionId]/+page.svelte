@@ -198,7 +198,10 @@
   });
 </script>
 
-<div class="terminal-window-root" class:dock-ready={dockHintActive}>
+<div
+  class="h-[100dvh] flex flex-col overflow-hidden bg-surface-terminal transition-all duration-150
+    {dockHintActive ? 'shadow-[inset_0_0_0_2px_rgba(59,130,246,0.45)]' : ''}"
+>
   <TerminalWindowTitleBar
     title={connectionName}
     dockHintActive={dockHintActive}
@@ -207,55 +210,12 @@
   />
 
   {#if loadError}
-    <div class="terminal-window-error">
+    <div class="flex-1 flex items-center justify-center text-muted text-xs">
       <p>{loadError}</p>
     </div>
   {:else}
-    <div class="terminal-window-body">
-      <div id="terminal-popout-root" class="terminal-popout-target"></div>
+    <div class="flex-1 min-h-0 p-1 box-border">
+      <div id="terminal-popout-root" class="w-full h-full"></div>
     </div>
   {/if}
 </div>
-
-<style>
-  :global(html),
-  :global(body),
-  :global(#app-shell) {
-    height: 100%;
-    margin: 0;
-  }
-
-  .terminal-window-root {
-    height: 100dvh;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    background: var(--bg-terminal);
-    transition: box-shadow 0.15s ease;
-  }
-
-  .terminal-window-root.dock-ready {
-    box-shadow: inset 0 0 0 2px rgba(0, 240, 255, 0.45);
-  }
-
-  .terminal-window-body {
-    flex: 1;
-    min-height: 0;
-    padding: 4px;
-    box-sizing: border-box;
-  }
-
-  .terminal-popout-target {
-    width: 100%;
-    height: 100%;
-  }
-
-  .terminal-window-error {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-muted);
-    font-size: 13px;
-  }
-</style>

@@ -5,6 +5,17 @@ All notable changes to Bayesian SSH will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.2] - 2026-07-15
+
+### Added
+- **Kerberos client detection**: Desktop app reads `krb5.conf` to detect configured realms, infer default principals, and resolve credential cache paths even when no ticket is present.
+- **Branded app icon sync**: Tray, title bar, and favicon now use the custom Bayesian SSH icon consistently.
+
+### Fixed
+- **Kerberos Heimdal compatibility**: Fixed false "no ticket" detection when valid tickets use `Credentials cache:` output from Heimdal klist.
+- **Modal accessibility**: Resolved Svelte a11y warnings in Kerberos, Detached Sessions, and Onboarding modals; replaced deprecated `<svelte:component>` in Sidebar.
+- **Tray icon embedding**: Use dedicated 32×32 compile-time icon asset for reliable Linux system tray display.
+
 ## [2.1.1] - 2026-07-14
 
 ### Added

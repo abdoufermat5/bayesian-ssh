@@ -3,9 +3,13 @@ import type { Connection } from "$lib/types";
 
 export interface KerberosStatus {
   tools_available: boolean;
+  client_configured: boolean;
   has_ticket: boolean;
   valid: boolean;
   principal: string | null;
+  suggested_principal: string | null;
+  default_realm: string | null;
+  config_path: string | null;
   cache_path: string | null;
   expires_at: number | null;
   renew_until: number | null;
@@ -15,9 +19,13 @@ export interface KerberosStatus {
 
 const EMPTY_STATUS: KerberosStatus = {
   tools_available: false,
+  client_configured: false,
   has_ticket: false,
   valid: false,
   principal: null,
+  suggested_principal: null,
+  default_realm: null,
+  config_path: null,
   cache_path: null,
   expires_at: null,
   renew_until: null,
@@ -124,11 +132,17 @@ export async function acquireKerberosTicket(
   password: string,
   principal?: string,
   forwardable = true,
+  proxiable = false,
+  lifetime?: string,
+  renewLifetime?: string,
 ): Promise<KerberosStatus> {
   const next = await invoke<KerberosStatus>("acquire_kerberos_ticket", {
     principal: principal?.trim() || null,
     password,
     forwardable,
+    proxiable,
+    lifetime: lifetime?.trim() || null,
+    renew_lifetime: renewLifetime?.trim() || null,
   });
   status = next;
   syncExpiryFromStatus(next);

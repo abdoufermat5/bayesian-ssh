@@ -80,30 +80,33 @@
   }
 </script>
 
-<div class="terminals-split-view">
-  <aside class="terminals-hosts-sidebar">
-    <div class="terminals-sidebar-header">
-      <span class="section-title">QUICK CONNECT</span>
+<div class="flex flex-1 min-h-0 w-full overflow-hidden bg-surface">
+  <aside class="w-60 min-w-[240px] border-r border-border bg-surface flex flex-col min-h-0">
+    <div class="p-3.5 pb-2.5 border-b border-border flex flex-col gap-2 shrink-0">
+      <span class="text-[10px] font-semibold tracking-wider text-muted uppercase pl-1">QUICK CONNECT</span>
       <input
         type="text"
         placeholder="Search hosts..."
         bind:value={searchQuery}
         oninput={onSearchInput}
-        class="cyber-input terminals-search-input"
+        class="bg-surface-input border border-border text-primary py-1.5 px-2.5 rounded-lg outline-none text-xs transition-all duration-100 hover:border-border-hover focus:border-border-focus focus:shadow-[0_0_0_3px_rgba(59,130,246,0.12)] w-full"
       />
     </div>
 
-    <div class="terminals-hosts-list">
+    <div class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2 flex flex-col gap-1 overscroll-contain">
       {#if connections.length === 0}
-        <p class="terminals-empty-hint">No hosts found.</p>
+        <p class="p-6 text-center text-muted text-[11px] m-0">No hosts found.</p>
       {:else}
         {#each connections as conn}
-          <button class="quick-connect-btn" onclick={() => handleConnect(conn)}>
-            <div class="quick-connect-info">
-              <span class="quick-connect-name">{conn.name}</span>
-              <span class="quick-connect-addr">{conn.user}@{conn.host}</span>
+          <button
+            class="w-full text-left p-2 border border-border rounded-lg bg-transparent cursor-pointer transition-all duration-100 flex items-center justify-between gap-2 hover:border-accent hover:bg-accent/4 group"
+            onclick={() => handleConnect(conn)}
+          >
+            <div class="flex flex-col min-w-0">
+              <span class="text-xs font-semibold text-primary overflow-hidden text-ellipsis whitespace-nowrap mb-0.5 group-hover:text-accent">{conn.name}</span>
+              <span class="text-[10px] text-secondary font-mono overflow-hidden text-ellipsis whitespace-nowrap">{conn.user}@{conn.host}</span>
             </div>
-            <span class="quick-connect-icon">
+            <span class="text-accent flex items-center opacity-70 shrink-0">
               <Play size={10} fill="currentColor" />
             </span>
           </button>
@@ -112,8 +115,12 @@
     </div>
 
     {#if terminalState.externalSessionCount > 0}
-      <div class="detached-compact-bar">
-        <button type="button" class="detached-manage-btn" onclick={onManageSessions}>
+      <div class="p-2.5 pb-3 border-t border-border shrink-0">
+        <button
+          type="button"
+          class="w-full inline-flex items-center justify-center gap-2 py-2 px-2.5 rounded-lg border border-accent/25 bg-accent/6 text-accent text-xs font-semibold cursor-pointer transition-colors duration-100 hover:bg-accent/12"
+          onclick={onManageSessions}
+        >
           <Layers size={14} />
           <span>{terminalState.externalSessionCount} away</span>
         </button>
@@ -121,17 +128,19 @@
     {/if}
   </aside>
 
-  <div class="terminals-main-content">
+  <div class="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden bg-surface relative">
     {#if terminalState.tabs.length > 0 || terminalState.externalSessionCount > 0}
       <div
-        class="terminal-tabs-bar"
+        class="flex items-end gap-2 px-3 pt-2 border-b border-border shrink-0 transition-colors duration-100"
         use:tabBarReattachDrop={handleDropReattach}
       >
-        <div class="terminal-tabs">
+        <div class="flex gap-0.5 pb-0 flex-1 min-w-0 overflow-x-auto">
           {#each terminalState.tabs as tab (tab.id)}
             <div
-              class="terminal-tab-btn"
-              class:active={terminalState.activeTabId === tab.id}
+              class="bg-transparent border border-transparent border-b-none text-muted py-2 px-3 rounded-t-lg cursor-pointer text-xs font-medium flex items-center gap-1.5 transition-all duration-100 relative group
+                {terminalState.activeTabId === tab.id
+                  ? 'bg-white/5 text-primary !border-border !border-b-transparent after:absolute after:bottom-[-1px] after:left-0 after:right-0 after:h-[2px] after:bg-accent after:rounded-sm after:z-[2]'
+                  : 'hover:bg-white/[0.03] hover:text-secondary'}"
               use:tabPopOutDrag={tab.id}
               onclick={() => (terminalState.activeTabId = tab.id)}
               role="button"
@@ -144,7 +153,7 @@
               <Server size={12} />
               <span>{tab.name}</span>
               <button
-                class="tab-action-btn popout"
+                class="bg-transparent border-none text-muted cursor-pointer p-0.25 rounded flex items-center hover:bg-white/8 hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity"
                 title="Pop out to separate window (session keeps running)"
                 onclick={(e) => {
                   e.stopPropagation();
@@ -154,7 +163,7 @@
                 <AppWindow size={11} />
               </button>
               <button
-                class="tab-action-btn detach"
+                class="bg-transparent border-none text-muted cursor-pointer p-0.25 rounded flex items-center hover:bg-white/8 hover:text-accent transition-all opacity-0 group-hover:opacity-100 transition-opacity"
                 title="Run in background (hide tab, program keeps running)"
                 onclick={(e) => {
                   e.stopPropagation();
@@ -164,7 +173,7 @@
                 <Unlink size={11} />
               </button>
               <button
-                class="tab-close-btn"
+                class="bg-transparent border-none text-muted cursor-pointer p-0.5 rounded-full flex transition-all duration-100 hover:bg-danger/10 hover:text-danger"
                 title="Terminate session"
                 onclick={(e) => {
                   e.stopPropagation();
@@ -178,7 +187,7 @@
 
           {#each awaySessions as session (session.sessionId)}
             <div
-              class="away-session-chip"
+              class="away-session-chip inline-flex items-center gap-1.5 py-1.5 px-2.5 rounded-t-md border border-dashed border-accent/35 border-b-0 bg-accent/6 text-accent text-xs cursor-grab select-none max-w-[180px] hover:bg-accent/12"
               draggable="true"
               title="Drag to tab bar to reattach, or double-click"
               ondragstart={(event) => handleAwayDragStart(event, session)}
@@ -193,19 +202,19 @@
               {:else}
                 <Link2 size={12} />
               {/if}
-              <span>{session.name}</span>
+              <span class="overflow-hidden text-ellipsis whitespace-nowrap">{session.name}</span>
             </div>
           {/each}
         </div>
 
-        <div class="terminal-tabs-bar-actions">
+        <div class="flex items-center gap-2.5 shrink-0">
           {#if terminalState.externalSessionCount > 0}
-            <span class="tab-bar-drop-hint">Drop here to reattach</span>
+            <span class="text-[10px] text-muted whitespace-nowrap">Drop here to reattach</span>
           {/if}
           {#if terminalState.totalSessionCount > 0}
             <button
               type="button"
-              class="close-all-sessions-btn"
+              class="inline-flex items-center gap-1.25 py-1.5 px-2.5 mb-1 border border-danger/25 rounded-lg bg-transparent text-red-300 text-[11px] font-semibold cursor-pointer shrink-0 transition-all duration-100 hover:bg-danger/8 hover:border-danger/40"
               onclick={onCloseAll}
               title="Terminate all active and detached SSH sessions"
             >
@@ -217,265 +226,81 @@
       </div>
 
       {#if terminalState.tabs.length > 0}
-      <div class="terminal-viewport-container">
-        {#each terminalState.tabs as tab (tab.id)}
-          <div
-            class="terminal-viewport"
-            class:hidden={terminalState.activeTabId !== tab.id}
-          >
-            <div id="terminal-{tab.id}" class="terminal-fit-target"></div>
-          </div>
-        {/each}
-      </div>
-      {:else}
-      <div
-        class="terminals-empty-state reattach-drop-zone"
-        use:tabBarReattachDrop={handleDropReattach}
-      >
-        <TerminalSquare size={48} class="empty-icon" />
-        <h3>Sessions running elsewhere</h3>
-        <p>
-          Drag a session chip from below onto this area to reattach, or use the session manager.
-        </p>
-        <div class="away-chip-row">
-          {#each awaySessions as session (session.sessionId)}
+        <div class="flex-1 min-h-0 relative bg-surface-terminal border border-border border-t-0 rounded-b-lg overflow-hidden">
+          {#each terminalState.tabs as tab (tab.id)}
             <div
-              class="away-session-chip large"
-              draggable="true"
-              title="Drag to reattach"
-              ondragstart={(event) => handleAwayDragStart(event, session)}
-              ondragend={handleAwayDragEnd}
-              role="button"
-              tabindex="0"
+              class="absolute inset-0 px-3 py-2 box-border overflow-hidden"
+              class:hidden={terminalState.activeTabId !== tab.id}
             >
-              <GripVertical size={12} />
-              {#if session.kind === "popout"}
-                <AppWindow size={14} />
-              {:else}
-                <Link2 size={14} />
-              {/if}
-              <span>{session.name}</span>
+              <div id="terminal-{tab.id}" class="terminal-fit-target"></div>
             </div>
           {/each}
         </div>
-        <button type="button" class="reattach-primary-btn" onclick={onManageSessions}>
-          <Layers size={14} />
-          Manage sessions
-        </button>
-      </div>
+      {:else}
+        <div
+          class="flex-1 flex flex-col items-center justify-center p-12 text-center min-h-0 border border-dashed border-transparent rounded-xl transition-all duration-200 reattach-drop-zone"
+          use:tabBarReattachDrop={handleDropReattach}
+        >
+          <TerminalSquare size={48} class="text-muted mb-4" />
+          <h3 class="text-base font-semibold mb-1.5 text-primary">Sessions running elsewhere</h3>
+          <p class="text-xs text-muted m-0 max-w-[320px] leading-relaxed">
+            Drag a session chip from below onto this area to reattach, or use the session manager.
+          </p>
+          <div class="flex flex-wrap gap-2 justify-center mt-4 mb-1">
+            {#each awaySessions as session (session.sessionId)}
+              <div
+                class="away-session-chip inline-flex items-center gap-1.5 rounded-lg border border-dashed border-accent/35 border-b-0 py-2.5 px-3.5 max-w-[240px]"
+                draggable="true"
+                title="Drag to reattach"
+                ondragstart={(event) => handleAwayDragStart(event, session)}
+                ondragend={handleAwayDragEnd}
+                role="button"
+                tabindex="0"
+              >
+                <GripVertical size={12} />
+                {#if session.kind === "popout"}
+                  <AppWindow size={14} />
+                {:else}
+                  <Link2 size={14} />
+                {/if}
+                <span class="overflow-hidden text-ellipsis whitespace-nowrap">{session.name}</span>
+              </div>
+            {/each}
+          </div>
+          <button
+            type="button"
+            class="mt-4 inline-flex items-center gap-2 py-2 px-4 rounded-lg border border-accent/35 bg-accent/8 text-accent text-[13px] font-semibold cursor-pointer transition-colors duration-100 hover:bg-accent/14"
+            onclick={onManageSessions}
+          >
+            <Layers size={14} />
+            Manage sessions
+          </button>
+        </div>
       {/if}
     {:else}
-      <div class="terminals-empty-state">
-        <TerminalSquare size={48} class="empty-icon" />
-        <h3>No active sessions</h3>
-        <p>Select a host from Quick Connect to open an SSH session.</p>
+      <div class="flex-1 flex flex-col items-center justify-center p-12 text-center min-h-0">
+        <TerminalSquare size={48} class="text-muted mb-4" />
+        <h3 class="text-base font-semibold mb-1.5 text-primary">No active sessions</h3>
+        <p class="text-xs text-muted m-0 max-w-[320px] leading-relaxed">Select a host from Quick Connect to open an SSH session.</p>
       </div>
     {/if}
   </div>
 </div>
 
 <style>
-  .terminals-search-input {
-    width: 100%;
-    box-sizing: border-box;
-    font-size: 12px;
-    padding: 6px 10px;
+  :global(.tab-bar-drop-active) {
+    background: rgba(59, 130, 246, 0.04) !important;
+    box-shadow: inset 0 -2px 0 var(--color-accent) !important;
   }
-
-  .terminals-empty-hint {
-    padding: 24px;
-    text-align: center;
-    color: var(--text-muted);
-    font-size: 11px;
-    margin: 0;
-  }
-
-  .quick-connect-info {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-  }
-
-  .quick-connect-name {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-primary);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    margin-bottom: 2px;
-  }
-
-  .quick-connect-addr {
-    font-size: 10px;
-    color: var(--text-secondary);
-    font-family: monospace;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .quick-connect-icon {
-    color: var(--accent-cyan);
-    display: flex;
-    align-items: center;
-    opacity: 0.7;
-    flex-shrink: 0;
-  }
-
-  .detached-compact-bar {
-    padding: 10px 12px 12px;
-    border-top: 1px solid var(--border-color);
-    flex-shrink: 0;
-  }
-
-  .detached-manage-btn {
-    width: 100%;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 8px 10px;
-    border-radius: 8px;
-    border: 1px solid rgba(0, 240, 255, 0.25);
-    background: rgba(0, 240, 255, 0.06);
-    color: var(--accent-cyan);
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-  }
-
-  .detached-manage-btn:hover {
-    background: rgba(0, 240, 255, 0.12);
-  }
-
-  .tab-action-btn {
-    background: transparent;
-    border: none;
-    color: var(--text-muted);
-    cursor: pointer;
-    padding: 1px;
-    border-radius: 4px;
-    display: flex;
-    align-items: center;
-  }
-
-  .tab-action-btn.popout:hover {
-    color: var(--text-primary);
-    background: rgba(255, 255, 255, 0.08);
-  }
-
-  .tab-action-btn.detach:hover {
-    color: var(--accent-cyan);
-    background: rgba(0, 240, 255, 0.08);
-  }
-
-  .reattach-primary-btn {
-    margin-top: 16px;
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 0.55rem 1rem;
-    border-radius: 6px;
-    border: 1px solid rgba(0, 240, 255, 0.35);
-    background: rgba(0, 240, 255, 0.08);
-    color: var(--accent-cyan);
-    font-size: 0.85rem;
-    font-weight: 600;
-    cursor: pointer;
-  }
-
-  .reattach-primary-btn:hover {
-    background: rgba(0, 240, 255, 0.14);
-  }
-
-  .terminals-empty-state :global(.empty-icon) {
-    color: var(--text-muted);
-    margin-bottom: 16px;
-  }
-
-  .terminals-empty-state h3 {
-    font-size: 16px;
-    font-weight: 600;
-    margin: 0 0 6px;
-    color: var(--text-primary);
-  }
-
-  .terminals-empty-state p {
-    font-size: 12px;
-    color: var(--text-muted);
-    margin: 0;
-    max-width: 320px;
-  }
-
-  .terminal-tabs-bar-actions {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-shrink: 0;
-  }
-
-  .tab-bar-drop-hint {
-    font-size: 10px;
-    color: var(--text-muted);
-    white-space: nowrap;
-  }
-
-  .away-session-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 0.45rem 0.7rem;
-    border-radius: 6px 6px 0 0;
-    border: 1px dashed rgba(0, 240, 255, 0.35);
-    border-bottom: none;
-    background: rgba(0, 240, 255, 0.06);
-    color: var(--accent-cyan);
-    font-size: 0.78rem;
-    cursor: grab;
-    user-select: none;
-    max-width: 180px;
-  }
-
-  .away-session-chip.large {
-    border-radius: 8px;
-    border-bottom: 1px dashed rgba(0, 240, 255, 0.35);
-    padding: 0.55rem 0.85rem;
-    max-width: 240px;
-  }
-
-  .away-session-chip span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .away-session-chip:hover {
-    background: rgba(0, 240, 255, 0.12);
-  }
-
-  .away-session-chip.away-chip-dragging {
+  :global(.away-chip-dragging) {
     opacity: 0.55;
     cursor: grabbing;
   }
-
-  .away-chip-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    justify-content: center;
-    margin-top: 16px;
-    margin-bottom: 4px;
-  }
-
-  .reattach-drop-zone {
-    border: 1px dashed transparent;
-    border-radius: 12px;
-    transition: border-color 0.2s, background 0.2s;
-  }
-
-  .reattach-drop-zone.tab-bar-drop-active {
-    border-color: rgba(0, 240, 255, 0.35);
-    background: rgba(0, 240, 255, 0.04);
+  :global(.tab-dragging-out) {
+    opacity: 0.6;
+    transform: translateY(-2px) scale(1.02);
+    border-color: rgba(59, 130, 246, 0.3);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    cursor: grabbing;
   }
 </style>

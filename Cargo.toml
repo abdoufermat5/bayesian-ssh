@@ -1,6 +1,6 @@
 [package]
 name = "bayesian-ssh"
-version = "2.1.1"
+version = "2.1.2"
 edition = "2021"
 authors = ["Abdoufermat5"]
 description = "A fast and lightweight SSH session manager with Kerberos support"

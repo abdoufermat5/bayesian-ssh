@@ -53,50 +53,93 @@
   });
 </script>
 
-<div class="modal-backdrop" onclick={onClose} role="dialog" aria-modal="true" aria-labelledby="session-manager-title">
-  <div class="detached-manager-dialog" onclick={(e) => e.stopPropagation()}>
-    <div class="detached-manager-header">
+<div class="fixed inset-0 flex items-center justify-center z-[100]">
+  <button
+    type="button"
+    class="absolute inset-0 bg-black/75 backdrop-blur-sm border-none p-0 cursor-default"
+    onclick={onClose}
+    aria-label="Close dialog"
+  ></button>
+  <div
+    class="relative bg-surface border border-border rounded-2xl w-[720px] max-h-[80vh] shadow-xl flex flex-col animate-[modal-enter_0.25s_cubic-bezier(0.16,1,0.3,1)_forwards]"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="session-manager-title"
+    tabindex="-1"
+  >
+    <div class="flex justify-between items-center px-6 py-5 border-b border-border">
       <div>
-        <h3 id="session-manager-title">Running Sessions</h3>
-        <p>Programs keep running when hidden. Reattach or dock to restore the terminal view.</p>
+        <h3 id="session-manager-title" class="text-base font-semibold tracking-tight m-0 text-primary">Running Sessions</h3>
+        <p class="text-xs text-muted mt-0.5">Programs keep running when hidden. Reattach or dock to restore the terminal view.</p>
       </div>
-      <button type="button" class="icon-btn" onclick={onClose} aria-label="Close">
+      <button
+        type="button"
+        class="bg-transparent border-none text-muted cursor-pointer flex p-1 rounded-md transition-all duration-100 hover:text-primary hover:bg-white/5"
+        onclick={onClose}
+        aria-label="Close"
+      >
         <X size={16} />
       </button>
     </div>
 
-    <div class="detached-manager-toolbar">
-      <div class="search-box">
-        <Search size={14} />
-        <input type="text" placeholder="Filter sessions..." bind:value={query} class="cyber-input" />
+    <div class="flex gap-2.5 items-center px-6 py-3 border-b border-border">
+      <div class="flex-1 flex items-center bg-surface-input border border-border rounded-lg px-3 py-1.5 focus-within:border-border-focus focus-within:shadow-[0_0_0_3px_rgba(59,130,246,0.12)]">
+        <Search size={14} class="text-muted mr-2 shrink-0" />
+        <input
+          type="text"
+          placeholder="Filter sessions..."
+          bind:value={query}
+          class="bg-transparent border-none text-primary outline-none w-full text-xs"
+        />
       </div>
       {#if totalCount > 0}
-        <button type="button" class="terminate-all-btn" onclick={onTerminateAll}>Terminate all</button>
+        <button
+          type="button"
+          class="py-1.5 px-3 rounded-lg border border-danger/35 bg-danger/8 text-red-200 text-xs font-semibold cursor-pointer transition-colors duration-100 hover:bg-danger/15 hover:border-danger/50"
+          onclick={onTerminateAll}
+        >
+          Terminate all
+        </button>
       {/if}
     </div>
 
-    <div class="detached-manager-list">
+    <div class="overflow-y-auto px-6 py-5 flex flex-col gap-2">
       {#if filteredPopouts.length > 0}
-        <div class="session-group-label">Pop-out windows</div>
+        <div class="text-[10px] font-bold tracking-widest text-muted uppercase mt-1 mb-1 block pl-0.5">Pop-out windows</div>
         {#each filteredPopouts as session (session.id)}
-          <div class="detached-manager-item">
-            <div class="detached-manager-item-main">
+          <div class="flex items-center justify-between gap-3 p-3 px-4 border border-border rounded-xl bg-white/[0.02]">
+            <div class="flex items-center gap-2.5 min-w-0 text-accent">
               <AppWindow size={14} />
-              <div>
-                <span class="session-name">{session.name}</span>
-                <span class="session-hint">Running in separate window</span>
+              <div class="min-w-0">
+                <span class="block text-xs font-semibold text-primary overflow-hidden text-ellipsis whitespace-nowrap">{session.name}</span>
+                <span class="block text-[10px] text-muted">Running in separate window</span>
               </div>
             </div>
-            <div class="detached-manager-item-actions">
-            <button type="button" class="action-btn" title="Bring back to main tab bar" onclick={() => onDock(session.id)}>
-              <Link2 size={14} />
-              <span>Dock here</span>
-            </button>
-              <button type="button" class="action-btn" title="Focus pop-out window" onclick={() => onFocusPopout(session.id)}>
+            <div class="flex gap-1.5 shrink-0">
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 py-1.5 px-2.5 rounded-lg border border-border bg-transparent text-secondary text-[11px] cursor-pointer transition-colors duration-100 hover:text-primary hover:bg-white/5"
+                title="Bring back to main tab bar"
+                onclick={() => onDock(session.id)}
+              >
+                <Link2 size={14} />
+                <span>Dock here</span>
+              </button>
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 py-1.5 px-2.5 rounded-lg border border-border bg-transparent text-secondary text-[11px] cursor-pointer transition-colors duration-100 hover:text-primary hover:bg-white/5"
+                title="Focus pop-out window"
+                onclick={() => onFocusPopout(session.id)}
+              >
                 <ExternalLink size={14} />
                 <span>Focus</span>
               </button>
-              <button type="button" class="action-btn danger" title="Terminate session" onclick={() => onTerminatePopout(session.id)}>
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 py-1.5 px-2.5 rounded-lg border border-border bg-transparent text-secondary text-[11px] cursor-pointer transition-colors duration-100 hover:border-danger/35 hover:bg-danger/8 hover:text-red-300"
+                title="Terminate session"
+                onclick={() => onTerminatePopout(session.id)}
+              >
                 <X size={14} />
               </button>
             </div>
@@ -105,26 +148,41 @@
       {/if}
 
       {#if filteredDetached.length > 0}
-        <div class="session-group-label">Background detached</div>
+        <div class="text-[10px] font-bold tracking-widest text-muted uppercase mt-3 mb-1 block pl-0.5">Background detached</div>
         {#each filteredDetached as session (session.id)}
-          <div class="detached-manager-item">
-            <div class="detached-manager-item-main">
+          <div class="flex items-center justify-between gap-3 p-3 px-4 border border-border rounded-xl bg-white/[0.02]">
+            <div class="flex items-center gap-2.5 min-w-0 text-accent">
               <Server size={14} />
-              <div>
-                <span class="session-name">{session.name}</span>
-                <span class="session-hint">Hidden tab — SSH process still active</span>
+              <div class="min-w-0">
+                <span class="block text-xs font-semibold text-primary overflow-hidden text-ellipsis whitespace-nowrap">{session.name}</span>
+                <span class="block text-[10px] text-muted">Hidden tab — SSH process still active</span>
               </div>
             </div>
-            <div class="detached-manager-item-actions">
-            <button type="button" class="action-btn" title="Restore tab in main window" onclick={() => onReattach(session.id)}>
-              <Link2 size={14} />
-              <span>Reattach</span>
-            </button>
-              <button type="button" class="action-btn" title="Open in new window" onclick={() => onPopOut(session.id)}>
+            <div class="flex gap-1.5 shrink-0">
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 py-1.5 px-2.5 rounded-lg border border-border bg-transparent text-secondary text-[11px] cursor-pointer transition-colors duration-100 hover:text-primary hover:bg-white/5"
+                title="Restore tab in main window"
+                onclick={() => onReattach(session.id)}
+              >
+                <Link2 size={14} />
+                <span>Reattach</span>
+              </button>
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 py-1.5 px-2.5 rounded-lg border border-border bg-transparent text-secondary text-[11px] cursor-pointer transition-colors duration-100 hover:text-primary hover:bg-white/5"
+                title="Open in new window"
+                onclick={() => onPopOut(session.id)}
+              >
                 <AppWindow size={14} />
                 <span>Pop out</span>
               </button>
-              <button type="button" class="action-btn danger" title="Terminate session" onclick={() => onTerminateDetached(session.id)}>
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 py-1.5 px-2.5 rounded-lg border border-border bg-transparent text-secondary text-[11px] cursor-pointer transition-colors duration-100 hover:border-danger/35 hover:bg-danger/8 hover:text-red-300"
+                title="Terminate session"
+                onclick={() => onTerminateDetached(session.id)}
+              >
                 <X size={14} />
               </button>
             </div>
@@ -133,182 +191,10 @@
       {/if}
 
       {#if filteredPopouts.length === 0 && filteredDetached.length === 0}
-        <div class="detached-manager-empty">
+        <div class="py-12 text-center text-muted text-xs">
           {query.trim() ? "No sessions match your filter." : "No detached or pop-out sessions."}
         </div>
       {/if}
     </div>
   </div>
 </div>
-
-<style>
-  .detached-manager-dialog {
-    width: min(720px, calc(100vw - 32px));
-    max-height: min(80vh, 720px);
-    display: flex;
-    flex-direction: column;
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
-    overflow: hidden;
-  }
-
-  .detached-manager-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 18px 20px 12px;
-    border-bottom: 1px solid var(--border-color);
-  }
-
-  .detached-manager-header h3 {
-    margin: 0 0 4px;
-    font-size: 16px;
-    color: var(--text-primary);
-  }
-
-  .detached-manager-header p {
-    margin: 0;
-    font-size: 12px;
-    color: var(--text-muted);
-  }
-
-  .icon-btn {
-    width: 32px;
-    height: 32px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background: transparent;
-    color: var(--text-secondary);
-    cursor: pointer;
-  }
-
-  .detached-manager-toolbar {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-    padding: 12px 20px;
-    border-bottom: 1px solid var(--border-color);
-  }
-
-  .search-box {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 0 10px;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    color: var(--text-muted);
-  }
-
-  .search-box input {
-    border: none;
-    background: transparent;
-    padding-left: 0;
-  }
-
-  .terminate-all-btn {
-    padding: 8px 12px;
-    border-radius: 8px;
-    border: 1px solid rgba(239, 68, 68, 0.35);
-    background: rgba(239, 68, 68, 0.08);
-    color: #fca5a5;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    white-space: nowrap;
-  }
-
-  .detached-manager-list {
-    overflow-y: auto;
-    padding: 12px 20px 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .session-group-label {
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--text-muted);
-    margin-top: 4px;
-    margin-bottom: 2px;
-  }
-
-  .detached-manager-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 12px 14px;
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
-    background: rgba(255, 255, 255, 0.02);
-  }
-
-  .detached-manager-item-main {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    min-width: 0;
-    color: var(--accent-cyan);
-  }
-
-  .session-name {
-    display: block;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .session-hint {
-    display: block;
-    font-size: 11px;
-    color: var(--text-muted);
-  }
-
-  .detached-manager-item-actions {
-    display: flex;
-    gap: 6px;
-    flex-shrink: 0;
-  }
-
-  .action-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 10px;
-    border-radius: 8px;
-    border: 1px solid var(--border-color);
-    background: transparent;
-    color: var(--text-secondary);
-    font-size: 11px;
-    cursor: pointer;
-  }
-
-  .action-btn:hover {
-    color: var(--text-primary);
-    background: rgba(255, 255, 255, 0.04);
-  }
-
-  .action-btn.danger:hover {
-    color: #fca5a5;
-    border-color: rgba(239, 68, 68, 0.35);
-    background: rgba(239, 68, 68, 0.08);
-  }
-
-  .detached-manager-empty {
-    padding: 36px 16px;
-    text-align: center;
-    color: var(--text-muted);
-    font-size: 13px;
-  }
-</style>

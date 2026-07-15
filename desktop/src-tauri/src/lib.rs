@@ -87,7 +87,9 @@ pub fn run() {
             complete_onboarding,
             import_ssh_config,
             pick_ssh_config_file,
-            quit_app
+            quit_app,
+            tray::refresh_tray_menu,
+            tray::send_desktop_notification
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -107,7 +109,14 @@ fn init_shell_env() {
                 if let Some(pos) = line.find('=') {
                     let key = &line[..pos];
                     let val = &line[pos + 1..];
-                    if key == "SSH_AUTH_SOCK" || key == "KRB5CCNAME" || key == "PATH" {
+                    if key == "SSH_AUTH_SOCK"
+                        || key == "KRB5CCNAME"
+                        || key == "KRB5_CONFIG"
+                        || key == "PATH"
+                        || key == "USER"
+                        || key == "LOGNAME"
+                        || key == "UID"
+                    {
                         std::env::set_var(key, val);
                     }
                 }

@@ -1,4 +1,5 @@
 import { defineConfig } from "vite";
+import tailwindcss from "@tailwindcss/vite";
 import { sveltekit } from "@sveltejs/kit/vite";
 
 // @ts-expect-error process is a nodejs global
@@ -6,7 +7,7 @@ const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-  plugins: [sveltekit()],
+  plugins: [tailwindcss(), sveltekit()],
 
   // xterm.js 6.0.0 ships pre-minified ESM; Vite's esbuild pass can break
   // InputHandler.requestMode and kill vim/nano input in production builds.

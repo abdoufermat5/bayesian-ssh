@@ -176,6 +176,11 @@ export class AppStateStore {
       await this.loadHistory();
       await this.loadSettings();
       await this.loadAgentStatus();
+      try {
+        await invoke("refresh_tray_menu");
+      } catch (e) {
+        console.error("Failed to refresh tray menu", e);
+      }
     } catch (e: unknown) {
       notify(String(e), "error");
     }
@@ -242,6 +247,11 @@ export class AppStateStore {
       });
       await this.loadConnections();
       await this.loadStats();
+      try {
+        await invoke("refresh_tray_menu");
+      } catch (e) {
+        console.error(e);
+      }
       notify(
         count > 0 ? `Imported ${count} host${count === 1 ? "" : "s"} from OpenSSH config` : "No new hosts to import",
         count > 0 ? "success" : "info",
@@ -397,11 +407,25 @@ export class AppStateStore {
     }
   }
 
-  handleKerberosAcquire = async (principal: string, password: string) => {
+  handleKerberosAcquire = async (
+    principal: string,
+    password: string,
+    forwardable = true,
+    proxiable = false,
+    lifetime?: string,
+    renewLifetime?: string,
+  ) => {
     this.kerberosLoading = true;
     this.kerberosError = null;
     try {
-      const next = await acquireKerberosTicket(password, principal);
+      const next = await acquireKerberosTicket(
+        password,
+        principal,
+        forwardable,
+        proxiable,
+        lifetime,
+        renewLifetime,
+      );
       if (next.valid) {
         notify("Kerberos ticket acquired", "success");
         await this.resumePendingKerberosConnection();
@@ -489,6 +513,11 @@ export class AppStateStore {
 
       await this.reloadConnectionsAfterMutation();
       await this.loadStats();
+      try {
+        await invoke("refresh_tray_menu");
+      } catch (e) {
+        console.error(e);
+      }
 
       const newIdx = this.connections.findIndex((c) => c.name === copyName && c.host === conn.host);
       if (newIdx !== -1) {
@@ -660,6 +689,11 @@ export class AppStateStore {
       this.showModal = false;
       await this.reloadConnectionsAfterMutation();
       await this.loadStats();
+      try {
+        await invoke("refresh_tray_menu");
+      } catch (e) {
+        console.error(e);
+      }
     } catch (e: unknown) {
       notify(String(e), "error");
     }
@@ -671,6 +705,11 @@ export class AppStateStore {
       notify(`'${conn.name}' removed`, "success");
       await this.loadConnections();
       await this.loadStats();
+      try {
+        await invoke("refresh_tray_menu");
+      } catch (e) {
+        console.error(e);
+      }
     });
   }
 

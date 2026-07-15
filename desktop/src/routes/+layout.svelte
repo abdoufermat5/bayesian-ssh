@@ -11,7 +11,7 @@
 {#if isTerminalWindow}
   {@render children?.()}
 {:else}
-  <div class="app-root">
+  <div class="flex flex-col w-full h-[100dvh] min-h-0 overflow-hidden">
     {@render children?.()}
   </div>
 {/if}
