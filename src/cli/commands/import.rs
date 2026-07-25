@@ -30,7 +30,11 @@ pub async fn execute(
 
     // Check if encrypted or if passphrase is provided
     let content_bytes = if raw_bytes.starts_with(b"BSSH") || passphrase.is_some() {
-        let pass = passphrase.ok_or_else(|| anyhow::anyhow!("File is encrypted with passphrase. Please provide --passphrase <secret>"))?;
+        let pass = passphrase.ok_or_else(|| {
+            anyhow::anyhow!(
+                "File is encrypted with passphrase. Please provide --passphrase <secret>"
+            )
+        })?;
         println!("🔓 Decrypting import file with passphrase...");
         crate::services::crypto::decrypt_data(&raw_bytes, &pass)?
     } else {

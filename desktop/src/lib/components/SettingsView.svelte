@@ -10,8 +10,13 @@
     RefreshCw,
     Layers,
     Database,
+    Download,
+    Upload,
   } from "lucide-svelte";
+  import { invoke } from "@tauri-apps/api/core";
   import type { DesktopSettings, EnvInfo, WorkspaceInfo } from "$lib/types";
+  import CustomSelect from "$lib/components/ui/CustomSelect.svelte";
+  import { notify } from "$lib/stores/notifications.svelte";
   import {
     SYSTEM_TIMEZONE,
     getSupportedTimezones,
@@ -43,6 +48,39 @@
     onBrowseSshConfig,
     onImportSshConfig,
   }: Props = $props();
+
+  let backupPassphrase = $state("");
+
+  async function handleExportEncryptedBackup() {
+    try {
+      const path = await invoke<string | null>("pick_ssh_config_file");
+      if (!path) return;
+      const msg = await invoke<string>("export_connections_payload", {
+        outputPath: path,
+        passphrase: backupPassphrase || null,
+        format: "json",
+        tag: null,
+      });
+      notify(msg, "success");
+    } catch (err) {
+      notify(`Export backup failed: ${err}`, "error");
+    }
+  }
+
+  async function handleImportEncryptedBackup() {
+    try {
+      const path = await invoke<string | null>("pick_ssh_config_file");
+      if (!path) return;
+      const count = await invoke<number>("import_connections_payload", {
+        filePath: path,
+        passphrase: backupPassphrase || null,
+        noBastion: false,
+      });
+      notify(`Successfully imported ${count} connection(s)!`, "success");
+    } catch (err) {
+      notify(`Import backup failed: ${err}`, "error");
+    }
+  }
 
   let activeCategory = $state("workspace");
   let sshConfigPath = $state(workspace.ssh_config_path || "");
@@ -213,7 +251,41 @@
               onclick={onImportSshConfig}
             >
               <RefreshCw size={12} />
-              Import hosts now
+              Import OpenSSH hosts
+            </button>
+          </div>
+        </div>
+
+        <!-- Encrypted Backup & Backup Export Section -->
+        <div class="h-px bg-border/50 my-1"></div>
+        <div class="flex flex-col gap-2">
+          <h4 class="text-[10px] font-bold tracking-widest text-muted uppercase flex items-center gap-2">
+            <ShieldCheck size={12} class="text-accent" />
+            <span>Encrypted Backup & Restore</span>
+          </h4>
+          <p class="text-[11px] text-muted">Export your server database encrypted with AES-256-GCM / PBKDF2 or restore from an encrypted backup.</p>
+          <div class="flex flex-wrap gap-2 mt-1">
+            <input
+              type="password"
+              placeholder="Passphrase (optional)"
+              bind:value={backupPassphrase}
+              class="bg-surface-input border border-border text-primary py-1.5 px-3 rounded-lg outline-none text-xs w-[220px]"
+            />
+            <button
+              type="button"
+              class="bg-accent/15 border border-accent/30 text-accent py-1.5 px-3 rounded-lg cursor-pointer font-semibold flex items-center gap-1.5 text-xs hover:bg-accent hover:text-white transition-all"
+              onclick={handleExportEncryptedBackup}
+            >
+              <Download size={13} />
+              Export Encrypted Backup
+            </button>
+            <button
+              type="button"
+              class="bg-white/[0.04] border border-border text-secondary py-1.5 px-3 rounded-lg cursor-pointer font-semibold flex items-center gap-1.5 text-xs hover:text-primary hover:bg-white/[0.06] transition-all"
+              onclick={handleImportEncryptedBackup}
+            >
+              <Upload size={13} />
+              Import Backup File
             </button>
           </div>
         </div>
@@ -223,17 +295,17 @@
             <span class="text-xs font-semibold text-secondary">Host Ranking Mode</span>
             <span class="text-[11px] text-muted">Bayesian uses frequency + recency; fuzzy uses text matching</span>
           </div>
-          <select
-            class="min-w-[180px] bg-surface-input border border-border text-primary py-2 px-3 rounded-lg outline-none text-[13px] cursor-pointer transition-all duration-100 hover:border-border-hover focus:border-border-focus focus:shadow-[0_0_0_3px_rgba(59,130,246,0.12)]"
+          <CustomSelect
+            options={[
+              { value: "bayesian", label: "Bayesian ranking", description: "Frequency + recency scoring" },
+              { value: "fuzzy", label: "Fuzzy search", description: "Literal text matching" }
+            ]}
             value={settings.fuzzy_search ? "fuzzy" : "bayesian"}
-            onchange={(e) => {
-              settings.fuzzy_search = (e.target as HTMLSelectElement).value === "fuzzy";
+            onChange={(val) => {
+              settings.fuzzy_search = val === "fuzzy";
               handleDefaultsSave();
             }}
-          >
-            <option value="bayesian">Bayesian ranking</option>
-            <option value="fuzzy">Fuzzy search</option>
-          </select>
+          />
         </div>
 
         <div class="h-px bg-border/50 my-1"></div>
@@ -428,21 +500,24 @@
         </div>
 
         <div class="flex flex-col gap-1.5">
-          <label for="settings-log-level" class="text-xs font-semibold text-secondary">Application Log Level</label>
+          <label id="settings-log-level-label" for="settings-log-level" class="text-xs font-semibold text-secondary">Application Log Level</label>
           <span class="text-[11px] text-muted">Controls backend diagnostic log granularity</span>
-          <select
+          <CustomSelect
             id="settings-log-level"
-            class="bg-surface-input border border-border text-primary py-2 px-3 rounded-lg outline-none text-[13px] cursor-pointer transition-all duration-100 hover:border-border-hover focus:border-border-focus focus:shadow-[0_0_0_3px_rgba(59,130,246,0.12)] mt-1"
-            bind:value={workspace.log_level}
-            onchange={handleWorkspaceSave}
-          >
-            <option value="trace">Trace</option>
-            <option value="debug">Debug</option>
-            <option value="info">Info</option>
-            <option value="warn">Warn</option>
-            <option value="error">Error</option>
-            <option value="off">Off</option>
-          </select>
+            options={[
+              { value: "trace", label: "Trace" },
+              { value: "debug", label: "Debug" },
+              { value: "info", label: "Info" },
+              { value: "warn", label: "Warn" },
+              { value: "error", label: "Error" },
+              { value: "off", label: "Off" }
+            ]}
+            value={workspace.log_level}
+            onChange={(val) => {
+              workspace.log_level = val;
+              handleWorkspaceSave();
+            }}
+          />
         </div>
       </div>
     {/if}
@@ -457,19 +532,19 @@
         <div class="h-px bg-border/50"></div>
 
         <div class="flex flex-col gap-1.5">
-          <label for="settings-theme" class="text-xs font-semibold text-secondary">Active UI Theme</label>
+          <label id="settings-theme-label" for="settings-theme" class="text-xs font-semibold text-secondary">Active UI Theme</label>
           <span class="text-[11px] text-muted">Choose your preferred visual style and colors</span>
-          <select
+          <CustomSelect
             id="settings-theme"
-            class="bg-surface-input border border-border text-primary py-2 px-3 rounded-lg outline-none text-[13px] cursor-pointer transition-all duration-100 hover:border-border-hover focus:border-border-focus focus:shadow-[0_0_0_3px_rgba(59,130,246,0.12)] mt-1"
+            options={[
+              { value: "zinc", label: "Slate Minimalist (Zinc)" },
+              { value: "cyberpunk", label: "Cyberpunk Cyan (Neon Glow)" },
+              { value: "oled", label: "OLED Pitch Black" },
+              { value: "slate", label: "Sleek Navy (Slate)" }
+            ]}
             value={settings.theme}
-            onchange={(e) => onThemeChange((e.target as HTMLSelectElement).value)}
-          >
-            <option value="zinc">Slate Minimalist (Zinc)</option>
-            <option value="cyberpunk">Cyberpunk Neon (Dark Glow)</option>
-            <option value="oled">OLED Pitch Black</option>
-            <option value="slate">Sleek Navy (Slate)</option>
-          </select>
+            onChange={(val) => onThemeChange(val)}
+          />
         </div>
 
         <div class="flex flex-col gap-2">

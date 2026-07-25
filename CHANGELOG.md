@@ -5,6 +5,15 @@ All notable changes to Bayesian SSH will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-07-25
+
+### Added
+- **SSH Key Management (`bssh key`)**: Subcommand and GUI manager (`KeysView.svelte`) to inspect, list, generate (`Ed25519` / `RSA`), and deploy SSH identity keys to remote servers.
+- **Security Auditor (`bssh audit`)**: Comprehensive automated security scanner (`AuditView.svelte`) calculating system grade (`A+` to `F`), security score, and actionable remediation steps.
+- **Passphrase-Encrypted Exports & Imports (`bssh export --passphrase` / `import`)**: Database backup export and restore protected with PBKDF2-HMAC-SHA256 and Encrypt-then-MAC AES-256 payload encryption.
+- **Dual Binary Build & Installation**: Automatically produces and installs both `bayesian-ssh` and `bssh` binary aliases via `Cargo.toml`, `Makefile`, and `install.sh`.
+- **Developer UI/UX Redesign**: High-density Zed/Warp-inspired layout, customizable themes, keyboard shortcuts overlay (`Cmd/Ctrl+/` or `F1`), and dynamic About dialog (`?`).
+
 ## [2.1.2] - 2026-07-15
 
 ### Added

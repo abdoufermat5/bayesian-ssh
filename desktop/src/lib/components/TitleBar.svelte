@@ -1,12 +1,15 @@
 <script lang="ts">
+  import { HelpCircle, Command } from "lucide-svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { refreshWindowState } from "$lib/stores/window.svelte";
 
   interface Props {
     activeEnv: string;
+    onOpenAbout?: () => void;
+    onOpenShortcuts?: () => void;
   }
 
-  let { activeEnv }: Props = $props();
+  let { activeEnv, onOpenAbout, onOpenShortcuts }: Props = $props();
 
   const appWindow = getCurrentWindow();
 
@@ -66,7 +69,25 @@
     </div>
   </div>
 
-  <div class="flex items-center justify-end flex-1 h-full">
+  <div class="flex items-center justify-end flex-1 h-full gap-1">
+    {#if onOpenShortcuts}
+      <button
+        class="flex items-center justify-center w-7 h-7 bg-transparent border-none text-muted cursor-pointer transition-colors hover:text-accent rounded-md"
+        onclick={onOpenShortcuts}
+        title="Keyboard Shortcuts"
+      >
+        <Command size={13} />
+      </button>
+    {/if}
+    {#if onOpenAbout}
+      <button
+        class="flex items-center justify-center w-7 h-7 bg-transparent border-none text-muted cursor-pointer transition-colors hover:text-accent rounded-md font-bold text-xs font-mono"
+        onclick={onOpenAbout}
+        title="About Bayesian SSH (?)"
+      >
+        <HelpCircle size={14} />
+      </button>
+    {/if}
     <button
       class="flex items-center justify-center w-[46px] h-[var(--titlebar-h)] bg-transparent border-none text-muted cursor-pointer transition-colors duration-100 hover:bg-white/5 hover:text-primary"
       onclick={handleWindowMinimize}

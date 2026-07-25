@@ -71,19 +71,19 @@ html.theme-zinc {
 }
 
 html.theme-cyberpunk {
-  --color-surface: #0c0813;
-  --color-surface-raised: #140d24;
-  --color-surface-hover: #21153b;
-  --color-surface-input: #100a1e;
-  --color-surface-terminal: #0c0813;
-  --color-border: rgba(139, 92, 246, 0.12);
-  --color-border-hover: rgba(139, 92, 246, 0.25);
-  --color-primary: #f8fafc;
-  --color-secondary: #c4b5fd;
-  --color-muted: #7c3aed;
-  --color-accent: #a78bfa;
-  --color-accent-hover: #8b5cf6;
-  --color-accent-muted: rgba(167, 139, 250, 0.12);
+  --color-surface: #061724;
+  --color-surface-raised: #0b2234;
+  --color-surface-hover: #13334a;
+  --color-surface-input: #081d2c;
+  --color-surface-terminal: #061724;
+  --color-border: rgba(6, 182, 212, 0.15);
+  --color-border-hover: rgba(6, 182, 212, 0.3);
+  --color-primary: #ecfeff;
+  --color-secondary: #a5f3fc;
+  --color-muted: #0891b2;
+  --color-accent: #06b6d4;
+  --color-accent-hover: #0284c7;
+  --color-accent-muted: rgba(6, 182, 212, 0.15);
 }
 
 html.theme-oled {
@@ -136,6 +136,43 @@ html, body {
 /* Preserve text selection in terminal and inputs */
 input, textarea, .xterm, .xterm * {
   user-select: text;
+}
+
+/* ---- CUSTOM SELECT DROPDOWN STYLING ---- */
+
+select {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 10px center !important;
+  background-size: 14px 14px !important;
+  padding-right: 32px !important;
+  color: var(--color-primary) !important;
+  background-color: var(--color-surface-input) !important;
+  border: 1px solid var(--color-border) !important;
+  border-radius: 8px !important;
+  font-family: inherit !important;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease !important;
+  cursor: pointer !important;
+}
+
+select:hover {
+  border-color: var(--color-border-hover) !important;
+  background-color: var(--color-surface-hover) !important;
+}
+
+select:focus {
+  outline: none !important;
+  border-color: var(--color-accent) !important;
+  box-shadow: 0 0 0 2px var(--color-accent-muted) !important;
+}
+
+select option {
+  background-color: #18181b !important;
+  color: #f4f4f5 !important;
+  padding: 8px 12px !important;
 }
 
 /* ---- GLOBAL SCROLLBAR ---- */

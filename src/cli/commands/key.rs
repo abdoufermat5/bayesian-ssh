@@ -33,18 +33,27 @@ pub async fn execute_list() -> Result<()> {
                     found_keys += 1;
                     let priv_path = path.with_extension("");
                     let filename = path.file_stem().unwrap_or_default().to_string_lossy();
-                    
+
                     let key_content = fs::read_to_string(&path).unwrap_or_default();
                     let parts: Vec<&str> = key_content.split_whitespace().collect();
                     let key_type = parts.first().copied().unwrap_or("unknown");
                     let comment = parts.get(2).copied().unwrap_or("");
 
                     let fingerprint = if parts.len() >= 2 {
-                        if let Ok(raw) = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, parts[1]) {
+                        if let Ok(raw) = base64::Engine::decode(
+                            &base64::engine::general_purpose::STANDARD,
+                            parts[1],
+                        ) {
                             let mut hasher = Sha256::new();
                             hasher.update(&raw);
                             let hash = hasher.finalize();
-                            format!("SHA256:{}", base64::Engine::encode(&base64::engine::general_purpose::STANDARD_NO_PAD, hash))
+                            format!(
+                                "SHA256:{}",
+                                base64::Engine::encode(
+                                    &base64::engine::general_purpose::STANDARD_NO_PAD,
+                                    hash
+                                )
+                            )
                         } else {
                             "INVALID_BASE64".to_string()
                         }
@@ -132,12 +141,13 @@ pub async fn execute_generate(name: String, key_type: Option<String>) -> Result<
 
 pub async fn execute_copy(config: AppConfig, target: String, key: Option<String>) -> Result<()> {
     let database = Database::new(&config)?;
-    let conn = database.get_connection_or_alias(&target)?
+    let conn = database
+        .get_connection_or_alias(&target)?
         .ok_or_else(|| anyhow!("Connection '{}' not found", target))?;
 
     let pub_key_path = if let Some(k) = key {
         let p = PathBuf::from(&k);
-        if p.extension().map_or(false, |e| e == "pub") {
+        if p.extension().is_some_and(|e| e == "pub") {
             p
         } else {
             PathBuf::from(format!("{}.pub", k))
@@ -157,11 +167,19 @@ pub async fn execute_copy(config: AppConfig, target: String, key: Option<String>
     };
 
     if !pub_key_path.exists() {
-        return Err(anyhow!("Public key file not found: {}", pub_key_path.display()));
+        return Err(anyhow!(
+            "Public key file not found: {}",
+            pub_key_path.display()
+        ));
     }
 
     let pub_key_content = fs::read_to_string(&pub_key_path)?.trim().to_string();
-    println!("Copying public key ({}) to {}@{}...", pub_key_path.display(), conn.user, conn.host);
+    println!(
+        "Copying public key ({}) to {}@{}...",
+        pub_key_path.display(),
+        conn.user,
+        conn.host
+    );
 
     let remote_cmd = format!(
         "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '{}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys",
@@ -178,14 +196,15 @@ pub async fn execute_copy(config: AppConfig, target: String, key: Option<String>
     ssh_argv.push(remote_cmd);
 
     let (bin, args) = ssh_argv.split_first().unwrap();
-    let status = Command::new(bin)
-        .args(args)
-        .status()?;
+    let status = Command::new(bin).args(args).status()?;
 
     if status.success() {
         println!("Public key successfully copied to remote authorized_keys!");
         Ok(())
     } else {
-        Err(anyhow!("Failed to copy public key to remote host (exit status: {})", status))
+        Err(anyhow!(
+            "Failed to copy public key to remote host (exit status: {})",
+            status
+        ))
     }
 }

@@ -232,7 +232,7 @@
               bind:value={theme}
             >
               <option value="zinc">Slate Minimalist (Zinc)</option>
-              <option value="cyberpunk">Cyberpunk Neon</option>
+              <option value="cyberpunk">Cyberpunk Cyan (Neon Glow)</option>
               <option value="oled">OLED Pitch Black</option>
               <option value="slate">Sleek Navy (Slate)</option>
             </select>

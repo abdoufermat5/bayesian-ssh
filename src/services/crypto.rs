@@ -23,7 +23,7 @@ fn derive_keys(passphrase: &str, salt: &[u8]) -> (Vec<u8>, Vec<u8>) {
 
 /// Simple implementation of PBKDF2 with HMAC-SHA256
 fn pbkdf2_sha256(password: &[u8], salt: &[u8], rounds: u32, out: &mut [u8]) {
-    let block_count = (out.len() + 31) / 32;
+    let block_count = out.len().div_ceil(32);
     for i in 1..=block_count {
         let mut mac = HmacSha256::new_from_slice(password).expect("HMAC can take any key length");
         mac.update(salt);
@@ -32,7 +32,8 @@ fn pbkdf2_sha256(password: &[u8], salt: &[u8], rounds: u32, out: &mut [u8]) {
         let mut t = u;
 
         for _ in 1..rounds {
-            let mut mac = HmacSha256::new_from_slice(password).expect("HMAC can take any key length");
+            let mut mac =
+                HmacSha256::new_from_slice(password).expect("HMAC can take any key length");
             mac.update(&u);
             u = mac.finalize().into_bytes();
             for (tb, ub) in t.iter_mut().zip(u.iter()) {
@@ -54,7 +55,7 @@ fn keystream(key: &[u8], iv: &[u8], length: usize) -> Vec<u8> {
         let mut hasher = Sha256::new();
         hasher.update(key);
         hasher.update(iv);
-        hasher.update(&counter.to_be_bytes());
+        hasher.update(counter.to_be_bytes());
         let block = hasher.finalize();
         stream.extend_from_slice(&block);
         counter += 1;
@@ -85,7 +86,8 @@ pub fn encrypt_data(data: &[u8], passphrase: &str) -> Result<Vec<u8>> {
     mac.update(&ciphertext);
     let mac_tag = mac.finalize().into_bytes();
 
-    let mut output = Vec::with_capacity(MAGIC.len() + SALT_LEN + IV_LEN + HMAC_LEN + ciphertext.len());
+    let mut output =
+        Vec::with_capacity(MAGIC.len() + SALT_LEN + IV_LEN + HMAC_LEN + ciphertext.len());
     output.extend_from_slice(MAGIC);
     output.extend_from_slice(&salt);
     output.extend_from_slice(&iv);
@@ -103,7 +105,9 @@ pub fn decrypt_data(encrypted: &[u8], passphrase: &str) -> Result<Vec<u8>> {
     }
 
     if &encrypted[..4] != MAGIC {
-        return Err(anyhow!("Invalid encrypted file format: missing BSSH header"));
+        return Err(anyhow!(
+            "Invalid encrypted file format: missing BSSH header"
+        ));
     }
 
     let salt = &encrypted[4..20];
@@ -120,7 +124,9 @@ pub fn decrypt_data(encrypted: &[u8], passphrase: &str) -> Result<Vec<u8>> {
     mac.update(ciphertext);
 
     if mac.verify_slice(expected_mac).is_err() {
-        return Err(anyhow!("Decryption failed: invalid passphrase or corrupted file"));
+        return Err(anyhow!(
+            "Decryption failed: invalid passphrase or corrupted file"
+        ));
     }
 
     let ks = keystream(&enc_key, iv, ciphertext.len());

@@ -3,7 +3,7 @@ export type AppTheme = (typeof APP_THEMES)[number];
 
 const THEME_WINDOW_BG: Record<AppTheme, string> = {
   zinc: "#09090b",
-  cyberpunk: "#0c0813",
+  cyberpunk: "#061724",
   oled: "#000000",
   slate: "#0f172a",
 };

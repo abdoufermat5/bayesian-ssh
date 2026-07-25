@@ -78,11 +78,16 @@ update-deps: ## Update Rust toolchain and dependencies
 	@echo "✅ Updates completed"
 
 # Installation
-install: release ## Install binary to system
-	@echo "📦 Installing $(BINARY_NAME)..."
+install: release ## Install binary and bssh alias to system
+	@echo "📦 Installing $(BINARY_NAME) and bssh alias..."
 	@if [ -f "$(RELEASE_DIR)/$(BINARY_NAME)" ]; then \
 		sudo cp "$(RELEASE_DIR)/$(BINARY_NAME)" "$(INSTALL_DIR)/$(BINARY_NAME)"; \
-		echo "✅ $(BINARY_NAME) installed to $(INSTALL_DIR)"; \
+		if [ -f "$(RELEASE_DIR)/bssh" ]; then \
+			sudo cp "$(RELEASE_DIR)/bssh" "$(INSTALL_DIR)/bssh"; \
+		else \
+			sudo ln -sf "$(INSTALL_DIR)/$(BINARY_NAME)" "$(INSTALL_DIR)/bssh"; \
+		fi; \
+		echo "✅ $(BINARY_NAME) and bssh installed to $(INSTALL_DIR)"; \
 	else \
 		echo "❌ Release binary not found. Run 'make release' first."; \
 		exit 1; \

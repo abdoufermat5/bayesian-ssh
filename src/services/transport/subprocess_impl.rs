@@ -511,7 +511,10 @@ mod tests {
     #[test]
     fn test_shell_quote_single() {
         assert_eq!(shell_quote_single("hello"), "'hello'");
-        assert_eq!(shell_quote_single("hello 'world'"), r"'hello '\''world'\'''");
+        assert_eq!(
+            shell_quote_single("hello 'world'"),
+            r"'hello '\''world'\'''"
+        );
         assert_eq!(shell_quote_single("foo; rm -rf /"), "'foo; rm -rf /'");
     }
 }
@@ -520,4 +523,3 @@ mod tests {
 pub fn shell_quote_single(input: &str) -> String {
     format!("'{}'", input.replace('\'', r"'\''"))
 }
-

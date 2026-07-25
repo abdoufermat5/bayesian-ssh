@@ -41,6 +41,11 @@ pub struct AuditReportDto {
 }
 
 #[tauri::command]
+pub fn get_app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
+#[tauri::command]
 pub fn list_ssh_keys() -> Result<Vec<SshKeyInfo>, String> {
     let ssh_dir = dirs::home_dir()
         .ok_or_else(|| "Could not resolve home directory".to_string())?
@@ -170,7 +175,7 @@ pub fn copy_ssh_key_to_target(target: String, key_path: Option<String>) -> Resul
 
     let pub_key_path = if let Some(k) = key_path {
         let p = PathBuf::from(&k);
-        if p.extension().map_or(false, |e| e == "pub") {
+        if p.extension().is_some_and(|e| e == "pub") {
             p
         } else {
             PathBuf::from(format!("{k}.pub"))
@@ -279,7 +284,7 @@ pub fn run_security_audit() -> Result<AuditReportDto, String> {
             if let Ok(entries) = fs::read_dir(&ssh_dir) {
                 for entry in entries.flatten() {
                     let path = entry.path();
-                    if path.is_file() && path.extension().map_or(true, |ext| ext != "pub" && ext != "known_hosts" && ext != "config") {
+                    if path.is_file() && path.extension().is_none_or(|ext| ext != "pub" && ext != "known_hosts" && ext != "config") {
                         if let Ok(meta) = fs::metadata(&path) {
                             let mode = meta.permissions().mode() & 0o777;
                             if mode != 0o600 {

@@ -263,6 +263,16 @@ install_binary() {
     if [ -f "${INSTALL_DIR}/${BINARY_NAME}" ]; then
         echo -e "${GREEN}✅ Binary installed successfully${NC}"
         
+        # Create bssh alias for CLI
+        if [ "$INSTALL_DESKTOP" = false ]; then
+            if [ "$EUID" -eq 0 ]; then
+                ln -sf "${INSTALL_DIR}/${BINARY_NAME}" "${INSTALL_DIR}/bssh"
+            elif command -v sudo &> /dev/null; then
+                sudo ln -sf "${INSTALL_DIR}/${BINARY_NAME}" "${INSTALL_DIR}/bssh"
+            fi
+            echo -e "${GREEN}✅ Created 'bssh' command alias in ${INSTALL_DIR}${NC}"
+        fi
+        
         # Install desktop menu shortcut and icon if installing desktop version
         if [ "$INSTALL_DESKTOP" = true ]; then
             echo -e "${BLUE}🎨 Installing desktop menu shortcut and icon...${NC}"

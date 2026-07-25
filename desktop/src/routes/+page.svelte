@@ -19,6 +19,8 @@
   import DetachedSessionsModal from "$lib/components/modals/DetachedSessionsModal.svelte";
   import DeleteConfirm from "$lib/components/modals/DeleteConfirm.svelte";
   import OnboardingModal from "$lib/components/modals/OnboardingModal.svelte";
+  import ShortcutsModal from "$lib/components/modals/ShortcutsModal.svelte";
+  import AboutModal from "$lib/components/modals/AboutModal.svelte";
   import Toast from "$lib/components/Toast.svelte";
 
   import { notify } from "$lib/stores/notifications.svelte";
@@ -63,12 +65,28 @@
 
   let unlistenConnect: (() => void) | undefined;
 
+  let showShortcutsModal = $state(false);
+  let showAboutModal = $state(false);
+
+  function handleKeydownWithHelp(e: KeyboardEvent) {
+    const isEditingInput = document.activeElement?.tagName === "INPUT" || document.activeElement?.tagName === "TEXTAREA";
+    if (e.key === "?" && !isEditingInput) {
+      e.preventDefault();
+      showAboutModal = !showAboutModal;
+    } else if ((e.key === "F1" || (e.key === "/" && (e.ctrlKey || e.metaKey))) && !isEditingInput) {
+      e.preventDefault();
+      showShortcutsModal = !showShortcutsModal;
+    } else {
+      appState.handleGlobalKeydown(e);
+    }
+  }
+
   onMount(() => {
     (async () => {
       await appState.loadData();
       await appState.checkOnboarding();
     })();
-    window.addEventListener("keydown", appState.handleGlobalKeydown);
+    window.addEventListener("keydown", handleKeydownWithHelp);
 
     initTerminalListeners(async () => {
       await appState.loadHistory();
@@ -113,7 +131,7 @@
     });
 
     return () => {
-      window.removeEventListener("keydown", appState.handleGlobalKeydown);
+      window.removeEventListener("keydown", handleKeydownWithHelp);
       teardownTerminalListeners();
       stopKerberosMonitoring();
       teardownWindow();
@@ -126,7 +144,11 @@
   class="flex flex-col flex-1 w-full h-[100dvh] min-h-0 overflow-hidden bg-surface"
   class:is-fullscreen={windowState.isFullscreen}
 >
-  <TitleBar activeEnv={appState.activeEnv} />
+  <TitleBar
+    activeEnv={appState.activeEnv}
+    onOpenAbout={() => (showAboutModal = true)}
+    onOpenShortcuts={() => (showShortcutsModal = true)}
+  />
 
   <div class="flex flex-1 min-h-0 w-full bg-surface overflow-hidden">
     <Sidebar
@@ -483,6 +505,15 @@
       onComplete={appState.completeOnboarding}
     />
   {/if}
+
+  <ShortcutsModal show={showShortcutsModal} onClose={() => (showShortcutsModal = false)} />
+
+  <AboutModal
+    show={showAboutModal}
+    workspace={appState.workspace}
+    activeEnv={appState.activeEnv}
+    onClose={() => (showAboutModal = false)}
+  />
 
   <Toast />
 </div>

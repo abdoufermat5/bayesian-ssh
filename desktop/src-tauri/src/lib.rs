@@ -94,6 +94,7 @@ pub fn run() {
             commands::run_security_audit,
             commands::export_connections_payload,
             commands::import_connections_payload,
+            commands::get_app_version,
             tray::refresh_tray_menu,
             tray::send_desktop_notification
         ])

@@ -3,6 +3,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { KeyRound, Plus, Send, ShieldCheck, ShieldAlert, RefreshCw, Copy, Check } from "lucide-svelte";
   import type { SshKeyInfo, Connection } from "$lib/types";
+  import CustomSelect from "$lib/components/ui/CustomSelect.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
 
   interface Props {
@@ -238,15 +239,15 @@
         </div>
 
         <div>
-          <label for="gen-key-type" class="block text-xs font-semibold text-muted mb-1">Key Algorithm</label>
-          <select
+          <label id="gen-key-type-label" for="gen-key-type" class="block text-xs font-semibold text-muted mb-1">Key Algorithm</label>
+          <CustomSelect
             id="gen-key-type"
-            class="w-full bg-surface-input border border-border rounded-lg px-3 py-2 text-xs text-primary outline-none focus:border-accent"
+            options={[
+              { value: "ed25519", label: "Ed25519", description: "Recommended - High security & fast" },
+              { value: "rsa", label: "RSA 4096-bit", description: "Legacy compatibility" }
+            ]}
             bind:value={genKeyType}
-          >
-            <option value="ed25519">Ed25519 (Recommended - High security & fast)</option>
-            <option value="rsa">RSA 4096-bit (Legacy compatibility)</option>
-          </select>
+          />
         </div>
 
         <div class="flex justify-end gap-2 pt-2">
@@ -295,17 +296,13 @@
         </div>
 
         <div>
-          <label for="copy-key-target" class="block text-xs font-semibold text-muted mb-1">Target Host Connection</label>
-          <select
+          <label id="copy-key-target-label" for="copy-key-target" class="block text-xs font-semibold text-muted mb-1">Target Host Connection</label>
+          <CustomSelect
             id="copy-key-target"
-            class="w-full bg-surface-input border border-border rounded-lg px-3 py-2 text-xs text-primary outline-none focus:border-accent"
+            placeholder="Select target host connection..."
+            options={connections.map((c) => ({ value: c.name, label: c.name, description: `${c.user}@${c.host}:${c.port}` }))}
             bind:value={selectedTarget}
-          >
-            <option value="" disabled>Select target connection...</option>
-            {#each connections as conn}
-              <option value={conn.name}>{conn.name} ({conn.user}@{conn.host})</option>
-            {/each}
-          </select>
+          />
         </div>
 
         <div class="flex justify-end gap-2 pt-2">

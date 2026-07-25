@@ -1,6 +1,6 @@
 [package]
 name = "bayesian-ssh"
-version = "2.1.2"
+version = "2.2.0"
 edition = "2021"
 authors = ["Abdoufermat5"]
 description = "A fast and lightweight SSH session manager with Kerberos support"
@@ -12,6 +12,10 @@ path = "src/lib.rs"
 
 [[bin]]
 name = "bayesian-ssh"
+path = "src/main.rs"
+
+[[bin]]
+name = "bssh"
 path = "src/main.rs"
 
 [dependencies]

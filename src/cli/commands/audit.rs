@@ -76,14 +76,25 @@ pub async fn execute(config: AppConfig) -> Result<()> {
             if let Ok(entries) = fs::read_dir(&ssh_dir) {
                 for entry in entries.flatten() {
                     let path = entry.path();
-                    if path.is_file() && path.extension().map_or(true, |ext| ext != "pub" && ext != "known_hosts" && ext != "config") {
+                    if path.is_file()
+                        && path.extension().is_none_or(|ext| {
+                            ext != "pub" && ext != "known_hosts" && ext != "config"
+                        })
+                    {
                         if let Ok(meta) = fs::metadata(&path) {
                             let mode = meta.permissions().mode() & 0o777;
                             if mode != 0o600 {
                                 findings.push(AuditFinding {
                                     severity: AuditSeverity::Warning,
-                                    title: format!("Insecure Private Key Permissions: {}", path.file_name().unwrap_or_default().to_string_lossy()),
-                                    description: format!("Key file {} mode is {:04o} (expected 0600).", path.display(), mode),
+                                    title: format!(
+                                        "Insecure Private Key Permissions: {}",
+                                        path.file_name().unwrap_or_default().to_string_lossy()
+                                    ),
+                                    description: format!(
+                                        "Key file {} mode is {:04o} (expected 0600).",
+                                        path.display(),
+                                        mode
+                                    ),
                                     remediation: format!("Run 'chmod 600 {}'", path.display()),
                                 });
                             }
@@ -127,7 +138,9 @@ pub async fn execute(config: AppConfig) -> Result<()> {
         findings.push(AuditFinding {
             severity: AuditSeverity::Info,
             title: format!("{} Stale Connection(s) Unused for >90 Days", stale_count),
-            description: "Unused connection entries increase attack surface and clutter session inventory.".into(),
+            description:
+                "Unused connection entries increase attack surface and clutter session inventory."
+                    .into(),
             remediation: "Review and remove inactive servers via 'bssh remove <name>'.".into(),
         });
     }
@@ -151,7 +164,10 @@ pub async fn execute(config: AppConfig) -> Result<()> {
         _ => ("F", "CRITICAL RISK"),
     };
 
-    println!("Security Score: {}/100 (Grade: {}, Rating: {})\n", score, grade, color_label);
+    println!(
+        "Security Score: {}/100 (Grade: {}, Rating: {})\n",
+        score, grade, color_label
+    );
     println!("Audit Breakdown (Total Findings: {})\n", findings.len());
 
     if findings.is_empty() {
