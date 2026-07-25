@@ -204,6 +204,7 @@
           <div class="flex gap-2 mt-1">
             <CustomSelect
               id="settings-profile"
+              class="flex-1"
               options={environments.map((env) => ({ value: env.name, label: env.name }))}
               value={workspace.active_env}
               onChange={(val) => onSwitchEnv(val)}
