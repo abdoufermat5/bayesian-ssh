@@ -89,16 +89,6 @@
 >
   <!-- Header -->
   <div class="shrink-0">
-    <!-- App Logo -->
-    <div class="flex items-center gap-2 mb-4 {sidebarCollapsed ? 'justify-center' : 'px-1'}">
-      <div class="w-6 h-6 rounded-md bg-accent/15 border border-accent/30 flex items-center justify-center shrink-0">
-        <TerminalSquare class="text-accent" size={14} />
-      </div>
-      {#if !sidebarCollapsed}
-        <span class="text-xs font-bold tracking-wider text-primary font-mono uppercase">BAYESIAN SSH</span>
-      {/if}
-    </div>
-
     <!-- Profile Selector -->
     {#if !sidebarCollapsed}
       <div class="mb-4">
