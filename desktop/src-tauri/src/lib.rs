@@ -25,6 +25,13 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
         .manage(PtyState {
             sessions: Arc::new(Mutex::new(HashMap::new())),
         })
@@ -94,9 +101,13 @@ pub fn run() {
             commands::run_security_audit,
             commands::export_connections_payload,
             commands::import_connections_payload,
+            commands::fix_security_permissions,
+            commands::ping_all_connections,
+            commands::run_batch_command,
             commands::get_app_version,
             tray::refresh_tray_menu,
-            tray::send_desktop_notification
+            tray::send_desktop_notification,
+            commands::get_env_status
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -104,29 +115,154 @@ pub fn run() {
 
 #[cfg(unix)]
 fn init_shell_env() {
+    // ── Strategy 1: read systemd user environment (covers PATH, DBUS, DISPLAY …) ──
+    if let Ok(output) = std::process::Command::new("systemctl")
+        .args(["--user", "show-environment"])
+        .output()
+    {
+        if output.status.success() {
+            apply_env_vars(&String::from_utf8_lossy(&output.stdout));
+        }
+    }
+
+    // ── Strategy 2: login-shell env (covers NVM, pyenv, .profile exports …) ──
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
-    // Run a login shell and output its environment to override desktop session defaults
     if let Ok(output) = std::process::Command::new(&shell)
         .args(["-l", "-c", "env"])
         .output()
     {
         if output.status.success() {
-            let env_str = String::from_utf8_lossy(&output.stdout);
-            for line in env_str.lines() {
-                if let Some(pos) = line.find('=') {
-                    let key = &line[..pos];
-                    let val = &line[pos + 1..];
-                    if key == "SSH_AUTH_SOCK"
-                        || key == "KRB5CCNAME"
-                        || key == "KRB5_CONFIG"
-                        || key == "PATH"
-                        || key == "USER"
-                        || key == "LOGNAME"
-                        || key == "UID"
-                    {
-                        std::env::set_var(key, val);
+            apply_env_vars(&String::from_utf8_lossy(&output.stdout));
+        }
+    }
+
+    // ── Strategy 3: probe for an SSH agent socket if none is set ──
+    if std::env::var("SSH_AUTH_SOCK").is_err() {
+        if let Some(sock) = find_ssh_agent_socket() {
+            std::env::set_var("SSH_AUTH_SOCK", &sock);
+            // Also propagate into the systemd user session for child processes
+            let _ = std::process::Command::new("systemctl")
+                .args(["--user", "set-environment", &format!("SSH_AUTH_SOCK={sock}")])
+                .output();
+        }
+    }
+}
+
+/// Walk the well-known places where SSH agent sockets are created and return
+/// the first one that exists and is a socket.
+#[cfg(unix)]
+fn find_ssh_agent_socket() -> Option<String> {
+    use std::os::unix::fs::FileTypeExt;
+
+    // 1. Read /proc environ of any running ssh-agent owned by this user
+    if let Ok(entries) = std::fs::read_dir("/proc") {
+        for entry in entries.flatten() {
+            let pid_path = entry.path();
+            if !pid_path.is_dir() {
+                continue;
+            }
+            let environ_path = pid_path.join("environ");
+            if let Ok(data) = std::fs::read(&environ_path) {
+                // The file is NUL-separated key=value pairs
+                let mut found_agent = false;
+                let mut sock_val: Option<String> = None;
+                for kv in data.split(|&b| b == 0) {
+                    let s = String::from_utf8_lossy(kv);
+                    if s.starts_with("SSH_AUTH_SOCK=") {
+                        sock_val = Some(s["SSH_AUTH_SOCK=".len()..].to_string());
+                    }
+                    if s.contains("ssh-agent") {
+                        found_agent = true;
                     }
                 }
+                if let (true, Some(sock)) = (found_agent, sock_val) {
+                    if std::path::Path::new(&sock).exists() {
+                        return Some(sock);
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Try common XDG_RUNTIME_DIR patterns
+    let uid = unsafe { libc::getuid() };
+    let runtime_dir = format!("/run/user/{uid}");
+    let candidates = [
+        format!("{runtime_dir}/ssh-agent.socket"),
+        format!("{runtime_dir}/keyring/ssh"),
+        // gnome-keyring-daemon socket
+        format!("{runtime_dir}/gcr/ssh"),
+    ];
+    for c in &candidates {
+        let p = std::path::Path::new(c);
+        if let Ok(meta) = p.metadata() {
+            if meta.file_type().is_socket() {
+                return Some(c.clone());
+            }
+        }
+    }
+
+    // 3. Glob /tmp/ssh-*/agent.* (the classic openssh-agent pattern)
+    if let Ok(entries) = std::fs::read_dir("/tmp") {
+        for entry in entries.flatten() {
+            let dir = entry.path();
+            if !dir.is_dir() {
+                continue;
+            }
+            let name = dir.file_name().unwrap_or_default().to_string_lossy().to_string();
+            if !name.starts_with("ssh-") {
+                continue;
+            }
+            if let Ok(files) = std::fs::read_dir(&dir) {
+                for f in files.flatten() {
+                    let fp = f.path();
+                    let fname = fp.file_name().unwrap_or_default().to_string_lossy().to_string();
+                    if fname.starts_with("agent.") {
+                        if let Ok(meta) = fp.metadata() {
+                            if meta.file_type().is_socket() {
+                                return Some(fp.to_string_lossy().to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Parse `KEY=VALUE` lines (from `env` or `systemctl show-environment`) and
+/// selectively set the ones that SSH / Kerberos / PATH need.
+#[cfg(unix)]
+fn apply_env_vars(text: &str) {
+    const KEYS: &[&str] = &[
+        "SSH_AUTH_SOCK",
+        "SSH_AGENT_PID",
+        "KRB5CCNAME",
+        "KRB5_CONFIG",
+        "KRB5KEYTAB",
+        "PATH",
+        "USER",
+        "LOGNAME",
+        "HOME",
+        "SHELL",
+        "DBUS_SESSION_BUS_ADDRESS",
+        "XDG_RUNTIME_DIR",
+        "DISPLAY",
+        "WAYLAND_DISPLAY",
+    ];
+    for line in text.lines() {
+        if let Some(pos) = line.find('=') {
+            let key = &line[..pos];
+            let val = &line[pos + 1..];
+            if KEYS.contains(&key) {
+                // Don't downgrade an already-good SSH_AUTH_SOCK from the
+                // socket we found in Strategy 3.
+                if key == "SSH_AUTH_SOCK" && std::env::var("SSH_AUTH_SOCK").is_ok() {
+                    continue;
+                }
+                std::env::set_var(key, val);
             }
         }
     }

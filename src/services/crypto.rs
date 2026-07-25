@@ -12,12 +12,13 @@ const MAGIC: &[u8; 4] = b"BSSH";
 const SALT_LEN: usize = 16;
 const IV_LEN: usize = 16;
 const HMAC_LEN: usize = 32;
-const PBKDF2_ROUNDS: u32 = 10_000;
+const PBKDF2_ROUNDS: u32 = 600_000;
+const LEGACY_PBKDF2_ROUNDS: u32 = 10_000;
 
 /// Derive a 64-byte key (32 bytes encryption key + 32 bytes HMAC key) using PBKDF2-HMAC-SHA256.
-fn derive_keys(passphrase: &str, salt: &[u8]) -> (Vec<u8>, Vec<u8>) {
+fn derive_keys(passphrase: &str, salt: &[u8], rounds: u32) -> (Vec<u8>, Vec<u8>) {
     let mut derived = vec![0u8; 64];
-    pbkdf2_sha256(passphrase.as_bytes(), salt, PBKDF2_ROUNDS, &mut derived);
+    pbkdf2_sha256(passphrase.as_bytes(), salt, rounds, &mut derived);
     (derived[0..32].to_vec(), derived[32..64].to_vec())
 }
 
@@ -71,7 +72,7 @@ pub fn encrypt_data(data: &[u8], passphrase: &str) -> Result<Vec<u8>> {
     rand::thread_rng().fill_bytes(&mut salt);
     rand::thread_rng().fill_bytes(&mut iv);
 
-    let (enc_key, mac_key) = derive_keys(passphrase, &salt);
+    let (enc_key, mac_key) = derive_keys(passphrase, &salt, PBKDF2_ROUNDS);
     let ks = keystream(&enc_key, &iv, data.len());
 
     let mut ciphertext = vec![0u8; data.len()];
@@ -115,27 +116,32 @@ pub fn decrypt_data(encrypted: &[u8], passphrase: &str) -> Result<Vec<u8>> {
     let expected_mac = &encrypted[36..68];
     let ciphertext = &encrypted[68..];
 
-    let (enc_key, mac_key) = derive_keys(passphrase, salt);
+    // Try current 600,000 rounds first, fall back to legacy 10,000 rounds if MAC check fails
+    for &rounds in &[PBKDF2_ROUNDS, LEGACY_PBKDF2_ROUNDS] {
+        let (enc_key, mac_key) = derive_keys(passphrase, salt, rounds);
 
-    let mut mac = HmacSha256::new_from_slice(&mac_key)?;
-    mac.update(MAGIC);
-    mac.update(salt);
-    mac.update(iv);
-    mac.update(ciphertext);
+        let mut mac = match HmacSha256::new_from_slice(&mac_key) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        mac.update(MAGIC);
+        mac.update(salt);
+        mac.update(iv);
+        mac.update(ciphertext);
 
-    if mac.verify_slice(expected_mac).is_err() {
-        return Err(anyhow!(
-            "Decryption failed: invalid passphrase or corrupted file"
-        ));
+        if mac.verify_slice(expected_mac).is_ok() {
+            let ks = keystream(&enc_key, iv, ciphertext.len());
+            let mut plaintext = vec![0u8; ciphertext.len()];
+            for i in 0..ciphertext.len() {
+                plaintext[i] = ciphertext[i] ^ ks[i];
+            }
+            return Ok(plaintext);
+        }
     }
 
-    let ks = keystream(&enc_key, iv, ciphertext.len());
-    let mut plaintext = vec![0u8; ciphertext.len()];
-    for i in 0..ciphertext.len() {
-        plaintext[i] = ciphertext[i] ^ ks[i];
-    }
-
-    Ok(plaintext)
+    Err(anyhow!(
+        "Decryption failed: invalid passphrase or corrupted file"
+    ))
 }
 
 #[cfg(test)]

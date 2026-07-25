@@ -21,6 +21,7 @@
   import OnboardingModal from "$lib/components/modals/OnboardingModal.svelte";
   import ShortcutsModal from "$lib/components/modals/ShortcutsModal.svelte";
   import AboutModal from "$lib/components/modals/AboutModal.svelte";
+  import BatchExecModal from "$lib/components/modals/BatchExecModal.svelte";
   import Toast from "$lib/components/Toast.svelte";
 
   import { notify } from "$lib/stores/notifications.svelte";
@@ -67,6 +68,7 @@
 
   let showShortcutsModal = $state(false);
   let showAboutModal = $state(false);
+  let showBatchExecModal = $state(false);
 
   function handleKeydownWithHelp(e: KeyboardEvent) {
     const isEditingInput = document.activeElement?.tagName === "INPUT" || document.activeElement?.tagName === "TEXTAREA";
@@ -359,6 +361,7 @@
               onCopyCommand={appState.copyToClipboard}
               onRefresh={appState.loadConnections}
               onAddHost={appState.openAddModal}
+              onOpenBatchExec={() => (showBatchExecModal = true)}
             />
           </div>
         {/if}
@@ -513,6 +516,12 @@
     workspace={appState.workspace}
     activeEnv={appState.activeEnv}
     onClose={() => (showAboutModal = false)}
+  />
+
+  <BatchExecModal
+    show={showBatchExecModal}
+    connections={appState.connections}
+    onClose={() => (showBatchExecModal = false)}
   />
 
   <Toast />

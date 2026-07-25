@@ -11,10 +11,13 @@
     RefreshCw,
     CopyPlus,
     Terminal,
+    Activity,
   } from "lucide-svelte";
+  import { invoke } from "@tauri-apps/api/core";
   import type { Connection } from "$lib/types";
   import { toSshCommand } from "$lib/utils/sshCommand";
   import { formatDate } from "$lib/utils/timezone";
+  import { notify } from "$lib/stores/notifications.svelte";
 
   interface Props {
     connections: Connection[];
@@ -31,6 +34,7 @@
     onCopyCommand: (text: string, id: string) => void;
     onRefresh: () => void;
     onAddHost: () => void;
+    onOpenBatchExec?: () => void;
   }
 
   let {
@@ -48,7 +52,30 @@
     onCopyCommand,
     onRefresh,
     onAddHost,
+    onOpenBatchExec,
   }: Props = $props();
+
+  let pinging = $state(false);
+  let pingResults = $state<Record<string, { latency_ms: number; success: boolean }>>({});
+
+  async function pingAllHosts() {
+    pinging = true;
+    try {
+      const results = await invoke<Array<{ connection_id: string; success: boolean; latency_ms: number }>>("ping_all_connections");
+      const map: Record<string, { latency_ms: number; success: boolean }> = {};
+      let reachable = 0;
+      for (const r of results) {
+        map[r.connection_id] = { latency_ms: r.latency_ms, success: r.success };
+        if (r.success) reachable++;
+      }
+      pingResults = map;
+      notify(`Ping completed: ${reachable}/${results.length} hosts reachable!`, "success");
+    } catch (err) {
+      notify(`Ping failed: ${err}`, "error");
+    } finally {
+      pinging = false;
+    }
+  }
 </script>
 
 <div class="flex flex-col flex-1 min-h-0 w-full overflow-hidden bg-surface">
@@ -66,6 +93,25 @@
     </div>
 
     <div class="flex items-center gap-2">
+      {#if onOpenBatchExec}
+        <button
+          class="bg-surface-input border border-border text-muted px-2.5 py-1.5 rounded-md cursor-pointer flex items-center gap-1.5 text-xs font-semibold transition-all hover:border-border-hover hover:text-primary"
+          onclick={onOpenBatchExec}
+          title="Safe Multi-Host Batch Execution"
+        >
+          <Terminal size={14} class="text-accent" />
+          Batch Exec
+        </button>
+      {/if}
+      <button
+        class="bg-surface-input border border-border text-muted px-2.5 py-1.5 rounded-md cursor-pointer flex items-center gap-1.5 text-xs font-semibold transition-all hover:border-border-hover hover:text-primary"
+        onclick={pingAllHosts}
+        disabled={pinging}
+        title="Ping all hosts"
+      >
+        <Activity size={14} class={pinging ? "animate-spin text-accent" : "text-emerald-400"} />
+        Ping All
+      </button>
       <button
         class="bg-surface-input border border-border text-muted p-1.5 rounded-md cursor-pointer flex transition-all hover:border-border-hover hover:text-primary"
         onclick={onRefresh}

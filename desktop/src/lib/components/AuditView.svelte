@@ -1,12 +1,13 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import { ShieldCheck, ShieldAlert, AlertTriangle, Info, RefreshCw, CheckCircle2 } from "lucide-svelte";
+  import { ShieldCheck, ShieldAlert, AlertTriangle, Info, RefreshCw, CheckCircle2, Wrench } from "lucide-svelte";
   import type { AuditReport, AuditFinding } from "$lib/types";
   import { notify } from "$lib/stores/notifications.svelte";
 
   let report = $state<AuditReport | null>(null);
   let loading = $state(true);
+  let fixing = $state(false);
   let activeFilter = $state<"all" | "critical" | "warning" | "info">("all");
 
   async function runAudit() {
@@ -17,6 +18,19 @@
       notify(`Failed to run security audit: ${err}`, "error");
     } finally {
       loading = false;
+    }
+  }
+
+  async function fixPermissions() {
+    fixing = true;
+    try {
+      const repaired = await invoke<number>("fix_security_permissions");
+      notify(`Successfully repaired permissions for ${repaired} item(s)!`, "success");
+      await runAudit();
+    } catch (err) {
+      notify(`Failed to fix permissions: ${err}`, "error");
+    } finally {
+      fixing = false;
     }
   }
 
@@ -59,14 +73,24 @@
         Comprehensive automated audit of your SSH identity files, strict host key settings, private key permissions, and connection freshness.
       </p>
     </div>
-    <button
-      class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium cursor-pointer transition-all hover:opacity-90 shadow-sm"
-      onclick={runAudit}
-      disabled={loading}
-    >
-      <RefreshCw size={14} class={loading ? "animate-spin" : ""} />
-      Re-run Audit
-    </button>
+    <div class="flex items-center gap-2">
+      <button
+        class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 text-xs font-semibold cursor-pointer transition-all hover:bg-emerald-600/30 shadow-sm"
+        onclick={fixPermissions}
+        disabled={loading || fixing}
+      >
+        <Wrench size={14} class={fixing ? "animate-spin" : ""} />
+        Fix All Insecure Permissions
+      </button>
+      <button
+        class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium cursor-pointer transition-all hover:opacity-90 shadow-sm"
+        onclick={runAudit}
+        disabled={loading}
+      >
+        <RefreshCw size={14} class={loading ? "animate-spin" : ""} />
+        Re-run Audit
+      </button>
+    </div>
   </div>
 
   {#if loading}

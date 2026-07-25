@@ -4,11 +4,60 @@ use crate::services::SshService;
 use anyhow::Result;
 use tracing::info;
 
-pub async fn execute(target: String, force: bool, config: AppConfig) -> Result<()> {
-    info!("Removing connection: {}", target);
-
+pub async fn execute(
+    target: Option<String>,
+    tag: Option<String>,
+    force: bool,
+    config: AppConfig,
+) -> Result<()> {
     let ssh_service = SshService::new(config)?;
-    let connection = resolve_connection(&ssh_service, &target, "remove", false).await?;
+
+    if let Some(tag_name) = tag {
+        let connections = ssh_service.list_connections(Some(&tag_name), false).await?;
+        if connections.is_empty() {
+            println!("No connections found matching tag '{}'.", tag_name);
+            return Ok(());
+        }
+
+        println!(
+            "\n⚠️  WARNING: You are about to remove {} connection(s) matching tag '{}':",
+            connections.len(),
+            tag_name
+        );
+        for conn in &connections {
+            println!(" - {} ({}@{})", conn.name, conn.user, conn.host);
+        }
+
+        if !force
+            && !confirm(
+                &format!("Remove all {} connection(s)?", connections.len()),
+                false,
+            )?
+        {
+            println!("❌ Removal cancelled.");
+            return Ok(());
+        }
+
+        let mut removed = 0;
+        for conn in &connections {
+            if ssh_service.remove_connection(&conn.name).await? {
+                removed += 1;
+            }
+        }
+        println!(
+            "✅ Removed {} connection(s) matching tag '{}'.",
+            removed, tag_name
+        );
+        return Ok(());
+    }
+
+    let target_str = match target {
+        Some(t) => t,
+        None => anyhow::bail!("Target connection name or --tag is required"),
+    };
+
+    info!("Removing connection: {}", target_str);
+    let connection = resolve_connection(&ssh_service, &target_str, "remove", false).await?;
     remove_connection_with_confirmation(&ssh_service, &connection, force).await
 }
 

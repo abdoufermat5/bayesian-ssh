@@ -28,26 +28,42 @@ impl Database {
         mode: &str,
     ) -> Result<Vec<Connection>> {
         let mut all_matches = Vec::new();
-        let normalized_query = query.to_lowercase();
+        let mut normalized_query = query.trim().to_lowercase();
 
-        // Search in names with multiple strategies
-        if let Ok(mut name_matches) = self.search_by_field(&normalized_query, "name", limit) {
-            all_matches.append(&mut name_matches);
-        }
+        let is_tag_query = if let Some(stripped) = normalized_query.strip_prefix("tag:") {
+            normalized_query = stripped.to_string();
+            true
+        } else if let Some(stripped) = normalized_query.strip_prefix('@') {
+            normalized_query = stripped.to_string();
+            true
+        } else {
+            false
+        };
 
-        // Enhanced fuzzy matching for names
-        if let Ok(mut fuzzy_matches) = self.enhanced_fuzzy_search(&normalized_query, limit) {
-            all_matches.append(&mut fuzzy_matches);
-        }
+        if is_tag_query {
+            if let Ok(mut tag_matches) = self.search_in_tags(&normalized_query, limit) {
+                all_matches.append(&mut tag_matches);
+            }
+        } else {
+            // Search in names with multiple strategies
+            if let Ok(mut name_matches) = self.search_by_field(&normalized_query, "name", limit) {
+                all_matches.append(&mut name_matches);
+            }
 
-        // Search in hosts
-        if let Ok(mut host_matches) = self.search_by_field(&normalized_query, "host", limit) {
-            all_matches.append(&mut host_matches);
-        }
+            // Enhanced fuzzy matching for names
+            if let Ok(mut fuzzy_matches) = self.enhanced_fuzzy_search(&normalized_query, limit) {
+                all_matches.append(&mut fuzzy_matches);
+            }
 
-        // Search in tags (JSON array search)
-        if let Ok(mut tag_matches) = self.search_in_tags(&normalized_query, limit) {
-            all_matches.append(&mut tag_matches);
+            // Search in hosts
+            if let Ok(mut host_matches) = self.search_by_field(&normalized_query, "host", limit) {
+                all_matches.append(&mut host_matches);
+            }
+
+            // Search in tags (JSON array search)
+            if let Ok(mut tag_matches) = self.search_in_tags(&normalized_query, limit) {
+                all_matches.append(&mut tag_matches);
+            }
         }
 
         // Remove duplicates and sort by relevance
@@ -411,5 +427,59 @@ impl Database {
         }
 
         score
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::config::AppConfig;
+    use crate::database::Database;
+    use crate::models::Connection;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_tag_prefix_search() {
+        let dir = tempdir().unwrap();
+        let config = AppConfig {
+            database_path: dir.path().join("test.db"),
+            ..Default::default()
+        };
+        let db = Database::new(&config).unwrap();
+
+        let mut conn1 = Connection::new(
+            "web-prod".into(),
+            "web1.example.com".into(),
+            "root".into(),
+            22,
+            None,
+            None,
+            false,
+            None,
+        );
+        conn1.add_tag("production".into());
+        db.add_connection(&conn1).unwrap();
+
+        let mut conn2 = Connection::new(
+            "web-staging".into(),
+            "web2.example.com".into(),
+            "root".into(),
+            22,
+            None,
+            None,
+            false,
+            None,
+        );
+        conn2.add_tag("staging".into());
+        db.add_connection(&conn2).unwrap();
+
+        let res_tag = db
+            .search_connections("tag:production", 10, "bayesian")
+            .unwrap();
+        assert_eq!(res_tag.len(), 1);
+        assert_eq!(res_tag[0].name, "web-prod");
+
+        let res_at = db.search_connections("@staging", 10, "bayesian").unwrap();
+        assert_eq!(res_at.len(), 1);
+        assert_eq!(res_at[0].name, "web-staging");
     }
 }

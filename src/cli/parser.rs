@@ -165,10 +165,13 @@ pub enum Commands {
         detailed: bool,
     },
 
-    /// Remove a saved connection and its session history
+    /// Remove a saved connection (single or bulk by tag)
     Remove {
         /// Connection name, alias, or ID to delete
-        target: String,
+        target: Option<String>,
+        /// Remove connections matching this tag
+        #[arg(short = 't', long, value_name = "TAG")]
+        tag: Option<String>,
         /// Skip the confirmation prompt
         #[arg(short = 'f', long)]
         force: bool,
@@ -265,7 +268,11 @@ pub enum Commands {
     Stats,
 
     /// Audit security configuration, host keys, key permissions, and connection health
-    Audit,
+    Audit {
+        /// Automatically repair overly permissive file and directory permissions
+        #[arg(short = 'f', long)]
+        fix: bool,
+    },
 
     /// Manage SSH keys (list, generate, copy public keys to remote servers)
     Key {
@@ -336,17 +343,24 @@ pub enum Commands {
         new_name: String,
     },
 
-    /// Test SSH reachability of a saved connection
+    /// Test SSH reachability of a saved connection (single or multi-host)
     #[command(
-        long_about = "Attempt a TCP connect (and optional SSH handshake) to verify the host is reachable.\n\
-            Useful for verifying firewall rules or bastion routing before a full session.\n\n\
+        long_about = "Attempt a TCP connect (and optional SSH handshake) to verify hosts are reachable.\n\
+            Supports single host, all hosts (--all), or filtering by tag (-g/--tag).\n\n\
             Examples:\n\
               bssh ping web-prod\n\
-              bssh ping db01 -t 10"
+              bssh ping --all\n\
+              bssh ping -g prod -t 10"
     )]
     Ping {
         /// Connection name, alias, or hostname
-        target: String,
+        target: Option<String>,
+        /// Ping all saved connections in parallel
+        #[arg(short = 'a', long)]
+        all: bool,
+        /// Ping connections matching this tag
+        #[arg(short = 'g', long, value_name = "TAG")]
+        tag: Option<String>,
         /// Connection timeout in seconds (default: 5)
         #[arg(short = 't', long, value_name = "SECS")]
         timeout: Option<u64>,
@@ -435,20 +449,30 @@ pub enum Commands {
     )]
     Desktop,
 
-    /// Run a command on a remote host and print its output locally
+    /// Run a command on remote host(s) and print output locally
     #[command(
         alias = "run",
         long_about = "Execute a one-off command over SSH without opening an interactive shell.\n\
-            The remote stdout and stderr are printed locally.\n\n\
+            Supports single host, all hosts (--all), or filtering by tag (-g/--tag).\n\
+            Use --dry-run to preview target hosts before running.\n\n\
             IMPORTANT: Use -- to separate the remote command from bssh flags.\n\n\
             Examples:\n\
               bssh exec web-prod -- uname -a\n\
-              bssh exec db01 -- ls -l /tmp\n\
-              bssh run staging -- systemctl status nginx"
+              bssh exec --all --dry-run -- uptime\n\
+              bssh exec -g prod -- systemctl status nginx"
     )]
     Exec {
         /// Connection name, alias, or hostname
-        target: String,
+        target: Option<String>,
+        /// Run command on all saved connections in parallel
+        #[arg(short = 'a', long)]
+        all: bool,
+        /// Run command on connections matching this tag
+        #[arg(short = 'g', long, value_name = "TAG")]
+        tag: Option<String>,
+        /// Preview target hosts and command without executing
+        #[arg(long)]
+        dry_run: bool,
         /// Remote command and arguments (put -- before the command)
         #[arg(last = true, required = true)]
         command: Vec<String>,

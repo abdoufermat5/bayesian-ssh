@@ -22,7 +22,16 @@ pub struct AuditFinding {
     pub remediation: String,
 }
 
-pub async fn execute(config: AppConfig) -> Result<()> {
+pub async fn execute(fix: bool, config: AppConfig) -> Result<()> {
+    if fix {
+        println!("🔧 Automatically fixing overly permissive file and directory permissions...");
+        let repaired = fix_permissions(&config)?;
+        println!(
+            "✅ Successfully repaired permissions for {} item(s).\n",
+            repaired
+        );
+    }
+
     let mut findings: Vec<AuditFinding> = Vec::new();
     let database = Database::new(&config)?;
     let connections = database.list_connections(None, false)?;
@@ -53,7 +62,7 @@ pub async fn execute(config: AppConfig) -> Result<()> {
                 severity: AuditSeverity::Warning,
                 title: "Config Directory Permissions Overly Permissive".into(),
                 description: format!("Directory {} mode is {:04o} (expected 0700). Other local users may read/write configuration.", config_dir.display(), mode),
-                remediation: format!("Run 'chmod 700 {}'", config_dir.display()),
+                remediation: format!("Run 'bssh audit --fix' or 'chmod 700 {}'", config_dir.display()),
             });
         }
     }
@@ -65,38 +74,51 @@ pub async fn execute(config: AppConfig) -> Result<()> {
                 severity: AuditSeverity::Warning,
                 title: "Database File Permissions Overly Permissive".into(),
                 description: format!("Database file {} mode is {:04o} (expected 0600). Other local users may view connection records.", config.database_path.display(), mode),
-                remediation: format!("Run 'chmod 600 {}'", config.database_path.display()),
+                remediation: format!("Run 'bssh audit --fix' or 'chmod 600 {}'", config.database_path.display()),
             });
         }
     }
 
-    // 3. Audit Local SSH Private Key Permissions
+    // 3. Audit Local SSH Keys (Permissions & Weak Algorithms)
     if let Some(ssh_dir) = dirs::home_dir().map(|h| h.join(".ssh")) {
         if ssh_dir.exists() {
             if let Ok(entries) = fs::read_dir(&ssh_dir) {
                 for entry in entries.flatten() {
                     let path = entry.path();
-                    if path.is_file()
-                        && path.extension().is_none_or(|ext| {
+                    if path.is_file() {
+                        let filename = path.file_name().unwrap_or_default().to_string_lossy();
+                        if filename.starts_with("id_dsa") {
+                            findings.push(AuditFinding {
+                                severity: AuditSeverity::Warning,
+                                title: format!("Deprecated Weak Key Algorithm: {}", filename),
+                                description: format!("Key file {} uses DSA, which is cryptographically weak and deprecated in OpenSSH.", path.display()),
+                                remediation: "Migrate to Ed25519 or RSA-4096 using 'bssh key generate'.".into(),
+                            });
+                        }
+
+                        if path.extension().is_none_or(|ext| {
                             ext != "pub" && ext != "known_hosts" && ext != "config"
-                        })
-                    {
-                        if let Ok(meta) = fs::metadata(&path) {
-                            let mode = meta.permissions().mode() & 0o777;
-                            if mode != 0o600 {
-                                findings.push(AuditFinding {
-                                    severity: AuditSeverity::Warning,
-                                    title: format!(
-                                        "Insecure Private Key Permissions: {}",
-                                        path.file_name().unwrap_or_default().to_string_lossy()
-                                    ),
-                                    description: format!(
-                                        "Key file {} mode is {:04o} (expected 0600).",
-                                        path.display(),
-                                        mode
-                                    ),
-                                    remediation: format!("Run 'chmod 600 {}'", path.display()),
-                                });
+                        }) {
+                            if let Ok(meta) = fs::metadata(&path) {
+                                let mode = meta.permissions().mode() & 0o777;
+                                if mode != 0o600 {
+                                    findings.push(AuditFinding {
+                                        severity: AuditSeverity::Warning,
+                                        title: format!(
+                                            "Insecure Private Key Permissions: {}",
+                                            filename
+                                        ),
+                                        description: format!(
+                                            "Key file {} mode is {:04o} (expected 0600).",
+                                            path.display(),
+                                            mode
+                                        ),
+                                        remediation: format!(
+                                            "Run 'bssh audit --fix' or 'chmod 600 {}'",
+                                            path.display()
+                                        ),
+                                    });
+                                }
                             }
                         }
                     }
@@ -186,4 +208,43 @@ pub async fn execute(config: AppConfig) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Automatically repair overly permissive permissions for bssh config dirs, database files, and SSH keys.
+pub fn fix_permissions(config: &AppConfig) -> Result<usize> {
+    let mut count = 0;
+
+    let config_dir = dirs::config_dir()
+        .unwrap_or_else(|| PathBuf::from("~/.config"))
+        .join("bayesian-ssh");
+    if config_dir.exists() {
+        crate::config::enforce_secure_dir(&config_dir);
+        count += 1;
+    }
+
+    if config.database_path.exists() {
+        crate::config::enforce_secure_file(&config.database_path);
+        count += 1;
+    }
+
+    if let Some(ssh_dir) = dirs::home_dir().map(|h| h.join(".ssh")) {
+        if ssh_dir.exists() {
+            crate::config::enforce_secure_dir(&ssh_dir);
+            if let Ok(entries) = fs::read_dir(&ssh_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_file()
+                        && path.extension().is_none_or(|ext| {
+                            ext != "pub" && ext != "known_hosts" && ext != "config"
+                        })
+                    {
+                        crate::config::enforce_secure_file(&path);
+                        count += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(count)
 }

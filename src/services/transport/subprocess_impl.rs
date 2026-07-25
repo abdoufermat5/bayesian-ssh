@@ -30,6 +30,9 @@ impl SubprocessTransport {
     /// instead.
     pub(crate) fn build_exec_argv(conn: &Connection, command: &str) -> Vec<String> {
         let mut argv: Vec<String> = vec!["ssh".into()];
+        argv.push("-tt".into());
+        argv.push("-o".into());
+        argv.push("RequestTTY=force".into());
         if conn.use_kerberos {
             argv.push("-K".into());
         }
@@ -38,14 +41,20 @@ impl SubprocessTransport {
             argv.push(key.clone());
         }
         argv.push("-o".into());
-        argv.push("BatchMode=yes".into());
-        argv.push("-o".into());
         argv.push("StrictHostKeyChecking=accept-new".into());
 
         if let Some(bastion) = &conn.bastion {
             let bu = conn.bastion_user.as_deref().unwrap_or(&conn.user);
-            argv.push("-J".into());
-            argv.push(format!("{bu}@{bastion}"));
+            let key_flag = if let Some(k) = &conn.key_path {
+                format!(" -i {k}")
+            } else {
+                String::new()
+            };
+            let proxy_cmd = format!(
+                "ssh -tt -o RequestTTY=force{key_flag} -o StrictHostKeyChecking=accept-new -W %h:%p {bu}@{bastion}"
+            );
+            argv.push("-o".into());
+            argv.push(format!("ProxyCommand={proxy_cmd}"));
         }
         argv.push("-p".into());
         argv.push(conn.port.to_string());
@@ -58,11 +67,13 @@ impl SubprocessTransport {
     ///
     /// When Kerberos + bastion are both active the bastion is an *interactive*
     /// bastion: we SSH into it and pass `target_user@target` as argument.
-    /// Without Kerberos the bastion is a classic jump host and `-J` is used.
+    /// Without Kerberos the bastion is a classic jump host using ProxyCommand with forced TTY.
     pub fn build_shell_argv(conn: &Connection) -> Vec<String> {
         let mut argv: Vec<String> = vec!["ssh".into()];
-        // Force remote TTY allocation so vim/nano/htop work even when ssh config sets RequestTTY=no
+        // Force remote TTY allocation even when stdin is not a terminal (e.g. GUI background process)
         argv.push("-tt".into());
+        argv.push("-o".into());
+        argv.push("RequestTTY=force".into());
         if conn.use_kerberos {
             argv.push("-A".into());
             argv.push("-K".into());
@@ -81,9 +92,17 @@ impl SubprocessTransport {
                 argv.push(format!("{bu}@{bastion}"));
                 argv.push(format!("{}@{}", conn.user, conn.host));
             } else {
-                // Jump host: transparent forwarding via -J.
-                argv.push("-J".into());
-                argv.push(format!("{bu}@{bastion}"));
+                // ProxyCommand with forced TTY allocation on the bastion connection
+                let key_flag = if let Some(k) = &conn.key_path {
+                    format!(" -i {k}")
+                } else {
+                    String::new()
+                };
+                let proxy_cmd = format!(
+                    "ssh -tt -o RequestTTY=force{key_flag} -o StrictHostKeyChecking=accept-new -W %h:%p {bu}@{bastion}"
+                );
+                argv.push("-o".into());
+                argv.push(format!("ProxyCommand={proxy_cmd}"));
                 argv.push("-p".into());
                 argv.push(conn.port.to_string());
                 argv.push(format!("{}@{}", conn.user, conn.host));
@@ -273,8 +292,7 @@ impl SshTransport for SubprocessTransport {
     }
 
     async fn exec(&self, conn: &Connection, command: &str) -> Result<ExecOutput, TransportError> {
-        // Interactive bastions cannot pass a remote command in the SSH argv.
-        // Delegate to the interactive exec path which pipes it via stdin.
+        // Interactive bastions (Kerberos + bastion) cannot pass a remote command in the SSH argv.
         if conn.use_kerberos && conn.bastion.is_some() {
             return self.run_interactive_exec(conn, command).await;
         }
@@ -290,6 +308,20 @@ impl SshTransport for SubprocessTransport {
             .output()
             .await
             .map_err(|e| TransportError::permanent(anyhow::Error::from(e)))?;
+
+        let stdout_str = String::from_utf8_lossy(&output.stdout);
+        let stderr_str = String::from_utf8_lossy(&output.stderr);
+
+        // Fallback to interactive execution if server complains about missing TTY
+        if stdout_str.contains("option -t")
+            || stderr_str.contains("option -t")
+            || stdout_str.contains("l'option -t")
+            || stderr_str.contains("l'option -t")
+            || stdout_str.contains("pseudo-terminal")
+            || stderr_str.contains("pseudo-terminal")
+        {
+            return self.run_interactive_exec(conn, command).await;
+        }
 
         Ok(ExecOutput {
             stdout: output.stdout,
@@ -426,6 +458,11 @@ impl SubprocessTransport {
     }
 }
 
+/// Safely quote a string for POSIX shell execution within single quotes.
+pub fn shell_quote_single(input: &str) -> String {
+    format!("'{}'", input.replace('\'', r"'\''"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -464,23 +501,20 @@ mod tests {
     }
 
     #[test]
-    fn argv_bastion_uses_j_flag() {
+    fn argv_bastion_uses_proxy_command() {
         let argv =
             SubprocessTransport::build_exec_argv(&c(false, Some("b.example"), None), "uptime");
-        assert!(argv.contains(&"-J".to_string()));
-        assert!(argv.contains(&"alice@b.example".to_string()));
+        assert!(argv.iter().any(|a| a.contains("ProxyCommand=")));
+        assert!(argv.iter().any(|a| a.contains("alice@b.example")));
     }
 
     #[test]
-    fn argv_kerberos_bastion_still_uses_j_flag() {
-        // build_exec_argv is only used for non-interactive-bastion paths,
-        // but verify it produces valid argv even when called with kerberos+bastion.
-        // At runtime, the exec trait method short-circuits to run_interactive_exec instead.
+    fn argv_kerberos_bastion_uses_proxy_command() {
         let argv =
             SubprocessTransport::build_exec_argv(&c(true, Some("b.example"), None), "ls -l /tmp");
-        assert!(argv.contains(&"-J".to_string()));
+        assert!(argv.iter().any(|a| a.contains("ProxyCommand=")));
         assert!(argv.contains(&"-K".to_string()));
-        assert!(argv.contains(&"alice@b.example".to_string()));
+        assert!(argv.iter().any(|a| a.contains("alice@b.example")));
         assert!(argv.contains(&"ls -l /tmp".to_string()));
     }
 
@@ -517,9 +551,4 @@ mod tests {
         );
         assert_eq!(shell_quote_single("foo; rm -rf /"), "'foo; rm -rf /'");
     }
-}
-
-/// Safely quote a string for POSIX shell execution within single quotes.
-pub fn shell_quote_single(input: &str) -> String {
-    format!("'{}'", input.replace('\'', r"'\''"))
 }

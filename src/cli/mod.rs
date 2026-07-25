@@ -1,7 +1,7 @@
 use crate::config::AppConfig;
 use anyhow::Result;
 
-mod commands;
+pub mod commands;
 pub mod parser;
 pub mod utils;
 
@@ -67,8 +67,8 @@ impl Cli {
                 recent,
                 detailed,
             } => commands::list::execute(tag, recent, detailed, config).await,
-            Commands::Remove { target, force } => {
-                commands::remove::execute(target, force, config).await
+            Commands::Remove { target, tag, force } => {
+                commands::remove::execute(target, tag, force, config).await
             }
             Commands::Show { target } => commands::show::execute(target, config).await,
             Commands::Edit {
@@ -126,7 +126,7 @@ impl Cli {
                 .await
             }
             Commands::Stats => commands::stats::execute(config).await,
-            Commands::Audit => commands::audit::execute(config).await,
+            Commands::Audit { fix } => commands::audit::execute(fix, config).await,
             Commands::Key { command } => match command {
                 parser::KeyCommands::List => commands::key::execute_list().await,
                 parser::KeyCommands::Generate { name, key_type } => {
@@ -150,9 +150,12 @@ impl Cli {
             Commands::Duplicate { source, new_name } => {
                 commands::duplicate::execute(source, new_name, config).await
             }
-            Commands::Ping { target, timeout } => {
-                commands::ping::execute(target, timeout, config).await
-            }
+            Commands::Ping {
+                target,
+                all,
+                tag,
+                timeout,
+            } => commands::ping::execute(target, all, tag, timeout, config).await,
             Commands::Groups { group_name } => commands::groups::execute(group_name, config).await,
             Commands::Env { command } => commands::env::execute(command).await,
             Commands::Import {
@@ -169,9 +172,13 @@ impl Cli {
             } => commands::history::execute(connection, limit, days, failed, config).await,
             Commands::Tui => commands::tui::execute(config).await,
             Commands::Desktop => commands::desktop::execute(config).await,
-            Commands::Exec { target, command } => {
-                commands::exec::execute(target, command, config).await
-            }
+            Commands::Exec {
+                target,
+                all,
+                tag,
+                dry_run,
+                command,
+            } => commands::exec::execute(target, all, tag, dry_run, command, config).await,
             Commands::Upload {
                 target,
                 local,

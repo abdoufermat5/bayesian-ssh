@@ -457,3 +457,59 @@ pub fn import_connections_payload(
 
     Err("Import file is not a valid JSON connection backup or payload".to_string())
 }
+
+#[tauri::command]
+pub fn fix_security_permissions() -> Result<usize, String> {
+    let config = AppConfig::load(None).map_err(|e| e.to_string())?;
+    bayesian_ssh::cli::commands::audit::fix_permissions(&config).map_err(|e| e.to_string())
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct PingResultDto {
+    pub connection_id: String,
+    pub name: String,
+    pub host: String,
+    pub success: bool,
+    pub latency_ms: u64,
+    pub error: Option<String>,
+}
+
+#[tauri::command]
+pub async fn ping_all_connections() -> Result<Vec<PingResultDto>, String> {
+    let config = AppConfig::load(None).map_err(|e| e.to_string())?;
+    let database = Database::new(&config).map_err(|e| e.to_string())?;
+    let connections = database.list_connections(None, false).map_err(|e| e.to_string())?;
+
+    let mut results = Vec::new();
+    for conn in connections {
+        let start = std::time::Instant::now();
+        let status = tokio::process::Command::new("ssh")
+            .args([
+                "-o", "BatchMode=yes",
+                "-o", "ConnectTimeout=3",
+                "-p", &conn.port.to_string(),
+                &format!("{}@{}", conn.user, conn.host),
+                "exit 0",
+            ])
+            .status()
+            .await;
+
+        let duration = start.elapsed().as_millis() as u64;
+        let (success, err) = match status {
+            Ok(s) if s.success() => (true, None),
+            Ok(s) => (false, Some(format!("Exit status: {}", s))),
+            Err(e) => (false, Some(e.to_string())),
+        };
+
+        results.push(PingResultDto {
+            connection_id: conn.id.to_string(),
+            name: conn.name,
+            host: conn.host,
+            success,
+            latency_ms: duration,
+            error: err,
+        });
+    }
+
+    Ok(results)
+}

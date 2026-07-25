@@ -5,6 +5,29 @@ All notable changes to Bayesian SSH will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-07-25
+
+### Added
+- **GUI Multi-Host Batch Execution (`Batch Exec` modal)**: Select any subset of registered hosts, optionally filter by name/tag/user, enter a remote command, and run it in parallel across all targets directly from the desktop UI. Results are displayed per-host in a tabbed output inspector with exit code, duration, stdout/stderr panels, and one-click copy.
+- **Batch Exec: Dry-Run Safety Mode** (enabled by default): Preview which hosts would be targeted and what command would be sent — without executing any remote code. Production hosts are highlighted with amber `PROD` badges and a warning banner is shown when live execution targets production servers.
+- **Resizable & Fullscreen Batch Exec Modal**: The Batch Exec dialog is now resizable via a drag handle in the bottom-right corner, and can be maximized to fill the entire viewport via the maximize button (⤢) in the title bar. Pressing `Escape` dismisses the dialog from keyboard.
+- **SSH Agent & Environment Auto-Discovery on Desktop Launch**: When launched from an app icon (where the shell environment is not inherited), the desktop app now uses a three-strategy bootstrap:
+  1. `systemctl --user show-environment` for session-level vars (`DISPLAY`, `DBUS_SESSION_BUS_ADDRESS`, `XDG_RUNTIME_DIR`).
+  2. Login-shell `env` output (picks up `.profile`/`.zprofile` exports: nvm, cargo, pyenv, etc.).
+  3. Active `/proc` scan + `/tmp/ssh-*/agent.*` glob to locate a running `ssh-agent` socket that is not published to the systemd environment — and write it back to `systemctl --user set-environment` for child processes.
+- **Single-Instance Enforcement**: Launching the app a second time brings the existing window to the foreground instead of opening a duplicate.
+- **`get_env_status` Tauri command**: Returns `ssh_agent_available`, `ssh_auth_sock`, `kerberos_available`, and a human-readable `warnings` list. The Batch Exec modal uses this to display a **dismissible amber warning banner** when the SSH agent socket is not found at startup.
+
+### Fixed
+- **Bastion Host TTY Allocation in GUI subprocess**: Replaced `-J` (ProxyJump) with an explicit `ProxyCommand` that carries `-tt -o RequestTTY=force` on the bastion hop. This ensures the bastion security policy (`[ -t 1 ]` check) is satisfied even when the SSH subprocess is launched from a GUI process where stdin is not a terminal — resolving `"Veuillez ajouter l'option -t à votre commande SSH"` errors.
+- **Multiselect unselect regression in Batch Exec**: Replaced the `$effect` length-zero guard (which re-selected all hosts on clear) with an `initialized` boolean flag — allowing users to freely unselect individual hosts or use the Clear button without triggering auto-reselection.
+- **Clippy lints**: Fixed `clippy::field_reassign_with_default` in `database/search.rs` and `clippy::items_after_test_module` in `transport/subprocess_impl.rs`.
+- **Svelte a11y**: Fixed three accessibility warnings in `BatchExecModal.svelte` — added `tabindex="-1"` to the dialog wrapper, keyboard handler (`Escape`) to the backdrop, and `role="separator"` + `tabindex="0"` to the resize handle.
+
+### Changed
+- `build_exec_argv` and `build_shell_argv` now use `ProxyCommand` with forced TTY for all non-Kerberos bastion connections (previously used `-J`).
+- SSH agent warning banner in Batch Exec modal is **dismissible** — click ✕ to hide it for the session.
+
 ## [2.2.0] - 2026-07-25
 
 ### Added
