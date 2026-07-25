@@ -45,6 +45,29 @@ pub enum EnvCommands {
 }
 
 #[derive(Subcommand)]
+pub enum KeyCommands {
+    /// List local SSH keys in ~/.ssh/ with fingerprints and permission checks
+    List,
+    /// Generate a new SSH keypair (Ed25519 or RSA) with secure permissions
+    Generate {
+        /// Name of key file (e.g. id_ed25519 or my_company_key)
+        #[arg(short = 'n', long)]
+        name: String,
+        /// Key type: ed25519 or rsa (default: ed25519)
+        #[arg(short = 't', long, value_name = "TYPE")]
+        key_type: Option<String>,
+    },
+    /// Copy public key to remote server (~/.ssh/authorized_keys)
+    Copy {
+        /// Connection name or alias target
+        target: String,
+        /// Path to public key file (default: autodetect ~/.ssh/id_*.pub)
+        #[arg(short = 'k', long, value_name = "FILE")]
+        key: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum Commands {
     /// Connect to a saved server (supports fuzzy name matching)
     #[command(long_about = "Open an SSH session to a saved connection.\n\n\
@@ -241,6 +264,15 @@ pub enum Commands {
     /// Show usage statistics (total connections, sessions, top hosts)
     Stats,
 
+    /// Audit security configuration, host keys, key permissions, and connection health
+    Audit,
+
+    /// Manage SSH keys (list, generate, copy public keys to remote servers)
+    Key {
+        #[command(subcommand)]
+        command: KeyCommands,
+    },
+
     /// Export connections to a file or stdout
     #[command(
         long_about = "Serialize saved connections to JSON, TOML, or OpenSSH config format.\n\n\
@@ -260,6 +292,9 @@ pub enum Commands {
         /// Export only connections matching this tag
         #[arg(short = 't', long, value_name = "TAG")]
         tag: Option<String>,
+        /// Encrypt export payload with a secret passphrase
+        #[arg(short = 'p', long, value_name = "PASSPHRASE")]
+        passphrase: Option<String>,
     },
 
     /// Backup the connection database to a file
@@ -323,22 +358,25 @@ pub enum Commands {
         group_name: Option<String>,
     },
 
-    /// Import SSH hosts from an OpenSSH config file
+    /// Import SSH hosts from an OpenSSH config file or encrypted JSON backup
     #[command(
-        long_about = "Parse an OpenSSH config file and import each Host block as a connection.\n\
+        long_about = "Parse an OpenSSH config file or encrypted JSON backup and import each host as a connection.\n\
             Defaults to ~/.ssh/config when --file is omitted.\n\n\
             Examples:\n\
               bssh import\n\
-              bssh import -f /etc/ssh/ssh_config\n\
+              bssh import -f backup.enc --passphrase secret\n\
               bssh import --no-bastion"
     )]
     Import {
-        /// Path to the SSH config file (default: ~/.ssh/config)
+        /// Path to the SSH config file or backup file (default: ~/.ssh/config)
         #[arg(short = 'f', long, value_name = "FILE")]
         file: Option<String>,
         /// Import all hosts as direct connections (ignore ProxyJump)
         #[arg(long)]
         no_bastion: bool,
+        /// Passphrase to decrypt encrypted backup file
+        #[arg(short = 'p', long, value_name = "PASSPHRASE")]
+        passphrase: Option<String>,
     },
 
     /// Manage multi-environment profiles (separate connection databases)

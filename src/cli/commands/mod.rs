@@ -1,5 +1,6 @@
 pub mod add;
 pub mod alias;
+pub mod audit;
 pub mod backup;
 pub mod close;
 pub mod completions;
@@ -16,6 +17,7 @@ pub mod forward;
 pub mod groups;
 pub mod history;
 pub mod import;
+pub mod key;
 pub mod list;
 pub mod ping;
 pub mod proxy;

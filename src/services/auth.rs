@@ -168,9 +168,11 @@ mod tests {
         assert_eq!(count, 1);
     }
 
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn agent_socket_from_env() {
-        // Set env var and verify it is used when no config override
+        let _guard = ENV_LOCK.lock().unwrap();
         std::env::set_var("SSH_AUTH_SOCK", "/tmp/agent.sock");
         let cfg = AuthConfig::default();
         let sock = agent_socket_path(&cfg);
@@ -180,6 +182,7 @@ mod tests {
 
     #[test]
     fn agent_socket_config_overrides_env() {
+        let _guard = ENV_LOCK.lock().unwrap();
         std::env::set_var("SSH_AUTH_SOCK", "/tmp/env.sock");
         let cfg = AuthConfig {
             agent_socket: Some(PathBuf::from("/tmp/cfg.sock")),

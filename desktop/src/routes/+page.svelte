@@ -9,6 +9,8 @@
   import ConnectionsView from "$lib/components/ConnectionsView.svelte";
   import TerminalsView from "$lib/components/TerminalsView.svelte";
   import HistoryView from "$lib/components/HistoryView.svelte";
+  import KeysView from "$lib/components/KeysView.svelte";
+  import AuditView from "$lib/components/AuditView.svelte";
   import SettingsView from "$lib/components/SettingsView.svelte";
   import ConnectionModal from "$lib/components/modals/ConnectionModal.svelte";
   import EnvModal from "$lib/components/modals/EnvModal.svelte";
@@ -124,7 +126,7 @@
   class="flex flex-col flex-1 w-full h-[100dvh] min-h-0 overflow-hidden bg-surface"
   class:is-fullscreen={windowState.isFullscreen}
 >
-  <TitleBar activeEnv={appState.activeEnv} onQuit={appState.requestQuitApp} />
+  <TitleBar activeEnv={appState.activeEnv} />
 
   <div class="flex flex-1 min-h-0 w-full bg-surface overflow-hidden">
     <Sidebar
@@ -342,6 +344,18 @@
         {#if appState.activeTab === "history"}
           <div class="absolute inset-0 flex flex-col min-h-0 overflow-hidden transition-all duration-200 {appState.activeTab === 'history' ? 'opacity-100 visible pointer-events-auto z-10' : 'opacity-0 invisible pointer-events-none z-0'}">
             <HistoryView history={appState.history} timezone={appState.settings.timezone} />
+          </div>
+        {/if}
+
+        {#if appState.activeTab === "keys"}
+          <div class="absolute inset-0 flex flex-col min-h-0 overflow-hidden transition-all duration-200 {appState.activeTab === 'keys' ? 'opacity-100 visible pointer-events-auto z-10' : 'opacity-0 invisible pointer-events-none z-0'}">
+            <KeysView connections={appState.connections} />
+          </div>
+        {/if}
+
+        {#if appState.activeTab === "audit"}
+          <div class="absolute inset-0 flex flex-col min-h-0 overflow-hidden transition-all duration-200 {appState.activeTab === 'audit' ? 'opacity-100 visible pointer-events-auto z-10' : 'opacity-0 invisible pointer-events-none z-0'}">
+            <AuditView />
           </div>
         {/if}
 

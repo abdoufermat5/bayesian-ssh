@@ -58,7 +58,7 @@ export function attachOrphanCompositionEndGuard(
     pendingRestore = null;
     if (event.target !== target) return;
     target.value = value;
-    if (deliver) {
+    if (deliver && typeof deliverOrphanData === "function") {
       deliverOrphanData(deliver);
     }
   };

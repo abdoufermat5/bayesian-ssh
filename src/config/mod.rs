@@ -95,8 +95,10 @@ impl AppConfig {
             .unwrap_or_else(|| PathBuf::from("~/.config"))
             .join("bayesian-ssh");
         std::fs::create_dir_all(&config_dir)?;
+        enforce_secure_dir(&config_dir);
         let env_file = config_dir.join("active_env");
-        std::fs::write(env_file, env)?;
+        std::fs::write(&env_file, env)?;
+        enforce_secure_file(&env_file);
         Ok(())
     }
 
@@ -104,6 +106,7 @@ impl AppConfig {
         let default_env_dir = config_dir.join("environments").join("default");
         if !default_env_dir.exists() {
             std::fs::create_dir_all(&default_env_dir)?;
+            enforce_secure_dir(&default_env_dir);
 
             let legacy_config = config_dir.join("config.json");
             if legacy_config.exists() {
@@ -124,11 +127,13 @@ impl AppConfig {
             .join("bayesian-ssh");
 
         std::fs::create_dir_all(&config_dir)?;
+        enforce_secure_dir(&config_dir);
         Self::migrate_legacy_config(&config_dir)?;
 
         let environment = env_override.unwrap_or_else(Self::get_active_env);
         let env_dir = config_dir.join("environments").join(&environment);
         std::fs::create_dir_all(&env_dir)?;
+        enforce_secure_dir(&env_dir);
 
         let config_file = env_dir.join("config.json");
 
@@ -183,10 +188,13 @@ impl AppConfig {
 
         let env_dir = config_dir.join("environments").join(&self.environment);
         std::fs::create_dir_all(&env_dir)?;
+        enforce_secure_dir(&config_dir);
+        enforce_secure_dir(&env_dir);
 
         let config_file = env_dir.join("config.json");
         let content = serde_json::to_string_pretty(self)?;
-        std::fs::write(config_file, content)?;
+        std::fs::write(&config_file, content)?;
+        enforce_secure_file(&config_file);
 
         Ok(())
     }
@@ -237,4 +245,22 @@ pub struct AppConfigUpdates {
     pub auto_save_history: Option<bool>,
     pub max_history_size: Option<usize>,
     pub search_mode: Option<String>,
+}
+
+pub fn enforce_secure_dir(path: &std::path::Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700));
+    }
+    let _ = path;
+}
+
+pub fn enforce_secure_file(path: &std::path::Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+    }
+    let _ = path;
 }

@@ -29,6 +29,7 @@ pub async fn execute(
     format: Option<String>,
     output: Option<String>,
     tag: Option<String>,
+    passphrase: Option<String>,
     config: AppConfig,
 ) -> Result<()> {
     let format = format
@@ -51,6 +52,13 @@ pub async fn execute(
         ExportFormat::SshConfig => generate_ssh_config(&connections),
     };
 
+    let final_bytes = if let Some(ref pass) = passphrase {
+        println!("🔒 Encrypting export with passphrase...");
+        crate::services::crypto::encrypt_data(exported_content.as_bytes(), pass)?
+    } else {
+        exported_content.into_bytes()
+    };
+
     if let Some(output_path) = output {
         let expanded_path = expand_tilde(&output_path);
         let path = std::path::Path::new(&expanded_path);
@@ -62,7 +70,8 @@ pub async fn execute(
         }
 
         let mut file = File::create(&expanded_path).context("Failed to create output file")?;
-        file.write_all(exported_content.as_bytes())?;
+        file.write_all(&final_bytes)?;
+        crate::config::enforce_secure_file(path);
         info!(
             "Exported {} connections to {}",
             connections.len(),
@@ -73,8 +82,10 @@ pub async fn execute(
             connections.len(),
             expanded_path
         );
+    } else if passphrase.is_some() {
+        return Err(anyhow::anyhow!("--passphrase requires --output file path"));
     } else {
-        println!("{}", exported_content);
+        println!("{}", String::from_utf8_lossy(&final_bytes));
     }
 
     Ok(())

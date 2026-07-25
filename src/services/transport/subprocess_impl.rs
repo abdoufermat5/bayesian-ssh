@@ -507,4 +507,17 @@ mod tests {
         assert!(argv.contains(&"-tt".to_string()));
         assert!(argv.contains(&"-K".to_string()));
     }
+
+    #[test]
+    fn test_shell_quote_single() {
+        assert_eq!(shell_quote_single("hello"), "'hello'");
+        assert_eq!(shell_quote_single("hello 'world'"), r"'hello '\''world'\'''");
+        assert_eq!(shell_quote_single("foo; rm -rf /"), "'foo; rm -rf /'");
+    }
 }
+
+/// Safely quote a string for POSIX shell execution within single quotes.
+pub fn shell_quote_single(input: &str) -> String {
+    format!("'{}'", input.replace('\'', r"'\''"))
+}
+

@@ -126,11 +126,22 @@ impl Cli {
                 .await
             }
             Commands::Stats => commands::stats::execute(config).await,
+            Commands::Audit => commands::audit::execute(config).await,
+            Commands::Key { command } => match command {
+                parser::KeyCommands::List => commands::key::execute_list().await,
+                parser::KeyCommands::Generate { name, key_type } => {
+                    commands::key::execute_generate(name, key_type).await
+                }
+                parser::KeyCommands::Copy { target, key } => {
+                    commands::key::execute_copy(config, target, key).await
+                }
+            },
             Commands::Export {
                 format,
                 output,
                 tag,
-            } => commands::export::execute(format, output, tag, config).await,
+                passphrase,
+            } => commands::export::execute(format, output, tag, passphrase, config).await,
             Commands::Backup { output } => commands::backup::execute(output, config).await,
             Commands::Doctor => commands::doctor::execute(config).await,
             Commands::Restore { file, force } => {
@@ -144,9 +155,11 @@ impl Cli {
             }
             Commands::Groups { group_name } => commands::groups::execute(group_name, config).await,
             Commands::Env { command } => commands::env::execute(command).await,
-            Commands::Import { file, no_bastion } => {
-                commands::import::execute(file, no_bastion, config).await
-            }
+            Commands::Import {
+                file,
+                no_bastion,
+                passphrase,
+            } => commands::import::execute(file, no_bastion, passphrase, config).await,
             Commands::Completions { shell } => commands::completions::execute(shell, config).await,
             Commands::History {
                 connection,

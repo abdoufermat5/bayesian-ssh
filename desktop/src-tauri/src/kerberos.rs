@@ -39,15 +39,11 @@ impl Krb5Config {
 }
 
 fn resolve_command(name: &str) -> Option<PathBuf> {
-    if let Ok(output) = Command::new("sh")
-        .arg("-c")
-        .arg(format!("command -v {name}"))
-        .output()
-    {
-        if output.status.success() {
-            let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path_str.is_empty() {
-                return Some(PathBuf::from(path_str));
+    if let Some(path) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path) {
+            let candidate = dir.join(name);
+            if candidate.is_file() {
+                return Some(candidate);
             }
         }
     }
@@ -66,7 +62,7 @@ fn resolve_command(name: &str) -> Option<PathBuf> {
         "/opt/local/sbin",
     ] {
         let full_path = PathBuf::from(path).join(name);
-        if full_path.exists() {
+        if full_path.is_file() {
             return Some(full_path);
         }
     }

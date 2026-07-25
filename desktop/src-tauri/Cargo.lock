@@ -1191,6 +1191,7 @@ dependencies = [
 name = "desktop"
 version = "2.1.2"
 dependencies = [
+ "base64 0.22.1",
  "bayesian-ssh",
  "chrono",
  "dirs 5.0.1",
@@ -1199,6 +1200,7 @@ dependencies = [
  "rfd",
  "serde",
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",

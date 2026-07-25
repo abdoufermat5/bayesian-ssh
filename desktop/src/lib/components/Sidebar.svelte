@@ -128,6 +128,8 @@
       {#each [
         { tab: "connections" as AppTab, icon: Server, label: "Hosts" },
         { tab: "terminals" as AppTab, icon: TerminalSquare, label: "Terminals" },
+        { tab: "keys" as AppTab, icon: KeyRound, label: "Keys" },
+        { tab: "audit" as AppTab, icon: ShieldCheck, label: "Audit" },
         { tab: "history" as AppTab, icon: Clock, label: "Logs" },
         { tab: "settings" as AppTab, icon: Settings, label: "Settings" },
       ] as item}

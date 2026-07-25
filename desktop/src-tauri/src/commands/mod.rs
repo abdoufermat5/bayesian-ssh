@@ -18,6 +18,7 @@ pub mod env;
 pub mod history;
 pub mod import;
 pub mod pty;
+pub mod security;
 pub mod settings;
 
 pub use agent::*;
@@ -28,6 +29,7 @@ pub use env::*;
 pub use history::*;
 pub use import::*;
 pub use pty::*;
+pub use security::*;
 pub use settings::*;
 
 // State for active PTY sessions

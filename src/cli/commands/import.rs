@@ -3,8 +3,13 @@ use crate::services::SshService;
 use anyhow::Result;
 use tracing::info;
 
-pub async fn execute(file: Option<String>, no_bastion: bool, config: AppConfig) -> Result<()> {
-    let ssh_config_path = if let Some(file) = file {
+pub async fn execute(
+    file: Option<String>,
+    no_bastion: bool,
+    passphrase: Option<String>,
+    config: AppConfig,
+) -> Result<()> {
+    let target_path = if let Some(file) = file {
         std::path::PathBuf::from(file)
     } else {
         config.ssh_config_path.clone().unwrap_or_else(|| {
@@ -14,18 +19,52 @@ pub async fn execute(file: Option<String>, no_bastion: bool, config: AppConfig) 
         })
     };
 
-    info!(
-        "Importing connections from SSH config: {:?}",
-        ssh_config_path
-    );
+    info!("Importing connections from file: {:?}", target_path);
 
-    if !ssh_config_path.exists() {
-        println!("❌ SSH config file not found: {:?}", ssh_config_path);
+    if !target_path.exists() {
+        println!("❌ Import file not found: {:?}", target_path);
         return Ok(());
     }
 
+    let raw_bytes = std::fs::read(&target_path)?;
+
+    // Check if encrypted or if passphrase is provided
+    let content_bytes = if raw_bytes.starts_with(b"BSSH") || passphrase.is_some() {
+        let pass = passphrase.ok_or_else(|| anyhow::anyhow!("File is encrypted with passphrase. Please provide --passphrase <secret>"))?;
+        println!("🔓 Decrypting import file with passphrase...");
+        crate::services::crypto::decrypt_data(&raw_bytes, &pass)?
+    } else {
+        raw_bytes
+    };
+
+    let content_str = String::from_utf8_lossy(&content_bytes);
     let ssh_service = SshService::new(config)?;
-    let content = std::fs::read_to_string(&ssh_config_path)?;
+
+    // Try parsing as JSON array of Connection models first
+    if let Ok(connections) = serde_json::from_str::<Vec<crate::models::Connection>>(&content_str) {
+        let mut count = 0;
+        for conn in connections {
+            ssh_service
+                .add_connection(
+                    conn.name,
+                    conn.host,
+                    Some(conn.user),
+                    Some(conn.port),
+                    Some(conn.use_kerberos),
+                    conn.bastion,
+                    no_bastion,
+                    conn.bastion_user,
+                    conn.key_path,
+                    conn.tags,
+                )
+                .await?;
+            count += 1;
+        }
+        println!("✅ Imported {} connection(s) from JSON backup.", count);
+        return Ok(());
+    }
+
+    let content = content_str;
 
     let mut imported_count = 0;
     let mut current_host: Option<String> = None;

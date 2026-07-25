@@ -75,5 +75,33 @@ export interface OnboardingPayload {
   fuzzy_search: boolean;
 }
 
-export type AppTab = "connections" | "terminals" | "history" | "settings";
+export type AppTab = "connections" | "terminals" | "history" | "keys" | "audit" | "settings";
 export type NotificationType = "success" | "error" | "info";
+
+export interface SshKeyInfo {
+  name: string;
+  key_type: string;
+  fingerprint: string;
+  comment: string;
+  public_key_path: string;
+  private_key_path?: string;
+  private_key_permission: string;
+  is_secure: boolean;
+}
+
+export interface AuditFinding {
+  severity: "critical" | "warning" | "info";
+  title: string;
+  description: string;
+  remediation: string;
+}
+
+export interface AuditReport {
+  score: number;
+  grade: string;
+  rating: string;
+  findings: AuditFinding[];
+  total_critical: number;
+  total_warning: number;
+  total_info: number;
+}

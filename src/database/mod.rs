@@ -16,9 +16,12 @@ impl Database {
         // Ensure database directory exists
         if let Some(parent) = config.database_path.parent() {
             std::fs::create_dir_all(parent)?;
+            crate::config::enforce_secure_dir(parent);
         }
 
         let conn = SqliteConnection::open(&config.database_path)?;
+        crate::config::enforce_secure_file(&config.database_path);
+
         let db = Database { conn };
         db.init()?;
 

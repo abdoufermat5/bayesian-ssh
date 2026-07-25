@@ -88,6 +88,12 @@ pub fn run() {
             import_ssh_config,
             pick_ssh_config_file,
             quit_app,
+            commands::list_ssh_keys,
+            commands::generate_ssh_key,
+            commands::copy_ssh_key_to_target,
+            commands::run_security_audit,
+            commands::export_connections_payload,
+            commands::import_connections_payload,
             tray::refresh_tray_menu,
             tray::send_desktop_notification
         ])
