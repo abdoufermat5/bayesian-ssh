@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ChevronLeft, ChevronRight, FolderOpen, Sparkles, TerminalSquare } from "lucide-svelte";
   import type { OnboardingPayload } from "$lib/types";
+  import CustomSelect from "$lib/components/ui/CustomSelect.svelte";
 
   interface Props {
     defaultUser: string;
@@ -226,16 +227,16 @@
 
           <div class="flex flex-col gap-1.5">
             <label for="onboard-theme" class="text-[11px] font-semibold text-muted uppercase tracking-wider pl-0.5">Theme</label>
-            <select
+            <CustomSelect
               id="onboard-theme"
-              class="bg-surface-input border border-border text-primary py-2 px-3 rounded-lg outline-none text-[13px] cursor-pointer transition-all duration-100 hover:border-border-hover focus:border-border-focus focus:shadow-[0_0_0_3px_rgba(59,130,246,0.12)] w-full"
+              options={[
+                { value: "zinc", label: "Slate Minimalist (Zinc)" },
+                { value: "cyberpunk", label: "Cyberpunk Cyan (Neon Glow)" },
+                { value: "oled", label: "OLED Pitch Black" },
+                { value: "slate", label: "Sleek Navy (Slate)" }
+              ]}
               bind:value={theme}
-            >
-              <option value="zinc">Slate Minimalist (Zinc)</option>
-              <option value="cyberpunk">Cyberpunk Cyan (Neon Glow)</option>
-              <option value="oled">OLED Pitch Black</option>
-              <option value="slate">Sleek Navy (Slate)</option>
-            </select>
+            />
           </div>
 
           <label class="flex items-center gap-2 text-[13px] cursor-pointer select-none text-secondary py-1">

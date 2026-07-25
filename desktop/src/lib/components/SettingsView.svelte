@@ -202,16 +202,12 @@
           <label for="settings-profile" class="text-xs font-semibold text-secondary">Active Profile</label>
           <span class="text-[11px] text-muted">Hosts and credentials are isolated within environment profiles</span>
           <div class="flex gap-2 mt-1">
-            <select
+            <CustomSelect
               id="settings-profile"
-              class="flex-1 bg-surface-input border border-border text-primary py-2 px-3 rounded-lg outline-none text-[13px] cursor-pointer transition-all duration-100 hover:border-border-hover focus:border-border-focus focus:shadow-[0_0_0_3px_rgba(59,130,246,0.12)]"
+              options={environments.map((env) => ({ value: env.name, label: env.name }))}
               value={workspace.active_env}
-              onchange={(e) => onSwitchEnv((e.target as HTMLSelectElement).value)}
-            >
-              {#each environments as env}
-                <option value={env.name}>{env.name}</option>
-              {/each}
-            </select>
+              onChange={(val) => onSwitchEnv(val)}
+            />
             <button
               type="button"
               class="bg-white/[0.04] border border-border text-secondary py-2 px-3.5 rounded-lg cursor-pointer font-semibold flex items-center gap-1.5 text-xs whitespace-nowrap transition-all duration-100 hover:border-border-hover hover:text-primary hover:bg-white/[0.06] outline-none"
@@ -558,20 +554,18 @@
               bind:value={timezoneFilter}
               class="bg-surface-input border border-border text-primary py-2 px-3 rounded-lg outline-none text-[13px] transition-all duration-100 hover:border-border-hover focus:border-border-focus focus:shadow-[0_0_0_3px_rgba(59,130,246,0.12)]"
             />
-            <select
+            <CustomSelect
               id="settings-timezone"
-              class="bg-surface-input border border-border text-primary py-2 px-3 rounded-lg outline-none text-[13px] cursor-pointer transition-all duration-100 hover:border-border-hover focus:border-border-focus focus:shadow-[0_0_0_3px_rgba(59,130,246,0.12)]"
+              options={[
+                { value: SYSTEM_TIMEZONE, label: `System default (${systemTimezone})` },
+                ...filteredTimezoneOptions.map((tz) => ({ value: tz, label: tz }))
+              ]}
               value={settings.timezone}
-              onchange={(e) => {
-                settings.timezone = (e.target as HTMLSelectElement).value;
+              onChange={(val) => {
+                settings.timezone = val;
                 onSave();
               }}
-            >
-              <option value={SYSTEM_TIMEZONE}>System default ({systemTimezone})</option>
-              {#each filteredTimezoneOptions as tz}
-                <option value={tz}>{tz}</option>
-              {/each}
-            </select>
+            />
           </div>
         </div>
       </div>
