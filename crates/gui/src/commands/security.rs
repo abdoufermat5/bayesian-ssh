@@ -2,7 +2,7 @@ use bayesian_ssh::config::AppConfig;
 use bayesian_ssh::database::Database;
 use bayesian_ssh::models::Connection;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -377,24 +377,66 @@ pub fn run_security_audit() -> Result<AuditReportDto, String> {
     })
 }
 
+
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct BackupEnvironmentData {
+    pub name: String,
+    pub config: AppConfig,
+    pub connections: Vec<Connection>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct FullBackupPayload {
+    pub version: u32,
+    pub active_environment: String,
+    pub global_config: AppConfig,
+    pub environments: Vec<BackupEnvironmentData>,
+}
+
 #[tauri::command]
 pub fn export_connections_payload(
     output_path: Option<String>,
     passphrase: Option<String>,
-    format: Option<String>,
+    _format: Option<String>,
     tag: Option<String>,
 ) -> Result<String, String> {
-    let config = AppConfig::load(None).map_err(|e| e.to_string())?;
-    let database = Database::new(&config).map_err(|e| e.to_string())?;
-    let connections = database
-        .list_connections(tag.as_deref(), false)
-        .map_err(|e| e.to_string())?;
+    let global_config = AppConfig::load(None).map_err(|e| e.to_string())?;
+    let active_env = AppConfig::get_active_env();
+    let env_list = crate::commands::env::list_environments().unwrap_or_default();
 
-    let format_str = format.unwrap_or_else(|| "json".to_string());
-    let raw_content = match format_str.as_str() {
-        "json" => serde_json::to_string_pretty(&connections).map_err(|e| e.to_string())?,
-        _ => serde_json::to_string_pretty(&connections).map_err(|e| e.to_string())?,
+    let mut backup_environments = Vec::new();
+    let mut total_connections_count = 0;
+
+    for env_info in env_list {
+        let env_cfg = match AppConfig::load(Some(env_info.name.clone())) {
+            Ok(cfg) => cfg,
+            Err(_) => AppConfig::default_for_env(&env_info.name),
+        };
+
+        let mut env_connections = Vec::new();
+        if let Ok(db) = Database::new(&env_cfg) {
+            if let Ok(conns) = db.list_connections(tag.as_deref(), false) {
+                total_connections_count += conns.len();
+                env_connections = conns;
+            }
+        }
+
+        backup_environments.push(BackupEnvironmentData {
+            name: env_info.name,
+            config: env_cfg,
+            connections: env_connections,
+        });
+    }
+
+    let payload = FullBackupPayload {
+        version: 2,
+        active_environment: active_env,
+        global_config,
+        environments: backup_environments,
     };
+
+    let raw_content = serde_json::to_string_pretty(&payload).map_err(|e| e.to_string())?;
 
     let bytes = match passphrase {
         Some(ref pass) if !pass.trim().is_empty() => {
@@ -408,8 +450,9 @@ pub fn export_connections_payload(
         std::fs::write(&path_str, &bytes).map_err(|e| format!("Failed to write export file: {e}"))?;
         bayesian_ssh::config::enforce_secure_file(std::path::Path::new(&path_str));
         Ok(format!(
-            "Exported {} connections to {}",
-            connections.len(),
+            "Exported {} environment(s) and {} connection(s) to {}",
+            payload.environments.len(),
+            total_connections_count,
             path_str
         ))
     } else {
@@ -423,8 +466,6 @@ pub fn import_connections_payload(
     passphrase: Option<String>,
     no_bastion: bool,
 ) -> Result<usize, String> {
-    let config = AppConfig::load(None).map_err(|e| e.to_string())?;
-    let database = Database::new(&config).map_err(|e| e.to_string())?;
     let path = std::path::PathBuf::from(&file_path);
 
     if !path.exists() {
@@ -443,20 +484,57 @@ pub fn import_connections_payload(
 
     let content_str = String::from_utf8_lossy(&content_bytes);
 
+    // Case 1: Try parsing FullBackupPayload (v2 full backup format)
+    if let Ok(payload) = serde_json::from_str::<FullBackupPayload>(&content_str) {
+        let mut total_imported = 0;
+
+        for env_data in payload.environments {
+            let env_cfg = env_data.config;
+            let _ = env_cfg.save();
+
+            if let Ok(db) = Database::new(&env_cfg) {
+                for mut conn in env_data.connections {
+                    if no_bastion {
+                        conn.bastion = None;
+                        conn.bastion_user = None;
+                    }
+                    if db.add_connection(&conn).is_ok() {
+                        total_imported += 1;
+                        for alias in &conn.aliases {
+                            let _ = db.add_alias(alias, &conn.id.to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        let _ = AppConfig::set_active_env(&payload.active_environment);
+
+        return Ok(total_imported);
+    }
+
+    // Case 2: Try parsing Vec<Connection> (v1 legacy format)
     if let Ok(connections) = serde_json::from_str::<Vec<Connection>>(&content_str) {
+        let active_config = AppConfig::load(None).map_err(|e| e.to_string())?;
+        let db = Database::new(&active_config).map_err(|e| e.to_string())?;
         let mut count = 0;
+
         for mut conn in connections {
             if no_bastion {
                 conn.bastion = None;
                 conn.bastion_user = None;
             }
-            database.add_connection(&conn).map_err(|e| e.to_string())?;
-            count += 1;
+            if db.add_connection(&conn).is_ok() {
+                count += 1;
+                for alias in &conn.aliases {
+                    let _ = db.add_alias(alias, &conn.id.to_string());
+                }
+            }
         }
         return Ok(count);
     }
 
-    Err("Import file is not a valid JSON connection backup or payload".to_string())
+    Err("Import file is not a valid Bayesian SSH backup payload".to_string())
 }
 
 #[tauri::command]
