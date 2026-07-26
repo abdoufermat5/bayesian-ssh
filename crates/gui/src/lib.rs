@@ -98,6 +98,7 @@ pub fn run() {
             commands::list_ssh_keys,
             commands::generate_ssh_key,
             commands::copy_ssh_key_to_target,
+            commands::run_security_audit,
             commands::save_backup_file,
             commands::pick_backup_file,
             commands::export_connections_payload,
@@ -169,8 +170,8 @@ fn find_ssh_agent_socket() -> Option<String> {
                 let mut sock_val: Option<String> = None;
                 for kv in data.split(|&b| b == 0) {
                     let s = String::from_utf8_lossy(kv);
-                    if s.starts_with("SSH_AUTH_SOCK=") {
-                        sock_val = Some(s["SSH_AUTH_SOCK=".len()..].to_string());
+                    if let Some(val) = s.strip_prefix("SSH_AUTH_SOCK=") {
+                        sock_val = Some(val.to_string());
                     }
                     if s.contains("ssh-agent") {
                         found_agent = true;
