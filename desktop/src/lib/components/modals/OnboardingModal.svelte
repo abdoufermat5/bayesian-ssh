@@ -1,7 +1,9 @@
 <script lang="ts">
-  import { ChevronLeft, ChevronRight, FolderOpen, Sparkles, TerminalSquare } from "lucide-svelte";
+  import { ChevronLeft, ChevronRight, FolderOpen, Sparkles, TerminalSquare, Upload, Lock, KeyRound } from "lucide-svelte";
   import type { OnboardingPayload } from "$lib/types";
   import CustomSelect from "$lib/components/ui/CustomSelect.svelte";
+  import { invoke } from "@tauri-apps/api/core";
+  import { notify } from "$lib/stores/notifications.svelte";
 
   interface Props {
     defaultUser: string;
@@ -26,6 +28,60 @@
   let auto_start_agent = $state(false);
   let import_ssh_config = $state(true);
   let fuzzy_search = $state(false);
+
+  // Backup restore state
+  let selectedBackupPath = $state("");
+  let restorePassphrase = $state("");
+  let showPassphraseInput = $state(false);
+
+  async function handleRestoreBackup() {
+    try {
+      const path = await invoke<string | null>("pick_backup_file");
+      if (!path) return;
+      selectedBackupPath = path;
+      await executeRestore(path, null);
+    } catch (err) {
+      notify(`Restore failed: ${err}`, "error");
+    }
+  }
+
+  async function executeRestore(path: string, pass: string | null) {
+    busy = true;
+    try {
+      const count = await invoke<number>("import_connections_payload", {
+        filePath: path,
+        passphrase: pass,
+        noBastion: false,
+      });
+      showPassphraseInput = false;
+      await onComplete({
+        profile_name: "default",
+        create_profile: false,
+        default_user: default_user || defaultUser || "root",
+        default_port: 22,
+        ssh_config_path: null,
+        theme: "zinc",
+        auto_start_agent: false,
+        import_ssh_config: false,
+        fuzzy_search: false,
+      });
+      notify(`Backup restored successfully (${count} connection(s) loaded)!`, "success");
+    } catch (err: unknown) {
+      const errStr = String(err);
+      if (errStr.includes("requires passphrase") || errStr.includes("decrypt") || errStr.includes("Passphrase")) {
+        showPassphraseInput = true;
+      } else {
+        notify(`Restore failed: ${err}`, "error");
+      }
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function submitPassphrase() {
+    if (!restorePassphrase.trim() || !selectedBackupPath) return;
+    await executeRestore(selectedBackupPath, restorePassphrase.trim());
+  }
 
   $effect(() => {
     if (defaultUser && !default_user) {
@@ -124,6 +180,22 @@
             <li>Built-in terminals with live session persistence</li>
             <li>Import hosts from your existing OpenSSH config</li>
           </ul>
+
+          <div class="mt-3 p-4 border border-accent/30 bg-accent/5 rounded-xl flex items-center justify-between gap-4">
+            <div>
+              <strong class="block text-primary text-xs font-semibold">Moving to a new computer?</strong>
+              <span class="text-secondary text-[11px]">Restore your complete backup file (.json or .enc)</span>
+            </div>
+            <button
+              type="button"
+              class="py-2 px-3.5 rounded-lg text-xs font-semibold bg-accent border-none text-white hover:bg-accent-hover flex items-center gap-1.5 shrink-0 cursor-pointer transition-all duration-100 disabled:opacity-50"
+              onclick={handleRestoreBackup}
+              disabled={busy}
+            >
+              <Upload size={14} />
+              Restore Backup
+            </button>
+          </div>
         </div>
       {:else if step === 1}
         <div class="flex flex-col gap-4">
@@ -270,9 +342,53 @@
           {busy ? "Setting up..." : "Get started"}
         {:else}
           Continue
-          <ChevronRight size={14} />
         {/if}
       </button>
     </div>
   </div>
 </div>
+
+{#if showPassphraseInput}
+  <div class="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center z-[250] p-6">
+    <div class="w-[420px] max-w-full bg-surface border border-border rounded-2xl shadow-2xl p-6 flex flex-col gap-4">
+      <div class="flex items-center gap-3 text-accent">
+        <Lock size={24} />
+        <div>
+          <h3 class="m-0 text-base font-bold text-primary">Encrypted Backup</h3>
+          <p class="m-0 text-[11px] text-muted mt-0.5">Enter passphrase to decrypt and restore</p>
+        </div>
+      </div>
+
+      <div class="flex flex-col gap-1.5">
+        <label for="restore-passphrase" class="text-[11px] font-semibold text-muted uppercase tracking-wider">Passphrase</label>
+        <input
+          id="restore-passphrase"
+          type="password"
+          class="bg-surface-input border border-border text-primary py-2 px-3 rounded-lg outline-none text-sm focus:border-border-focus"
+          placeholder="Enter backup passphrase"
+          bind:value={restorePassphrase}
+          onkeydown={(e) => e.key === "Enter" && submitPassphrase()}
+        />
+      </div>
+
+      <div class="flex justify-end gap-2.5 mt-2">
+        <button
+          type="button"
+          class="py-2 px-3.5 rounded-lg text-xs font-semibold bg-transparent border border-border text-secondary hover:text-primary hover:bg-white/[0.04]"
+          onclick={() => (showPassphraseInput = false)}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="py-2 px-4 rounded-lg text-xs font-semibold bg-accent text-white hover:bg-accent-hover flex items-center gap-1.5 disabled:opacity-50"
+          onclick={submitPassphrase}
+          disabled={busy || !restorePassphrase.trim()}
+        >
+          <KeyRound size={14} />
+          Decrypt & Restore
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
