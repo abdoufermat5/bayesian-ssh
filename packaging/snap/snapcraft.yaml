@@ -1,0 +1,78 @@
+name: bayesian-ssh
+base: core22
+version: '2.3.0'
+summary: Fast and lightweight SSH session manager with Kerberos support
+description: |
+  Bayesian SSH (bssh) is a smart, high-performance SSH session manager featuring
+  Bayesian-ranked search, bastion jump-host chaining, Kerberos integration,
+  interactive TUI, and a desktop graphical user interface.
+
+grade: stable
+confinement: strict
+
+architectures:
+  - build-on: amd64
+  - build-on: arm64
+
+apps:
+  bayesian-ssh:
+    command: bin/bayesian-ssh
+    plugs:
+      - network
+      - network-bind
+      - ssh-keys
+      - home
+
+  bssh:
+    command: bin/bayesian-ssh
+    plugs:
+      - network
+      - network-bind
+      - ssh-keys
+      - home
+
+  desktop:
+    command: bin/bayesian-ssh-desktop
+    desktop: usr/share/applications/bayesian-ssh-desktop.desktop
+    plugs:
+      - desktop
+      - desktop-legacy
+      - x11
+      - wayland
+      - network
+      - network-bind
+      - ssh-keys
+      - home
+
+parts:
+  bayesian-ssh:
+    plugin: nil
+    override-build: |
+      cargo build --release --workspace
+      install -Dm755 target/release/bayesian-ssh $CRAFT_PART_INSTALL/bin/bayesian-ssh
+      
+      cd desktop
+      npm install
+      npm run tauri build -- --config ../crates/gui/tauri.conf.json --no-bundle
+      install -Dm755 ../target/release/bayesian-ssh-desktop $CRAFT_PART_INSTALL/bin/bayesian-ssh-desktop
+      install -Dm644 ../crates/gui/icons/128x128.png $CRAFT_PART_INSTALL/usr/share/icons/hicolor/128x128/apps/bayesian-ssh-desktop.png
+      
+      mkdir -p $CRAFT_PART_INSTALL/usr/share/applications
+      cat <<EOF > $CRAFT_PART_INSTALL/usr/share/applications/bayesian-ssh-desktop.desktop
+      [Desktop Entry]
+      Name=Bayesian SSH
+      Comment=Fast and lightweight SSH session manager
+      Exec=bayesian-ssh-desktop
+      Icon=bayesian-ssh-desktop
+      Terminal=false
+      Type=Application
+      Categories=Development;Network;
+      EOF
+    build-packages:
+      - cargo
+      - rustc
+      - nodejs
+      - npm
+      - libssl-dev
+      - libgtk-3-dev
+      - libwebkit2gtk-4.1-dev

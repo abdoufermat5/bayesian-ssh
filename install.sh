@@ -21,6 +21,7 @@ INSTALL_DIR="/usr/local/bin"
 TEMP_DIR="/tmp/bayesian-ssh-install"
 INTERACTIVE=false
 INSTALL_DESKTOP=false
+NO_GUI=false
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -34,9 +35,14 @@ while [[ $# -gt 0 ]]; do
             BINARY_NAME="bayesian-ssh-desktop"
             shift
             ;;
+        --no-gui)
+            NO_GUI=true
+            INSTALL_DESKTOP=false
+            shift
+            ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--interactive] [--desktop]"
+            echo "Usage: $0 [--interactive] [--desktop] [--no-gui]"
             exit 1
             ;;
     esac

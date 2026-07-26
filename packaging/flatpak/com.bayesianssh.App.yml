@@ -1,0 +1,47 @@
+app-id: com.bayesianssh.App
+runtime: org.gnome.Platform
+runtime-version: '49'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.node20
+command: bayesian-ssh-desktop
+
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=x11
+  - --socket=wayland
+  - --filesystem=home
+  - --filesystem=host
+  - --device=all
+
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/node20/bin
+  build-args:
+    - --share=network
+  env:
+    CARGO_HOME: /run/build/bayesian-ssh/cargo
+
+modules:
+  - name: bayesian-ssh
+    buildsystem: simple
+    build-commands:
+      - cargo build --release
+      - install -Dm755 target/release/bayesian-ssh /app/bin/bayesian-ssh
+      - ln -sf bayesian-ssh /app/bin/bssh
+    sources:
+      - type: dir
+        path: ../..
+
+  - name: bayesian-ssh-desktop
+    buildsystem: simple
+    build-commands:
+      - cd desktop && npm install && npm run tauri build -- --config ../crates/gui/tauri.conf.json --no-bundle
+      - install -Dm755 target/release/bayesian-ssh-desktop /app/bin/bayesian-ssh-desktop
+      - install -Dm644 crates/gui/icons/128x128.png /app/share/icons/hicolor/128x128/apps/com.bayesianssh.App.png
+      - install -Dm644 packaging/flatpak/com.bayesianssh.App.desktop /app/share/applications/com.bayesianssh.App.desktop
+      - install -Dm644 packaging/flatpak/com.bayesianssh.App.metainfo.xml /app/share/metainfo/com.bayesianssh.App.metainfo.xml
+    sources:
+      - type: dir
+        path: ../..

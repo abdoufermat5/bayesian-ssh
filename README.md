@@ -29,28 +29,46 @@
 
 #### Option 1: One-liner Install (Recommended)
 ```bash
-# Install latest CLI release automatically (non-interactive)
+# Install full package (CLI + Desktop GUI)
 curl -fsSL https://raw.githubusercontent.com/abdoufermat5/bayesian-ssh/main/install.sh | bash
 
-# Install latest Desktop GUI release automatically (non-interactive)
-curl -fsSL https://raw.githubusercontent.com/abdoufermat5/bayesian-ssh/main/install.sh | bash -s -- --desktop
+# Server / Headless install (CLI only, no GUI dependencies)
+curl -fsSL https://raw.githubusercontent.com/abdoufermat5/bayesian-ssh/main/install.sh | bash -s -- --no-gui
 
-# Interactive installation (choose CLI or Desktop)
+# Interactive mode
 curl -fsSL https://raw.githubusercontent.com/abdoufermat5/bayesian-ssh/main/install.sh | bash -s -- --interactive
 ```
 
-#### Option 2: Manual Build
+#### Option 2: Linux Distribution Packages (.deb / .rpm)
+Download pre-built packages from [Releases](https://github.com/abdoufermat5/bayesian-ssh/releases):
+
 ```bash
-# Clone and build
+# Debian / Ubuntu / Linux Mint / Pop!_OS (.deb)
+sudo apt install ./bayesian-ssh_2.3.0_amd64.deb
+
+# Fedora / RHEL / CentOS / openSUSE (.rpm)
+sudo dnf install ./bayesian-ssh-2.3.0-1.x86_64.rpm
+```
+
+#### Option 3: Flathub & Snap Store
+```bash
+# Flatpak (Flathub)
+flatpak install flathub com.bayesianssh.App
+
+# Snap Store (Ubuntu)
+sudo snap install bayesian-ssh
+```
+
+#### Option 4: Build from Source
+```bash
 git clone https://github.com/abdoufermat5/bayesian-ssh.git
 cd bayesian-ssh
 
-# Build and install CLI version using Makefile
-make release
-make install
+# Build & install locally
+make release && make install
 
-# Build and install Desktop GUI version using Makefile
-make install-desktop
+# Package .deb and .rpm locally
+make package
 ```
 
 ### First Connection

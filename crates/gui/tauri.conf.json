@@ -1,13 +1,13 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "desktop",
+  "productName": "bayesian-ssh-desktop",
   "version": "2.3.0",
   "identifier": "com.bayesian-ssh.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "npm run build",
-    "frontendDist": "../build"
+    "frontendDist": "../../desktop/build"
   },
   "app": {
     "windows": [

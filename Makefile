@@ -1,246 +1,47 @@
-# Bayesian SSH Makefile
-# Provides common development and build tasks
+.PHONY: help build release test check format lint install uninstall package flatpak-build snap-build docs clean
 
-.PHONY: help build test release clean install uninstall format lint check deps update-deps docs docs-serve docs-api demo-up demo-test demo-down demo-ssh-bastion demo-ssh-target1 demo-ssh-target2
+INSTALL_DIR ?= /usr/local/bin
 
-# Configuration
-BINARY_NAME = bayesian-ssh
-CARGO = cargo
-RUSTUP = rustup
-TARGET_DIR = target
-RELEASE_DIR = $(TARGET_DIR)/release
-INSTALL_DIR = /usr/local/bin
-
-# Default target
 help: ## Show this help message
-	@echo "🚀 Bayesian SSH - Available Commands"
-	@echo "====================================="
-	@echo ""
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
-	@echo ""
-	@echo "📚 Examples:"
-	@echo "  make build          # Build debug version"
-	@echo "  make release        # Build release version"
-	@echo "  make test           # Run all tests"
-	@echo "  make install        # Install to system"
-	@echo "  make clean          # Clean build artifacts"
 
-# Build targets
-build: ## Build debug version
-	@echo "🔨 Building debug version..."
-	$(CARGO) build
-	@echo "✅ Build completed"
+build: ## Build debug CLI version
+	cargo build
 
-release: ## Build release version
-	@echo "🔨 Building release version..."
-	$(CARGO) build --release
-	@echo "✅ Release build completed"
-	@echo "📊 Binary size: $(shell ls -lh $(RELEASE_DIR)/$(BINARY_NAME) 2>/dev/null | awk '{print $$5}' || echo "N/A")"
+release: ## Build release CLI version
+	cargo build --release
 
-# Testing and quality
-test: ## Run all tests
-	@echo "🧪 Running tests..."
-	$(CARGO) test
-	@echo "✅ Tests completed"
+test: ## Run tests
+	cargo test
 
-check: ## Run cargo check
-	@echo "🔍 Running cargo check..."
-	$(CARGO) check
-	@echo "✅ Check completed"
+check: ## Check code compilation
+	cargo check
 
-format: ## Format code with rustfmt
-	@echo "🎨 Formatting code..."
-	$(CARGO) fmt --all
-	@echo "✅ Formatting completed"
+format: ## Format Rust code
+	cargo fmt --all
 
-format-check: ## Check code formatting
-	@echo "🎨 Checking code formatting..."
-	$(CARGO) fmt --all -- --check
-	@echo "✅ Formatting check completed"
+lint: ## Run Clippy linter
+	cargo clippy -- -D warnings
 
-lint: ## Run clippy linter
-	@echo "🔍 Running clippy..."
-	$(CARGO) clippy -- -D warnings
-	@echo "✅ Linting completed"
+install: release ## Install bayesian-ssh and bssh alias to system
+	sudo install -m 755 target/release/bayesian-ssh $(INSTALL_DIR)/bayesian-ssh
+	sudo ln -sf $(INSTALL_DIR)/bayesian-ssh $(INSTALL_DIR)/bssh
 
-# Dependencies
-deps: ## Install development dependencies
-	@echo "📦 Installing development dependencies..."
-	$(RUSTUP) component add rustfmt
-	$(RUSTUP) component add clippy
-	@echo "✅ Dependencies installed"
+uninstall: ## Remove bayesian-ssh and bssh from system
+	sudo rm -f $(INSTALL_DIR)/bayesian-ssh $(INSTALL_DIR)/bssh
 
-update-deps: ## Update Rust toolchain and dependencies
-	@echo "🔄 Updating Rust toolchain..."
-	$(RUSTUP) update
-	@echo "🔄 Updating Cargo dependencies..."
-	$(CARGO) update
-	@echo "✅ Updates completed"
+package: ## Build unified .deb and .rpm packages
+	./scripts/package.sh
 
-# Installation
-install: release ## Install binary and bssh alias to system
-	@echo "📦 Installing $(BINARY_NAME) and bssh alias..."
-	@if [ -f "$(RELEASE_DIR)/$(BINARY_NAME)" ]; then \
-		sudo cp "$(RELEASE_DIR)/$(BINARY_NAME)" "$(INSTALL_DIR)/$(BINARY_NAME)"; \
-		if [ -f "$(RELEASE_DIR)/bssh" ]; then \
-			sudo cp "$(RELEASE_DIR)/bssh" "$(INSTALL_DIR)/bssh"; \
-		else \
-			sudo ln -sf "$(INSTALL_DIR)/$(BINARY_NAME)" "$(INSTALL_DIR)/bssh"; \
-		fi; \
-		echo "✅ $(BINARY_NAME) and bssh installed to $(INSTALL_DIR)"; \
-	else \
-		echo "❌ Release binary not found. Run 'make release' first."; \
-		exit 1; \
-	fi
+flatpak-build: ## Build Flatpak bundle
+	flatpak-builder --force-clean --install-deps-from=flathub target/flatpak-build packaging/flatpak/com.bayesianssh.App.yml
 
-# Desktop app targets
-build-desktop: ## Build debug version of the desktop app
-	@echo "🔨 Building debug version of the desktop app..."
-	@cd desktop && npm run tauri build -- --debug --no-bundle
-	@echo "✅ Desktop debug build completed"
+snap-build: ## Build Snap package
+	snapcraft --manifest=packaging/snap/snapcraft.yaml
 
-release-desktop: ## Build release version of the desktop app
-	@echo "🔨 Building release version of the desktop app..."
-	@cd desktop && npm run tauri build -- --no-bundle
-	@echo "✅ Desktop release build completed"
-
-bundle-desktop: ## Build desktop app Debian (.deb) and AppImage packages
-	@echo "📦 Packaging desktop app (.deb, .AppImage)..."
-	@cd desktop && npm run tauri build
-	@echo "✅ Desktop app packaging completed!"
-
-install-desktop: release-desktop ## Install desktop app binary, icon, and menu launcher shortcut
-	@echo "📦 Installing bayesian-ssh-desktop..."
-	@if [ -f "desktop/src-tauri/target/release/desktop" ]; then \
-		sudo cp "desktop/src-tauri/target/release/desktop" "$(INSTALL_DIR)/bayesian-ssh-desktop"; \
-		sudo chmod +x "$(INSTALL_DIR)/bayesian-ssh-desktop"; \
-		sudo mkdir -p /usr/share/icons/hicolor/128x128/apps; \
-		sudo cp "desktop/src-tauri/icons/128x128.png" "/usr/share/icons/hicolor/128x128/apps/bayesian-ssh-desktop.png"; \
-		echo "[Desktop Entry]" | sudo tee /usr/share/applications/bayesian-ssh-desktop.desktop >/dev/null; \
-		echo "Name=Bayesian SSH" | sudo tee -a /usr/share/applications/bayesian-ssh-desktop.desktop >/dev/null; \
-		echo "Comment=A fast and lightweight SSH session manager with Kerberos support" | sudo tee -a /usr/share/applications/bayesian-ssh-desktop.desktop >/dev/null; \
-		echo "Exec=/usr/local/bin/bayesian-ssh-desktop" | sudo tee -a /usr/share/applications/bayesian-ssh-desktop.desktop >/dev/null; \
-		echo "Icon=bayesian-ssh-desktop" | sudo tee -a /usr/share/applications/bayesian-ssh-desktop.desktop >/dev/null; \
-		echo "Terminal=false" | sudo tee -a /usr/share/applications/bayesian-ssh-desktop.desktop >/dev/null; \
-		echo "Type=Application" | sudo tee -a /usr/share/applications/bayesian-ssh-desktop.desktop >/dev/null; \
-		echo "Categories=Development;Network;" | sudo tee -a /usr/share/applications/bayesian-ssh-desktop.desktop >/dev/null; \
-		echo "StartupNotify=true" | sudo tee -a /usr/share/applications/bayesian-ssh-desktop.desktop >/dev/null; \
-		sudo gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true; \
-		echo "✅ bayesian-ssh-desktop and system launcher icon installed successfully!"; \
-	else \
-		echo "❌ Desktop release binary not found."; \
-		exit 1; \
-	fi
-
-uninstall-desktop: ## Remove desktop binary, icon, and menu launcher shortcut
-	@echo "🗑️  Uninstalling bayesian-ssh-desktop..."
-	@if [ -f "$(INSTALL_DIR)/bayesian-ssh-desktop" ]; then \
-		sudo rm "$(INSTALL_DIR)/bayesian-ssh-desktop"; \
-	fi
-	@if [ -f "/usr/share/applications/bayesian-ssh-desktop.desktop" ]; then \
-		sudo rm "/usr/share/applications/bayesian-ssh-desktop.desktop"; \
-	fi
-	@if [ -f "/usr/share/icons/hicolor/128x128/apps/bayesian-ssh-desktop.png" ]; then \
-		sudo rm "/usr/share/icons/hicolor/128x128/apps/bayesian-ssh-desktop.png"; \
-	fi
-	@sudo gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
-	@echo "✅ bayesian-ssh-desktop uninstalled successfully"
-
-uninstall: ## Remove binary from system
-	@echo "🗑️  Uninstalling $(BINARY_NAME)..."
-	@if [ -f "$(INSTALL_DIR)/$(BINARY_NAME)" ]; then \
-		sudo rm "$(INSTALL_DIR)/$(BINARY_NAME)"; \
-		echo "✅ $(BINARY_NAME) uninstalled from $(INSTALL_DIR)"; \
-	else \
-		echo "ℹ️  $(BINARY_NAME) not found in $(INSTALL_DIR)"; \
-	fi
-
-# Development workflow
-dev: format lint test ## Run full development workflow
-	@echo "🎉 Development workflow completed!"
-
-pre-commit: format lint test ## Run before committing
-	@echo "🎉 Pre-commit checks passed!"
-
-# Cleanup
-clean: ## Clean build artifacts
-	@echo "🧹 Cleaning build artifacts..."
-	$(CARGO) clean
-	@echo "✅ Cleanup completed"
-
-distclean: clean ## Deep clean (removes target and Cargo.lock)
-	@echo "🧹 Deep cleaning..."
-	rm -rf $(TARGET_DIR)
-	rm -f Cargo.lock
-	@echo "✅ Deep cleanup completed"
-
-# Release management
-version: ## Show current version
-	@echo "📋 Current version: $(shell grep '^version = ' Cargo.toml | cut -d'"' -f2)"
-
-bump-patch: ## Bump patch version
-	@echo "🔄 Bumping patch version..."
-	@./scripts/build_and_push.sh --version $(shell ./scripts/build_and_push.sh --version | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | awk -F. '{print $$1"."$$2"."$$3+1}')
-	@echo "✅ Version bumped"
-
-bump-minor: ## Bump minor version
-	@echo "🔄 Bumping minor version..."
-	@./scripts/build_and_push.sh --version $(shell ./scripts/build_and_push.sh --version | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | awk -F. '{print $$1"."$$2+1".0"}')
-	@echo "✅ Version bumped"
-
-bump-major: ## Bump major version
-	@echo "🔄 Bumping major version..."
-	@./scripts/build_and_push.sh --version $(shell ./scripts/build_and_push.sh --version | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | awk -F. '{print $$1+1".0.0"}')
-	@echo "✅ Version bumped"
-
-# Quick shortcuts
-all: clean deps build test release ## Full build pipeline
-	@echo "🎉 Full build pipeline completed!"
-
-# ── Demo Environment (Vagrant) ──────────────────────────────
-demo-up: ## Boot the Vagrant demo VMs
-	@echo "🚀 Starting demo VMs..."
-	@cd demo && vagrant up
-
-demo-test: build ## Run integration tests against demo VMs
-	@echo "🧪 Running integration tests..."
-	@cd demo && bash test-all.sh --skip-build
-
-demo-down: ## Destroy the Vagrant demo VMs
-	@echo "🗑️  Destroying demo VMs..."
-	@cd demo && vagrant destroy -f
-
-demo-ssh-bastion: ## SSH into the bastion VM
-	@cd demo && vagrant ssh bastion
-
-demo-ssh-target1: ## SSH into target1 VM
-	@cd demo && vagrant ssh target1
-
-demo-ssh-target2: ## SSH into target2 VM
-	@cd demo && vagrant ssh target2
-
-quick: build test ## Quick build and test
-	@echo "🎉 Quick build and test completed!"
-
-# Documentation
 docs: ## Build documentation with mdBook
-	@echo "📚 Building documentation..."
 	mdbook build
-	@echo "✅ Documentation built in docs/book/"
 
-docs-serve: ## Serve documentation locally with live reload
-	@echo "📚 Serving documentation..."
-	mdbook serve --open
-
-docs-api: ## Build Rust API documentation
-	@echo "📚 Building API documentation..."
-	$(CARGO) doc --no-deps --open
-	@echo "✅ API documentation built"
-
-# Show binary info
-info: release ## Show binary information
-	@echo "📊 Binary Information:"
-	@echo "  Location: $(RELEASE_DIR)/$(BINARY_NAME)"
-	@echo "  Size: $(shell ls -lh $(RELEASE_DIR)/$(BINARY_NAME) 2>/dev/null | awk '{print $$5}' || echo "N/A")"
-	@echo "  Version: $(shell grep '^version = ' Cargo.toml | cut -d'"' -f2)"
-	@echo "  Build time: $(shell date)"
+clean: ## Clean build artifacts
+	cargo clean
+	rm -rf target/package-stage target/packages target/flatpak-build .flatpak-builder

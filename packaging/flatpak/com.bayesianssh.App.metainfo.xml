@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.bayesianssh.App</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Bayesian SSH</name>
+  <summary>Fast and lightweight SSH session manager with Bayesian search</summary>
+  <description>
+    <p>
+      Bayesian SSH (bssh) is a high-performance SSH session manager featuring
+      Bayesian-ranked search, bastion jump-host chaining, Kerberos integration,
+      interactive TUI, and a desktop graphical user interface.
+    </p>
+  </description>
+  <launchable type="desktop-id">com.bayesianssh.App.desktop</launchable>
+  <url type="homepage">https://github.com/abdoufermat5/bayesian-ssh</url>
+  <url type="bugtracker">https://github.com/abdoufermat5/bayesian-ssh/issues</url>
+  <categories>
+    <category>Development</category>
+    <category>Network</category>
+    <category>System</category>
+  </categories>
+  <releases>
+    <release version="2.3.0" date="2026-07-25" />
+  </releases>
+</component>
