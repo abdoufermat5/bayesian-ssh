@@ -522,3 +522,18 @@
   <Toast />
 </div>
 {/if}
+
+<ShortcutsModal show={showShortcutsModal} onClose={() => (showShortcutsModal = false)} />
+
+<AboutModal
+  show={showAboutModal}
+  workspace={appState.workspace}
+  activeEnv={appState.activeEnv}
+  onClose={() => (showAboutModal = false)}
+/>
+
+<BatchExecModal
+  show={showBatchExecModal}
+  connections={appState.connections}
+  onClose={() => (showBatchExecModal = false)}
+/>
