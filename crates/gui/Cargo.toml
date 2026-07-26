@@ -12,7 +12,7 @@ name = "bayesian_ssh_gui_lib"
 path = "src/lib.rs"
 
 [[bin]]
-name = "bayesian-ssh-desktop"
+name = "bayesian-ssh-gui"
 path = "src/main.rs"
 
 [build-dependencies]

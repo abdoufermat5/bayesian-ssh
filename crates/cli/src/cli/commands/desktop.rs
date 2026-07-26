@@ -4,7 +4,7 @@ use std::process::Command;
 
 /// Launch the desktop app detached in the background
 pub async fn execute(_config: AppConfig) -> Result<()> {
-    let possible_binaries = ["bayesian-ssh-desktop", "desktop"];
+    let possible_binaries = ["bayesian-ssh-gui", "bssh-gui", "bayesian-ssh-desktop"];
     let mut command_to_run = None;
 
     // Search in PATH
@@ -18,28 +18,29 @@ pub async fn execute(_config: AppConfig) -> Result<()> {
     // Search relative to the current executable directory
     if command_to_run.is_none() {
         if let Ok(mut exe_path) = std::env::current_exe() {
-            exe_path.pop(); // Remove target name
+            exe_path.pop(); // Directory containing current binary
 
-            // Check debug target folder
-            let debug_desktop = exe_path.join("desktop");
-            // Check release target folder
-            let release_desktop = exe_path.join("release").join("desktop");
+            let same_dir_gui = exe_path.join("bayesian-ssh-gui");
+            let release_dir_gui = exe_path.parent().map(|p| p.join("release").join("bayesian-ssh-gui"));
 
-            if debug_desktop.exists() {
-                command_to_run = Some(debug_desktop.to_string_lossy().into_owned());
-            } else if release_desktop.exists() {
-                command_to_run = Some(release_desktop.to_string_lossy().into_owned());
+            if let Some(rel_gui) = release_dir_gui {
+                if rel_gui.exists() {
+                    command_to_run = Some(rel_gui.to_string_lossy().into_owned());
+                }
+            }
+            if command_to_run.is_none() && same_dir_gui.exists() {
+                command_to_run = Some(same_dir_gui.to_string_lossy().into_owned());
             }
         }
     }
 
-    // Development project fallback: check standard cargo output paths
+    // Development project fallback: check standard cargo workspace output paths (RELEASE FIRST)
     if command_to_run.is_none() {
         let dev_paths = [
-            "desktop/src-tauri/target/debug/desktop",
-            "desktop/src-tauri/target/release/desktop",
-            "desktop/src-tauri/target/x86_64-unknown-linux-gnu/debug/desktop",
-            "desktop/src-tauri/target/x86_64-unknown-linux-gnu/release/desktop",
+            "target/release/bayesian-ssh-gui",
+            "target/release/bayesian-ssh-desktop",
+            "target/debug/bayesian-ssh-gui",
+            "target/debug/bayesian-ssh-desktop",
         ];
         for path_str in &dev_paths {
             let path = std::path::Path::new(path_str);
@@ -52,12 +53,12 @@ pub async fn execute(_config: AppConfig) -> Result<()> {
 
     let bin_path = command_to_run.ok_or_else(|| {
         anyhow!(
-            "Could not find 'bayesian-ssh-desktop' executable in PATH or target directories.\n\
-             Please build the desktop application using 'make release-desktop' or 'make build-desktop' first."
+            "Could not find 'bayesian-ssh-gui' executable in PATH or target directories.\n\
+             Please build the desktop application using 'make release' or 'make build' first."
         )
     })?;
 
-    println!("Launching bayesian-ssh-desktop in the background...");
+    println!("Launching bayesian-ssh-gui in the background...");
 
     // Spawn detached process
     #[cfg(unix)]

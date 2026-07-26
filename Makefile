@@ -5,11 +5,15 @@ INSTALL_DIR ?= /usr/local/bin
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
-build: ## Build debug CLI version
-	cargo build
+build: ## Build debug CLI & GUI binaries
+	@if [ -d "desktop" ] && command -v npm >/dev/null 2>&1; then cd desktop && ( [ -d "node_modules" ] || npm install ) && npm run build; fi
+	cargo build --workspace
 
-release: ## Build release CLI version
-	cargo build --release
+release: ## Build release binaries (CLI + Desktop GUI)
+	cargo build --release --package bayesian-ssh
+	@if [ -d "desktop" ] && command -v npm >/dev/null 2>&1; then \
+		cd desktop && ( [ -d "node_modules" ] || npm install ) && npm run tauri build -- --config ../crates/gui/tauri.conf.json --no-bundle; \
+	fi
 
 test: ## Run tests
 	cargo test
@@ -23,12 +27,15 @@ format: ## Format Rust code
 lint: ## Run Clippy linter
 	cargo clippy -- -D warnings
 
-install: release ## Install bayesian-ssh and bssh alias to system
+install: release ## Install bayesian-ssh, bssh alias, and desktop GUI binary to system
 	sudo install -m 755 target/release/bayesian-ssh $(INSTALL_DIR)/bayesian-ssh
 	sudo ln -sf $(INSTALL_DIR)/bayesian-ssh $(INSTALL_DIR)/bssh
+	@if [ -f "target/release/bayesian-ssh-gui" ]; then \
+		sudo install -m 755 target/release/bayesian-ssh-gui $(INSTALL_DIR)/bayesian-ssh-gui; \
+	fi
 
-uninstall: ## Remove bayesian-ssh and bssh from system
-	sudo rm -f $(INSTALL_DIR)/bayesian-ssh $(INSTALL_DIR)/bssh
+uninstall: ## Remove bayesian-ssh, bssh, and desktop GUI binary from system
+	sudo rm -f $(INSTALL_DIR)/bayesian-ssh $(INSTALL_DIR)/bssh $(INSTALL_DIR)/bayesian-ssh-gui
 
 package: ## Build unified .deb and .rpm packages
 	./scripts/package.sh

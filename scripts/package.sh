@@ -71,20 +71,16 @@ chmod +x "${BUILD_DIR}/usr/bin/bayesian-ssh"
 
 ln -sf bayesian-ssh "${BUILD_DIR}/usr/bin/bssh"
 
-# Copy Desktop binary if built (Cargo workspace puts all binaries in root target/release)
-DESKTOP_BIN="${ROOT_DIR}/target/release/bayesian-ssh-desktop"
-if [ ! -f "${DESKTOP_BIN}" ]; then
-    DESKTOP_BIN="${ROOT_DIR}/target/release/desktop"
-fi
-
-if [ -f "${DESKTOP_BIN}" ]; then
-    cp "${DESKTOP_BIN}" "${BUILD_DIR}/usr/bin/bayesian-ssh-desktop"
-    chmod +x "${BUILD_DIR}/usr/bin/bayesian-ssh-desktop"
+# Copy Desktop GUI binary if built
+GUI_BIN="${ROOT_DIR}/target/release/bayesian-ssh-gui"
+if [ -f "${GUI_BIN}" ]; then
+    cp "${GUI_BIN}" "${BUILD_DIR}/usr/bin/bayesian-ssh-gui"
+    chmod +x "${BUILD_DIR}/usr/bin/bayesian-ssh-gui"
 fi
 
 # Copy Icon and Desktop entry
 if [ -f "${ROOT_DIR}/crates/gui/icons/128x128.png" ]; then
-    cp "${ROOT_DIR}/crates/gui/icons/128x128.png" "${BUILD_DIR}/usr/share/icons/hicolor/128x128/apps/bayesian-ssh-desktop.png"
+    cp "${ROOT_DIR}/crates/gui/icons/128x128.png" "${BUILD_DIR}/usr/share/icons/hicolor/128x128/apps/bayesian-ssh-gui.png"
 fi
 
 # Copy License and README
@@ -96,18 +92,18 @@ if [ -f "${ROOT_DIR}/README.md" ]; then
 fi
 
 # Create Desktop launcher file
-cat <<EOF > "${BUILD_DIR}/usr/share/applications/bayesian-ssh-desktop.desktop"
+cat <<EOF > "${BUILD_DIR}/usr/share/applications/bayesian-ssh-gui.desktop"
 [Desktop Entry]
 Name=Bayesian SSH
 Comment=Fast and lightweight SSH session manager with Bayesian search, Kerberos, and bastion support
-Exec=/usr/bin/bayesian-ssh-desktop
-Icon=bayesian-ssh-desktop
+Exec=/usr/bin/bayesian-ssh-gui
+Icon=bayesian-ssh-gui
 Terminal=false
 Type=Application
 Categories=Development;Network;System;
 StartupNotify=true
 EOF
-chmod 644 "${BUILD_DIR}/usr/share/applications/bayesian-ssh-desktop.desktop"
+chmod 644 "${BUILD_DIR}/usr/share/applications/bayesian-ssh-gui.desktop"
 
 # 3. Create .deb package
 echo "📦 Step 4/4: Building Debian package (.deb)..."
@@ -181,9 +177,9 @@ fi
 %files
 /usr/bin/bayesian-ssh
 /usr/bin/bssh
-/usr/bin/bayesian-ssh-desktop
-/usr/share/applications/bayesian-ssh-desktop.desktop
-/usr/share/icons/hicolor/128x128/apps/bayesian-ssh-desktop.png
+/usr/bin/bayesian-ssh-gui
+/usr/share/applications/bayesian-ssh-gui.desktop
+/usr/share/icons/hicolor/128x128/apps/bayesian-ssh-gui.png
 /usr/share/doc/${PKG_NAME}/*
 
 %changelog

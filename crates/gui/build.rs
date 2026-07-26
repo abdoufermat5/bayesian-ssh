@@ -1,3 +1,5 @@
 fn main() {
-    tauri_build::build()
+    println!("cargo:rerun-if-changed=../../desktop/build");
+    println!("cargo:rerun-if-changed=tauri.conf.json");
+    tauri_build::build();
 }
