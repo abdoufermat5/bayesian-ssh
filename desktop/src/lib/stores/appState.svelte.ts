@@ -100,6 +100,7 @@ export class AppStateStore {
   kerberosLoading = $state(false);
   kerberosError = $state<string | null>(null);
   showOnboarding = $state(false);
+  isInitializing = $state(true);
 
   workspace = $state<WorkspaceInfo>({
     active_env: "default",
@@ -195,12 +196,14 @@ export class AppStateStore {
     }
   }
 
-  checkOnboarding = async () => {
+  checkOnboarding = async (): Promise<boolean> => {
     try {
       const needsSetup = await invoke<boolean>("needs_onboarding");
       this.showOnboarding = needsSetup;
+      return needsSetup;
     } catch (e) {
       console.error("Failed to check onboarding state", e);
+      return false;
     }
   }
 

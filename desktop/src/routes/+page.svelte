@@ -85,8 +85,11 @@
 
   onMount(() => {
     (async () => {
-      await appState.loadData();
-      await appState.checkOnboarding();
+      const needsOnboarding = await appState.checkOnboarding();
+      if (!needsOnboarding) {
+        await appState.loadData();
+      }
+      appState.isInitializing = false;
     })();
     window.addEventListener("keydown", handleKeydownWithHelp);
 
@@ -143,6 +146,22 @@
   });
 </script>
 
+{#if appState.isInitializing}
+  <div class="fixed inset-0 bg-[#09090b] z-[300]"></div>
+{:else if appState.showOnboarding}
+  <TitleBar
+    activeEnv={appState.activeEnv}
+    onOpenAbout={() => (showAboutModal = true)}
+    onOpenShortcuts={() => (showShortcutsModal = true)}
+  />
+  <OnboardingModal
+    defaultUser={appState.settings.default_user}
+    defaultSshConfigPath={appState.workspace.ssh_config_path || ""}
+    configRoot={appState.workspace.config_root}
+    onBrowseSshConfig={appState.browseSshConfig}
+    onComplete={appState.completeOnboarding}
+  />
+{:else}
 <div
   class="flex flex-col flex-1 w-full h-[100dvh] min-h-0 overflow-hidden bg-surface"
   class:is-fullscreen={windowState.isFullscreen}
@@ -500,30 +519,6 @@
     />
   {/if}
 
-  {#if appState.showOnboarding}
-    <OnboardingModal
-      defaultUser={appState.settings.default_user}
-      defaultSshConfigPath={appState.workspace.ssh_config_path || ""}
-      configRoot={appState.workspace.config_root}
-      onBrowseSshConfig={appState.browseSshConfig}
-      onComplete={appState.completeOnboarding}
-    />
-  {/if}
-
-  <ShortcutsModal show={showShortcutsModal} onClose={() => (showShortcutsModal = false)} />
-
-  <AboutModal
-    show={showAboutModal}
-    workspace={appState.workspace}
-    activeEnv={appState.activeEnv}
-    onClose={() => (showAboutModal = false)}
-  />
-
-  <BatchExecModal
-    show={showBatchExecModal}
-    connections={appState.connections}
-    onClose={() => (showBatchExecModal = false)}
-  />
-
   <Toast />
 </div>
+{/if}
