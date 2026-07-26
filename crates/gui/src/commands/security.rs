@@ -396,11 +396,12 @@ pub fn export_connections_payload(
         _ => serde_json::to_string_pretty(&connections).map_err(|e| e.to_string())?,
     };
 
-    let bytes = if let Some(ref pass) = passphrase {
-        bayesian_ssh::services::crypto::encrypt_data(raw_content.as_bytes(), pass)
-            .map_err(|e| e.to_string())?
-    } else {
-        raw_content.into_bytes()
+    let bytes = match passphrase {
+        Some(ref pass) if !pass.trim().is_empty() => {
+            bayesian_ssh::services::crypto::encrypt_data(raw_content.as_bytes(), pass)
+                .map_err(|e| e.to_string())?
+        }
+        _ => raw_content.into_bytes(),
     };
 
     if let Some(path_str) = output_path {

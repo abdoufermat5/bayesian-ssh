@@ -53,7 +53,7 @@
 
   async function handleExportEncryptedBackup() {
     try {
-      const path = await invoke<string | null>("pick_ssh_config_file");
+      const path = await invoke<string | null>("save_backup_file");
       if (!path) return;
       const msg = await invoke<string>("export_connections_payload", {
         outputPath: path,
@@ -69,7 +69,7 @@
 
   async function handleImportEncryptedBackup() {
     try {
-      const path = await invoke<string | null>("pick_ssh_config_file");
+      const path = await invoke<string | null>("pick_backup_file");
       if (!path) return;
       const count = await invoke<number>("import_connections_payload", {
         filePath: path,
