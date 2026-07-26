@@ -95,10 +95,11 @@
       await appState.loadStats();
     });
 
-    if (appState.settings.monitor_kerberos) {
+    if (appState.settings.monitor_kerberos && !appState.showOnboarding) {
       startKerberosMonitoring({
         warnMinutes: appState.settings.kerberos_warn_minutes,
         onWarning: (message) => {
+          if (appState.showOnboarding) return;
           notify(message, "info");
           // Also send system notification
           import("@tauri-apps/api/core").then(({ invoke }) => {
@@ -468,7 +469,7 @@
     />
   {/if}
 
-  {#if kerberosState.showModal}
+  {#if kerberosState.showModal && !appState.showOnboarding}
     <KerberosModal
       status={kerberosState.status}
       remainingSeconds={kerberosState.liveRemainingSeconds}
