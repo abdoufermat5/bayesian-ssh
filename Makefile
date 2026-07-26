@@ -10,7 +10,7 @@ build: ## Build debug CLI & GUI binaries
 	cargo build --workspace
 
 release: ## Build release binaries (CLI + Desktop GUI)
-	cargo build --release --package bayesian-ssh
+	cargo build --release --workspace
 	@if [ -d "desktop" ] && command -v npm >/dev/null 2>&1; then \
 		cd desktop && ( [ -d "node_modules" ] || npm install ) && npm run tauri build -- --config ../crates/gui/tauri.conf.json --no-bundle; \
 	fi
