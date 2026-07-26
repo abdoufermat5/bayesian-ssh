@@ -155,86 +155,106 @@ pub async fn run_batch_command(
     }
 
     let timeout_duration = std::time::Duration::from_secs(timeout_secs.unwrap_or(10));
-    let mut results = Vec::new();
 
+    if dry_run {
+        let results = targets
+            .into_iter()
+            .map(|conn| {
+                let is_prod = conn.name.to_lowercase().contains("prod")
+                    || conn.tags.iter().any(|t| t.to_lowercase().contains("prod"));
+                let stdout_msg = format!("[DRY RUN PREVIEW] Would execute '{}' on {}@{}", command, conn.user, conn.host);
+                BatchExecHostResult {
+                    connection_id: conn.id.to_string(),
+                    name: conn.name,
+                    host: conn.host,
+                    user: conn.user,
+                    is_production: is_prod,
+                    stdout: stdout_msg,
+                    stderr: String::new(),
+                    exit_code: 0,
+                    success: true,
+                    duration_ms: 0,
+                }
+            })
+            .collect();
+        return Ok(results);
+    }
+
+    let mut tasks = Vec::new();
     for conn in targets {
-        let is_prod = conn.name.to_lowercase().contains("prod")
-            || conn.tags.iter().any(|t| t.to_lowercase().contains("prod"));
-
-        if dry_run {
-            let stdout_msg = format!("[DRY RUN PREVIEW] Would execute '{}' on {}@{}", command, conn.user, conn.host);
-            results.push(BatchExecHostResult {
-                connection_id: conn.id.to_string(),
-                name: conn.name,
-                host: conn.host,
-                user: conn.user,
-                is_production: is_prod,
-                stdout: stdout_msg,
-                stderr: String::new(),
-                exit_code: 0,
-                success: true,
-                duration_ms: 0,
-            });
-            continue;
-        }
-
-        let start = std::time::Instant::now();
-        let conn_clone = conn.clone();
         let cfg_clone = config.clone();
         let cmd_clone = command.clone();
+        let timeout_dur = timeout_duration;
 
-        let exec_future = bayesian_ssh::services::transport::execute_with_fallback(&conn_clone, &cfg_clone, |transport| {
-            let c = conn_clone.clone();
-            let cm = cmd_clone.clone();
-            Box::pin(async move { transport.exec(&c, &cm).await })
-        });
+        tasks.push(tokio::spawn(async move {
+            let is_prod = conn.name.to_lowercase().contains("prod")
+                || conn.tags.iter().any(|t| t.to_lowercase().contains("prod"));
 
-        match tokio::time::timeout(timeout_duration, exec_future).await {
-            Ok(Ok(output)) => {
-                let duration = start.elapsed().as_millis() as u64;
-                results.push(BatchExecHostResult {
-                    connection_id: conn.id.to_string(),
-                    name: conn.name,
-                    host: conn.host,
-                    user: conn.user,
-                    is_production: is_prod,
-                    stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-                    stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-                    exit_code: output.exit_code,
-                    success: output.exit_code == 0,
-                    duration_ms: duration,
-                });
+            let start = std::time::Instant::now();
+            let conn_for_ref = conn.clone();
+            let conn_for_closure = conn.clone();
+            let cmd_for_exec = cmd_clone.clone();
+
+            let exec_future = bayesian_ssh::services::transport::execute_with_fallback(&conn_for_ref, &cfg_clone, move |transport| {
+                let c = conn_for_closure.clone();
+                let cm = cmd_for_exec.clone();
+                Box::pin(async move { transport.exec(&c, &cm).await })
+            });
+
+            match tokio::time::timeout(timeout_dur, exec_future).await {
+                Ok(Ok(output)) => {
+                    let duration = start.elapsed().as_millis() as u64;
+                    BatchExecHostResult {
+                        connection_id: conn.id.to_string(),
+                        name: conn.name,
+                        host: conn.host,
+                        user: conn.user,
+                        is_production: is_prod,
+                        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+                        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+                        exit_code: output.exit_code,
+                        success: output.exit_code == 0,
+                        duration_ms: duration,
+                    }
+                }
+                Ok(Err(e)) => {
+                    let duration = start.elapsed().as_millis() as u64;
+                    BatchExecHostResult {
+                        connection_id: conn.id.to_string(),
+                        name: conn.name,
+                        host: conn.host,
+                        user: conn.user,
+                        is_production: is_prod,
+                        stdout: String::new(),
+                        stderr: format!("Execution failed: {}", e),
+                        exit_code: -1,
+                        success: false,
+                        duration_ms: duration,
+                    }
+                }
+                Err(_) => {
+                    let duration = start.elapsed().as_millis() as u64;
+                    BatchExecHostResult {
+                        connection_id: conn.id.to_string(),
+                        name: conn.name,
+                        host: conn.host,
+                        user: conn.user,
+                        is_production: is_prod,
+                        stdout: String::new(),
+                        stderr: format!("Execution timed out after {}s", timeout_dur.as_secs()),
+                        exit_code: -1,
+                        success: false,
+                        duration_ms: duration,
+                    }
+                }
             }
-            Ok(Err(e)) => {
-                let duration = start.elapsed().as_millis() as u64;
-                results.push(BatchExecHostResult {
-                    connection_id: conn.id.to_string(),
-                    name: conn.name,
-                    host: conn.host,
-                    user: conn.user,
-                    is_production: is_prod,
-                    stdout: String::new(),
-                    stderr: format!("Execution failed: {}", e),
-                    exit_code: -1,
-                    success: false,
-                    duration_ms: duration,
-                });
-            }
-            Err(_) => {
-                let duration = start.elapsed().as_millis() as u64;
-                results.push(BatchExecHostResult {
-                    connection_id: conn.id.to_string(),
-                    name: conn.name,
-                    host: conn.host,
-                    user: conn.user,
-                    is_production: is_prod,
-                    stdout: String::new(),
-                    stderr: format!("Execution timed out after {}s", timeout_duration.as_secs()),
-                    exit_code: -1,
-                    success: false,
-                    duration_ms: duration,
-                });
-            }
+        }));
+    }
+
+    let mut results = Vec::new();
+    for task in tasks {
+        if let Ok(res) = task.await {
+            results.push(res);
         }
     }
 
