@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=Bayesian SSH
 Comment=Fast and lightweight SSH session manager with Bayesian search
-Exec=bayesian-ssh-desktop
+Exec=bayesian-ssh-gui
 Icon=com.bayesianssh.App
 Terminal=false
 Type=Application

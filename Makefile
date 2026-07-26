@@ -41,7 +41,7 @@ package: ## Build unified .deb and .rpm packages
 	./scripts/package.sh
 
 flatpak-build: ## Build Flatpak bundle
-	flatpak-builder --force-clean --install-deps-from=flathub target/flatpak-build packaging/flatpak/com.bayesianssh.App.yml
+	flatpak-builder --force-clean --ccache --install-deps-from=flathub target/flatpak-build packaging/flatpak/com.bayesianssh.App.yml
 
 snap-build: ## Build Snap package
 	snapcraft --manifest=packaging/snap/snapcraft.yaml
