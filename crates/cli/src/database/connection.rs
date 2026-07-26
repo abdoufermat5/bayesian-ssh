@@ -86,7 +86,11 @@ impl Database {
 
         let mut connections = Vec::new();
         while let Some(row) = rows.next()? {
-            connections.push(self.row_to_connection(row)?);
+            let mut conn = self.row_to_connection(row)?;
+            if let Ok(aliases) = self.get_aliases_for_connection(&conn.id.to_string()) {
+                conn.aliases = aliases;
+            }
+            connections.push(conn);
         }
 
         Ok(connections)
