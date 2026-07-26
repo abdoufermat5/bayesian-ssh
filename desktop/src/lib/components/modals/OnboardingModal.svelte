@@ -107,7 +107,7 @@
   }
 </script>
 
-<div class="fixed inset-0 bg-[#09090b] z-[200] flex flex-col items-center justify-center p-6 select-none overflow-y-auto">
+<div class="fixed top-[var(--titlebar-h,36px)] left-0 right-0 bottom-0 bg-[#09090b] z-40 flex flex-col items-center justify-center p-6 select-none overflow-y-auto">
   <div class="w-full max-w-[480px] flex flex-col gap-6 my-auto">
     
     <!-- Header -->
