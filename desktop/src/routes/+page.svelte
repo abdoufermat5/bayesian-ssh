@@ -75,16 +75,22 @@
   let showQuitConfirmModal = $state(false);
 
   function handleKeydownWithHelp(e: KeyboardEvent) {
-    const isEditingInput = document.activeElement?.tagName === "INPUT" || document.activeElement?.tagName === "TEXTAREA";
-    if (e.key === "?" && !isEditingInput) {
-      e.preventDefault();
-      showAboutModal = !showAboutModal;
-    } else if ((e.key === "F1" || (e.key === "/" && (e.ctrlKey || e.metaKey))) && !isEditingInput) {
+    const isEditingInput =
+      document.activeElement?.tagName === "INPUT" ||
+      document.activeElement?.tagName === "TEXTAREA" ||
+      document.activeElement?.getAttribute("contenteditable") === "true";
+
+    if (
+      (e.key === "?" && !isEditingInput) ||
+      e.key === "F1" ||
+      ((e.ctrlKey || e.metaKey) && e.key === "/")
+    ) {
       e.preventDefault();
       showShortcutsModal = !showShortcutsModal;
-    } else {
-      appState.handleGlobalKeydown(e);
+      return;
     }
+
+    appState.handleGlobalKeydown(e);
   }
 
   onMount(() => {
@@ -247,7 +253,7 @@
                     (e.target as HTMLInputElement).blur();
                   }
                 }}
-                class="bg-transparent border-none text-primary outline-none w-full text-xs font-inherit"
+                class="search-input bg-transparent border-none text-primary outline-none w-full text-xs font-inherit"
               />
               {#if appState.searchQuery}
                 <button

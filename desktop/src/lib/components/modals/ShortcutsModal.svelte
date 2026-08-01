@@ -9,17 +9,19 @@
   let { show, onClose }: Props = $props();
 
   const shortcuts = [
-    { key: "/", description: "Focus search bar" },
-    { key: "N", description: "Open Add Connection modal" },
-    { key: "1", description: "Switch to Hosts tab" },
+    { key: "/  or  Ctrl+K", description: "Focus search bar" },
+    { key: "N  or  Ctrl+N", description: "Open Add Connection modal" },
+    { key: "1", description: "Switch to Hosts / Connections tab" },
     { key: "2", description: "Switch to Terminals tab" },
     { key: "3", description: "Switch to Keys tab" },
-    { key: "4", description: "Switch to Audit tab" },
-    { key: "5", description: "Switch to Logs tab" },
+    { key: "4", description: "Switch to Security Audit tab" },
+    { key: "5", description: "Switch to History / Logs tab" },
     { key: "6", description: "Switch to Settings tab" },
-    { key: "Double Click", description: "Connect to selected SSH host" },
+    { key: "↑ / ↓", description: "Navigate host list" },
+    { key: "Enter", description: "Connect to selected host" },
+    { key: "Ctrl + E", description: "Edit selected host" },
     { key: "Escape", description: "Close active modal / Clear search" },
-    { key: "?", description: "Open keyboard shortcuts guide" },
+    { key: "?  or  F1", description: "Toggle keyboard shortcuts guide" },
   ];
 </script>
 

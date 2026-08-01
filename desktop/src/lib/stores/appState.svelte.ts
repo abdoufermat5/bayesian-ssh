@@ -793,44 +793,90 @@ export class AppStateStore {
   }
 
   handleGlobalKeydown = (e: KeyboardEvent) => {
-    if (this.showOnboarding || this.showModal || this.showEnvModal) {
-      if (e.key === "Escape" && !this.showOnboarding) {
+    if (this.showOnboarding) return;
+
+    const isEditing =
+      document.activeElement?.tagName === "INPUT" ||
+      document.activeElement?.tagName === "TEXTAREA" ||
+      document.activeElement?.getAttribute("contenteditable") === "true";
+
+    // Escape closes open modals or clears search
+    if (e.key === "Escape") {
+      if (this.showModal || this.showEnvModal || this.showAgentModal || this.showDeleteConfirm) {
         this.showModal = false;
         this.showEnvModal = false;
+        this.showAgentModal = false;
+        this.showDeleteConfirm = false;
+        return;
       }
+      if (this.searchQuery) {
+        this.searchQuery = "";
+        (document.activeElement as HTMLElement)?.blur();
+        return;
+      }
+    }
+
+    if (this.showModal || this.showEnvModal || this.showAgentModal || this.showDeleteConfirm) {
       return;
     }
 
     if (this.activeTab === "terminals" && !isTerminalFocused()) {
-      if (e.ctrlKey && (e.key === "=" || e.key === "+")) {
+      if ((e.ctrlKey || e.metaKey) && (e.key === "=" || e.key === "+")) {
         e.preventDefault();
         updateTerminalFontSize(getTerminalFontSize() + 1);
         return;
       }
-      if (e.ctrlKey && e.key === "-") {
+      if ((e.ctrlKey || e.metaKey) && e.key === "-") {
         e.preventDefault();
         updateTerminalFontSize(getTerminalFontSize() - 1);
         return;
       }
-      if (e.ctrlKey && e.key === "0") {
+      if ((e.ctrlKey || e.metaKey) && e.key === "0") {
         e.preventDefault();
         updateTerminalFontSize(13);
         return;
       }
     }
 
+    // Focus Search Bar: '/' (when not editing input & not in terminal) OR 'Ctrl+K' / 'Cmd+K'
     if (
       !isTerminalFocused() &&
-      ((e.ctrlKey && e.key === "k") || (e.key === "/" && document.activeElement?.tagName !== "INPUT"))
+      (((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") ||
+        (e.key === "/" && !isEditing))
     ) {
       e.preventDefault();
       const searchInput = document.querySelector(".search-input") as HTMLInputElement;
-      searchInput?.focus();
-      searchInput?.select();
+      if (searchInput) {
+        searchInput.focus();
+        searchInput.select();
+      }
       return;
     }
 
-    if (this.activeTab === "connections" && this.connections.length > 0) {
+    // Open Add Connection Modal: 'N' / 'n' (when not editing input & not in terminal) OR 'Ctrl+N' / 'Cmd+N'
+    if (
+      !isTerminalFocused() &&
+      (((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n") ||
+        ((e.key === "n" || e.key === "N") && !isEditing))
+    ) {
+      e.preventDefault();
+      this.openAddModal();
+      return;
+    }
+
+    // Tab switching (1..6 or Alt+1..6) when not editing input & not in terminal
+    if (!isTerminalFocused() && !isEditing) {
+      const key = e.key;
+      if (key === "1") { e.preventDefault(); this.activeTab = "connections"; return; }
+      if (key === "2") { e.preventDefault(); this.goToTerminals(); return; }
+      if (key === "3") { e.preventDefault(); this.activeTab = "keys"; return; }
+      if (key === "4") { e.preventDefault(); this.activeTab = "audit"; return; }
+      if (key === "5") { e.preventDefault(); this.activeTab = "history"; return; }
+      if (key === "6") { e.preventDefault(); this.activeTab = "settings"; return; }
+    }
+
+    // Connections List navigation (ArrowUp, ArrowDown, Enter, Ctrl+E)
+    if (this.activeTab === "connections" && this.connections.length > 0 && !isEditing && !isTerminalFocused()) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
         this.selectedHostIndex = (this.selectedHostIndex + 1) % this.connections.length;
@@ -839,13 +885,17 @@ export class AppStateStore {
         this.selectedHostIndex = (this.selectedHostIndex - 1 + this.connections.length) % this.connections.length;
       } else if (e.key === "Enter") {
         e.preventDefault();
-        if (this.connections[this.selectedHostIndex]) this.handleConnect(this.connections[this.selectedHostIndex]);
-      } else if (e.key === "e" && e.ctrlKey) {
+        if (this.connections[this.selectedHostIndex]) {
+          this.handleConnect(this.connections[this.selectedHostIndex]);
+        }
+      } else if (e.key.toLowerCase() === "e" && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
-        if (this.connections[this.selectedHostIndex]) this.openEditModal(this.connections[this.selectedHostIndex]);
+        if (this.connections[this.selectedHostIndex]) {
+          this.openEditModal(this.connections[this.selectedHostIndex]);
+        }
       }
     }
-  }
+  };
 }
 
 export const appState = new AppStateStore();
