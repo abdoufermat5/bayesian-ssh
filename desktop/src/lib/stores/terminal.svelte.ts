@@ -60,13 +60,34 @@ export function initThemeSyncForTerminals() {
   observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
 }
 
-export function applyThemeToAllTerminals() {
+import type { DesktopSettings } from "$lib/types";
+
+export function applyThemeToAllTerminals(settings?: DesktopSettings) {
   const currentTheme = getCurrentXtermTheme();
   tabs.forEach((tab) => {
     if (tab.term) {
       tab.term.options.theme = currentTheme;
+      if (settings?.terminal_font_family) {
+        tab.term.options.fontFamily = settings.terminal_font_family;
+      }
+      if (settings?.terminal_font_size) {
+        tab.term.options.fontSize = settings.terminal_font_size;
+      }
+      if (settings?.terminal_line_height) {
+        tab.term.options.lineHeight = settings.terminal_line_height;
+      }
+      if (settings?.terminal_cursor_style) {
+        tab.term.options.cursorStyle = settings.terminal_cursor_style;
+      }
+      if (settings?.terminal_cursor_blink !== undefined) {
+        tab.term.options.cursorBlink = settings.terminal_cursor_blink;
+      }
+      if (settings?.terminal_scrollback) {
+        tab.term.options.scrollback = settings.terminal_scrollback;
+      }
     }
   });
+  fitActiveTerminal();
 }
 
 export function getTerminalFontSize(): number {

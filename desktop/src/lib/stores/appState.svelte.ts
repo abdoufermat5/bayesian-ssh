@@ -14,6 +14,7 @@ import { notify } from "$lib/stores/notifications.svelte";
 import { applyTheme } from "$lib/utils/theme";
 import { isTerminalFocused } from "$lib/utils/terminal-focus";
 import {
+  applyThemeToAllTerminals,
   closeAllTabs,
   connectSSH,
   dockPopoutSession,
@@ -128,6 +129,13 @@ export class AppStateStore {
     fuzzy_search: false,
     default_key_path: "",
     timezone: "system",
+    terminal_font_family: "JetBrains Mono, Fira Code, Cascadia Code, Consolas, monospace",
+    terminal_font_size: 13,
+    terminal_line_height: 1.18,
+    terminal_cursor_style: "block",
+    terminal_cursor_blink: true,
+    terminal_copy_on_select: false,
+    terminal_scrollback: 10000,
   });
 
   allTags = $derived.by(() => {
@@ -294,8 +302,16 @@ export class AppStateStore {
         fuzzy_search: Boolean(loaded.fuzzy_search),
         default_key_path: (loaded.default_key_path as string) || "",
         timezone: (loaded.timezone as string) || "system",
+        terminal_font_family: (loaded.terminal_font_family as string) || "JetBrains Mono, Fira Code, Cascadia Code, Consolas, monospace",
+        terminal_font_size: Number(loaded.terminal_font_size) || 13,
+        terminal_line_height: Number(loaded.terminal_line_height) || 1.18,
+        terminal_cursor_style: (loaded.terminal_cursor_style as "block" | "bar" | "underline") || "block",
+        terminal_cursor_blink: loaded.terminal_cursor_blink !== false,
+        terminal_copy_on_select: Boolean(loaded.terminal_copy_on_select),
+        terminal_scrollback: Number(loaded.terminal_scrollback) || 10000,
       };
       applyTheme(this.settings.theme);
+      applyThemeToAllTerminals(this.settings);
 
       if (this.settings.auto_start_agent && !this.agentActive) {
         await this.triggerStartAgent();
@@ -316,6 +332,7 @@ export class AppStateStore {
 
   saveSettings = async () => {
     applyTheme(this.settings.theme);
+    applyThemeToAllTerminals(this.settings);
     try {
       await invoke("save_desktop_settings", {
         settings: { ...this.settings, onboarding_complete: true },

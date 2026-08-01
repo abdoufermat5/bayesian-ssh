@@ -120,6 +120,20 @@ pub struct DesktopSettings {
     pub timezone: String,
     #[serde(default = "default_onboarding_complete")]
     pub onboarding_complete: bool,
+    #[serde(default = "default_terminal_font_family")]
+    pub terminal_font_family: String,
+    #[serde(default = "default_terminal_font_size")]
+    pub terminal_font_size: u32,
+    #[serde(default = "default_terminal_line_height")]
+    pub terminal_line_height: f64,
+    #[serde(default = "default_terminal_cursor_style")]
+    pub terminal_cursor_style: String,
+    #[serde(default = "default_terminal_cursor_blink")]
+    pub terminal_cursor_blink: bool,
+    #[serde(default = "default_terminal_copy_on_select")]
+    pub terminal_copy_on_select: bool,
+    #[serde(default = "default_terminal_scrollback")]
+    pub terminal_scrollback: u32,
 }
 
 pub fn default_timezone() -> String {
@@ -136,6 +150,34 @@ pub fn default_monitor_kerberos() -> bool {
 
 pub fn default_onboarding_complete() -> bool {
     true
+}
+
+pub fn default_terminal_font_family() -> String {
+    "JetBrains Mono, Fira Code, Cascadia Code, Consolas, monospace".to_string()
+}
+
+pub fn default_terminal_font_size() -> u32 {
+    13
+}
+
+pub fn default_terminal_line_height() -> f64 {
+    1.18
+}
+
+pub fn default_terminal_cursor_style() -> String {
+    "block".to_string()
+}
+
+pub fn default_terminal_cursor_blink() -> bool {
+    true
+}
+
+pub fn default_terminal_copy_on_select() -> bool {
+    false
+}
+
+pub fn default_terminal_scrollback() -> u32 {
+    10000
 }
 
 impl Default for DesktopSettings {
@@ -156,6 +198,13 @@ impl Default for DesktopSettings {
             default_key_path: None,
             timezone: default_timezone(),
             onboarding_complete: false,
+            terminal_font_family: default_terminal_font_family(),
+            terminal_font_size: default_terminal_font_size(),
+            terminal_line_height: default_terminal_line_height(),
+            terminal_cursor_style: default_terminal_cursor_style(),
+            terminal_cursor_blink: default_terminal_cursor_blink(),
+            terminal_copy_on_select: default_terminal_copy_on_select(),
+            terminal_scrollback: default_terminal_scrollback(),
         }
     }
 }

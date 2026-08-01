@@ -46,6 +46,13 @@ export interface DesktopSettings {
   default_key_path: string;
   timezone: string;
   onboarding_complete?: boolean;
+  terminal_font_family?: string;
+  terminal_font_size?: number;
+  terminal_line_height?: number;
+  terminal_cursor_style?: "block" | "bar" | "underline";
+  terminal_cursor_blink?: boolean;
+  terminal_copy_on_select?: boolean;
+  terminal_scrollback?: number;
 }
 
 export interface WorkspaceInfo {
