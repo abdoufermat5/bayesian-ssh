@@ -6,14 +6,20 @@ help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
 build: ## Build debug CLI & GUI binaries
-	@if [ -d "desktop" ] && command -v npm >/dev/null 2>&1; then cd desktop && ( [ -d "node_modules" ] || npm install ) && npm run build; fi
+	@if [ -d "desktop" ]; then \
+		export PATH=$$PATH:$$HOME/.nvm/versions/node/$$(ls $$HOME/.nvm/versions/node 2>/dev/null | tail -n 1)/bin:$$HOME/.cargo/bin; \
+		if command -v npm >/dev/null 2>&1; then cd desktop && ( [ -d "node_modules" ] || npm install ) && npm run build; fi; \
+	fi
 	cargo build --workspace
 
 release: ## Build release binaries (CLI + Desktop GUI)
-	cargo build --release --package bayesian-ssh
-	@if [ -d "desktop" ] && command -v npm >/dev/null 2>&1; then \
-		cd desktop && ( [ -d "node_modules" ] || npm install ) && rm -f ../target/release/bayesian-ssh-gui && npm run tauri build -- --config ../crates/gui/tauri.conf.json --no-bundle; \
+	@if [ -d "desktop" ]; then \
+		export PATH=$$PATH:$$HOME/.nvm/versions/node/$$(ls $$HOME/.nvm/versions/node 2>/dev/null | tail -n 1)/bin:$$HOME/.cargo/bin; \
+		if command -v npm >/dev/null 2>&1; then \
+			cd desktop && ( [ -d "node_modules" ] || npm install ) && npm run build; \
+		fi; \
 	fi
+	cargo build --release --workspace
 
 test: ## Run tests
 	cargo test
@@ -32,6 +38,8 @@ install: release ## Install bayesian-ssh, bssh alias, and desktop GUI binary to 
 	sudo ln -sf $(INSTALL_DIR)/bayesian-ssh $(INSTALL_DIR)/bssh
 	@if [ -f "target/release/bayesian-ssh-gui" ]; then \
 		sudo install -m 755 target/release/bayesian-ssh-gui $(INSTALL_DIR)/bayesian-ssh-gui; \
+	elif [ -f "target/release/bayesian-ssh-desktop" ]; then \
+		sudo install -m 755 target/release/bayesian-ssh-desktop $(INSTALL_DIR)/bayesian-ssh-gui; \
 	fi
 
 uninstall: ## Remove bayesian-ssh, bssh, and desktop GUI binary from system
