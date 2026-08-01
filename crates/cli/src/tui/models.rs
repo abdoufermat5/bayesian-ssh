@@ -115,6 +115,8 @@ pub enum ConfirmAction {
     StopTunnel(usize),
     /// Delete a remote file/dir at the given path
     DeleteFile(String),
+    /// Quit the TUI while one or more tunnels are still active
+    QuitWithTunnels,
 }
 
 /// Sort field for connection list

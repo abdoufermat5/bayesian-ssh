@@ -53,7 +53,24 @@ pub async fn execute(
 
     let target_str = match target {
         Some(t) => t,
-        None => anyhow::bail!("Target connection name or --tag is required"),
+        None => {
+            let connections = ssh_service.list_connections(None, false).await?;
+            if connections.is_empty() {
+                println!("No saved connections to remove.");
+                return Ok(());
+            }
+            println!("No target specified. Available connections:\n");
+            for (i, conn) in connections.iter().enumerate() {
+                let tags = if conn.tags.is_empty() {
+                    String::new()
+                } else {
+                    format!(" [{}]", conn.tags.join(", "))
+                };
+                println!("  {:<3} {}@{}:{}{}", i + 1, conn.name, conn.user, conn.host, tags);
+            }
+            println!("\nUse `bssh remove <name>` or `bssh remove --tag <tag>`.");
+            return Ok(());
+        }
     };
 
     info!("Removing connection: {}", target_str);

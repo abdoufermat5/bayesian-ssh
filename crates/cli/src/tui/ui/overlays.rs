@@ -62,6 +62,7 @@ pub fn draw_help_overlay(frame: &mut Frame, area: Rect, app: &App) {
             "  Indicators: [B] bastion  [K] kerberos",
             "  Ping:  ● reachable  ● unreachable  ◌ checking",
             "",
+            "  Esc / q / ? to close",
         ],
         Tab::History => vec![
             "",
@@ -84,6 +85,7 @@ pub fn draw_help_overlay(frame: &mut Frame, area: Rect, app: &App) {
             "  ?           Toggle this help",
             "  q/Esc       Quit",
             "",
+            "  Esc / q / ? to close",
         ],
         Tab::Config => vec![
             "",
@@ -104,6 +106,7 @@ pub fn draw_help_overlay(frame: &mut Frame, area: Rect, app: &App) {
             "  ?           Toggle this help",
             "  q/Esc       Quit",
             "",
+            "  Esc / q / ? to close",
         ],
         Tab::Files => vec![
             "",
@@ -127,6 +130,7 @@ pub fn draw_help_overlay(frame: &mut Frame, area: Rect, app: &App) {
             "  ?           Toggle this help",
             "  q/Esc       Quit",
             "",
+            "  Esc / q / ? to close",
         ],
         Tab::Tunnels => vec![
             "",
@@ -156,6 +160,7 @@ pub fn draw_help_overlay(frame: &mut Frame, area: Rect, app: &App) {
             "  ?           Toggle this help",
             "  q/Esc       Quit",
             "",
+            "  Esc / q / ? to close",
         ],
     };
 
@@ -239,6 +244,17 @@ pub fn draw_confirm_dialog(frame: &mut Frame, area: Rect, action: &ConfirmAction
             " Delete Remote Entry ",
             format!("Delete '{path}'?\n\nThis cannot be undone.\n\n[y] Yes  [n] No"),
         ),
+        ConfirmAction::QuitWithTunnels => {
+            let count = app.tunnels.len();
+            (
+                " Quit ",
+                format!(
+                    "Close {} active tunnel{}?\n\nTunnels will be cancelled on exit.\n\n[y] Yes  [n] No",
+                    count,
+                    if count == 1 { "" } else { "s" }
+                ),
+            )
+        }
     };
 
     let popup_area = centered_rect(50, 10, area);

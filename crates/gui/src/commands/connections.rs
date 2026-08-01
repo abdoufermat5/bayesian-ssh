@@ -2,6 +2,15 @@ use super::get_db_and_config;
 use bayesian_ssh::models::Connection;
 use uuid::Uuid;
 
+fn friendly_db_error(e: impl std::fmt::Display) -> String {
+    let msg = e.to_string();
+    if msg.contains("UNIQUE constraint failed") {
+        "A connection with this name already exists.".to_string()
+    } else {
+        msg
+    }
+}
+
 #[tauri::command]
 pub fn get_connections(
     query: Option<String>,
@@ -13,12 +22,12 @@ pub fn get_connections(
         if !q.trim().is_empty() {
             return db
                 .search_connections(&q, 100, &config.search_mode)
-                .map_err(|e| e.to_string());
+                .map_err(friendly_db_error);
         }
     }
 
     db.list_connections(tag_filter.as_deref(), false)
-        .map_err(|e| e.to_string())
+        .map_err(friendly_db_error)
 }
 
 #[tauri::command]

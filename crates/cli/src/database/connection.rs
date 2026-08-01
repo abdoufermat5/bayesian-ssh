@@ -86,11 +86,17 @@ impl Database {
 
         let mut connections = Vec::new();
         while let Some(row) = rows.next()? {
-            let mut conn = self.row_to_connection(row)?;
-            if let Ok(aliases) = self.get_aliases_for_connection(&conn.id.to_string()) {
-                conn.aliases = aliases;
+            connections.push(self.row_to_connection(row)?);
+        }
+
+        // Batch-fetch aliases for all returned connections in a single query
+        // (avoids N+1: one query per connection).
+        let ids: Vec<String> = connections.iter().map(|c| c.id.to_string()).collect();
+        let alias_map = self.get_aliases_for_connections(&ids)?;
+        for conn in &mut connections {
+            if let Some(aliases) = alias_map.get(&conn.id.to_string()) {
+                conn.aliases = aliases.clone();
             }
-            connections.push(conn);
         }
 
         Ok(connections)
@@ -213,12 +219,17 @@ impl Database {
             result.ok()
         };
 
-        let mut recent_connections = self.list_connections(None, true)?;
-        recent_connections.truncate(10);
+        let all_connections = self.list_connections(None, false)?;
+
+        let recent_connections: Vec<Connection> = all_connections
+            .iter()
+            .filter(|c| c.last_used.is_some())
+            .take(10)
+            .cloned()
+            .collect();
 
         let mut tag_counts = std::collections::HashMap::new();
-        let connections = self.list_connections(None, false)?;
-        for conn in connections {
+        for conn in &all_connections {
             for tag in &conn.tags {
                 *tag_counts.entry(tag.clone()).or_insert(0) += 1;
             }

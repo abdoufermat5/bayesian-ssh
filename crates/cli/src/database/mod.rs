@@ -119,6 +119,16 @@ impl Database {
             [],
         )?;
 
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sessions_exit_code ON sessions(exit_code)",
+            [],
+        )?;
+
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_connections_created_at ON connections(created_at)",
+            [],
+        )?;
+
         Ok(())
     }
 }

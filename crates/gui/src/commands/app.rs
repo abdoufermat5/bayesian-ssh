@@ -9,6 +9,12 @@ pub fn quit_app(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+pub fn force_quit_app(app: AppHandle) -> Result<(), String> {
+    tray::force_quit_application(&app);
+    Ok(())
+}
+
 #[derive(Serialize)]
 pub struct EnvStatus {
     pub ssh_agent_available: bool,

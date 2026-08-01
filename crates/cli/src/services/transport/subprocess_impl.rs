@@ -28,7 +28,7 @@ impl SubprocessTransport {
     /// bastions only.  Interactive bastions (kerberos + bastion) cannot
     /// pass a remote command via the argv — use `run_interactive_exec`
     /// instead.
-    pub(crate) fn build_exec_argv(conn: &Connection, command: &str) -> Vec<String> {
+    pub(crate) fn build_exec_argv(conn: &Connection, command: &str, shkc: &str) -> Vec<String> {
         let mut argv: Vec<String> = vec!["ssh".into()];
         argv.push("-tt".into());
         argv.push("-o".into());
@@ -41,7 +41,7 @@ impl SubprocessTransport {
             argv.push(key.clone());
         }
         argv.push("-o".into());
-        argv.push("StrictHostKeyChecking=accept-new".into());
+        argv.push(format!("StrictHostKeyChecking={shkc}"));
 
         if let Some(bastion) = &conn.bastion {
             let bu = conn.bastion_user.as_deref().unwrap_or(&conn.user);
@@ -51,7 +51,7 @@ impl SubprocessTransport {
                 String::new()
             };
             let proxy_cmd = format!(
-                "ssh -tt -o RequestTTY=force{key_flag} -o StrictHostKeyChecking=accept-new -W %h:%p {bu}@{bastion}"
+                "ssh -tt -o RequestTTY=force{key_flag} -o StrictHostKeyChecking={shkc} -W %h:%p {bu}@{bastion}"
             );
             argv.push("-o".into());
             argv.push(format!("ProxyCommand={proxy_cmd}"));
@@ -69,6 +69,10 @@ impl SubprocessTransport {
     /// bastion: we SSH into it and pass `target_user@target` as argument.
     /// Without Kerberos the bastion is a classic jump host using ProxyCommand with forced TTY.
     pub fn build_shell_argv(conn: &Connection) -> Vec<String> {
+        Self::build_shell_argv_with_shkc(conn, "accept-new")
+    }
+
+    fn build_shell_argv_with_shkc(conn: &Connection, shkc: &str) -> Vec<String> {
         let mut argv: Vec<String> = vec!["ssh".into()];
         // Force remote TTY allocation even when stdin is not a terminal (e.g. GUI background process)
         argv.push("-tt".into());
@@ -99,7 +103,7 @@ impl SubprocessTransport {
                     String::new()
                 };
                 let proxy_cmd = format!(
-                    "ssh -tt -o RequestTTY=force{key_flag} -o StrictHostKeyChecking=accept-new -W %h:%p {bu}@{bastion}"
+                    "ssh -tt -o RequestTTY=force{key_flag} -o StrictHostKeyChecking={shkc} -W %h:%p {bu}@{bastion}"
                 );
                 argv.push("-o".into());
                 argv.push(format!("ProxyCommand={proxy_cmd}"));
@@ -170,11 +174,16 @@ impl SubprocessTransport {
         let marker_start = format!("{marker}_START");
         let marker_end = format!("{marker}_END");
 
-        let mut argv = Self::build_shell_argv(conn);
+        let mut argv = Self::build_shell_argv_with_shkc(
+            conn,
+            &self.config.transport.strict_host_key_checking,
+        );
         if let Some(pos) = argv.iter().position(|a| a == "-t" || a == "-tt") {
             argv[pos] = "-tt".into();
         }
-        let (cmd_name, args) = argv.split_first().expect("argv non-empty");
+        let (cmd_name, args) = argv
+            .split_first()
+            .ok_or_else(|| TransportError::permanent(anyhow::anyhow!("empty argv")))?;
 
         let mut child = TokioCommand::new(cmd_name)
             .args(args)
@@ -184,8 +193,24 @@ impl SubprocessTransport {
             .spawn()
             .map_err(|e| TransportError::permanent(anyhow::Error::from(e)))?;
 
-        let mut stdin = child.stdin.take().expect("stdin piped");
-        let mut stdout = child.stdout.take().expect("stdout piped");
+        let mut stdin = match child.stdin.take() {
+            Some(s) => s,
+            None => {
+                let _ = child.kill().await;
+                return Err(TransportError::permanent(anyhow::anyhow!(
+                    "stdin pipe not available"
+                )));
+            }
+        };
+        let mut stdout = match child.stdout.take() {
+            Some(s) => s,
+            None => {
+                let _ = child.kill().await;
+                return Err(TransportError::permanent(anyhow::anyhow!(
+                    "stdout pipe not available"
+                )));
+            }
+        };
         // With -tt stderr is merged into stdout via the PTY.
         let _stderr = child.stderr.take();
 
@@ -297,8 +322,10 @@ impl SshTransport for SubprocessTransport {
             return self.run_interactive_exec(conn, command).await;
         }
 
-        let argv = Self::build_exec_argv(conn, command);
-        let (cmd_name, args) = argv.split_first().expect("argv non-empty");
+        let argv = Self::build_exec_argv(conn, command, &self.config.transport.strict_host_key_checking);
+        let (cmd_name, args) = argv
+            .split_first()
+            .ok_or_else(|| TransportError::permanent(anyhow::anyhow!("empty argv")))?;
 
         let output = TokioCommand::new(cmd_name)
             .args(args)
@@ -345,7 +372,9 @@ impl SshTransport for SubprocessTransport {
         remote_port: u16,
     ) -> Result<crate::services::transport::types::ForwardHandle, TransportError> {
         let argv = Self::build_forward_argv(conn, bind_host, bind_port, remote_host, remote_port);
-        let (cmd_name, args) = argv.split_first().expect("argv non-empty");
+        let (cmd_name, args) = argv
+            .split_first()
+            .ok_or_else(|| TransportError::Permanent(anyhow::anyhow!("empty argv")))?;
 
         let mut child = TokioCommand::new(cmd_name)
             .args(args)
@@ -375,7 +404,9 @@ impl SshTransport for SubprocessTransport {
         bind_port: u16,
     ) -> Result<crate::services::transport::types::ForwardHandle, TransportError> {
         let argv = Self::build_dynamic_argv(conn, bind_host, bind_port);
-        let (cmd_name, args) = argv.split_first().expect("argv non-empty");
+        let (cmd_name, args) = argv
+            .split_first()
+            .ok_or_else(|| TransportError::Permanent(anyhow::anyhow!("empty argv")))?;
 
         let mut child = TokioCommand::new(cmd_name)
             .args(args)
@@ -399,8 +430,13 @@ impl SshTransport for SubprocessTransport {
     }
 
     async fn run_interactive(&self, conn: &Connection) -> Result<i32, TransportError> {
-        let argv = Self::build_shell_argv(conn);
-        let (cmd_name, args) = argv.split_first().expect("argv non-empty");
+        let argv = Self::build_shell_argv_with_shkc(
+            conn,
+            &self.config.transport.strict_host_key_checking,
+        );
+        let (cmd_name, args) = argv
+            .split_first()
+            .ok_or_else(|| TransportError::permanent(anyhow::anyhow!("empty argv")))?;
 
         let mut child = TokioCommand::new(cmd_name)
             .args(args)
@@ -482,7 +518,7 @@ mod tests {
 
     #[test]
     fn argv_simple() {
-        let argv = SubprocessTransport::build_exec_argv(&c(false, None, None), "uptime");
+        let argv = SubprocessTransport::build_exec_argv(&c(false, None, None), "uptime", "accept-new");
         assert_eq!(argv[0], "ssh");
         assert!(argv.contains(&"-p".to_string()));
         assert!(argv.contains(&"2222".to_string()));
@@ -496,14 +532,14 @@ mod tests {
 
     #[test]
     fn argv_kerberos_adds_k_flag() {
-        let argv = SubprocessTransport::build_exec_argv(&c(true, None, None), "uptime");
+        let argv = SubprocessTransport::build_exec_argv(&c(true, None, None), "uptime", "accept-new");
         assert!(argv.contains(&"-K".to_string()));
     }
 
     #[test]
     fn argv_bastion_uses_proxy_command() {
         let argv =
-            SubprocessTransport::build_exec_argv(&c(false, Some("b.example"), None), "uptime");
+            SubprocessTransport::build_exec_argv(&c(false, Some("b.example"), None), "uptime", "accept-new");
         assert!(argv.iter().any(|a| a.contains("ProxyCommand=")));
         assert!(argv.iter().any(|a| a.contains("alice@b.example")));
     }
@@ -511,7 +547,7 @@ mod tests {
     #[test]
     fn argv_kerberos_bastion_uses_proxy_command() {
         let argv =
-            SubprocessTransport::build_exec_argv(&c(true, Some("b.example"), None), "ls -l /tmp");
+            SubprocessTransport::build_exec_argv(&c(true, Some("b.example"), None), "ls -l /tmp", "accept-new");
         assert!(argv.iter().any(|a| a.contains("ProxyCommand=")));
         assert!(argv.contains(&"-K".to_string()));
         assert!(argv.iter().any(|a| a.contains("alice@b.example")));
@@ -521,9 +557,17 @@ mod tests {
     #[test]
     fn argv_key_path_uses_i_flag() {
         let argv =
-            SubprocessTransport::build_exec_argv(&c(false, None, Some("/k/id_ed25519")), "uptime");
+            SubprocessTransport::build_exec_argv(&c(false, None, Some("/k/id_ed25519")), "uptime", "accept-new");
         assert!(argv.contains(&"-i".to_string()));
         assert!(argv.contains(&"/k/id_ed25519".to_string()));
+    }
+
+    #[test]
+    fn argv_shkc_threads_config_value() {
+        let argv = SubprocessTransport::build_exec_argv(&c(false, None, None), "uptime", "strict");
+        assert!(argv.iter().any(|a| a == "StrictHostKeyChecking=strict"));
+        let argv_off = SubprocessTransport::build_exec_argv(&c(false, None, None), "uptime", "off");
+        assert!(argv_off.iter().any(|a| a == "StrictHostKeyChecking=off"));
     }
 
     #[test]

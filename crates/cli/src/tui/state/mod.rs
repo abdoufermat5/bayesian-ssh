@@ -85,6 +85,7 @@ pub struct App {
     pub status_message: Option<String>,
     pub status_set_at: Option<Instant>,
     pub config: AppConfig,
+    pub db: Database,
 }
 
 /// Config field editing state
@@ -167,6 +168,7 @@ impl App {
             status_message: Some("Press ? for help, / to search, Tab to switch tabs".to_string()),
             status_set_at: Some(Instant::now()),
             config,
+            db,
         })
     }
 
@@ -174,6 +176,18 @@ impl App {
     pub fn set_status(&mut self, msg: impl Into<String>) {
         self.status_message = Some(msg.into());
         self.status_set_at = Some(Instant::now());
+    }
+
+    /// Request to quit the TUI. If tunnels are active, route to a confirmation
+    /// dialog instead of quitting immediately.
+    pub fn request_quit(&mut self) {
+        if self.tunnels.is_empty() {
+            self.should_quit = true;
+        } else {
+            self.mode = crate::tui::models::AppMode::Confirm(
+                crate::tui::models::ConfirmAction::QuitWithTunnels,
+            );
+        }
     }
 
     /// Clear status message if it has been shown long enough
@@ -230,8 +244,7 @@ impl App {
 
     /// Refresh connections from database
     pub fn refresh_connections(&mut self) -> Result<()> {
-        let db = Database::new(&self.config)?;
-        self.connections = db.list_connections(None, false)?;
+        self.connections = self.db.list_connections(None, false)?;
         self.apply_filter();
         self.apply_sort();
         if self.group_mode != GroupMode::None {
@@ -242,14 +255,13 @@ impl App {
 
     /// Refresh history from database
     pub fn refresh_history(&mut self) -> Result<()> {
-        let db = Database::new(&self.config)?;
         let filter = if self.history_filter.is_empty() {
             None
         } else {
             Some(self.history_filter.as_str())
         };
         self.history_entries =
-            db.get_session_history(filter, 100, None, self.history_show_failed_only)?;
+            self.db.get_session_history(filter, 100, None, self.history_show_failed_only)?;
         if self.history_selected >= self.history_entries.len() {
             self.history_selected = self.history_entries.len().saturating_sub(1);
         }

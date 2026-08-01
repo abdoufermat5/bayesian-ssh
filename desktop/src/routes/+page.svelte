@@ -22,7 +22,9 @@
   import ShortcutsModal from "$lib/components/modals/ShortcutsModal.svelte";
   import AboutModal from "$lib/components/modals/AboutModal.svelte";
   import BatchExecModal from "$lib/components/modals/BatchExecModal.svelte";
+  import QuitConfirmModal from "$lib/components/modals/QuitConfirmModal.svelte";
   import Toast from "$lib/components/Toast.svelte";
+  import { invoke } from "@tauri-apps/api/core";
 
   import { notify } from "$lib/stores/notifications.svelte";
   import {
@@ -65,10 +67,12 @@
   });
 
   let unlistenConnect: (() => void) | undefined;
+  let unlistenQuitConfirm: (() => void) | undefined;
 
   let showShortcutsModal = $state(false);
   let showAboutModal = $state(false);
   let showBatchExecModal = $state(false);
+  let showQuitConfirmModal = $state(false);
 
   function handleKeydownWithHelp(e: KeyboardEvent) {
     const isEditingInput = document.activeElement?.tagName === "INPUT" || document.activeElement?.tagName === "TEXTAREA";
@@ -123,7 +127,24 @@
     const appWindow = getCurrentWindow();
     void appWindow.onCloseRequested((event) => {
       event.preventDefault();
-      void appWindow.hide();
+      const activeCount = terminalState.count + terminalState.externalSessionCount;
+      if (activeCount > 0) {
+        showQuitConfirmModal = true;
+        void appWindow.unminimize();
+        void appWindow.show();
+        void appWindow.setFocus();
+      } else {
+        void appWindow.hide();
+      }
+    });
+
+    listen("prompt-quit-confirm", () => {
+      showQuitConfirmModal = true;
+      void appWindow.unminimize();
+      void appWindow.show();
+      void appWindow.setFocus();
+    }).then((unsub) => {
+      unlistenQuitConfirm = unsub;
     });
 
     listen("connect-host", async (event) => {
@@ -142,6 +163,7 @@
       stopKerberosMonitoring();
       teardownWindow();
       unlistenConnect?.();
+      unlistenQuitConfirm?.();
     };
   });
 </script>
@@ -537,3 +559,19 @@
   connections={appState.connections}
   onClose={() => (showBatchExecModal = false)}
 />
+
+{#if showQuitConfirmModal}
+  <QuitConfirmModal
+    activeCount={terminalState.count + terminalState.externalSessionCount}
+    onCancel={() => (showQuitConfirmModal = false)}
+    onMinimize={async () => {
+      showQuitConfirmModal = false;
+      const appWindow = getCurrentWindow();
+      await appWindow.hide();
+    }}
+    onQuit={async () => {
+      showQuitConfirmModal = false;
+      await invoke("force_quit_app");
+    }}
+  />
+{/if}

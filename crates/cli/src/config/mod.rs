@@ -251,7 +251,9 @@ pub fn enforce_secure_dir(path: &std::path::Path) {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700));
+        if let Err(e) = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)) {
+            eprintln!("[warn] failed to chmod 700 '{}': {e}", path.display());
+        }
     }
     let _ = path;
 }
@@ -260,7 +262,9 @@ pub fn enforce_secure_file(path: &std::path::Path) {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+        if let Err(e) = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)) {
+            eprintln!("[warn] failed to chmod 600 '{}': {e}", path.display());
+        }
     }
     let _ = path;
 }

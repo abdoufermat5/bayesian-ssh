@@ -98,6 +98,19 @@ pub fn show_main_window(app: &AppHandle) {
 
 pub fn quit_application(app: &AppHandle) {
     if let Some(state) = app.try_state::<PtyState>() {
+        let active_count = state.sessions.lock().unwrap().len();
+        if active_count > 0 {
+            show_main_window(app);
+            let _ = app.emit("prompt-quit-confirm", ());
+            return;
+        }
+        let _ = close_all_ptys(app.clone(), state);
+    }
+    app.exit(0);
+}
+
+pub fn force_quit_application(app: &AppHandle) {
+    if let Some(state) = app.try_state::<PtyState>() {
         let _ = close_all_ptys(app.clone(), state);
     }
     app.exit(0);

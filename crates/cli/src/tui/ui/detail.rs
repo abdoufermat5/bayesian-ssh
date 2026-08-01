@@ -116,7 +116,7 @@ pub fn draw_detail_pane(frame: &mut Frame, area: Rect, app: &App) {
 
     lines.push(Line::from(""));
     lines.push(Line::from(vec![Span::styled(
-        "  Enter connect | e edit | p preview | s close",
+        "  Enter connect | e edit | p preview | q/Esc close",
         Style::default().fg(Color::DarkGray).italic(),
     )]));
 

@@ -466,6 +466,9 @@ impl App {
                     ConfirmAction::DeleteFile(path) => {
                         self.files_do_delete(path);
                     }
+                    ConfirmAction::QuitWithTunnels => {
+                        self.should_quit = true;
+                    }
                 }
                 self.mode = AppMode::Normal;
             }

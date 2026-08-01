@@ -427,7 +427,7 @@ pub enum Commands {
         #[arg(short = 'n', long, default_value = "20", value_name = "COUNT")]
         limit: usize,
         /// Limit to sessions from the last N days
-        #[arg(short = 'd', long, value_name = "DAYS")]
+        #[arg(short = 'D', long, value_name = "DAYS")]
         days: Option<u32>,
         /// Show only sessions that exited with an error
         #[arg(short = 'f', long)]
@@ -453,13 +453,13 @@ pub enum Commands {
     #[command(
         alias = "run",
         long_about = "Execute a one-off command over SSH without opening an interactive shell.\n\
-            Supports single host, all hosts (--all), or filtering by tag (-g/--tag).\n\
+            Supports single host, all hosts (--all), or filtering by tag (-t/--tag).\n\
             Use --dry-run to preview target hosts before running.\n\n\
             IMPORTANT: Use -- to separate the remote command from bssh flags.\n\n\
             Examples:\n\
               bssh exec web-prod -- uname -a\n\
               bssh exec --all --dry-run -- uptime\n\
-              bssh exec -g prod -- systemctl status nginx"
+              bssh exec -t prod -- systemctl status nginx"
     )]
     Exec {
         /// Connection name, alias, or hostname
@@ -468,7 +468,7 @@ pub enum Commands {
         #[arg(short = 'a', long)]
         all: bool,
         /// Run command on connections matching this tag
-        #[arg(short = 'g', long, value_name = "TAG")]
+        #[arg(short = 't', long, value_name = "TAG")]
         tag: Option<String>,
         /// Preview target hosts and command without executing
         #[arg(long)]

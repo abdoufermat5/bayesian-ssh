@@ -76,13 +76,19 @@ impl Database {
     }
 
     fn search_by_field(&self, query: &str, field: &str, limit: usize) -> Result<Vec<Connection>> {
+        const ALLOWED_FIELDS: [&str; 3] = ["name", "host", "tags"];
+        if !ALLOWED_FIELDS.contains(&field) {
+            return Err(anyhow::anyhow!(
+                "Invalid search field '{field}': must be one of name, host, tags"
+            ));
+        }
+
         let sql = format!(
             "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used, tags
              FROM connections
-             WHERE {} LIKE ? COLLATE NOCASE
+             WHERE {field} LIKE ? COLLATE NOCASE
              ORDER BY last_used DESC NULLS LAST, name ASC
-             LIMIT ?",
-            field
+             LIMIT ?"
         );
 
         let mut stmt = self.conn.prepare(&sql)?;
@@ -204,29 +210,47 @@ impl Database {
             }
         });
 
+        let query_lower = query.to_lowercase();
+
+        // Precompute per-connection lowercase name once (not once per comparison).
+        let mut indexed: Vec<(Connection, String)> = connections
+            .drain(..)
+            .map(|c| {
+                let name_lower = c.name.to_lowercase();
+                (c, name_lower)
+            })
+            .collect();
+
         // Sort by relevance score based on mode
-        connections.sort_by(|a, b| {
+        indexed.sort_by(|(a, a_name_lower), (b, b_name_lower)| {
             let score_a = if mode == "bayesian" {
-                self.calculate_bayesian_score(a, query)
+                self.calculate_bayesian_score(a, &query_lower, a_name_lower)
             } else {
-                self.calculate_relevance_score(a, query)
+                self.calculate_relevance_score(a, &query_lower, a_name_lower)
             };
             let score_b = if mode == "bayesian" {
-                self.calculate_bayesian_score(b, query)
+                self.calculate_bayesian_score(b, &query_lower, b_name_lower)
             } else {
-                self.calculate_relevance_score(b, query)
+                self.calculate_relevance_score(b, &query_lower, b_name_lower)
             };
             score_b
                 .partial_cmp(&score_a)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
+
+        *connections = indexed.into_iter().map(|(c, _)| c).collect();
     }
 
     /// Bayesian-inspired scoring that combines:
     /// - Prior probability (frequency of use)
     /// - Likelihood (match quality)
     /// - Recency (temporal decay)
-    fn calculate_bayesian_score(&self, connection: &Connection, query: &str) -> f64 {
+    fn calculate_bayesian_score(
+        &self,
+        connection: &Connection,
+        query_lower: &str,
+        name_lower: &str,
+    ) -> f64 {
         // Get connection usage statistics
         let (frequency, total_connections) = self.get_connection_frequency(&connection.id);
 
@@ -238,7 +262,7 @@ impl Database {
         };
 
         // 2. Likelihood: P(query | connection) - how well does query match?
-        let likelihood = self.calculate_match_likelihood(connection, query);
+        let likelihood = self.calculate_match_likelihood(connection, query_lower, name_lower);
 
         // 3. Recency factor: exponential decay based on last use
         let recency = self.calculate_recency_factor(connection);
@@ -288,10 +312,12 @@ impl Database {
         }
     }
 
-    fn calculate_match_likelihood(&self, connection: &Connection, query: &str) -> f64 {
-        let query_lower = query.to_lowercase();
-        let name_lower = connection.name.to_lowercase();
-
+    fn calculate_match_likelihood(
+        &self,
+        connection: &Connection,
+        query_lower: &str,
+        name_lower: &str,
+    ) -> f64 {
         // Exact match - highest likelihood
         if name_lower == query_lower {
             return 1.0;
@@ -371,9 +397,12 @@ impl Database {
         }
     }
 
-    fn calculate_relevance_score(&self, connection: &Connection, query: &str) -> f64 {
-        let query_lower = query.to_lowercase();
-        let name_lower = connection.name.to_lowercase();
+    fn calculate_relevance_score(
+        &self,
+        connection: &Connection,
+        query_lower: &str,
+        name_lower: &str,
+    ) -> f64 {
         let mut score = 0.0;
 
         // Exact match in name gets highest score
@@ -392,7 +421,7 @@ impl Database {
         }
 
         // Enhanced pattern matching scores
-        if self.matches_enhanced_patterns(query, &name_lower) {
+        if self.matches_enhanced_patterns(query_lower, name_lower) {
             score += 15.0; // Bonus for pattern matching
         }
 
@@ -481,5 +510,47 @@ mod tests {
         let res_at = db.search_connections("@staging", 10, "bayesian").unwrap();
         assert_eq!(res_at.len(), 1);
         assert_eq!(res_at[0].name, "web-staging");
+    }
+
+    #[test]
+    fn test_search_by_field_rejects_invalid_field() {
+        let dir = tempdir().unwrap();
+        let config = AppConfig {
+            database_path: dir.path().join("test.db"),
+            ..Default::default()
+        };
+        let db = Database::new(&config).unwrap();
+
+        let result = db.search_by_field("query", "name; DROP TABLE connections--", 10);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Invalid search field"));
+    }
+
+    #[test]
+    fn test_search_by_field_accepts_valid_fields() {
+        let dir = tempdir().unwrap();
+        let config = AppConfig {
+            database_path: dir.path().join("test.db"),
+            ..Default::default()
+        };
+        let db = Database::new(&config).unwrap();
+
+        let conn1 = Connection::new(
+            "web-prod".into(),
+            "web1.example.com".into(),
+            "root".into(),
+            22,
+            None,
+            None,
+            false,
+            None,
+        );
+        db.add_connection(&conn1).unwrap();
+
+        for field in ["name", "host", "tags"] {
+            let result = db.search_by_field("web", field, 10);
+            assert!(result.is_ok(), "field '{field}' should be allowed");
+        }
     }
 }

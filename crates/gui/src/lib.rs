@@ -9,7 +9,7 @@ use commands::{
     get_agent_status, get_connections, get_history, get_stats, get_workspace_info,
     import_ssh_config, list_detached_sessions, list_environments, list_popout_sessions,
     load_desktop_settings, needs_onboarding, open_terminal_window, pick_key_file,
-    pick_ssh_config_file, quit_app, reattach_pty, remove_connection, remove_environment,
+    pick_ssh_config_file, quit_app, force_quit_app, reattach_pty, remove_connection, remove_environment,
     resize_pty, save_desktop_settings, save_workspace_config, seal_session_ui, set_active_env,
     spawn_pty, start_agent, write_pty, PtyState,
 };
@@ -95,6 +95,7 @@ pub fn run() {
             import_ssh_config,
             pick_ssh_config_file,
             quit_app,
+            force_quit_app,
             commands::list_ssh_keys,
             commands::generate_ssh_key,
             commands::copy_ssh_key_to_target,

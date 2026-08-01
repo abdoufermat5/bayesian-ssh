@@ -38,11 +38,21 @@ let showModal = $state(false);
 let pendingConnection = $state<Connection | null>(null);
 let expiresAtMs = $state<number | null>(null);
 let ticketLifetimeSeconds = $state<number | null>(null);
+let liveRemainingSeconds = $state<number | null>(null);
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let tickTimer: ReturnType<typeof setInterval> | null = null;
 let warnMinutes = $state(15);
 let warnedForExpiry = $state<number | null>(null);
 let onExpiryWarning: ((message: string) => void) | null = null;
+
+function updateLiveRemainingSeconds(): number | null {
+  if (!expiresAtMs) {
+    liveRemainingSeconds = status.seconds_remaining;
+  } else {
+    liveRemainingSeconds = Math.max(0, Math.floor((expiresAtMs - Date.now()) / 1000));
+  }
+  return liveRemainingSeconds;
+}
 
 function syncExpiryFromStatus(next: KerberosStatus) {
   expiresAtMs = next.expires_at ? next.expires_at * 1000 : null;
@@ -52,6 +62,7 @@ function syncExpiryFromStatus(next: KerberosStatus) {
   if (!next.has_ticket || !next.valid) {
     ticketLifetimeSeconds = null;
   }
+  updateLiveRemainingSeconds();
 }
 
 export function formatKerberosRemaining(seconds: number | null | undefined): string {
@@ -68,8 +79,7 @@ export function formatKerberosRemaining(seconds: number | null | undefined): str
 }
 
 export function getLiveRemainingSeconds(): number | null {
-  if (!expiresAtMs) return status.seconds_remaining;
-  return Math.max(0, Math.floor((expiresAtMs - Date.now()) / 1000));
+  return liveRemainingSeconds;
 }
 
 export function getKerberosHealth(
@@ -196,7 +206,7 @@ export function startKerberosMonitoring(options?: {
   }, 30_000);
 
   tickTimer = setInterval(() => {
-    const remaining = getLiveRemainingSeconds();
+    const remaining = updateLiveRemainingSeconds();
     maybeWarnExpiry(remaining);
   }, 1_000);
 }

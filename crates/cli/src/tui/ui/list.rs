@@ -100,7 +100,7 @@ pub fn draw_connection_list(frame: &mut Frame, area: Rect, app: &App) {
         .collect();
 
     let list_title = if app.mode == AppMode::Detail {
-        " Connections (s to close detail) "
+        " Connections (q/Esc to close detail) "
     } else {
         " Connections "
     };
@@ -189,7 +189,7 @@ fn draw_grouped_list(frame: &mut Frame, area: Rect, app: &App) {
 
 fn draw_empty_state(frame: &mut Frame, area: Rect, search_query: &str) {
     let empty_msg = if search_query.is_empty() {
-        "No connections found.\n\nUse 'bssh add' or press 'a' to create connections\nor 'bssh import' to import from ~/.ssh/config"
+        "No connections found.\n\nPress 'a' to add a connection\nor 'bssh import' to import from ~/.ssh/config"
     } else {
         "No matches found.\n\nTry a different search term."
     };

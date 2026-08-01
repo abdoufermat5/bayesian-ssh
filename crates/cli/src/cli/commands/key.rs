@@ -155,8 +155,10 @@ pub async fn execute_copy(config: AppConfig, target: String, key: Option<String>
     } else if let Some(ref k) = conn.key_path {
         PathBuf::from(format!("{}.pub", k))
     } else {
-        let default_ed25519 = dirs::home_dir().unwrap().join(".ssh/id_ed25519.pub");
-        let default_rsa = dirs::home_dir().unwrap().join(".ssh/id_rsa.pub");
+        let home = dirs::home_dir()
+            .ok_or_else(|| anyhow!("Could not resolve home directory"))?;
+        let default_ed25519 = home.join(".ssh/id_ed25519.pub");
+        let default_rsa = home.join(".ssh/id_rsa.pub");
         if default_ed25519.exists() {
             default_ed25519
         } else if default_rsa.exists() {
@@ -181,9 +183,12 @@ pub async fn execute_copy(config: AppConfig, target: String, key: Option<String>
         conn.host
     );
 
+    // Shell-quote the public key content to prevent command injection via
+    // crafted key files.  Uses the standard POSIX single-quote escape:
+    //   '  →  '\''  (close quote, escaped quote, reopen quote)
+    let quoted_key = format!("'{}'", pub_key_content.replace('\'', "'\"'\"'"));
     let remote_cmd = format!(
-        "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '{}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys",
-        pub_key_content
+        "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo {quoted_key} >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
     );
 
     let mut ssh_argv = vec!["ssh".to_string(), "-p".to_string(), conn.port.to_string()];

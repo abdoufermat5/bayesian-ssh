@@ -17,7 +17,7 @@ impl App {
                     self.multi_select.clear();
                     self.set_status("Selection cleared");
                 } else {
-                    self.should_quit = true;
+                    self.request_quit();
                 }
             }
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -217,7 +217,7 @@ impl App {
     pub(crate) fn handle_history_normal(&mut self, key: KeyEvent) -> Result<()> {
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => {
-                self.should_quit = true;
+                self.request_quit();
             }
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.should_quit = true;
@@ -302,7 +302,7 @@ impl App {
     pub(crate) fn handle_config_normal(&mut self, key: KeyEvent) -> Result<()> {
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => {
-                self.should_quit = true;
+                self.request_quit();
             }
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.should_quit = true;
@@ -373,7 +373,7 @@ impl App {
     pub(crate) fn handle_files_normal(&mut self, key: KeyEvent) -> Result<()> {
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => {
-                self.should_quit = true;
+                self.request_quit();
             }
             KeyCode::Char('?') => {
                 self.mode = AppMode::Help;
@@ -444,7 +444,7 @@ impl App {
     pub(crate) fn handle_tunnels_normal(&mut self, key: KeyEvent) -> Result<()> {
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => {
-                self.should_quit = true;
+                self.request_quit();
             }
             KeyCode::Char('?') => {
                 self.mode = AppMode::Help;
