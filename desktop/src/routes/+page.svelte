@@ -12,6 +12,9 @@
   import KeysView from "$lib/components/KeysView.svelte";
   import AuditView from "$lib/components/AuditView.svelte";
   import SettingsView from "$lib/components/SettingsView.svelte";
+  import SFTPView from "$lib/components/SFTPView.svelte";
+  import TunnelStudioView from "$lib/components/TunnelStudioView.svelte";
+  import SnippetsModal from "$lib/components/modals/SnippetsModal.svelte";
   import ConnectionModal from "$lib/components/modals/ConnectionModal.svelte";
   import EnvModal from "$lib/components/modals/EnvModal.svelte";
   import AgentModal from "$lib/components/modals/AgentModal.svelte";
@@ -23,6 +26,7 @@
   import AboutModal from "$lib/components/modals/AboutModal.svelte";
   import BatchExecModal from "$lib/components/modals/BatchExecModal.svelte";
   import QuitConfirmModal from "$lib/components/modals/QuitConfirmModal.svelte";
+  import AppLoader from "$lib/components/AppLoader.svelte";
   import Toast from "$lib/components/Toast.svelte";
   import { invoke } from "@tauri-apps/api/core";
 
@@ -73,6 +77,7 @@
   let showAboutModal = $state(false);
   let showBatchExecModal = $state(false);
   let showQuitConfirmModal = $state(false);
+  let showSnippetsModal = $state(false);
 
   function handleKeydownWithHelp(e: KeyboardEvent) {
     const isEditingInput =
@@ -175,7 +180,7 @@
 </script>
 
 {#if appState.isInitializing}
-  <div class="fixed inset-0 bg-[#09090b] z-[300]"></div>
+  <AppLoader />
 {:else if appState.showOnboarding}
   <TitleBar
     activeEnv={appState.activeEnv}
@@ -232,6 +237,8 @@
       onShowSessionManager={appState.openSessionManager}
       onGoToTerminals={appState.goToTerminals}
       onSearchMostUsed={(name) => (appState.searchQuery = name)}
+      onShowSnippetsModal={() => (showSnippetsModal = true)}
+      settings={appState.settings}
     />
 
     <main class="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
@@ -449,6 +456,18 @@
           </div>
         {/if}
 
+        {#if appState.activeTab === "sftp" && appState.settings.enable_sftp !== false}
+          <div class="absolute inset-0 flex flex-col min-h-0 overflow-hidden transition-all duration-200 {appState.activeTab === 'sftp' ? 'opacity-100 visible pointer-events-auto z-10' : 'opacity-0 invisible pointer-events-none z-0'}">
+            <SFTPView connections={appState.connections} />
+          </div>
+        {/if}
+
+        {#if appState.activeTab === "tunnels" && appState.settings.enable_tunneling !== false}
+          <div class="absolute inset-0 flex flex-col min-h-0 overflow-hidden transition-all duration-200 {appState.activeTab === 'tunnels' ? 'opacity-100 visible pointer-events-auto z-10' : 'opacity-0 invisible pointer-events-none z-0'}">
+            <TunnelStudioView connections={appState.connections} />
+          </div>
+        {/if}
+
         {#if appState.showTerminalsPanel}
           <div class="absolute inset-0 flex flex-col min-h-0 overflow-hidden transition-all duration-200 {appState.activeTab === 'terminals' ? 'opacity-100 visible pointer-events-auto z-10' : 'opacity-0 invisible pointer-events-none z-0'}">
             <TerminalsView
@@ -581,3 +600,11 @@
     }}
   />
 {/if}
+
+<SnippetsModal
+  show={showSnippetsModal}
+  onClose={() => (showSnippetsModal = false)}
+  onRunSnippet={(cmd) => {
+    notify(`Command ready: ${cmd}`, "info");
+  }}
+/>

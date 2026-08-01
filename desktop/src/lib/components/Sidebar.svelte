@@ -1,5 +1,8 @@
 <script lang="ts">
   import {
+    Code,
+    HardDrive,
+    Network,
     TerminalSquare,
     Server,
     Clock,
@@ -12,7 +15,7 @@
     ShieldCheck,
     Tag,
   } from "lucide-svelte";
-  import type { AppTab, ConnectionStats, EnvInfo } from "$lib/types";
+  import type { AppTab, ConnectionStats, DesktopSettings, EnvInfo } from "$lib/types";
   import CustomSelect from "$lib/components/ui/CustomSelect.svelte";
 
   interface Props {
@@ -43,6 +46,8 @@
     onShowSessionManager: () => void;
     onGoToTerminals: () => void;
     onSearchMostUsed: (name: string) => void;
+    onShowSnippetsModal?: () => void;
+    settings?: DesktopSettings;
   }
 
   let {
@@ -73,7 +78,21 @@
     onShowSessionManager,
     onGoToTerminals,
     onSearchMostUsed,
+    onShowSnippetsModal,
+    settings,
   }: Props = $props();
+
+  // Main Navigation items — filtered by feature flags from settings
+  const navItems = $derived([
+    { tab: "connections" as AppTab, icon: Server, label: "Hosts" },
+    { tab: "terminals" as AppTab, icon: TerminalSquare, label: "Terminals", badge: terminalCount },
+    ...(settings?.enable_sftp !== false ? [{ tab: "sftp" as AppTab, icon: HardDrive, label: "SFTP Files" }] : []),
+    ...(settings?.enable_tunneling !== false ? [{ tab: "tunnels" as AppTab, icon: Network, label: "Tunnels" }] : []),
+    { tab: "keys" as AppTab, icon: KeyRound, label: "Keys" },
+    { tab: "audit" as AppTab, icon: ShieldCheck, label: "Audit" },
+    { tab: "history" as AppTab, icon: Clock, label: "Logs" },
+    { tab: "settings" as AppTab, icon: Settings, label: "Settings" },
+  ]);
 
   function handleSessionsClick() {
     onGoToTerminals();
@@ -112,14 +131,7 @@
 
     <!-- Main Navigation -->
     <nav class="flex flex-col gap-0.5 mb-4 shrink-0">
-      {#each [
-        { tab: "connections" as AppTab, icon: Server, label: "Hosts" },
-        { tab: "terminals" as AppTab, icon: TerminalSquare, label: "Terminals", badge: terminalCount },
-        { tab: "keys" as AppTab, icon: KeyRound, label: "Keys" },
-        { tab: "audit" as AppTab, icon: ShieldCheck, label: "Audit" },
-        { tab: "history" as AppTab, icon: Clock, label: "Logs" },
-        { tab: "settings" as AppTab, icon: Settings, label: "Settings" },
-      ] as item}
+      {#each navItems as item}
         <button
           class="flex items-center gap-2.5 w-full bg-transparent border-none text-muted py-1.5 px-2.5 rounded-md cursor-pointer text-xs font-medium text-left transition-all duration-100 relative
             {sidebarCollapsed ? 'justify-center' : ''}
@@ -138,6 +150,20 @@
           {/if}
         </button>
       {/each}
+
+      {#if onShowSnippetsModal}
+        <button
+          type="button"
+          class="flex items-center gap-2.5 w-full bg-transparent border-none text-muted py-1.5 px-2.5 rounded-md cursor-pointer text-xs font-medium text-left transition-all duration-100 hover:text-primary hover:bg-white/[0.04] mt-1"
+          onclick={onShowSnippetsModal}
+          title="Command Snippets Library"
+        >
+          <Code size={16} class="text-amber-400" />
+          {#if !sidebarCollapsed}
+            <span>Snippets</span>
+          {/if}
+        </button>
+      {/if}
     </nav>
   </div>
 

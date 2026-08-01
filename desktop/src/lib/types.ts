@@ -53,6 +53,11 @@ export interface DesktopSettings {
   terminal_cursor_blink?: boolean;
   terminal_copy_on_select?: boolean;
   terminal_scrollback?: number;
+  sftp_show_hidden_files?: boolean;
+  sftp_default_remote_path?: string;
+  confirm_snippet_execution?: boolean;
+  enable_sftp?: boolean;
+  enable_tunneling?: boolean;
 }
 
 export interface WorkspaceInfo {
@@ -82,7 +87,15 @@ export interface OnboardingPayload {
   fuzzy_search: boolean;
 }
 
-export type AppTab = "connections" | "terminals" | "history" | "keys" | "audit" | "settings";
+export type AppTab =
+  | "connections"
+  | "terminals"
+  | "sftp"
+  | "tunnels"
+  | "history"
+  | "keys"
+  | "audit"
+  | "settings";
 export type NotificationType = "success" | "error" | "info";
 
 export interface SshKeyInfo {

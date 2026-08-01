@@ -136,6 +136,11 @@ export class AppStateStore {
     terminal_cursor_blink: true,
     terminal_copy_on_select: false,
     terminal_scrollback: 10000,
+    sftp_show_hidden_files: true,
+    sftp_default_remote_path: "/",
+    confirm_snippet_execution: true,
+    enable_sftp: true,
+    enable_tunneling: true,
   });
 
   allTags = $derived.by(() => {
@@ -309,6 +314,11 @@ export class AppStateStore {
         terminal_cursor_blink: loaded.terminal_cursor_blink !== false,
         terminal_copy_on_select: Boolean(loaded.terminal_copy_on_select),
         terminal_scrollback: Number(loaded.terminal_scrollback) || 10000,
+        sftp_show_hidden_files: loaded.sftp_show_hidden_files !== false,
+        sftp_default_remote_path: (loaded.sftp_default_remote_path as string) || "/",
+        confirm_snippet_execution: loaded.confirm_snippet_execution !== false,
+        enable_sftp: loaded.enable_sftp !== false,
+        enable_tunneling: loaded.enable_tunneling !== false,
       };
       applyTheme(this.settings.theme);
       applyThemeToAllTerminals(this.settings);

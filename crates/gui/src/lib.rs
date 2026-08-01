@@ -108,6 +108,7 @@ pub fn run() {
             commands::ping_all_connections,
             commands::run_batch_command,
             commands::get_app_version,
+            commands::list_remote_directory,
             tray::refresh_tray_menu,
             tray::send_desktop_notification,
             commands::get_env_status

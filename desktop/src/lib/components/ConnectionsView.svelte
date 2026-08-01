@@ -57,6 +57,16 @@
 
   let pinging = $state(false);
   let pingResults = $state<Record<string, { latency_ms: number; success: boolean }>>({});
+  let connectingHostId = $state<string | null>(null);
+
+  async function handleConnectHost(conn: Connection) {
+    connectingHostId = conn.id;
+    try {
+      await onConnect(conn);
+    } finally {
+      setTimeout(() => (connectingHostId = null), 1000);
+    }
+  }
 
   async function pingAllHosts() {
     pinging = true;
@@ -226,12 +236,17 @@
                     class="p-1 px-2 rounded bg-accent/15 text-accent font-semibold hover:bg-accent hover:text-white transition-all flex items-center gap-1 text-[11px]"
                     onclick={(e) => {
                       e.stopPropagation();
-                      onConnect(conn);
+                      handleConnectHost(conn);
                     }}
                     title="Connect"
                   >
-                    <Play size={11} fill="currentColor" />
-                    Connect
+                    {#if connectingHostId === conn.id}
+                      <RefreshCw size={11} class="animate-spin" />
+                      <span>Connecting...</span>
+                    {:else}
+                      <Play size={11} fill="currentColor" />
+                      <span>Connect</span>
+                    {/if}
                   </button>
                 </div>
               </div>
@@ -295,14 +310,19 @@
                     <Edit2 size={12} />
                   </button>
                   <button
-                    class="px-2 py-1 rounded bg-accent text-white text-[11px] font-semibold hover:opacity-90 transition-all flex items-center gap-1"
+                    class="px-2 py-1 rounded bg-accent text-white text-[11px] font-semibold hover:opacity-90 transition-all flex items-center gap-1 cursor-pointer"
                     onclick={(e) => {
                       e.stopPropagation();
-                      onConnect(conn);
+                      handleConnectHost(conn);
                     }}
                   >
-                    <Play size={10} fill="currentColor" />
-                    Connect
+                    {#if connectingHostId === conn.id}
+                      <RefreshCw size={10} class="animate-spin" />
+                      <span>Connecting...</span>
+                    {:else}
+                      <Play size={10} fill="currentColor" />
+                      <span>Connect</span>
+                    {/if}
                   </button>
                 </div>
               </div>

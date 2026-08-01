@@ -20,6 +20,7 @@ pub mod import;
 pub mod pty;
 pub mod security;
 pub mod settings;
+pub mod sftp;
 
 pub use agent::*;
 pub use app::*;
@@ -31,6 +32,7 @@ pub use import::*;
 pub use pty::*;
 pub use security::*;
 pub use settings::*;
+pub use sftp::*;
 
 // State for active PTY sessions
 pub struct PtyState {
@@ -134,6 +136,36 @@ pub struct DesktopSettings {
     pub terminal_copy_on_select: bool,
     #[serde(default = "default_terminal_scrollback")]
     pub terminal_scrollback: u32,
+    #[serde(default = "default_sftp_show_hidden_files")]
+    pub sftp_show_hidden_files: bool,
+    #[serde(default = "default_sftp_default_remote_path")]
+    pub sftp_default_remote_path: String,
+    #[serde(default = "default_confirm_snippet_execution")]
+    pub confirm_snippet_execution: bool,
+    #[serde(default = "default_enable_sftp")]
+    pub enable_sftp: bool,
+    #[serde(default = "default_enable_tunneling")]
+    pub enable_tunneling: bool,
+}
+
+pub fn default_sftp_show_hidden_files() -> bool {
+    true
+}
+
+pub fn default_sftp_default_remote_path() -> String {
+    "/".to_string()
+}
+
+pub fn default_confirm_snippet_execution() -> bool {
+    true
+}
+
+pub fn default_enable_sftp() -> bool {
+    true
+}
+
+pub fn default_enable_tunneling() -> bool {
+    true
 }
 
 pub fn default_timezone() -> String {
@@ -205,6 +237,11 @@ impl Default for DesktopSettings {
             terminal_cursor_blink: default_terminal_cursor_blink(),
             terminal_copy_on_select: default_terminal_copy_on_select(),
             terminal_scrollback: default_terminal_scrollback(),
+            sftp_show_hidden_files: default_sftp_show_hidden_files(),
+            sftp_default_remote_path: default_sftp_default_remote_path(),
+            confirm_snippet_execution: default_confirm_snippet_execution(),
+            enable_sftp: default_enable_sftp(),
+            enable_tunneling: default_enable_tunneling(),
         }
     }
 }
