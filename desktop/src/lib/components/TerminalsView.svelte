@@ -1,8 +1,10 @@
 <script lang="ts">
   import {
     AppWindow,
+    ArrowDown,
     ChevronDown,
     ChevronUp,
+    Download,
     GripVertical,
     Layers,
     Link2,
@@ -11,10 +13,12 @@
     Search,
     Server,
     TerminalSquare,
+    Trash2,
     Unlink,
     X,
   } from "lucide-svelte";
   import type { Connection } from "$lib/types";
+  import { downloadTerminalScrollback } from "$lib/utils/terminal-xterm";
   import { tabPopOutDrag } from "$lib/actions/tabPopOutDrag";
   import {
     encodeSessionDrag,
@@ -218,15 +222,43 @@
             <span class="text-[10px] text-muted whitespace-nowrap">Drop here to reattach</span>
           {/if}
           {#if terminalState.activeTabId}
+            {@const activeTab = terminalState.tabs.find((t) => t.id === terminalState.activeTabId)}
             <button
               type="button"
-              class="inline-flex items-center gap-1.25 py-1.5 px-2.5 mb-1 border border-border rounded-lg bg-transparent text-secondary text-[11px] font-medium cursor-pointer shrink-0 transition-all duration-100 hover:bg-white/5 hover:text-primary hover:border-border-hover"
+              class="inline-flex items-center gap-1.25 py-1.5 px-2 mb-1 border border-border rounded-lg bg-transparent text-secondary text-[11px] font-medium cursor-pointer shrink-0 transition-all duration-100 hover:bg-white/5 hover:text-primary hover:border-border-hover"
               onclick={() => toggleTerminalSearch(terminalState.activeTabId ?? undefined)}
               title="Find in terminal (Ctrl+F)"
             >
               <Search size={13} />
               <span>Find</span>
             </button>
+            {#if activeTab?.term}
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.25 py-1.5 px-2 mb-1 border border-border rounded-lg bg-transparent text-secondary text-[11px] font-medium cursor-pointer shrink-0 transition-all duration-100 hover:bg-white/5 hover:text-primary hover:border-border-hover"
+                onclick={() => downloadTerminalScrollback(activeTab.term!, activeTab.name)}
+                title="Export terminal history log (.txt)"
+              >
+                <Download size={13} />
+                <span>Export</span>
+              </button>
+              <button
+                type="button"
+                class="inline-flex items-center gap-1 mb-1 p-1.5 border border-border rounded-lg bg-transparent text-secondary text-[11px] cursor-pointer shrink-0 transition-all duration-100 hover:bg-white/5 hover:text-primary hover:border-border-hover"
+                onclick={() => activeTab.term?.clear()}
+                title="Clear terminal screen"
+              >
+                <Trash2 size={13} />
+              </button>
+              <button
+                type="button"
+                class="inline-flex items-center gap-1 mb-1 p-1.5 border border-border rounded-lg bg-transparent text-secondary text-[11px] cursor-pointer shrink-0 transition-all duration-100 hover:bg-white/5 hover:text-primary hover:border-border-hover"
+                onclick={() => activeTab.term?.scrollToBottom()}
+                title="Scroll to bottom"
+              >
+                <ArrowDown size={13} />
+              </button>
+            {/if}
           {/if}
           {#if terminalState.totalSessionCount > 0}
             <button
