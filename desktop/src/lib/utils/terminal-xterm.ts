@@ -1,5 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import type { Terminal } from "@xterm/xterm";
+import { WebLinksAddon } from "@xterm/addon-web-links";
+import { SearchAddon } from "@xterm/addon-search";
+import { ClipboardAddon } from "@xterm/addon-clipboard";
 
 import { attachOrphanCompositionEndGuard } from "$lib/utils/terminal-composition-guard";
 
@@ -15,18 +19,63 @@ export function attachXtermIo(sessionId: string, term: Terminal): void {
   term.onBinary((data) => writePty(sessionId, data));
 }
 
-/** Copy/paste shortcuts and Linux WebKitGTK IME guards. */
-export function attachXtermKeyHandler(term: Terminal): void {
+export interface LoadedAddons {
+  searchAddon: SearchAddon;
+  webLinksAddon: WebLinksAddon;
+  clipboardAddon: ClipboardAddon;
+}
+
+/** Instantiates and loads web-links, search, and clipboard addons onto the terminal. */
+export function attachXtermAddons(term: Terminal): LoadedAddons {
+  const webLinksAddon = new WebLinksAddon((event, uri) => {
+    openUrl(uri).catch(() => {
+      window.open(uri, "_blank");
+    });
+  });
+
+  const searchAddon = new SearchAddon();
+  const clipboardAddon = new ClipboardAddon();
+
+  term.loadAddon(webLinksAddon);
+  term.loadAddon(searchAddon);
+  term.loadAddon(clipboardAddon);
+
+  return { searchAddon, webLinksAddon, clipboardAddon };
+}
+
+/** Copy/paste shortcuts, selection, and Linux WebKitGTK IME guards. */
+export function attachXtermKeyHandler(
+  term: Terminal,
+  onOpenSearch?: () => void,
+): void {
   term.attachCustomKeyEventHandler((event) => {
     if (event.isComposing) {
       return false;
     }
 
     const key = event.key.toLowerCase();
+    const isCmdOrCtrl = event.ctrlKey || event.metaKey;
 
+    // Ctrl+F / Cmd+F -> Open in-terminal search
+    if (isCmdOrCtrl && key === "f" && !event.shiftKey && onOpenSearch) {
+      if (event.type === "keydown") {
+        onOpenSearch();
+      }
+      return false;
+    }
+
+    // Ctrl+Shift+A / Cmd+A -> Select All
+    if (isCmdOrCtrl && key === "a" && (event.shiftKey || !isCmdOrCtrl)) {
+      if (event.type === "keydown") {
+        term.selectAll();
+      }
+      return false;
+    }
+
+    // Ctrl+C / Cmd+C (when text is selected) or Ctrl+Shift+C -> Copy
     if (
-      (event.ctrlKey && key === "c" && term.hasSelection()) ||
-      (event.ctrlKey && event.shiftKey && key === "c")
+      (isCmdOrCtrl && key === "c" && term.hasSelection()) ||
+      (isCmdOrCtrl && event.shiftKey && key === "c")
     ) {
       if (event.type === "keydown") {
         const selection = term.getSelection();
@@ -41,10 +90,11 @@ export function attachXtermKeyHandler(term: Terminal): void {
       return false;
     }
 
+    // Ctrl+V / Cmd+V or Ctrl+Shift+V or Shift+Insert -> Paste
     if (
-      (event.ctrlKey && key === "v") ||
-      (event.ctrlKey && event.shiftKey && key === "v") ||
-      (event.shiftKey && event.key === "insert")
+      (isCmdOrCtrl && key === "v") ||
+      (isCmdOrCtrl && event.shiftKey && key === "v") ||
+      (event.shiftKey && event.key === "Insert")
     ) {
       if (event.type === "keydown") {
         navigator.clipboard.readText().then((text) => {
@@ -60,6 +110,26 @@ export function attachXtermKeyHandler(term: Terminal): void {
 
     return true;
   });
+}
+
+/** Attach mouse listeners for middle-click paste and smooth selection handling. */
+export function attachXtermMouseHandlers(
+  container: HTMLElement,
+  term: Terminal,
+): () => void {
+  const handleAuxClick = (e: MouseEvent) => {
+    if (e.button === 1) { // Middle click paste
+      e.preventDefault();
+      navigator.clipboard.readText().then((text) => {
+        if (text) term.paste(text);
+      }).catch(() => {});
+    }
+  };
+
+  container.addEventListener("auxclick", handleAuxClick);
+  return () => {
+    container.removeEventListener("auxclick", handleAuxClick);
+  };
 }
 
 /**

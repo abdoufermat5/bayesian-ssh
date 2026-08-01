@@ -1,11 +1,14 @@
 <script lang="ts">
   import {
     AppWindow,
+    ChevronDown,
+    ChevronUp,
     GripVertical,
     Layers,
     Link2,
     OctagonX,
     Play,
+    Search,
     Server,
     TerminalSquare,
     Unlink,
@@ -20,6 +23,7 @@
     tabBarReattachDrop,
   } from "$lib/actions/tabBarReattachDrop";
   import {
+    closeTerminalSearch,
     connectSSH,
     detachTab,
     disconnectTab,
@@ -27,6 +31,7 @@
     getTerminalState,
     popOutTab,
     reattachSession,
+    toggleTerminalSearch,
   } from "$lib/stores/terminal.svelte";
 
   interface Props {
@@ -41,6 +46,7 @@
     $props();
 
   const terminalState = getTerminalState();
+  let tabSearchQueries = $state<Record<string, string>>({});
 
   const awaySessions = $derived.by((): SessionDragPayload[] => [
     ...terminalState.popoutSessions.map((session) => ({
@@ -207,9 +213,20 @@
           {/each}
         </div>
 
-        <div class="flex items-center gap-2.5 shrink-0">
+        <div class="flex items-center gap-2 shrink-0">
           {#if terminalState.externalSessionCount > 0}
             <span class="text-[10px] text-muted whitespace-nowrap">Drop here to reattach</span>
+          {/if}
+          {#if terminalState.activeTabId}
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.25 py-1.5 px-2.5 mb-1 border border-border rounded-lg bg-transparent text-secondary text-[11px] font-medium cursor-pointer shrink-0 transition-all duration-100 hover:bg-white/5 hover:text-primary hover:border-border-hover"
+              onclick={() => toggleTerminalSearch(terminalState.activeTabId ?? undefined)}
+              title="Find in terminal (Ctrl+F)"
+            >
+              <Search size={13} />
+              <span>Find</span>
+            </button>
           {/if}
           {#if terminalState.totalSessionCount > 0}
             <button
@@ -232,6 +249,57 @@
               class="absolute inset-0 px-3 py-2 box-border overflow-hidden"
               class:hidden={terminalState.activeTabId !== tab.id}
             >
+              {#if tab.showSearch}
+                <div
+                  class="absolute top-2 right-4 z-40 bg-surface/95 backdrop-blur-md border border-border rounded-xl px-3 py-1.5 shadow-2xl flex items-center gap-2 text-xs"
+                >
+                  <Search size={14} class="text-muted shrink-0" />
+                  <input
+                    type="text"
+                    placeholder="Find in terminal..."
+                    class="bg-transparent border-none text-primary outline-none text-xs w-44 font-mono"
+                    bind:value={tabSearchQueries[tab.id]}
+                    oninput={() => tab.searchAddon?.findNext(tabSearchQueries[tab.id] ?? "")}
+                    onkeydown={(e) => {
+                      if (e.key === "Enter") {
+                        if (e.shiftKey) tab.searchAddon?.findPrevious(tabSearchQueries[tab.id] ?? "");
+                        else tab.searchAddon?.findNext(tabSearchQueries[tab.id] ?? "");
+                      } else if (e.key === "Escape") {
+                        closeTerminalSearch(tab.id);
+                        tab.term?.focus();
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    class="p-1 text-muted hover:text-primary rounded bg-transparent border-none cursor-pointer flex items-center"
+                    title="Previous match (Shift+Enter)"
+                    onclick={() => tab.searchAddon?.findPrevious(tabSearchQueries[tab.id] ?? "")}
+                  >
+                    <ChevronUp size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    class="p-1 text-muted hover:text-primary rounded bg-transparent border-none cursor-pointer flex items-center"
+                    title="Next match (Enter)"
+                    onclick={() => tab.searchAddon?.findNext(tabSearchQueries[tab.id] ?? "")}
+                  >
+                    <ChevronDown size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    class="p-1 text-muted hover:text-primary rounded bg-transparent border-none cursor-pointer flex items-center"
+                    title="Close search (Esc)"
+                    onclick={() => {
+                      closeTerminalSearch(tab.id);
+                      tab.term?.focus();
+                    }}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              {/if}
+
               <div id="terminal-{tab.id}" class="terminal-fit-target"></div>
             </div>
           {/each}

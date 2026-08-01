@@ -3,9 +3,18 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import type { SearchAddon } from "@xterm/addon-search";
 import type { Connection } from "$lib/types";
 import { ensureKerberosForConnection } from "$lib/stores/kerberos.svelte";
 import { notify } from "$lib/stores/notifications.svelte";
+import { getCurrentXtermTheme } from "$lib/utils/theme";
+import {
+  attachXtermAddons,
+  attachXtermIo,
+  attachXtermKeyHandler,
+  attachXtermLinuxInputFix,
+  attachXtermMouseHandlers,
+} from "$lib/utils/terminal-xterm";
 
 export interface TerminalTab {
   id: string;
@@ -13,7 +22,10 @@ export interface TerminalTab {
   connectionName: string;
   term?: Terminal;
   fitAddon?: FitAddon;
+  searchAddon?: SearchAddon;
   compositionGuardCleanup?: () => void;
+  mouseCleanup?: () => void;
+  showSearch?: boolean;
 }
 
 export interface DetachedSession {
@@ -34,13 +46,6 @@ interface ReattachSessionPayload {
   connection_name: string;
   buffered_output: string;
 }
-
-import { getCurrentXtermTheme } from "$lib/utils/theme";
-import {
-  attachXtermIo,
-  attachXtermKeyHandler,
-  attachXtermLinuxInputFix,
-} from "$lib/utils/terminal-xterm";
 
 let terminalFontSize = $state(13);
 let themeSyncInitialized = false;
@@ -113,13 +118,38 @@ function linkTerminal(
   tabId: string,
   term: Terminal,
   fitAddon: FitAddon,
+  searchAddon?: SearchAddon,
   compositionGuardCleanup?: () => void,
+  mouseCleanup?: () => void,
 ) {
   const index = tabs.findIndex((t) => t.id === tabId);
   if (index !== -1) {
     tabs[index].term = term;
     tabs[index].fitAddon = fitAddon;
+    tabs[index].searchAddon = searchAddon;
     tabs[index].compositionGuardCleanup = compositionGuardCleanup;
+    tabs[index].mouseCleanup = mouseCleanup;
+    tabs[index].showSearch = false;
+  }
+}
+
+export function toggleTerminalSearch(tabId?: string) {
+  const id = tabId ?? activeTabId;
+  if (!id) return;
+  const index = tabs.findIndex((t) => t.id === id);
+  if (index !== -1) {
+    tabs[index].showSearch = !tabs[index].showSearch;
+    tabs = [...tabs];
+  }
+}
+
+export function closeTerminalSearch(tabId?: string) {
+  const id = tabId ?? activeTabId;
+  if (!id) return;
+  const index = tabs.findIndex((t) => t.id === id);
+  if (index !== -1) {
+    tabs[index].showSearch = false;
+    tabs = [...tabs];
   }
 }
 
@@ -147,28 +177,38 @@ function openTerminalInstance(
 ): Terminal {
   const term = new Terminal({
     cursorBlink: true,
-    fontFamily: "JetBrains Mono, Courier New, monospace",
+    cursorStyle: "block",
+    fontFamily: "JetBrains Mono, Fira Code, Cascadia Code, Consolas, monospace",
     fontSize: terminalFontSize,
-    lineHeight: 1.15,
-    scrollback: 5000,
+    lineHeight: 1.18,
+    scrollback: 10000,
+    smoothScrollDuration: 120,
     theme: getCurrentXtermTheme(),
+    allowProposedApi: true,
   });
 
   const fitAddon = new FitAddon();
   term.loadAddon(fitAddon);
+
+  const { searchAddon } = attachXtermAddons(term);
+
   term.open(container);
   const compositionGuardCleanup = attachXtermLinuxInputFix(container, term);
-  linkTerminal(tabId, term, fitAddon, compositionGuardCleanup);
+  const mouseCleanup = attachXtermMouseHandlers(container, term);
+
+  linkTerminal(tabId, term, fitAddon, searchAddon, compositionGuardCleanup, mouseCleanup);
   attachResizeObserver(tabId, container, term, fitAddon);
   attachTerminalIo(tabId, term);
 
   container.addEventListener("mousedown", () => term.focus());
 
-  attachXtermKeyHandler(term);
+  attachXtermKeyHandler(term, () => {
+    toggleTerminalSearch(tabId);
+  });
 
-  // Ctrl + Mouse Wheel zoom event listener
+  // Ctrl / Cmd + Mouse Wheel zoom event listener
   container.addEventListener("wheel", (e) => {
-    if (e.ctrlKey) {
+    if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
       if (e.deltaY < 0) {
         updateTerminalFontSize(terminalFontSize + 1);
@@ -301,6 +341,7 @@ function removeDetachedSession(sessionId: string) {
 function cleanupTabUi(tabId: string) {
   const tab = findTab(tabId);
   tab?.compositionGuardCleanup?.();
+  tab?.mouseCleanup?.();
   tab?.term?.dispose();
   detachResizeObserver(tabId);
   tabs = tabs.filter((t) => t.id !== tabId);
