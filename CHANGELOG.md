@@ -5,6 +5,22 @@ All notable changes to Bayesian SSH will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] - 2026-08-15
+
+### Added
+- **Optional SFTP and Tunneling**: Desktop Settings > Features can hide SFTP and tunneling UI when those workflows are unused.
+- **Terminal rendering upgrades**: WebGL GPU acceleration, SIXEL/iTerm2 image rendering, Unicode 11, and scrollback export.
+- **Terminal settings**: Dedicated settings section with live font preview, plus xterm web-links, in-terminal search, and OSC52 clipboard support.
+
+### Changed
+- **CLI TUI modularization**: Split search, models, modal input, overlay rendering, and SFTP task spawning into domain-scoped modules.
+- **Shared backend services**: Agent, Kerberos, PTY, security audit, and subprocess SFTP now live in the CLI crate and are reused by the desktop GUI.
+- **Desktop UI structure**: Settings panels, modal chrome (`ModalShell`), and connection/session/settings stores are extracted from monolithic views.
+
+### Fixed
+- **SFTP over bastion + Kerberos**: Interactive marker-based stdin/stdout path for listings and transfers.
+- **Desktop shortcuts**: Keyboard shortcuts and tab navigation activate reliably across views.
+
 ## [2.3.0] - 2026-07-25
 
 ### Added

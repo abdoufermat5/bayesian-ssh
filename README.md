@@ -44,10 +44,10 @@ Download pre-built packages from [Releases](https://github.com/abdoufermat5/baye
 
 ```bash
 # Debian / Ubuntu / Linux Mint / Pop!_OS (.deb)
-sudo apt install ./bayesian-ssh_2.3.0_amd64.deb
+sudo apt install ./bayesian-ssh_2.4.0_amd64.deb
 
 # Fedora / RHEL / CentOS / openSUSE (.rpm)
-sudo dnf install ./bayesian-ssh-2.3.0-1.x86_64.rpm
+sudo dnf install ./bayesian-ssh-2.4.0-1.x86_64.rpm
 ```
 
 #### Option 3: Flathub & Snap Store

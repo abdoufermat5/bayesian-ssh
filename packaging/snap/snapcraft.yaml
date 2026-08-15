@@ -1,6 +1,6 @@
 name: bayesian-ssh
 base: core22
-version: '2.3.0'
+version: '2.4.0'
 summary: Fast and lightweight SSH session manager with Kerberos support
 description: |
   Bayesian SSH (bssh) is a smart, high-performance SSH session manager featuring

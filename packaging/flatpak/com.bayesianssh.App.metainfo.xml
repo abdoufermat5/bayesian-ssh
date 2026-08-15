@@ -21,6 +21,7 @@
     <category>System</category>
   </categories>
   <releases>
+    <release version="2.4.0" date="2026-08-15" />
     <release version="2.3.0" date="2026-07-25" />
   </releases>
 </component>
