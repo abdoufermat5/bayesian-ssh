@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { TerminalSquare, X, ShieldCheck, Cpu, HardDrive, Info, Heart, ExternalLink } from "lucide-svelte";
+  import ModalShell from "$lib/components/ui/ModalShell.svelte";
   import type { WorkspaceInfo } from "$lib/types";
 
   interface Props {
@@ -28,21 +29,15 @@
 </script>
 
 {#if show}
-  <div
-    class="fixed inset-0 bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-4"
-    role="presentation"
-    onclick={onClose}
+  <ModalShell
+    open={show}
+    title="About Bayesian SSH"
+    onClose={onClose}
+    width="md"
+    panelClass="p-6 space-y-5 relative overflow-hidden"
   >
-    <div
-      class="bg-surface border border-border rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-150 relative overflow-hidden"
-      role="dialog"
-      aria-modal="true"
-      onclick={(e) => e.stopPropagation()}
-      onkeydown={(e) => e.key === "Escape" && onClose()}
-      tabindex="-1"
-    >
-      <!-- Header -->
-      <div class="flex items-start justify-between">
+    <!-- Header -->
+    <div class="flex items-start justify-between">
         <div class="flex items-center gap-3">
           <div class="w-12 h-12 rounded-xl bg-accent/15 border border-accent/30 flex items-center justify-center shrink-0 shadow-inner">
             <TerminalSquare class="text-accent" size={26} />
@@ -123,6 +118,5 @@
           Close
         </button>
       </div>
-    </div>
-  </div>
+  </ModalShell>
 {/if}

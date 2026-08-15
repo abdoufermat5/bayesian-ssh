@@ -75,7 +75,7 @@
     </div>
     <div class="flex items-center gap-2">
       <button
-        class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 text-xs font-semibold cursor-pointer transition-all hover:bg-emerald-600/30 shadow-sm"
+        class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 text-xs font-semibold cursor-pointer transition-all hover:bg-emerald-600/30 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
         onclick={fixPermissions}
         disabled={loading || fixing}
       >
@@ -83,7 +83,7 @@
         Fix All Insecure Permissions
       </button>
       <button
-        class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium cursor-pointer transition-all hover:opacity-90 shadow-sm"
+        class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-semibold cursor-pointer transition-all hover:opacity-90 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
         onclick={runAudit}
         disabled={loading}
       >
@@ -151,7 +151,7 @@
           { id: "info", label: `Info (${report.total_info})` },
         ] as filter}
           <button
-            class="px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-all border-none
+            class="px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-all border-none disabled:opacity-50 disabled:cursor-not-allowed
               {activeFilter === filter.id ? 'bg-accent text-white shadow-sm' : 'text-muted hover:text-primary hover:bg-white/5'}"
             onclick={() => (activeFilter = filter.id as typeof activeFilter)}
           >

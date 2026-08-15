@@ -1,4 +1,6 @@
 <script lang="ts">
+  import ModalShell from "$lib/components/ui/ModalShell.svelte";
+
   interface Props {
     title?: string;
     confirmLabel?: string;
@@ -20,17 +22,15 @@
   }: Props = $props();
 </script>
 
-<div
-  class="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-[100]"
-  onclick={onCancel}
-  role="presentation"
+<ModalShell
+  open={true}
+  title={title}
+  onClose={onCancel}
+  width="sm"
+  panelClass="items-center p-8 text-center"
+  panelStyle="border-color: color-mix(in srgb, var(--color-danger) 25%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-danger) 6%, transparent), var(--shadow-xl);"
 >
-  <div
-    class="bg-surface border border-danger/25 rounded-2xl w-[380px] flex flex-col items-center p-8 shadow-xl text-center animate-[modal-enter_0.2s_cubic-bezier(0.16,1,0.3,1)_forwards] [box-shadow:0_0_0_1px_rgba(239,68,68,0.06),var(--shadow-xl)]"
-    onclick={(e) => e.stopPropagation()}
-    role="presentation"
-  >
-    <div class="w-14 h-14 rounded-full bg-danger/8 border border-danger/20 flex items-center justify-center text-danger mb-4">
+  <div class="w-14 h-14 rounded-full bg-danger/8 border border-danger/20 flex items-center justify-center text-danger mb-4">
       <svg
         width="28"
         height="28"
@@ -84,5 +84,4 @@
         {confirmLabel}
       </button>
     </div>
-  </div>
-</div>
+</ModalShell>

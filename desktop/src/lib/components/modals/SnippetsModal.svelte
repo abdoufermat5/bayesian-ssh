@@ -13,6 +13,7 @@
     X,
   } from "lucide-svelte";
   import { notify } from "$lib/stores/notifications.svelte";
+  import ModalShell from "$lib/components/ui/ModalShell.svelte";
 
   export interface SnippetItem {
     id: string;
@@ -112,10 +113,16 @@
 </script>
 
 {#if show}
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4">
-    <div class="bg-surface border border-border rounded-2xl w-full max-w-3xl p-6 shadow-2xl flex flex-col gap-4 max-h-[85vh] relative overflow-hidden">
-      <!-- Header -->
-      <div class="flex items-center justify-between gap-4 pb-3 border-b border-border">
+  <ModalShell
+    open={show}
+    title="Command Snippets & Automation Library"
+    onClose={onClose}
+    closeOnBackdrop={false}
+    width="lg"
+    panelClass="p-6 gap-4 max-h-[85vh] relative overflow-hidden"
+  >
+    <!-- Header -->
+    <div class="flex items-center justify-between gap-4 pb-3 border-b border-border">
         <div class="flex items-center gap-3">
           <div class="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400">
             <Code size={20} />
@@ -215,6 +222,5 @@
           </div>
         {/each}
       </div>
-    </div>
-  </div>
+  </ModalShell>
 {/if}

@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { CheckCircle2, AlertCircle, Info } from "lucide-svelte";
-  import { getNotificationState } from "$lib/stores/notifications.svelte";
+  import { CheckCircle2, AlertCircle, Info, X } from "lucide-svelte";
+  import { getNotificationState, dismissNotification } from "$lib/stores/notifications.svelte";
 
   const notification = getNotificationState();
 </script>
@@ -18,5 +18,14 @@
       <Info size={16} class="text-accent shrink-0" />
     {/if}
     <span>{notification.text}</span>
+    <button
+      type="button"
+      onclick={dismissNotification}
+      title="Dismiss notification"
+      aria-label="Dismiss notification"
+      class="shrink-0 text-muted hover:text-primary cursor-pointer outline-none"
+    >
+      <X size={14} />
+    </button>
   </div>
 {/if}

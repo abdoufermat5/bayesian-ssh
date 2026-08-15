@@ -1,5 +1,6 @@
 <script lang="ts">
   import { X, Plus } from "lucide-svelte";
+  import ModalShell from "$lib/components/ui/ModalShell.svelte";
 
   interface Props {
     agentSocket: string | null;
@@ -11,17 +12,13 @@
   let { agentSocket, agentKeys, onClose, onAddKey }: Props = $props();
 </script>
 
-<div
-  class="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-[100]"
-  onclick={onClose}
-  role="presentation"
+<ModalShell
+  open={true}
+  title="SSH Agent Manager"
+  onClose={onClose}
+  width="md"
 >
-  <div
-    class="bg-surface border border-border rounded-2xl w-[520px] shadow-xl flex flex-col animate-[modal-enter_0.25s_cubic-bezier(0.16,1,0.3,1)_forwards]"
-    onclick={(e) => e.stopPropagation()}
-    role="presentation"
-  >
-    <div class="flex justify-between items-center px-6 py-5 border-b border-border">
+  <div class="flex justify-between items-center px-6 py-5 border-b border-border">
       <h2 class="text-base font-semibold tracking-tight m-0 text-primary">SSH Agent Manager</h2>
       <button
         class="bg-transparent border-none text-muted cursor-pointer flex p-1 rounded-md transition-all duration-100 hover:text-primary hover:bg-white/5"
@@ -79,5 +76,4 @@
         Close
       </button>
     </div>
-  </div>
-</div>
+</ModalShell>

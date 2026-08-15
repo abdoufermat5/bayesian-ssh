@@ -18,6 +18,7 @@
   } from "lucide-svelte";
   import type { Connection } from "$lib/types";
   import { notify } from "$lib/stores/notifications.svelte";
+  import ModalShell from "$lib/components/ui/ModalShell.svelte";
 
   interface BatchExecHostResult {
     connection_id: string;
@@ -211,7 +212,6 @@
   }
 
   function stopResize() {
-    isResizing = true;
     isResizing = false;
   }
 </script>
@@ -219,23 +219,17 @@
 <svelte:window onmousemove={onMouseMove} onmouseup={stopResize} />
 
 {#if show}
-  <!-- backdrop -->
-  <div
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-sm"
-    style={isFullscreen ? "" : "padding: 16px"}
-    onclick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    onkeydown={(e) => { if (e.key === 'Escape') onClose(); }}
-    role="dialog"
-    aria-modal="true"
-    tabindex="-1"
+  <ModalShell
+    open={show}
+    title="Safe Multi-Host Batch Execution"
+    onClose={onClose}
+    width={isFullscreen ? "full" : "lg"}
+    overlayStyle={isFullscreen ? "" : "padding: 16px"}
+    panelStyle={isFullscreen
+      ? "width:100vw;height:100vh;border-radius:0;max-width:100%;max-height:100%"
+      : `width:${modalWidth}px;height:${modalHeight}px;max-width:calc(100vw - 32px);max-height:calc(100vh - 32px)`}
+    panelClass="overflow-hidden text-primary transition-[width,height] duration-150"
   >
-    <!-- modal shell -->
-    <div
-      class="flex flex-col bg-surface border border-border rounded-2xl shadow-2xl overflow-hidden text-primary transition-[width,height] duration-150"
-      style={isFullscreen
-        ? "width:100vw;height:100vh;border-radius:0;max-width:100%;max-height:100%"
-        : `width:${modalWidth}px;height:${modalHeight}px;max-width:calc(100vw - 32px);max-height:calc(100vh - 32px)`}
-    >
       <!-- ── HEADER ─────────────────────────────────────────────────────── -->
       <div class="px-5 py-3 flex items-center justify-between border-b border-border bg-surface-input/30 shrink-0 select-none">
         <div class="flex items-center gap-2.5">
@@ -525,13 +519,5 @@
           style="background: linear-gradient(135deg, transparent 50%, var(--color-accent, #6366f1) 50%) !important; border-bottom-right-radius: 1rem;"
         ></button>
       {/if}
-    </div>
-  </div>
+  </ModalShell>
 {/if}
-
-<style>
-  /* keep the modal positioned relative so resize handle can anchor to it */
-  .fixed > div {
-    position: relative;
-  }
-</style>

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { CheckCircle2, AlertCircle } from "lucide-svelte";
+  import { CheckCircle2, AlertCircle, Clock } from "lucide-svelte";
   import type { SessionHistoryEntry } from "$lib/types";
   import { formatDateTime } from "$lib/utils/timezone";
 
@@ -74,8 +74,14 @@
             </tr>
           {:else}
             <tr>
-              <td colspan="5" class="text-center py-12 text-muted">
-                No historical logs found.
+              <td colspan="5">
+                <div class="flex flex-col items-center justify-center px-6 py-14 text-center">
+                  <Clock size={40} class="text-muted opacity-80 mb-3" />
+                  <span class="text-sm font-semibold text-primary mb-1">No historical logs found.</span>
+                  <span class="text-xs text-muted m-0 max-w-[320px] leading-relaxed">
+                    Session history will appear here after you connect to a host.
+                  </span>
+                </div>
               </td>
             </tr>
           {/each}

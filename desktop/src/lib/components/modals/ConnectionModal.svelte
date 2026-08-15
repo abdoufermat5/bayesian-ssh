@@ -1,5 +1,6 @@
 <script lang="ts">
   import { X, Key } from "lucide-svelte";
+  import ModalShell from "$lib/components/ui/ModalShell.svelte";
 
   interface Props {
     isEditing: boolean;
@@ -34,17 +35,13 @@
   }: Props = $props();
 </script>
 
-<div
-  class="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-[100]"
-  onclick={onClose}
-  role="presentation"
+<ModalShell
+  open={true}
+  title={isEditing ? "Edit Connection" : "New SSH Connection"}
+  onClose={onClose}
+  width="md"
 >
-  <div
-    class="bg-surface border border-border rounded-2xl w-[520px] shadow-xl flex flex-col animate-[modal-enter_0.25s_cubic-bezier(0.16,1,0.3,1)_forwards]"
-    onclick={(e) => e.stopPropagation()}
-    role="presentation"
-  >
-    <div class="flex justify-between items-center px-6 py-5 border-b border-border">
+  <div class="flex justify-between items-center px-6 py-5 border-b border-border">
       <h2 class="text-base font-semibold tracking-tight m-0 text-primary">
         {isEditing ? "Edit Connection" : "New SSH Connection"}
       </h2>
@@ -190,5 +187,4 @@
         Save Server
       </button>
     </div>
-  </div>
-</div>
+</ModalShell>

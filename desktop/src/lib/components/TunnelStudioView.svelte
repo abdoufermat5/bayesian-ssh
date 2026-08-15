@@ -19,6 +19,7 @@
   } from "lucide-svelte";
   import type { Connection } from "$lib/types";
   import CustomSelect from "$lib/components/ui/CustomSelect.svelte";
+  import ModalShell from "$lib/components/ui/ModalShell.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
 
   export interface TunnelRule {
@@ -301,14 +302,19 @@
 
 <!-- New Tunnel Modal -->
 {#if showAddModal}
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4">
-    <div class="bg-surface border border-border rounded-xl w-full max-w-lg p-6 shadow-2xl flex flex-col gap-5">
-      <div class="flex items-center justify-between pb-2 border-b border-border">
-        <h3 class="text-base font-bold text-primary m-0 flex items-center gap-2">
-          <Network size={18} class="text-accent" />
-          <span>Create SSH Tunnel Rule</span>
-        </h3>
-      </div>
+  <ModalShell
+    open={showAddModal}
+    title="Create SSH Tunnel Rule"
+    onClose={() => (showAddModal = false)}
+    width="md"
+    panelClass="p-6 gap-5"
+  >
+    <div class="flex items-center justify-between pb-2 border-b border-border">
+      <h3 class="text-base font-bold text-primary m-0 flex items-center gap-2">
+        <Network size={18} class="text-accent" />
+        <span>Create SSH Tunnel Rule</span>
+      </h3>
+    </div>
 
       <!-- Presets Selector -->
       <div class="flex flex-col gap-1.5">
@@ -409,6 +415,5 @@
           Create Tunnel
         </button>
       </div>
-    </div>
-  </div>
+  </ModalShell>
 {/if}

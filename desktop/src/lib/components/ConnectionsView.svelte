@@ -105,7 +105,7 @@
     <div class="flex items-center gap-2">
       {#if onOpenBatchExec}
         <button
-          class="bg-surface-input border border-border text-muted px-2.5 py-1.5 rounded-md cursor-pointer flex items-center gap-1.5 text-xs font-semibold transition-all hover:border-border-hover hover:text-primary"
+          class="bg-surface-input border border-border text-muted px-2.5 py-1.5 rounded-md cursor-pointer flex items-center gap-1.5 text-xs font-semibold transition-all hover:border-border-hover hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed"
           onclick={onOpenBatchExec}
           title="Safe Multi-Host Batch Execution"
         >
@@ -114,7 +114,7 @@
         </button>
       {/if}
       <button
-        class="bg-surface-input border border-border text-muted px-2.5 py-1.5 rounded-md cursor-pointer flex items-center gap-1.5 text-xs font-semibold transition-all hover:border-border-hover hover:text-primary"
+        class="bg-surface-input border border-border text-muted px-2.5 py-1.5 rounded-md cursor-pointer flex items-center gap-1.5 text-xs font-semibold transition-all hover:border-border-hover hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed"
         onclick={pingAllHosts}
         disabled={pinging}
         title="Ping all hosts"
@@ -123,14 +123,14 @@
         Ping All
       </button>
       <button
-        class="bg-surface-input border border-border text-muted p-1.5 rounded-md cursor-pointer flex transition-all hover:border-border-hover hover:text-primary"
+        class="bg-surface-input border border-border text-muted p-1.5 rounded-md cursor-pointer flex transition-all hover:border-border-hover hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed"
         onclick={onRefresh}
         title="Refresh Connections"
       >
         <RefreshCw size={14} />
       </button>
       <button
-        class="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-accent text-white text-xs font-semibold cursor-pointer shadow-sm hover:opacity-90 transition-all"
+        class="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-accent text-white text-xs font-semibold cursor-pointer shadow-sm hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         onclick={onAddHost}
       >
         <Plus size={14} />
@@ -189,12 +189,12 @@
 
                 <div class="flex-[1.5] flex justify-end gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
                   <button
-                    class="p-1 rounded text-muted hover:text-primary hover:bg-white/10 transition-colors"
+                    class="p-1 rounded text-muted hover:text-primary hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     onclick={(e) => {
                       e.stopPropagation();
-                      onCopyCommand(toSshCommand(conn), conn.id);
+                      onEdit(conn);
                     }}
-                    title="Copy SSH Command"
+                    title="Edit"
                   >
                     {#if copiedId === conn.id}
                       <Check size={13} class="text-emerald-400" />
@@ -213,7 +213,7 @@
                     <Edit2 size={13} />
                   </button>
                   <button
-                    class="p-1 rounded text-muted hover:text-primary hover:bg-white/10 transition-colors"
+                    class="p-1 rounded text-muted hover:text-primary hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     onclick={(e) => {
                       e.stopPropagation();
                       onDuplicate(conn);
@@ -223,7 +223,7 @@
                     <CopyPlus size={13} />
                   </button>
                   <button
-                    class="p-1 rounded text-muted hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                    class="p-1 rounded text-muted hover:text-rose-400 hover:bg-rose-500/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     onclick={(e) => {
                       e.stopPropagation();
                       onDelete(conn);
@@ -233,11 +233,12 @@
                     <Trash2 size={13} />
                   </button>
                   <button
-                    class="p-1 px-2 rounded bg-accent/15 text-accent font-semibold hover:bg-accent hover:text-white transition-all flex items-center gap-1 text-[11px]"
+                    class="p-1 px-2 rounded bg-accent/15 text-accent font-semibold hover:bg-accent hover:text-white transition-all flex items-center gap-1 text-[11px] disabled:opacity-50 disabled:cursor-not-allowed"
                     onclick={(e) => {
                       e.stopPropagation();
                       handleConnectHost(conn);
                     }}
+                    disabled={connectingHostId !== null}
                     title="Connect"
                   >
                     {#if connectingHostId === conn.id}
@@ -310,11 +311,12 @@
                     <Edit2 size={12} />
                   </button>
                   <button
-                    class="px-2 py-1 rounded bg-accent text-white text-[11px] font-semibold hover:opacity-90 transition-all flex items-center gap-1 cursor-pointer"
+                    class="px-2 py-1 rounded bg-accent text-white text-[11px] font-semibold hover:opacity-90 transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     onclick={(e) => {
                       e.stopPropagation();
                       handleConnectHost(conn);
                     }}
+                    disabled={connectingHostId !== null}
                   >
                     {#if connectingHostId === conn.id}
                       <RefreshCw size={10} class="animate-spin" />
@@ -336,7 +338,7 @@
         <span class="text-sm font-semibold text-primary mb-1">No SSH Connections</span>
         <span class="text-xs max-w-sm text-center mb-4">Add your first remote host or import connections from OpenSSH config.</span>
         <button
-          class="flex items-center gap-1.5 px-3.5 py-2 rounded-md bg-accent text-white text-xs font-semibold cursor-pointer shadow-sm hover:opacity-90"
+          class="flex items-center gap-1.5 px-3.5 py-2 rounded-md bg-accent text-white text-xs font-semibold cursor-pointer shadow-sm hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
           onclick={onAddHost}
         >
           <Plus size={14} />

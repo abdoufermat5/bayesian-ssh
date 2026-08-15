@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Command, X, Search, Terminal, Server, KeyRound, ShieldCheck, Plus, RefreshCw, Layers } from "lucide-svelte";
+  import ModalShell from "$lib/components/ui/ModalShell.svelte";
 
   interface Props {
     show: boolean;
@@ -26,21 +27,15 @@
 </script>
 
 {#if show}
-  <div
-    class="fixed inset-0 bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-4"
-    role="presentation"
-    onclick={onClose}
+  <ModalShell
+    open={show}
+    title="Keyboard Shortcuts"
+    onClose={onClose}
+    width="md"
+    panelClass="p-6 space-y-5"
   >
-    <div
-      class="bg-surface border border-border rounded-2xl p-6 w-full max-w-lg shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-150"
-      role="dialog"
-      aria-modal="true"
-      onclick={(e) => e.stopPropagation()}
-      onkeydown={(e) => e.key === "Escape" && onClose()}
-      tabindex="-1"
-    >
-      <!-- Header -->
-      <div class="flex items-center justify-between pb-3 border-b border-border">
+    <!-- Header -->
+    <div class="flex items-center justify-between pb-3 border-b border-border">
         <h2 class="text-base font-bold text-primary flex items-center gap-2 m-0">
           <Command size={18} class="text-accent" />
           Keyboard Shortcuts & Productivity
@@ -78,6 +73,5 @@
           Got it
         </button>
       </div>
-    </div>
-  </div>
+  </ModalShell>
 {/if}

@@ -12,8 +12,17 @@ export function notify(message: string, notificationType: NotificationType = "in
 
   if (timeoutId) clearTimeout(timeoutId);
   timeoutId = setTimeout(() => {
+    timeoutId = null;
     visible = false;
   }, 3000);
+}
+
+export function dismissNotification() {
+  if (timeoutId) {
+    clearTimeout(timeoutId);
+    timeoutId = null;
+  }
+  visible = false;
 }
 
 export function getNotificationState() {

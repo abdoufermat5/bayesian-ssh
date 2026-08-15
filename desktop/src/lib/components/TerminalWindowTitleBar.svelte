@@ -63,7 +63,7 @@
   <div class="flex items-center shrink-0 gap-1">
     {#if onDock}
       <button
-        class="inline-flex items-center gap-1.5 h-6 mr-1 px-2.5 rounded-md border border-accent/25 bg-accent/6 text-accent text-[11px] font-semibold cursor-pointer transition-colors hover:bg-accent/12"
+        class="inline-flex items-center gap-1.5 h-6 mr-1 px-2.5 rounded-md border border-accent/25 bg-accent/6 text-accent text-[11px] font-semibold cursor-pointer transition-colors hover:bg-accent/12 disabled:opacity-50 disabled:cursor-not-allowed"
         onclick={() => onDock?.()}
         title="Dock back to main window"
       >
@@ -72,21 +72,21 @@
       </button>
     {/if}
     <button
-      class="flex items-center justify-center w-[46px] h-8 bg-transparent border-none text-muted cursor-pointer transition-colors duration-100 hover:bg-white/5 hover:text-primary"
+      class="flex items-center justify-center w-[46px] h-8 bg-transparent border-none text-muted cursor-pointer transition-colors duration-100 hover:bg-white/5 hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed"
       onclick={handleWindowMinimize}
       title="Minimize"
     >
       <svg viewBox="0 0 10 1" class="w-2.5 h-px fill-none stroke-current" style="stroke-width: 1.5;"><line x1="0" y1="0.5" x2="10" y2="0.5" /></svg>
     </button>
     <button
-      class="flex items-center justify-center w-[46px] h-8 bg-transparent border-none text-muted cursor-pointer transition-colors duration-100 hover:bg-white/5 hover:text-primary"
+      class="flex items-center justify-center w-[46px] h-8 bg-transparent border-none text-muted cursor-pointer transition-colors duration-100 hover:bg-white/5 hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed"
       onclick={handleWindowMaximize}
       title="Maximize/Restore"
     >
       <svg viewBox="0 0 10 10" class="w-2.5 h-2.5 fill-none stroke-current" style="stroke-width: 1.2;"><rect x="1" y="1" width="8" height="8" /></svg>
     </button>
     <button
-      class="flex items-center justify-center w-[46px] h-8 bg-transparent border-none text-muted cursor-pointer transition-colors duration-100 hover:bg-red-500 hover:text-white"
+      class="flex items-center justify-center w-[46px] h-8 bg-transparent border-none text-muted cursor-pointer transition-colors duration-100 hover:bg-red-500 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
       onclick={handleWindowClose}
       title="Close"
     >

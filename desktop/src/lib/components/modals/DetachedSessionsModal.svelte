@@ -1,5 +1,6 @@
 <script lang="ts">
   import { AppWindow, ExternalLink, Link2, Search, Server, X } from "lucide-svelte";
+  import ModalShell from "$lib/components/ui/ModalShell.svelte";
   import type { DetachedSession, PopoutSession } from "$lib/stores/terminal.svelte";
 
   interface Props {
@@ -53,21 +54,14 @@
   });
 </script>
 
-<div class="fixed inset-0 flex items-center justify-center z-[100]">
-  <button
-    type="button"
-    class="absolute inset-0 bg-black/75 backdrop-blur-sm border-none p-0 cursor-default"
-    onclick={onClose}
-    aria-label="Close dialog"
-  ></button>
-  <div
-    class="relative bg-surface border border-border rounded-2xl w-[720px] max-h-[80vh] shadow-xl flex flex-col animate-[modal-enter_0.25s_cubic-bezier(0.16,1,0.3,1)_forwards]"
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="session-manager-title"
-    tabindex="-1"
-  >
-    <div class="flex justify-between items-center px-6 py-5 border-b border-border">
+<ModalShell
+  open={true}
+  title="Running Sessions"
+  onClose={onClose}
+  width="lg"
+  panelClass="max-h-[80vh]"
+>
+  <div class="flex justify-between items-center px-6 py-5 border-b border-border">
       <div>
         <h3 id="session-manager-title" class="text-base font-semibold tracking-tight m-0 text-primary">Running Sessions</h3>
         <p class="text-xs text-muted mt-0.5">Programs keep running when hidden. Reattach or dock to restore the terminal view.</p>
@@ -196,5 +190,4 @@
         </div>
       {/if}
     </div>
-  </div>
-</div>
+</ModalShell>

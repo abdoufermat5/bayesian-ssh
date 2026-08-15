@@ -163,7 +163,7 @@
               <Server size={12} />
               <span>{tab.name}</span>
               <button
-                class="bg-transparent border-none text-muted cursor-pointer p-0.25 rounded flex items-center hover:bg-white/8 hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity"
+                class="bg-transparent border-none text-muted cursor-pointer p-0.25 rounded flex items-center hover:bg-white/8 hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Pop out to separate window (session keeps running)"
                 onclick={(e) => {
                   e.stopPropagation();
@@ -173,7 +173,7 @@
                 <AppWindow size={11} />
               </button>
               <button
-                class="bg-transparent border-none text-muted cursor-pointer p-0.25 rounded flex items-center hover:bg-white/8 hover:text-accent transition-all opacity-0 group-hover:opacity-100 transition-opacity"
+                class="bg-transparent border-none text-muted cursor-pointer p-0.25 rounded flex items-center hover:bg-white/8 hover:text-accent transition-all opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Run in background (hide tab, program keeps running)"
                 onclick={(e) => {
                   e.stopPropagation();
@@ -183,7 +183,7 @@
                 <Unlink size={11} />
               </button>
               <button
-                class="bg-transparent border-none text-muted cursor-pointer p-0.5 rounded-full flex transition-all duration-100 hover:bg-danger/10 hover:text-danger"
+                class="bg-transparent border-none text-muted cursor-pointer p-0.5 rounded-full flex transition-all duration-100 hover:bg-danger/10 hover:text-danger disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Terminate session"
                 onclick={(e) => {
                   e.stopPropagation();
@@ -244,7 +244,7 @@
               </button>
               <button
                 type="button"
-                class="inline-flex items-center gap-1 mb-1 p-1.5 border border-border rounded-lg bg-transparent text-secondary text-[11px] cursor-pointer shrink-0 transition-all duration-100 hover:bg-white/5 hover:text-primary hover:border-border-hover"
+                class="inline-flex items-center gap-1 mb-1 p-1.5 border border-border rounded-lg bg-transparent text-secondary text-[11px] cursor-pointer shrink-0 transition-all duration-100 hover:bg-white/5 hover:text-primary hover:border-border-hover disabled:opacity-50 disabled:cursor-not-allowed"
                 onclick={() => activeTab.term?.clear()}
                 title="Clear terminal screen"
               >
@@ -252,7 +252,7 @@
               </button>
               <button
                 type="button"
-                class="inline-flex items-center gap-1 mb-1 p-1.5 border border-border rounded-lg bg-transparent text-secondary text-[11px] cursor-pointer shrink-0 transition-all duration-100 hover:bg-white/5 hover:text-primary hover:border-border-hover"
+                class="inline-flex items-center gap-1 mb-1 p-1.5 border border-border rounded-lg bg-transparent text-secondary text-[11px] cursor-pointer shrink-0 transition-all duration-100 hover:bg-white/5 hover:text-primary hover:border-border-hover disabled:opacity-50 disabled:cursor-not-allowed"
                 onclick={() => activeTab.term?.scrollToBottom()}
                 title="Scroll to bottom"
               >
@@ -263,7 +263,7 @@
           {#if terminalState.totalSessionCount > 0}
             <button
               type="button"
-              class="inline-flex items-center gap-1.25 py-1.5 px-2.5 mb-1 border border-danger/25 rounded-lg bg-transparent text-red-300 text-[11px] font-semibold cursor-pointer shrink-0 transition-all duration-100 hover:bg-danger/8 hover:border-danger/40"
+              class="inline-flex items-center gap-1.25 py-1.5 px-2.5 mb-1 border border-danger/25 rounded-lg bg-transparent text-red-300 text-[11px] font-semibold cursor-pointer shrink-0 transition-all duration-100 hover:bg-danger/8 hover:border-danger/40 disabled:opacity-50 disabled:cursor-not-allowed"
               onclick={onCloseAll}
               title="Terminate all active and detached SSH sessions"
             >
@@ -304,7 +304,7 @@
                   />
                   <button
                     type="button"
-                    class="p-1 text-muted hover:text-primary rounded bg-transparent border-none cursor-pointer flex items-center"
+                    class="p-1 text-muted hover:text-primary rounded bg-transparent border-none cursor-pointer flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
                     title="Previous match (Shift+Enter)"
                     onclick={() => tab.searchAddon?.findPrevious(tabSearchQueries[tab.id] ?? "")}
                   >
@@ -312,7 +312,7 @@
                   </button>
                   <button
                     type="button"
-                    class="p-1 text-muted hover:text-primary rounded bg-transparent border-none cursor-pointer flex items-center"
+                    class="p-1 text-muted hover:text-primary rounded bg-transparent border-none cursor-pointer flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
                     title="Next match (Enter)"
                     onclick={() => tab.searchAddon?.findNext(tabSearchQueries[tab.id] ?? "")}
                   >
@@ -320,7 +320,7 @@
                   </button>
                   <button
                     type="button"
-                    class="p-1 text-muted hover:text-primary rounded bg-transparent border-none cursor-pointer flex items-center"
+                    class="p-1 text-muted hover:text-primary rounded bg-transparent border-none cursor-pointer flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
                     title="Close search (Esc)"
                     onclick={() => {
                       closeTerminalSearch(tab.id);
@@ -369,7 +369,7 @@
           </div>
           <button
             type="button"
-            class="mt-4 inline-flex items-center gap-2 py-2 px-4 rounded-lg border border-accent/35 bg-accent/8 text-accent text-[13px] font-semibold cursor-pointer transition-colors duration-100 hover:bg-accent/14"
+            class="mt-4 inline-flex items-center gap-2 py-2 px-4 rounded-lg border border-accent/35 bg-accent/8 text-accent text-[13px] font-semibold cursor-pointer transition-colors duration-100 hover:bg-accent/14 disabled:opacity-50 disabled:cursor-not-allowed"
             onclick={onManageSessions}
           >
             <Layers size={14} />

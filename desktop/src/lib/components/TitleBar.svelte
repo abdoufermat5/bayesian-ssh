@@ -72,7 +72,7 @@
   <div class="flex items-center justify-end flex-1 h-full gap-1">
     {#if onOpenShortcuts}
       <button
-        class="flex items-center justify-center w-7 h-7 bg-transparent border-none text-muted cursor-pointer transition-colors hover:text-accent rounded-md"
+        class="flex items-center justify-center w-7 h-7 bg-transparent border-none text-muted cursor-pointer transition-colors hover:text-accent rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
         onclick={onOpenShortcuts}
         title="Keyboard Shortcuts"
       >
@@ -81,7 +81,7 @@
     {/if}
     {#if onOpenAbout}
       <button
-        class="flex items-center justify-center w-7 h-7 bg-transparent border-none text-muted cursor-pointer transition-colors hover:text-accent rounded-md font-bold text-xs font-mono"
+        class="flex items-center justify-center w-7 h-7 bg-transparent border-none text-muted cursor-pointer transition-colors hover:text-accent rounded-md font-bold text-xs font-mono disabled:opacity-50 disabled:cursor-not-allowed"
         onclick={onOpenAbout}
         title="About Bayesian SSH (?)"
       >
@@ -89,7 +89,7 @@
       </button>
     {/if}
     <button
-      class="flex items-center justify-center w-[46px] h-[var(--titlebar-h)] bg-transparent border-none text-muted cursor-pointer transition-colors duration-100 hover:bg-white/5 hover:text-primary"
+      class="flex items-center justify-center w-[46px] h-[var(--titlebar-h)] bg-transparent border-none text-muted cursor-pointer transition-colors duration-100 hover:bg-white/5 hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed"
       onclick={handleWindowMinimize}
       title="Minimize"
     >
@@ -98,7 +98,7 @@
       </svg>
     </button>
     <button
-      class="flex items-center justify-center w-[46px] h-[var(--titlebar-h)] bg-transparent border-none text-muted cursor-pointer transition-colors duration-100 hover:bg-white/5 hover:text-primary"
+      class="flex items-center justify-center w-[46px] h-[var(--titlebar-h)] bg-transparent border-none text-muted cursor-pointer transition-colors duration-100 hover:bg-white/5 hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed"
       onclick={handleWindowMaximize}
       title="Maximize/Restore"
     >
@@ -107,7 +107,7 @@
       </svg>
     </button>
     <button
-      class="flex items-center justify-center w-[46px] h-[var(--titlebar-h)] bg-transparent border-none text-muted cursor-pointer transition-colors duration-100 hover:bg-red-500 hover:!text-white"
+      class="flex items-center justify-center w-[46px] h-[var(--titlebar-h)] bg-transparent border-none text-muted cursor-pointer transition-colors duration-100 hover:bg-red-500 hover:!text-white disabled:opacity-50 disabled:cursor-not-allowed"
       onclick={handleWindowClose}
       title="Close"
     >

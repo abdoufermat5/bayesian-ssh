@@ -1,5 +1,6 @@
 <script lang="ts">
   import { TerminalSquare, AlertTriangle, Minimize2, Power } from "lucide-svelte";
+  import ModalShell from "$lib/components/ui/ModalShell.svelte";
 
   interface Props {
     activeCount: number;
@@ -11,17 +12,15 @@
   let { activeCount, onCancel, onMinimize, onQuit }: Props = $props();
 </script>
 
-<div
-  class="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-[100]"
-  onclick={onCancel}
-  role="presentation"
+<ModalShell
+  open={true}
+  title="Active Connections Running"
+  onClose={onCancel}
+  width="sm"
+  panelClass="items-center p-7 text-center"
+  panelStyle="border-color: color-mix(in srgb, var(--color-warning) 25%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-warning) 8%, transparent), var(--shadow-xl);"
 >
-  <div
-    class="bg-surface border border-amber-500/25 rounded-2xl w-[420px] flex flex-col items-center p-7 shadow-2xl text-center animate-[modal-enter_0.2s_cubic-bezier(0.16,1,0.3,1)_forwards] [box-shadow:0_0_0_1px_rgba(245,158,11,0.08),var(--shadow-xl)]"
-    onclick={(e) => e.stopPropagation()}
-    role="presentation"
-  >
-    <div class="w-14 h-14 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 mb-4">
+  <div class="w-14 h-14 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 mb-4">
       <AlertTriangle size={28} />
     </div>
 
@@ -63,5 +62,4 @@
         Cancel
       </button>
     </div>
-  </div>
-</div>
+</ModalShell>

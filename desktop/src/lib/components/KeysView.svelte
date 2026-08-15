@@ -4,6 +4,7 @@
   import { KeyRound, Plus, Send, ShieldCheck, ShieldAlert, RefreshCw, Copy, Check } from "lucide-svelte";
   import type { SshKeyInfo, Connection } from "$lib/types";
   import CustomSelect from "$lib/components/ui/CustomSelect.svelte";
+  import ModalShell from "$lib/components/ui/ModalShell.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
 
   interface Props {
@@ -220,12 +221,17 @@
 
   <!-- Generate Key Modal -->
   {#if showGenerateModal}
-    <div class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div class="bg-surface border border-border rounded-xl p-6 w-full max-w-md shadow-2xl space-y-4">
-        <h2 class="text-base font-bold text-primary flex items-center gap-2">
-          <KeyRound class="text-accent" size={20} />
-          Generate New SSH Keypair
-        </h2>
+    <ModalShell
+      open={showGenerateModal}
+      title="Generate New SSH Keypair"
+      onClose={() => (showGenerateModal = false)}
+      width="md"
+      panelClass="p-6 space-y-4"
+    >
+      <h2 class="text-base font-bold text-primary flex items-center gap-2">
+        <KeyRound class="text-accent" size={20} />
+        Generate New SSH Keypair
+      </h2>
 
         <div>
           <label for="gen-key-name" class="block text-xs font-semibold text-muted mb-1">Key Filename (~/.ssh/)</label>
@@ -271,18 +277,22 @@
             {/if}
           </button>
         </div>
-      </div>
-    </div>
+    </ModalShell>
   {/if}
 
   <!-- Copy Key Modal -->
   {#if showCopyModal}
-    <div class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div class="bg-surface border border-border rounded-xl p-6 w-full max-w-md shadow-2xl space-y-4">
-        <h2 class="text-base font-bold text-primary flex items-center gap-2">
-          <Send class="text-accent" size={20} />
-          Deploy Public Key to Target
-        </h2>
+    <ModalShell
+      open={showCopyModal}
+      title="Deploy Public Key to Target"
+      onClose={() => (showCopyModal = false)}
+      width="md"
+      panelClass="p-6 space-y-4"
+    >
+      <h2 class="text-base font-bold text-primary flex items-center gap-2">
+        <Send class="text-accent" size={20} />
+        Deploy Public Key to Target
+      </h2>
 
         <div>
           <label for="copy-key-path" class="block text-xs font-semibold text-muted mb-1">Public Key Path</label>
@@ -326,7 +336,6 @@
             {/if}
           </button>
         </div>
-      </div>
-    </div>
+    </ModalShell>
   {/if}
 </div>

@@ -114,7 +114,7 @@
         <div class="flex justify-between items-center mb-1">
           <span class="text-[10px] font-bold uppercase tracking-wider text-muted px-1">Profile</span>
           <button
-            class="bg-transparent border-none text-muted cursor-pointer p-0.5 rounded flex items-center transition-colors hover:text-primary hover:bg-white/5"
+            class="bg-transparent border-none text-muted cursor-pointer p-0.5 rounded flex items-center transition-colors hover:text-primary hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
             onclick={onShowEnvModal}
             title="Manage Profiles"
           >
@@ -133,7 +133,7 @@
     <nav class="flex flex-col gap-0.5 mb-4 shrink-0">
       {#each navItems as item}
         <button
-          class="flex items-center gap-2.5 w-full bg-transparent border-none text-muted py-1.5 px-2.5 rounded-md cursor-pointer text-xs font-medium text-left transition-all duration-100 relative
+          class="flex items-center gap-2.5 w-full bg-transparent border-none text-muted py-1.5 px-2.5 rounded-md cursor-pointer text-xs font-medium text-left transition-all duration-100 relative disabled:opacity-50 disabled:cursor-not-allowed
             {sidebarCollapsed ? 'justify-center' : ''}
             {activeTab === item.tab ? 'text-primary bg-accent/10 border-l-2 border-accent font-semibold' : 'hover:text-primary hover:bg-white/[0.04]'}"
           onclick={() => onTabChange(item.tab)}
@@ -154,7 +154,7 @@
       {#if onShowSnippetsModal}
         <button
           type="button"
-          class="flex items-center gap-2.5 w-full bg-transparent border-none text-muted py-1.5 px-2.5 rounded-md cursor-pointer text-xs font-medium text-left transition-all duration-100 hover:text-primary hover:bg-white/[0.04] mt-1"
+          class="flex items-center gap-2.5 w-full bg-transparent border-none text-muted py-1.5 px-2.5 rounded-md cursor-pointer text-xs font-medium text-left transition-all duration-100 hover:text-primary hover:bg-white/[0.04] mt-1 disabled:opacity-50 disabled:cursor-not-allowed"
           onclick={onShowSnippetsModal}
           title="Command Snippets Library"
         >
@@ -177,7 +177,7 @@
         <!-- Agent Status -->
         <button
           type="button"
-          class="flex items-center justify-between py-1.5 px-2 rounded-md border text-xs cursor-pointer transition-all border-border bg-surface-input/60 hover:bg-surface-input"
+          class="flex items-center justify-between py-1.5 px-2 rounded-md border text-xs cursor-pointer transition-all border-border bg-surface-input/60 hover:bg-surface-input disabled:opacity-50 disabled:cursor-not-allowed"
           onclick={() => (agentActive ? onShowAgentModal() : onStartAgent())}
         >
           <span class="flex items-center gap-1.5 text-muted">
@@ -193,7 +193,7 @@
         {#if kerberosHealth !== "unavailable"}
           <button
             type="button"
-            class="flex items-center justify-between py-1.5 px-2 rounded-md border text-xs cursor-pointer transition-all border-border bg-surface-input/60 hover:bg-surface-input"
+            class="flex items-center justify-between py-1.5 px-2 rounded-md border text-xs cursor-pointer transition-all border-border bg-surface-input/60 hover:bg-surface-input disabled:opacity-50 disabled:cursor-not-allowed"
             onclick={onShowKerberosModal}
           >
             <span class="flex items-center gap-1.5 text-muted">
@@ -210,7 +210,7 @@
         {#if externalSessionCount > 0}
           <button
             type="button"
-            class="flex items-center justify-between py-1.5 px-2 rounded-md border border-accent/30 bg-accent/10 text-accent text-xs font-semibold cursor-pointer hover:bg-accent/15"
+            class="flex items-center justify-between py-1.5 px-2 rounded-md border border-accent/30 bg-accent/10 text-accent text-xs font-semibold cursor-pointer hover:bg-accent/15 disabled:opacity-50 disabled:cursor-not-allowed"
             onclick={onShowSessionManager}
           >
             <span class="flex items-center gap-1.5">
@@ -231,7 +231,7 @@
           </span>
           <div class="flex flex-wrap gap-1">
             <button
-              class="text-[11px] py-0.5 px-2 rounded cursor-pointer transition-all border
+              class="text-[11px] py-0.5 px-2 rounded cursor-pointer transition-all border disabled:opacity-50 disabled:cursor-not-allowed
                 {selectedTag === null
                   ? 'border-accent bg-accent/15 text-accent font-semibold'
                   : 'border-border bg-surface-input text-muted hover:text-primary hover:border-border-hover'}"
@@ -241,7 +241,7 @@
             </button>
             {#each allTags as tag}
               <button
-                class="text-[11px] py-0.5 px-2 rounded cursor-pointer transition-all border
+                class="text-[11px] py-0.5 px-2 rounded cursor-pointer transition-all border disabled:opacity-50 disabled:cursor-not-allowed
                   {selectedTag === tag
                     ? 'border-accent bg-accent/15 text-accent font-semibold'
                     : 'border-border bg-surface-input text-muted hover:text-primary hover:border-border-hover'}"
@@ -258,7 +258,7 @@
 
   <!-- Sidebar Toggle -->
   <button
-    class="absolute top-1/2 -right-3 -translate-y-1/2 bg-surface-raised border border-border-hover text-secondary cursor-pointer w-[24px] h-[24px] rounded-full flex items-center justify-center z-50 shadow-md transition-all hover:text-accent hover:border-accent"
+    class="absolute top-1/2 -right-3 -translate-y-1/2 bg-surface-raised border border-border-hover text-secondary cursor-pointer w-[24px] h-[24px] rounded-full flex items-center justify-center z-50 shadow-md transition-all hover:text-accent hover:border-accent disabled:opacity-50 disabled:cursor-not-allowed"
     onclick={onToggleSidebar}
     title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
   >

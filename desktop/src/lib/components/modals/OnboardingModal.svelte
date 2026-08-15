@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Terminal, Upload, ArrowRight, Lock, KeyRound } from "lucide-svelte";
+  import ModalShell from "$lib/components/ui/ModalShell.svelte";
   import type { OnboardingPayload } from "$lib/types";
   import { invoke } from "@tauri-apps/api/core";
   import { notify } from "$lib/stores/notifications.svelte";
@@ -105,10 +106,44 @@
     if (!restorePassphrase.trim() || !selectedBackupPath) return;
     await executeRestore(selectedBackupPath, restorePassphrase.trim());
   }
+
+  // Skip setup entirely: complete onboarding with minimal defaults.
+  function handleSkip() {
+    onComplete({
+      profile_name: "default",
+      create_profile: false,
+      default_user: default_user.trim() || defaultUser || "root",
+      default_port: default_port || 22,
+      ssh_config_path: null,
+      theme: "zinc",
+      auto_start_agent: false,
+      import_ssh_config: false,
+      fuzzy_search: false,
+    });
+  }
 </script>
 
-<div class="fixed top-[var(--titlebar-h,36px)] left-0 right-0 bottom-0 bg-[#09090b] z-40 flex flex-col items-center justify-center p-6 select-none overflow-y-auto">
-  <div class="w-full max-w-[480px] flex flex-col gap-6 my-auto">
+<ModalShell
+  open={true}
+  title="Bayesian SSH - Setup"
+  onClose={handleSkip}
+  closeOnEscape={false}
+  closeOnBackdrop={false}
+  width="full"
+  overlayStyle="top: var(--titlebar-h, 36px)"
+  panelClass="items-center overflow-y-auto select-none"
+>
+  <button
+    type="button"
+    class="absolute top-4 right-5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-transparent border border-border text-muted hover:text-primary hover:bg-white/5 transition-colors cursor-pointer text-xs font-medium"
+    onclick={handleSkip}
+    title="Skip setup and get started with defaults"
+  >
+    Skip setup
+    <ArrowRight size={13} />
+  </button>
+
+  <div class="w-full max-w-[480px] flex flex-col gap-6 my-auto p-6">
     
     <!-- Header -->
     <div class="flex flex-col items-center text-center gap-2">
@@ -220,47 +255,51 @@
     </div>
 
   </div>
-</div>
+</ModalShell>
 
-{#if showPassphraseInput}
-  <div class="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-[250] p-6">
-    <div class="w-[380px] max-w-full bg-[#121215] border border-white/10 rounded-2xl p-5 flex flex-col gap-4 shadow-2xl">
-      <div class="flex items-center gap-3 text-white">
-        <Lock size={20} class="text-accent" />
-        <div>
-          <h3 class="m-0 text-sm font-bold">Encrypted Backup</h3>
-          <p class="m-0 text-[11px] text-muted mt-0.5">Enter passphrase to decrypt and restore</p>
-        </div>
-      </div>
-
-      <div class="flex flex-col gap-1">
-        <input
-          type="password"
-          class="bg-white/[0.05] border border-white/10 text-white py-2 px-3 rounded-lg outline-none text-xs focus:border-accent"
-          placeholder="Passphrase"
-          bind:value={restorePassphrase}
-          onkeydown={(e) => e.key === "Enter" && submitPassphrase()}
-        />
-      </div>
-
-      <div class="flex justify-end gap-2">
-        <button
-          type="button"
-          class="py-1.5 px-3 rounded-lg text-xs text-secondary hover:text-white bg-transparent border border-white/10 cursor-pointer"
-          onclick={() => (showPassphraseInput = false)}
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          class="py-1.5 px-3.5 rounded-lg text-xs font-semibold bg-accent text-white hover:bg-accent-hover flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-          onclick={submitPassphrase}
-          disabled={busy || !restorePassphrase.trim()}
-        >
-          <KeyRound size={13} />
-          Decrypt
-        </button>
+<ModalShell
+  open={showPassphraseInput}
+  title="Encrypted Backup"
+  onClose={() => (showPassphraseInput = false)}
+  closeOnBackdrop={false}
+  width="sm"
+>
+  <div class="p-5 flex flex-col gap-4">
+    <div class="flex items-center gap-3 text-primary">
+      <Lock size={20} class="text-accent" />
+      <div>
+        <h3 class="m-0 text-sm font-bold">Encrypted Backup</h3>
+        <p class="m-0 text-[11px] text-muted mt-0.5">Enter passphrase to decrypt and restore</p>
       </div>
     </div>
+
+    <div class="flex flex-col gap-1">
+      <input
+        type="password"
+        class="bg-surface-input border border-border text-primary py-2 px-3 rounded-lg outline-none text-xs focus:border-accent"
+        placeholder="Passphrase"
+        bind:value={restorePassphrase}
+        onkeydown={(e) => e.key === "Enter" && submitPassphrase()}
+      />
+    </div>
+
+    <div class="flex justify-end gap-2">
+      <button
+        type="button"
+        class="py-1.5 px-3 rounded-lg text-xs text-secondary hover:text-primary bg-transparent border border-border cursor-pointer"
+        onclick={() => (showPassphraseInput = false)}
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        class="py-1.5 px-3.5 rounded-lg text-xs font-semibold bg-accent text-white hover:bg-accent-hover flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+        onclick={submitPassphrase}
+        disabled={busy || !restorePassphrase.trim()}
+      >
+        <KeyRound size={13} />
+        Decrypt
+      </button>
+    </div>
   </div>
-{/if}
+</ModalShell>

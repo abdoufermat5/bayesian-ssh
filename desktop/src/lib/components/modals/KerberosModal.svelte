@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Eye, EyeOff, KeyRound, RefreshCw, ShieldCheck, X, ChevronDown, ChevronUp, Settings2 } from "lucide-svelte";
+  import ModalShell from "$lib/components/ui/ModalShell.svelte";
   import type { KerberosStatus } from "$lib/stores/kerberos.svelte";
   import { formatKerberosRemaining } from "$lib/stores/kerberos.svelte";
 
@@ -74,21 +75,13 @@
   }
 </script>
 
-<div class="fixed inset-0 flex items-center justify-center z-[100]">
-  <button
-    type="button"
-    class="absolute inset-0 bg-black/75 backdrop-blur-sm border-none p-0 cursor-default"
-    onclick={onClose}
-    aria-label="Close dialog"
-  ></button>
-  <div
-    class="relative bg-surface border border-border rounded-2xl w-[520px] shadow-xl flex flex-col animate-[modal-enter_0.25s_cubic-bezier(0.16,1,0.3,1)_forwards]"
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="kerberos-modal-title"
-    tabindex="-1"
-  >
-    <div class="flex justify-between items-center px-6 py-5 border-b border-border">
+<ModalShell
+  open={true}
+  title="Kerberos Ticket"
+  onClose={onClose}
+  width="md"
+>
+  <div class="flex justify-between items-center px-6 py-5 border-b border-border">
       <div class="flex gap-3 items-start text-accent">
         <ShieldCheck size={20} class="mt-0.5 text-accent" />
         <div>
@@ -340,5 +333,4 @@
         Close
       </button>
     </div>
-  </div>
-</div>
+</ModalShell>
