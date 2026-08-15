@@ -412,6 +412,7 @@ dependencies = [
  "dirs 5.0.1",
  "hmac",
  "nix 0.27.1",
+ "portable-pty",
  "pty",
  "rand",
  "ratatui",

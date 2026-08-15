@@ -1,6 +1,4 @@
-use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use serde::Serialize;
-use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
@@ -123,39 +121,23 @@ pub fn spawn_pty(
     let _ = db.update_connection(&updated_conn);
 
     // Build the SSH command arguments
-    let pty_system = native_pty_system();
-
     let argv =
         bayesian_ssh::services::transport::SubprocessTransport::build_shell_argv(&connection);
     let (cmd_name, args) = argv
         .split_first()
         .ok_or_else(|| "SSH command generation failed".to_string())?;
 
-    let mut cmd_builder = CommandBuilder::new(cmd_name);
-    cmd_builder.args(args);
+    // Spawn inside a fresh PTY via the shared module. It inherits env vars so
+    // Kerberos tickets (KRB5CCNAME) and ssh-agent (SSH_AUTH_SOCK) are passed
+    // down, and forces TERM=xterm-256color for xterm.js compatibility.
+    let spawned = bayesian_ssh::services::pty::spawn(bayesian_ssh::services::pty::PtySpawnOptions {
+        cmd_name,
+        args,
+        rows: bayesian_ssh::services::pty::DEFAULT_ROWS,
+        cols: bayesian_ssh::services::pty::DEFAULT_COLS,
+    })?;
 
-    // Inherit env vars so Kerberos tickets (KRB5CCNAME) and ssh-agent (SSH_AUTH_SOCK) are passed down
-    for (key, val) in std::env::vars() {
-        cmd_builder.env(key, val);
-    }
-
-    // Ensure TERM is set for xterm.js compatibility — without this, vim/nano/htop won't render.
-    cmd_builder.env("TERM", "xterm-256color");
-
-    // Open PTY Pair
-    let pty_pair = pty_system
-        .openpty(PtySize {
-            rows: 24,
-            cols: 80,
-            pixel_width: 0,
-            pixel_height: 0,
-        })
-        .map_err(|e| e.to_string())?;
-
-    let child = pty_pair
-        .slave
-        .spawn_command(cmd_builder)
-        .map_err(|e| e.to_string())?;
+    let child = spawned.child;
 
     let mut db_session_id: Option<Uuid> = None;
     if config.auto_save_history {
@@ -173,11 +155,8 @@ pub fn spawn_pty(
         }
     }
 
-    let reader = pty_pair
-        .master
-        .try_clone_reader()
-        .map_err(|e| e.to_string())?;
-    let writer = pty_pair.master.take_writer().map_err(|e| e.to_string())?;
+    let reader = spawned.reader;
+    let writer = spawned.writer;
 
     // Cancelled flag: set by close_pty so the reader thread won't emit pty-exit
     let cancelled = Arc::new(AtomicBool::new(false));
@@ -196,7 +175,7 @@ pub fn spawn_pty(
         PtySession {
             writer,
             child,
-            _master: pty_pair.master,
+            _master: spawned.master,
             cancelled,
             db_session_id,
             connection_name: connection.name.clone(),
@@ -214,33 +193,25 @@ pub fn spawn_pty(
 
     std::thread::spawn(move || {
         let mut reader = reader;
-        let mut buf = [0u8; 4096];
 
-        loop {
-            match reader.read(&mut buf) {
-                Ok(0) => break,
-                Ok(n) => {
-                    let str_data = String::from_utf8_lossy(&buf[..n]).to_string();
-                    append_to_output_buffer(&output_buffer_clone, &replay_offset_clone, &str_data);
+        bayesian_ssh::services::pty::read_loop(&mut reader, |str_data| {
+            append_to_output_buffer(&output_buffer_clone, &replay_offset_clone, &str_data);
 
-                    if !detached_clone.load(Ordering::SeqCst) {
-                        #[derive(Clone, Serialize)]
-                        struct PtyPayload {
-                            session_id: String,
-                            data: String,
-                        }
-                        let _ = app_handle.emit(
-                            "pty-output",
-                            PtyPayload {
-                                session_id: session_id_clone.clone(),
-                                data: str_data,
-                            },
-                        );
-                    }
+            if !detached_clone.load(Ordering::SeqCst) {
+                #[derive(Clone, Serialize)]
+                struct PtyPayload {
+                    session_id: String,
+                    data: String,
                 }
-                Err(_) => break,
+                let _ = app_handle.emit(
+                    "pty-output",
+                    PtyPayload {
+                        session_id: session_id_clone.clone(),
+                        data: str_data,
+                    },
+                );
             }
-        }
+        });
 
         // Only emit pty-exit if this was NOT a manual close (avoids ghost events)
         if !cancelled_clone.load(Ordering::SeqCst) {
@@ -259,11 +230,7 @@ pub fn write_pty(
 ) -> Result<(), String> {
     let mut sessions = state.sessions.lock().unwrap();
     if let Some(session) = sessions.get_mut(&session_id) {
-        session
-            .writer
-            .write_all(data.as_bytes())
-            .map_err(|e| e.to_string())?;
-        session.writer.flush().map_err(|e| e.to_string())?;
+        bayesian_ssh::services::pty::write_all(session.writer.as_mut(), &data)?;
         Ok(())
     } else {
         Err(format!("PTY session '{}' not found", session_id))
@@ -281,15 +248,7 @@ pub fn resize_pty(
     let session = sessions
         .get(&session_id)
         .ok_or_else(|| format!("PTY session '{}' not found", session_id))?;
-    session
-        ._master
-        .resize(PtySize {
-            rows,
-            cols,
-            pixel_width: 0,
-            pixel_height: 0,
-        })
-        .map_err(|e| e.to_string())?;
+    bayesian_ssh::services::pty::resize(session._master.as_ref(), cols, rows)?;
     Ok(())
 }
 

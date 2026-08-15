@@ -17,12 +17,12 @@ fn expand_path(path: &str) -> PathBuf {
 
 fn resolve_active_socket() -> Option<String> {
     if let Ok(sock) = std::env::var("SSH_AUTH_SOCK") {
-        if crate::is_valid_socket(&sock) {
+        if bayesian_ssh::services::agent::is_valid_socket(&sock) {
             return Some(sock);
         }
         std::env::remove_var("SSH_AUTH_SOCK");
     }
-    if let Some(discovered) = crate::find_ssh_agent_socket() {
+    if let Some(discovered) = bayesian_ssh::services::agent::find_ssh_agent_socket() {
         std::env::set_var("SSH_AUTH_SOCK", &discovered);
         Some(discovered)
     } else {

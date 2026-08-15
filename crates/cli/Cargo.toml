@@ -35,6 +35,8 @@ thiserror = "1.0"
 # Terminal and process management
 nix = { version = "0.27", features = ["process", "signal"] }
 pty = "0.2"
+# Shared PTY primitives for GUI/TUI; already in the workspace lockfile via the GUI crate.
+portable-pty = "0.8"
 
 # Logging
 tracing = "0.1"
