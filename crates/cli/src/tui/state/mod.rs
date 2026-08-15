@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
 mod sftp;
+mod sftp_tasks;
 mod tunnels;
 
 /// Main TUI application state
