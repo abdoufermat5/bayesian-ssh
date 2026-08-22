@@ -155,12 +155,12 @@
               <span class="font-bold text-sm text-primary">{key.name}</span>
             </div>
             {#if key.is_secure}
-              <span class="flex items-center gap-1 text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+              <span class="flex items-center gap-1 text-[11px] font-semibold text-running bg-success/10 px-2 py-0.5 rounded-full border border-success/20">
                 <ShieldCheck size={12} />
                 {key.private_key_permission}
               </span>
             {:else}
-              <span class="flex items-center gap-1 text-[11px] font-semibold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+              <span class="flex items-center gap-1 text-[11px] font-semibold text-warning bg-warning/10 px-2 py-0.5 rounded-full border border-warning/20">
                 <ShieldAlert size={12} />
                 {key.private_key_permission}
               </span>
@@ -176,7 +176,7 @@
               title="Copy Fingerprint"
             >
               {#if copiedFingerprint === key.fingerprint}
-                <Check size={13} class="text-emerald-400" />
+                <Check size={13} class="text-running" />
               {:else}
                 <Copy size={13} />
               {/if}

@@ -1,0 +1,245 @@
+/* ============================================================ */
+/* COMPONENT PRIMITIVES                                          */
+/* ============================================================ */
+/* Shared, token-driven classes for every screen. If a pattern
+   repeats in markup, it belongs here — never inline a fifth
+   variant. Full usage rules: docs/src/design/design-system.md.  */
+
+@layer components {
+  /* ---- Buttons ---------------------------------------------------
+     Hierarchy: primary (one per view) > secondary > ghost > link.
+     Destructive is reserved for irreversible actions.              */
+  .btn {
+    @apply inline-flex select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors duration-fast cursor-pointer disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply bg-accent text-on-accent hover:bg-accent-hover;
+  }
+  .btn-secondary {
+    @apply border border-border bg-surface-input text-secondary hover:border-border-hover hover:bg-surface-hover hover:text-primary;
+  }
+  .btn-ghost {
+    @apply border border-transparent bg-transparent text-secondary hover:bg-surface-hover hover:text-primary;
+  }
+  .btn-danger {
+    @apply border border-error/35 bg-error/10 text-error hover:border-error/50 hover:bg-error/20;
+  }
+  .btn-icon {
+    @apply rounded-md p-1.5 text-muted hover:bg-surface-hover hover:text-primary;
+  }
+  .btn-sm {
+    @apply gap-1 px-2 py-1;
+  }
+  .btn-lg {
+    @apply rounded-lg px-3.5 py-2 text-sm;
+  }
+
+  /* ---- Inputs -----------------------------------------------------
+     One control height (py-2) everywhere; search uses .search-box.  */
+  .input {
+    @apply w-full rounded-md border border-border bg-surface-input px-3 py-2 text-sm text-primary outline-none transition-colors duration-fast placeholder:text-muted hover:border-border-hover focus:border-accent focus:ring-2 focus:ring-accent-muted;
+  }
+  .search-box {
+    @apply flex items-center gap-2 rounded-md border border-border bg-surface-input px-3 py-1.5 transition-colors duration-fast focus-within:border-accent focus-within:shadow-[0_0_0_2px_var(--color-accent-muted)];
+  }
+
+  /* ---- Tags & badges ----------------------------------------------
+     tag  — metadata labels (mono, neutral)
+     badge— counts / states (pill, colored)
+     flag — tiny feature markers (krb5, jump)                        */
+  .tag {
+    @apply inline-flex items-center gap-1 rounded-xs border border-border bg-surface-input px-1.5 py-px font-mono text-2xs text-secondary;
+  }
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full border px-2 py-px text-2xs font-bold uppercase tracking-wider;
+  }
+  .badge-neutral {
+    @apply border-border bg-surface-input text-secondary;
+  }
+  .badge-accent {
+    @apply border-accent/25 bg-accent/15 text-accent;
+  }
+  .badge-success {
+    @apply border-success/25 bg-success/15 text-success;
+  }
+  .badge-running {
+    @apply border-running/25 bg-running/15 text-running;
+  }
+  .badge-warning {
+    @apply border-warning/25 bg-warning/15 text-warning;
+  }
+  .badge-error {
+    @apply border-error/25 bg-error/15 text-error;
+  }
+  .flag {
+    @apply inline-flex items-center gap-1 rounded-xs border px-1 py-px text-2xs font-bold uppercase tracking-wider;
+  }
+  .flag-accent {
+    @apply border-accent/25 bg-accent/15 text-accent;
+  }
+
+  /* ---- Connection / state indicators ----------------------------- */
+  .status-dot {
+    @apply inline-block h-2 w-2 shrink-0 rounded-full;
+  }
+  .status-dot-sm {
+    @apply h-1.5 w-1.5;
+  }
+  .status-dot-running {
+    @apply bg-running;
+  }
+  .status-dot-success {
+    @apply bg-success;
+  }
+  .status-dot-warning {
+    @apply bg-warning;
+  }
+  .status-dot-error {
+    @apply bg-error;
+  }
+  .status-dot-offline {
+    @apply bg-muted/40;
+  }
+  .status-dot-pulse {
+    animation: status-pulse 2s var(--ease-out) infinite;
+  }
+  .status-dot-running.status-dot-pulse {
+    --pulse: var(--color-running);
+  }
+  .status-dot-success.status-dot-pulse {
+    --pulse: var(--color-success);
+  }
+  .status-dot-warning.status-dot-pulse {
+    --pulse: var(--color-warning);
+  }
+  .status-dot-error.status-dot-pulse {
+    --pulse: var(--color-error);
+  }
+
+  /* ---- Keyboard shortcuts ----------------------------------------- */
+  .kbd {
+    @apply inline-flex h-5 min-w-5 items-center justify-center rounded-xs border border-border bg-surface-raised px-1.5 font-mono text-2xs font-semibold text-secondary;
+  }
+  .kbd-accent {
+    @apply border-accent/30 bg-accent/10 text-accent;
+  }
+
+  /* ---- Text helpers ----------------------------------------------- */
+  .eyebrow {
+    @apply text-2xs font-bold uppercase tracking-wider text-muted;
+  }
+  .table-header {
+    @apply text-2xs font-bold uppercase tracking-wider text-muted;
+  }
+  .link {
+    @apply cursor-pointer text-accent transition-colors duration-fast hover:text-accent-hover hover:underline;
+    text-underline-offset: 2px;
+  }
+
+  /* ---- Containers ------------------------------------------------- */
+  .panel {
+    @apply rounded-lg border border-border bg-panel;
+  }
+  .divider {
+    @apply h-px w-full border-0 bg-border/60;
+  }
+  .row {
+    @apply cursor-pointer outline-none transition-colors duration-fast hover:bg-surface-hover/40;
+  }
+  .row-active {
+    @apply bg-accent/10;
+  }
+
+  /* ---- Alerts / error & warning surfaces -------------------------- */
+  .alert {
+    @apply flex items-start gap-2.5 rounded-lg border px-3.5 py-3 text-xs leading-relaxed;
+  }
+  .alert-error {
+    @apply border-error/35 bg-error/8 text-error;
+  }
+  .alert-warning {
+    @apply border-warning/35 bg-warning/8 text-warning;
+  }
+  .alert-success {
+    @apply border-success/35 bg-success/8 text-success;
+  }
+  .alert-info {
+    @apply border-accent/30 bg-accent/10 text-secondary;
+  }
+  .alert-title {
+    @apply font-semibold text-primary;
+  }
+
+  /* ---- Empty states ------------------------------------------------ */
+  .empty-state {
+    @apply flex flex-col items-center justify-center gap-1.5 px-6 py-14 text-center;
+  }
+  .empty-state-icon {
+    @apply mb-1 flex h-12 w-12 items-center justify-center rounded-xl border border-border bg-surface-input text-muted;
+  }
+  .empty-state-title {
+    @apply text-sm font-semibold text-primary;
+  }
+  .empty-state-desc {
+    @apply max-w-sm text-xs text-muted;
+  }
+  .empty-state-action {
+    @apply mt-3;
+  }
+  .empty-state-dashed {
+    @apply w-full rounded-xl border border-dashed border-border;
+  }
+
+  /* ---- Loading ----------------------------------------------------- */
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--color-surface-hover) 55%, transparent);
+  }
+  .skeleton::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in srgb, var(--color-primary) 7%, transparent),
+      transparent
+    );
+    animation: skeleton-shimmer 1.6s ease-in-out infinite;
+  }
+
+  /* ---- Toast -------------------------------------------------------- */
+  .toast {
+    @apply fixed bottom-5 right-5 z-[1000] flex items-center gap-2.5 rounded-xl border bg-surface-raised px-4 py-2.5 text-sm shadow-lg;
+    animation: toast-enter 0.3s var(--ease-out) forwards;
+  }
+  .toast-success {
+    @apply border-success/40;
+  }
+  .toast-error {
+    @apply border-error/40;
+  }
+  .toast-info {
+    @apply border-border;
+  }
+
+  /* ---- Modal -------------------------------------------------------- */
+  .modal-overlay {
+    @apply fixed inset-0 z-[100] flex items-center justify-center bg-overlay;
+  }
+  .modal-panel {
+    @apply relative flex flex-col rounded-xl border border-border bg-surface shadow-xl;
+    animation: modal-enter 0.25s var(--ease-out) forwards;
+  }
+}
+
+/* ---- Utilities ---------------------------------------------------- */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

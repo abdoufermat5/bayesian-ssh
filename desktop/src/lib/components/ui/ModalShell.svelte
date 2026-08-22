@@ -127,7 +127,7 @@
 
 {#if open}
   <div
-    class="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 backdrop-blur-sm {overlayClass}"
+    class="modal-overlay backdrop-blur-sm {overlayClass}"
     style={overlayStyle}
     role="presentation"
     onpointerdown={(e) => {
@@ -136,7 +136,7 @@
   >
     <div
       bind:this={panelRef}
-      class="relative flex flex-col bg-surface border border-border rounded-2xl shadow-xl animate-[modal-enter_0.25s_cubic-bezier(0.16,1,0.3,1)_forwards] {WIDTH_CLASSES[width]} {panelClass}"
+      class="modal-panel {WIDTH_CLASSES[width]} {panelClass}"
       style={panelStyle}
       role="dialog"
       aria-modal="true"

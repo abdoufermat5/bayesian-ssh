@@ -69,12 +69,13 @@
   <button
     type="button"
     {id}
-    class="w-full flex items-center justify-between gap-2 px-3 py-2 bg-surface-input border border-border rounded-lg cursor-pointer outline-none transition-all duration-150
-      {isOpen ? 'border-accent shadow-[0_0_0_2px_rgba(59,130,246,0.15)] bg-surface-input/90' : 'hover:border-border-hover hover:bg-surface-input/80'}
+    class="w-full flex items-center justify-between gap-2 px-3 py-2 bg-surface-input border border-border rounded-lg cursor-pointer transition-all duration-150
+      {isOpen ? 'border-accent shadow-[0_0_0_2px_var(--color-accent-muted)] bg-surface-input/90' : 'hover:border-border-hover hover:bg-surface-input/80'}
       {disabled ? 'opacity-50 cursor-not-allowed' : ''}"
     onclick={() => !disabled && (isOpen = !isOpen)}
     onkeydown={handleKeydown}
     aria-expanded={isOpen}
+    aria-haspopup="listbox"
     {disabled}
   >
     <span class="truncate text-left text-primary">
@@ -86,7 +87,7 @@
   <!-- Dropdown Menu Popup -->
   {#if isOpen}
     <div
-      class="absolute top-full left-0 right-0 mt-1 z-50 bg-surface-raised border border-border rounded-xl shadow-2xl py-1 overflow-hidden max-h-60 overflow-y-auto backdrop-blur-md animate-in fade-in zoom-in-95 duration-100"
+      class="absolute top-full left-0 right-0 mt-1 z-50 bg-surface-raised border border-border rounded-xl shadow-2xl py-1 overflow-hidden max-h-60 overflow-y-auto backdrop-blur-md animate-[popover-enter_0.15s_var(--ease-out)_forwards]"
       role="listbox"
     >
       {#each options as option}

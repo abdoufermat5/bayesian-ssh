@@ -252,7 +252,7 @@
       >
         <div class="flex items-center gap-2.5 shrink-0 min-w-0">
           {#if appState.activeTab !== "terminals"}
-            <div class="relative flex items-center bg-surface-input border border-border rounded-lg px-3 py-1.5 w-[280px] transition-colors duration-150 focus-within:border-border-focus focus-within:shadow-[0_0_0_3px_rgba(59,130,246,0.12)]">
+            <div class="relative flex items-center bg-surface-input border border-border rounded-lg px-3 py-1.5 w-[280px] transition-colors duration-150 focus-within:border-border-focus focus-within:shadow-[0_0_0_2px_var(--color-accent-muted)]">
               <Search class="text-muted mr-2 shrink-0" size={16} />
               <input
                 type="text"
@@ -384,7 +384,7 @@
         <div class="flex items-center gap-2 shrink-0">
           {#if terminalState.totalSessionCount > 0}
             <button
-              class="bg-transparent border border-danger/25 text-red-300 py-1.5 px-3.5 rounded-lg font-semibold cursor-pointer inline-flex items-center gap-1.5 text-xs whitespace-nowrap transition-all duration-150 hover:bg-danger/8 hover:border-danger/40 hover:text-red-200"
+              class="bg-transparent border border-danger/25 text-error py-1.5 px-3.5 rounded-lg font-semibold cursor-pointer inline-flex items-center gap-1.5 text-xs whitespace-nowrap transition-all duration-150 hover:bg-danger/8 hover:border-danger/40 hover:text-red-200"
               onclick={appState.requestCloseAllSessions}
             >
               <OctagonX size={16} />

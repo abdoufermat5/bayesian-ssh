@@ -74,12 +74,12 @@
   <div class="flex flex-col gap-1.5 p-3.5 rounded-xl border border-border/70 bg-[#09090b]">
     <span class="text-[10px] font-bold text-muted uppercase tracking-wider mb-1">Live Font Preview</span>
     <div
-      class="text-emerald-400 p-3 rounded-lg bg-black/60 font-mono text-xs overflow-x-auto whitespace-pre select-none border border-white/5"
+      class="text-running p-3 rounded-lg bg-black/60 font-mono text-xs overflow-x-auto whitespace-pre select-none border border-white/5"
       style="font-family: {settings.terminal_font_family}; font-size: {settings.terminal_font_size || 13}px; line-height: {settings.terminal_line_height || 1.18};"
     >
-      <span class="text-emerald-400">user@bayesian-ssh</span>:<span class="text-blue-400">~</span>$ uname -a &amp;&amp; uptime
+      <span class="text-running">user@bayesian-ssh</span>:<span class="text-blue-400">~</span>$ uname -a &amp;&amp; uptime
       <span class="text-muted block mt-0.5">Linux production-srv1 6.8.0-31-generic #31-Ubuntu SMP PREEMPT_DYNAMIC</span>
-      <span class="text-amber-400 block"> 04:10:00 up 42 days, 12:34,  2 users,  load average: 0.12, 0.08, 0.04</span>
+      <span class="text-warning block"> 04:10:00 up 42 days, 12:34,  2 users,  load average: 0.12, 0.08, 0.04</span>
     </div>
   </div>
 

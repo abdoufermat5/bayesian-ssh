@@ -130,7 +130,7 @@
               </button>
               <button
                 type="button"
-                class="inline-flex items-center gap-1.5 py-1.5 px-2.5 rounded-lg border border-border bg-transparent text-secondary text-[11px] cursor-pointer transition-colors duration-100 hover:border-danger/35 hover:bg-danger/8 hover:text-red-300"
+                class="inline-flex items-center gap-1.5 py-1.5 px-2.5 rounded-lg border border-border bg-transparent text-secondary text-[11px] cursor-pointer transition-colors duration-100 hover:border-danger/35 hover:bg-danger/8 hover:text-error"
                 title="Terminate session"
                 onclick={() => onTerminatePopout(session.id)}
               >
@@ -173,7 +173,7 @@
               </button>
               <button
                 type="button"
-                class="inline-flex items-center gap-1.5 py-1.5 px-2.5 rounded-lg border border-border bg-transparent text-secondary text-[11px] cursor-pointer transition-colors duration-100 hover:border-danger/35 hover:bg-danger/8 hover:text-red-300"
+                class="inline-flex items-center gap-1.5 py-1.5 px-2.5 rounded-lg border border-border bg-transparent text-secondary text-[11px] cursor-pointer transition-colors duration-100 hover:border-danger/35 hover:bg-danger/8 hover:text-error"
                 title="Terminate session"
                 onclick={() => onTerminateDetached(session.id)}
               >

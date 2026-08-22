@@ -171,7 +171,7 @@
     if (entry.is_dir) {
       return {
         icon: Folder,
-        colorClass: "text-amber-400 bg-amber-400/10 border-amber-400/20",
+        colorClass: "text-warning bg-amber-400/10 border-amber-400/20",
         badge: "Directory",
       };
     }
@@ -193,14 +193,14 @@
     if (name.endsWith(".txt") || name.endsWith(".log") || name.endsWith(".md") || name.endsWith(".conf") || name.endsWith(".yaml") || name.endsWith(".yml")) {
       return {
         icon: FileText,
-        colorClass: "text-emerald-400 bg-emerald-400/10 border-emerald-400/20",
+        colorClass: "text-running bg-running/10 border-running/20",
         badge: "Doc",
       };
     }
     if (name.endsWith(".zip") || name.endsWith(".tar") || name.endsWith(".gz") || name.endsWith(".7z") || name.endsWith(".rar")) {
       return {
         icon: HardDrive,
-        colorClass: "text-rose-400 bg-rose-400/10 border-rose-400/20",
+        colorClass: "text-error bg-rose-400/10 border-error/20",
         badge: "Archive",
       };
     }
@@ -223,8 +223,8 @@
         <h2 class="text-base font-bold text-primary m-0 flex items-center gap-2">
           <span>SFTP Graphical Explorer</span>
           {#if isConnected}
-            <span class="px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-semibold flex items-center gap-1">
-              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span class="px-2 py-0.5 rounded-full bg-success/10 border border-success/20 text-running text-[10px] font-semibold flex items-center gap-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-running animate-pulse"></span>
               Connected
             </span>
           {:else}
@@ -426,7 +426,7 @@
               <span class="text-xs font-medium">Fetching remote directory contents...</span>
             </div>
           {:else if errorMsg}
-            <div class="flex-1 flex flex-col items-center justify-center p-8 text-center text-red-400 gap-2">
+            <div class="flex-1 flex flex-col items-center justify-center p-8 text-center text-error gap-2">
               <Lock size={36} class="text-danger mb-1" />
               <h4 class="text-sm font-bold m-0 text-primary">Unable to Access Remote Path</h4>
               <p class="text-xs text-muted max-w-md m-0 font-mono bg-surface-input p-2.5 rounded border border-border leading-relaxed">{errorMsg}</p>
@@ -504,7 +504,7 @@
                         onclick={() => copyPathToClipboard(entry.path)}
                       >
                         {#if copiedPath === entry.path}
-                          <Check size={14} class="text-emerald-400" />
+                          <Check size={14} class="text-running" />
                         {:else}
                           <Copy size={14} />
                         {/if}
@@ -554,7 +554,7 @@
                       onclick={() => copyPathToClipboard(entry.path)}
                     >
                       {#if copiedPath === entry.path}
-                        <Check size={12} class="text-emerald-400" />
+                        <Check size={12} class="text-running" />
                       {:else}
                         <Copy size={12} />
                       {/if}

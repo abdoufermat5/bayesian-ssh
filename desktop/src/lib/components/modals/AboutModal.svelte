@@ -75,7 +75,7 @@
 
           <div class="flex justify-between items-center text-muted">
             <span class="flex items-center gap-1.5 font-medium">
-              <ShieldCheck size={13} class="text-emerald-400" />
+              <ShieldCheck size={13} class="text-running" />
               Security Suite
             </span>
             <span class="font-mono text-[11px] text-primary">PBKDF2 + AES-GCM + POSIX 0600</span>
@@ -108,7 +108,7 @@
       <!-- Footer -->
       <div class="pt-2 border-t border-border flex justify-between items-center text-[11px] text-muted">
         <span class="flex items-center gap-1">
-          Made with <Heart size={11} class="text-rose-400 fill-rose-400" /> by Abdoufermat
+          Made with <Heart size={11} class="text-error fill-rose-400" /> by Abdoufermat
         </span>
         <button
           type="button"

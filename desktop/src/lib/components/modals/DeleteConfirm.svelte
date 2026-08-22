@@ -28,9 +28,9 @@
   onClose={onCancel}
   width="sm"
   panelClass="items-center p-8 text-center"
-  panelStyle="border-color: color-mix(in srgb, var(--color-danger) 25%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-danger) 6%, transparent), var(--shadow-xl);"
+  panelStyle="border-color: color-mix(in srgb, var(--color-error) 25%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-error) 6%, transparent), var(--shadow-xl);"
 >
-  <div class="w-14 h-14 rounded-full bg-danger/8 border border-danger/20 flex items-center justify-center text-danger mb-4">
+  <div class="w-14 h-14 rounded-full bg-error/8 border border-error/20 flex items-center justify-center text-error mb-4">
       <svg
         width="28"
         height="28"
@@ -51,20 +51,20 @@
 
     <div class="flex flex-col items-center gap-1 mb-6">
       <h3 class="text-base font-semibold text-primary m-0">{title}</h3>
-      <p class="text-sm font-semibold text-danger mt-1 break-all">{label}</p>
+      <p class="text-sm font-semibold text-error mt-1 break-all">{label}</p>
       <p class="text-[11px] font-mono text-muted mt-0.5">{subtitle}</p>
-      <p class="text-[11px] text-red-400 mt-2 px-3 py-1.25 rounded-full bg-danger/6 border border-danger/12">{warning}</p>
+      <p class="text-[11px] text-error mt-2 px-3 py-1.25 rounded-full bg-error/6 border border-error/12">{warning}</p>
     </div>
 
     <div class="flex gap-2 w-full">
       <button
-        class="flex-1 py-2.5 rounded-lg border border-border bg-transparent text-secondary text-[13px] font-medium cursor-pointer transition-all duration-100 hover:bg-white/[0.03] hover:text-primary hover:border-border-hover"
+        class="btn btn-secondary flex-1 py-2.5 text-sm"
         onclick={onCancel}
       >
         Cancel
       </button>
       <button
-        class="flex-1 py-2.5 rounded-lg border border-danger/35 bg-danger/10 text-red-400 text-[13px] font-semibold cursor-pointer flex items-center justify-center gap-1.5 transition-all duration-100 hover:bg-danger/[0.18] hover:text-red-300 hover:border-danger/50"
+        class="btn btn-danger flex-1 py-2.5 text-sm"
         onclick={onConfirm}
       >
         <svg

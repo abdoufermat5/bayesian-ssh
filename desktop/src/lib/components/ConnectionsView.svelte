@@ -119,7 +119,7 @@
         disabled={pinging}
         title="Ping all hosts"
       >
-        <Activity size={14} class={pinging ? "animate-spin text-accent" : "text-emerald-400"} />
+        <Activity size={14} class={pinging ? "animate-spin text-accent" : "text-running"} />
         Ping All
       </button>
       <button
@@ -165,7 +165,7 @@
                 onkeydown={(e) => e.key === "Enter" && onConnect(conn)}
               >
                 <div class="flex-[2] flex items-center gap-2 font-medium text-primary">
-                  <span class="w-2 h-2 rounded-full {conn.last_used ? 'bg-emerald-400' : 'bg-muted/40'} shrink-0"></span>
+                  <span class="w-2 h-2 rounded-full {conn.last_used ? 'bg-running' : 'bg-muted/40'} shrink-0"></span>
                   <span class="truncate">{conn.name}</span>
                   {#if conn.use_kerberos}
                     <span class="text-[9px] px-1 py-0.2 rounded bg-accent/15 border border-accent/25 text-accent font-bold uppercase tracking-wider">krb5</span>
@@ -197,7 +197,7 @@
                     title="Copy SSH command"
                   >
                     {#if copiedId === conn.id}
-                      <Check size={13} class="text-emerald-400" />
+                      <Check size={13} class="text-running" />
                     {:else}
                       <Copy size={13} />
                     {/if}
@@ -223,7 +223,7 @@
                     <CopyPlus size={13} />
                   </button>
                   <button
-                    class="p-1 rounded text-muted hover:text-rose-400 hover:bg-rose-500/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    class="p-1 rounded text-muted hover:text-error hover:bg-error/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     onclick={(e) => {
                       e.stopPropagation();
                       onDelete(conn);
@@ -271,7 +271,7 @@
               <div>
                 <div class="flex items-center justify-between mb-2">
                   <div class="flex items-center gap-2 min-w-0">
-                    <span class="w-2 h-2 rounded-full {conn.last_used ? 'bg-emerald-400' : 'bg-muted/40'} shrink-0"></span>
+                    <span class="w-2 h-2 rounded-full {conn.last_used ? 'bg-running' : 'bg-muted/40'} shrink-0"></span>
                     <span class="font-bold text-xs text-primary truncate">{conn.name}</span>
                   </div>
                   <div class="flex items-center gap-1">

@@ -263,14 +263,14 @@
 
       <!-- ── ENV WARNING BANNER (dismissible) ──────────────────────────── -->
       {#if showEnvWarning}
-        <div class="mx-4 mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 flex items-start gap-2.5 text-xs text-amber-300 shrink-0">
-          <TriangleAlert size={16} class="shrink-0 mt-0.5 text-amber-400" />
+        <div class="mx-4 mt-3 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2.5 flex items-start gap-2.5 text-xs text-amber-300 shrink-0">
+          <TriangleAlert size={16} class="shrink-0 mt-0.5 text-warning" />
           <div class="flex-1 min-w-0">
             <span class="font-bold block">SSH Agent Not Detected</span>
             <span class="text-amber-300/80 leading-relaxed">{envStatus?.warnings[0]}</span>
           </div>
           <button
-            class="ml-1 p-0.5 rounded text-amber-400 hover:text-amber-200 hover:bg-amber-500/20 transition-all cursor-pointer shrink-0"
+            class="ml-1 p-0.5 rounded text-warning hover:text-amber-200 hover:bg-warning/20 transition-all cursor-pointer shrink-0"
             onclick={() => (envWarningDismissed = true)}
             title="Dismiss"
           >
@@ -305,7 +305,7 @@
               <button class="px-2 py-0.5 rounded bg-surface border border-border text-muted hover:text-primary cursor-pointer" onclick={selectAll}>All</button>
               <button class="px-2 py-0.5 rounded bg-surface border border-border text-muted hover:text-primary cursor-pointer" onclick={selectNone}>Clear</button>
               <button class="px-2 py-0.5 rounded bg-surface border border-border text-muted hover:text-primary cursor-pointer" onclick={selectInvert}>Invert</button>
-              <button class="px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20 cursor-pointer" onclick={() => selectTag("prod")}>Prod</button>
+              <button class="px-2 py-0.5 rounded bg-warning/10 border border-warning/20 text-warning hover:bg-warning/20 cursor-pointer" onclick={() => selectTag("prod")}>Prod</button>
               <button class="px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/20 text-blue-400 hover:bg-blue-500/20 cursor-pointer" onclick={() => selectTag("staging")}>Staging</button>
             </div>
 
@@ -331,7 +331,7 @@
                     <span class="truncate">{conn.name}</span>
                   </div>
                   {#if isProd}
-                    <span class="px-1.5 text-[9px] font-extrabold text-amber-400 bg-amber-500/20 border border-amber-500/30 rounded shrink-0 ml-1">PROD</span>
+                    <span class="px-1.5 text-[9px] font-extrabold text-warning bg-warning/20 border border-warning/30 rounded shrink-0 ml-1">PROD</span>
                   {/if}
                 </button>
               {:else}
@@ -367,7 +367,7 @@
 
           <!-- production warning -->
           {#if hasProductionTarget && !dryRun}
-            <div class="mb-3 px-3 py-2.5 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center gap-2 text-amber-400 text-xs shrink-0">
+            <div class="mb-3 px-3 py-2.5 rounded-xl bg-warning/15 border border-warning/30 flex items-center gap-2 text-warning text-xs shrink-0">
               <ShieldAlert size={16} class="shrink-0" />
               <div>
                 <span class="font-bold block">⚠️ Production Host(s) Targeted</span>
@@ -406,7 +406,7 @@
             <span class="text-xs text-muted">Targeting <strong class="text-primary">{selectedIds.length}</strong> server(s)</span>
             <button
               class="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow cursor-pointer border-none disabled:opacity-50 disabled:cursor-not-allowed
-                {dryRun ? 'bg-accent text-white hover:opacity-90' : hasProductionTarget ? 'bg-amber-500 text-black hover:bg-amber-400' : 'bg-emerald-500 text-black hover:bg-emerald-400'}"
+                {dryRun ? 'bg-accent text-white hover:opacity-90' : hasProductionTarget ? 'bg-amber-500 text-black hover:bg-amber-400' : 'bg-success text-black hover:bg-running'}"
               onclick={executeBatch}
               disabled={running}
             >
@@ -436,9 +436,9 @@
                       <div class="text-[10px] opacity-70 font-mono truncate">{res.user}@{res.host}</div>
                     </div>
                     {#if res.success}
-                      <CheckCircle2 size={13} class="text-emerald-400 shrink-0 ml-1" />
+                      <CheckCircle2 size={13} class="text-running shrink-0 ml-1" />
                     {:else}
-                      <XCircle size={13} class="text-rose-400 shrink-0 ml-1" />
+                      <XCircle size={13} class="text-error shrink-0 ml-1" />
                     {/if}
                   </button>
                 {/each}
@@ -452,7 +452,7 @@
                     <div class="flex items-center gap-2 min-w-0 flex-wrap">
                       <span class="font-bold text-primary truncate">{active.name}</span>
                       <span class="font-mono text-muted text-[10px]">{active.user}@{active.host}</span>
-                      <span class="px-2 py-0.5 rounded text-[10px] font-mono {active.success ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'}">
+                      <span class="px-2 py-0.5 rounded text-[10px] font-mono {active.success ? 'bg-success/15 text-running border border-success/30' : 'bg-error/15 text-error border border-error/30'}">
                         exit {active.exit_code} · {active.duration_ms}ms
                       </span>
                     </div>
@@ -461,7 +461,7 @@
                       onclick={copyActiveOutput}
                     >
                       {#if copied}
-                        <Check size={11} class="text-emerald-400" /> Copied
+                        <Check size={11} class="text-running" /> Copied
                       {:else}
                         <Copy size={11} /> Copy
                       {/if}
@@ -477,7 +477,7 @@
                       </div>
                     {/if}
                     {#if active.stderr}
-                      <div class="text-rose-400 border-t border-white/10 pt-2 mt-2">
+                      <div class="text-error border-t border-white/10 pt-2 mt-2">
                         <span class="text-rose-300 text-[9px] uppercase block mb-1 font-sans tracking-widest">stderr</span>
                         <pre class="m-0 whitespace-pre-wrap">{active.stderr}</pre>
                       </div>

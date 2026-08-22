@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Command, X, Search, Terminal, Server, KeyRound, ShieldCheck, Plus, RefreshCw, Layers } from "lucide-svelte";
+  import { Command, X } from "lucide-svelte";
   import ModalShell from "$lib/components/ui/ModalShell.svelte";
 
   interface Props {
@@ -42,9 +42,10 @@
         </h2>
         <button
           type="button"
-          class="p-1 rounded-lg text-muted hover:text-primary hover:bg-white/10 transition-colors"
+          class="btn-icon"
           onclick={onClose}
           title="Close"
+          aria-label="Close"
         >
           <X size={16} />
         </button>
@@ -53,21 +54,19 @@
       <!-- Shortcuts Table -->
       <div class="space-y-2 max-h-80 overflow-y-auto pr-1">
         {#each shortcuts as shortcut}
-          <div class="flex items-center justify-between p-2 rounded-lg bg-surface-input/60 border border-border/50 text-xs">
+          <div class="flex items-center justify-between gap-4 p-2 rounded-lg bg-surface-input/60 border border-border/50 text-xs">
             <span class="text-secondary font-medium">{shortcut.description}</span>
-            <kbd class="px-2 py-1 rounded bg-black/40 border border-white/10 text-accent font-mono text-[11px] font-bold shadow-sm">
-              {shortcut.key}
-            </kbd>
+            <kbd class="kbd kbd-accent shrink-0">{shortcut.key}</kbd>
           </div>
         {/each}
       </div>
 
       <!-- Footer -->
       <div class="pt-2 border-t border-border flex justify-between items-center text-[11px] text-muted">
-        <span>Press <kbd class="px-1.5 py-0.5 rounded bg-black/40 font-mono text-accent font-bold">Esc</kbd> to close</span>
+        <span>Press <kbd class="kbd">Esc</kbd> to close</span>
         <button
           type="button"
-          class="px-4 py-1.5 rounded-lg bg-accent text-white text-xs font-semibold hover:opacity-90 transition-all"
+          class="btn btn-primary"
           onclick={onClose}
         >
           Got it

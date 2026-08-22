@@ -28,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Sequential ping storm**: "Ping All" now pings hosts concurrently (bounded at 16) instead of serially (N × 3 s worst case).
 
 ### Changed
+- **Design system foundation**: The desktop UI now runs on a documented, token-driven design system (`tokens.css` / `base.css` / `components.css`, see `docs/design/design-system.md`): semantic color tokens (including new `panel`, `running`, `error`, `on-accent`, `overlay`), a disciplined 10–20 px type scale, radius rules, and shared component primitives (buttons, inputs, tags/badges, status dots, kbd, alerts, empty states, skeletons, toasts, modals). Shared chrome (title bars, sidebar, modals, toasts, custom select, loader, shortcut sheet, delete dialog) already consumes the primitives; raw palette colors in views were mapped to semantic tokens.
+- **Focus & motion**: All interactive elements now show a visible accent focus ring on keyboard focus; status dots gained a calm pulse; the app loader was de-cluttered (no gradients/glow/bounce) and honors `prefers-reduced-motion`.
+- **Terminal palette fidelity**: xterm now also reads the theme's `--text-primary`/`--text-secondary`/`--text-muted`/`--surface-input` variables (they were previously undefined, so the terminal silently fell back to fixed colors).
+- **Dead styles fixed**: `bg-surface-card` (used by SFTP/tunnel/snippets panels) and `scrollbar-none` were silently no-ops; both are now defined tokens/utilities.
 - **Full ANSI terminal palette**: xterm now uses a complete 16-color palette + selection color derived from the active app theme (previously the CSS variables were undefined and the terminal silently fell back to fixed colors).
 - **Linux font fallbacks**: Terminal font stack now includes Ubuntu Mono / DejaVu Sans Mono / Liberation Mono so the terminal looks right on distros without JetBrains Mono.
 - **Snippets "Execute in PTY" now actually executes**: The command is sent to the active terminal (with the configured confirmation gate) instead of showing a no-op toast.

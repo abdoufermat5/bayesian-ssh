@@ -7,13 +7,18 @@
 
 {#if notification.visible}
   <div
-    class="fixed bottom-5 right-5 bg-surface-raised border text-primary px-4 py-2.5 rounded-xl shadow-lg z-[1000] text-[13px] flex items-center gap-2 animate-[toast-enter_0.3s_cubic-bezier(0.16,1,0.3,1)_forwards]
-      {notification.type === 'success' ? 'border-success/30' : notification.type === 'error' ? 'border-danger/30' : 'border-border'}"
+    class="toast {notification.type === 'success'
+      ? 'toast-success'
+      : notification.type === 'error'
+        ? 'toast-error'
+        : 'toast-info'}"
+    role={notification.type === "error" ? "alert" : "status"}
+    aria-live={notification.type === "error" ? "assertive" : "polite"}
   >
     {#if notification.type === "success"}
       <CheckCircle2 size={16} class="text-success shrink-0" />
     {:else if notification.type === "error"}
-      <AlertCircle size={16} class="text-danger shrink-0" />
+      <AlertCircle size={16} class="text-error shrink-0" />
     {:else}
       <Info size={16} class="text-accent shrink-0" />
     {/if}
@@ -23,7 +28,7 @@
       onclick={dismissNotification}
       title="Dismiss notification"
       aria-label="Dismiss notification"
-      class="shrink-0 text-muted hover:text-primary cursor-pointer outline-none"
+      class="btn-icon shrink-0"
     >
       <X size={14} />
     </button>

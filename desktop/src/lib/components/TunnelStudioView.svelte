@@ -191,8 +191,8 @@
           <div class="flex items-center gap-2.5">
             {#if t.active}
               <div class="relative flex h-3 w-3 items-center justify-center">
-                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-running opacity-75"></span>
+                <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-success"></span>
               </div>
             {:else}
               <div class="h-2.5 w-2.5 rounded-full bg-muted"></div>
@@ -207,7 +207,7 @@
           <button
             type="button"
             class="px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition-all flex items-center gap-1.5
-              {t.active ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20' : 'bg-surface-input border-border text-muted hover:text-primary'}"
+              {t.active ? 'bg-success/10 border-success/30 text-running hover:bg-success/20' : 'bg-surface-input border-border text-muted hover:text-primary'}"
             onclick={() => toggleTunnel(t.id)}
           >
             <Power size={13} />
@@ -246,7 +246,7 @@
                 {t.type === "socks5" ? "SOCKS5 Proxy" : `${t.remoteHost}:${t.remotePort}`}
               </span>
             </div>
-            <div class="p-1.5 rounded bg-amber-500/10 border border-amber-500/20 text-amber-400 shrink-0">
+            <div class="p-1.5 rounded bg-warning/10 border border-warning/20 text-warning shrink-0">
               <Server size={14} />
             </div>
           </div>
@@ -279,7 +279,7 @@
               onclick={() => copyTunnelCommand(t)}
             >
               {#if copiedId === t.id}
-                <Check size={14} class="text-emerald-400" />
+                <Check size={14} class="text-running" />
               {:else}
                 <Copy size={14} />
               {/if}

@@ -41,3 +41,9 @@
 - [Technical Architecture](./reference/architecture.md)
 - [Diagnostics & Troubleshooting](./reference/troubleshooting.md)
 - [Changelog](./reference/changelog.md)
+
+---
+
+# Design
+
+- [Design System](./design/design-system.md)

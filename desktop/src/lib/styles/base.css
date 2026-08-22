@@ -1,0 +1,224 @@
+/* ============================================================ */
+/* BASE STYLES — resets, focus, selection, scrollbars, motion    */
+/* ============================================================ */
+
+@layer base {
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100dvh;
+    overflow: hidden;
+    background-color: var(--color-surface);
+    color: var(--color-primary);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Monospace default for data-like text */
+  code,
+  kbd,
+  samp,
+  pre {
+    font-family: var(--font-mono);
+  }
+
+  /* Preserve text selection in terminal and inputs */
+  input,
+  textarea,
+  .xterm,
+  .xterm * {
+    user-select: text;
+  }
+
+  /* ---- Focus / selection states ------------------------------
+     Every interactive element gets a visible keyboard-focus ring.
+     Elements with a custom ring (e.g. .search-box) intentionally
+     keep `outline-none` and provide their own focus indication.  */
+  :where(button, [role="button"], a, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: var(--selection-bg, rgba(59, 130, 246, 0.25));
+  }
+
+  /* ---- Global scrollbar --------------------------------------- */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border-hover);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-secondary);
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border-hover) transparent;
+  }
+
+  /* ---- Native select -------------------------------------------
+     Replaced by CustomSelect in most places; kept for plain forms. */
+  select {
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    -moz-appearance: none !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
+    background-repeat: no-repeat !important;
+    background-position: right 10px center !important;
+    background-size: 14px 14px !important;
+    padding-right: 32px !important;
+    color: var(--color-primary) !important;
+    background-color: var(--color-surface-input) !important;
+    border: 1px solid var(--color-border) !important;
+    border-radius: var(--radius-md) !important;
+    font-family: inherit !important;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease,
+      background-color 0.15s ease !important;
+    cursor: pointer !important;
+  }
+
+  select:hover {
+    border-color: var(--color-border-hover) !important;
+    background-color: var(--color-surface-hover) !important;
+  }
+
+  select:focus {
+    outline: none !important;
+    border-color: var(--color-accent) !important;
+    box-shadow: 0 0 0 2px var(--color-accent-muted) !important;
+  }
+
+  select option {
+    background-color: var(--color-surface-raised) !important;
+    color: var(--color-primary) !important;
+    padding: 8px 12px !important;
+  }
+
+  /* ---- Xterm terminal overrides -------------------------------- */
+  .terminal-fit-target,
+  .terminal-popout-target {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+  }
+
+  .terminal-fit-target .xterm,
+  .terminal-popout-target .xterm {
+    height: 100%;
+    width: 100%;
+  }
+
+  .terminal-fit-target .xterm-viewport,
+  .terminal-popout-target .xterm-viewport {
+    overflow-y: auto !important;
+    width: 100% !important;
+  }
+
+  /* ---- Motion guard ---------------------------------------------
+     Motion only communicates state; disable it for users who ask.  */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* ---- Keyframes (global, referenced by components.css classes) --- */
+
+/* Modal / toast entrance: brief, single easing curve, 150–300 ms */
+@keyframes modal-enter {
+  from {
+    transform: translateY(12px) scale(0.98);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+/* Popover / dropdown entrance (menus, search results) */
+@keyframes popover-enter {
+  from {
+    transform: translateY(-4px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes toast-enter {
+  from {
+    transform: translateY(12px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Row flash after duplicate / mutation — communicates "this changed" */
+@keyframes flash-highlight {
+  0% {
+    background: var(--color-accent-muted);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+/* Calm live-state pulse for status dots (2 s loop, opacity only) */
+@keyframes status-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--pulse, var(--color-accent)) 40%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 4px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+/* Skeleton shimmer: slow, low-contrast sweep */
+@keyframes skeleton-shimmer {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+/* AppLoader indeterminate bar: single sweep, calm */
+@keyframes loader-slide {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
+/* Utility for the flash animation on duplicate */
+.animate-flash {
+  animation: flash-highlight 1.5s ease-out forwards;
+}

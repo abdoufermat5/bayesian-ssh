@@ -43,18 +43,18 @@
   );
 
   function getGradeColor(grade: string) {
-    if (grade.startsWith("A")) return "text-emerald-400 border-emerald-500/30 bg-emerald-500/10";
+    if (grade.startsWith("A")) return "text-running border-success/30 bg-success/10";
     if (grade.startsWith("B")) return "text-blue-400 border-blue-500/30 bg-blue-500/10";
-    if (grade.startsWith("C")) return "text-amber-400 border-amber-500/30 bg-amber-500/10";
-    return "text-rose-400 border-rose-500/30 bg-rose-500/10";
+    if (grade.startsWith("C")) return "text-warning border-warning/30 bg-warning/10";
+    return "text-error border-error/30 bg-error/10";
   }
 
   function getSeverityBadge(severity: AuditFinding["severity"]) {
     switch (severity) {
       case "critical":
-        return { label: "CRITICAL", class: "text-rose-400 bg-rose-500/15 border-rose-500/30", icon: ShieldAlert };
+        return { label: "CRITICAL", class: "text-error bg-error/15 border-error/30", icon: ShieldAlert };
       case "warning":
-        return { label: "WARNING", class: "text-amber-400 bg-amber-500/15 border-amber-500/30", icon: AlertTriangle };
+        return { label: "WARNING", class: "text-warning bg-warning/15 border-warning/30", icon: AlertTriangle };
       case "info":
         return { label: "INFO", class: "text-blue-400 bg-blue-500/15 border-blue-500/30", icon: Info };
     }
@@ -75,7 +75,7 @@
     </div>
     <div class="flex items-center gap-2">
       <button
-        class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 text-xs font-semibold cursor-pointer transition-all hover:bg-emerald-600/30 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+        class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/20 text-running border border-success/30 text-xs font-semibold cursor-pointer transition-all hover:bg-success/30 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
         onclick={fixPermissions}
         disabled={loading || fixing}
       >
@@ -114,9 +114,9 @@
       <div class="p-5 rounded-2xl border border-border bg-surface-input/50 flex flex-col justify-between">
         <div class="flex items-center justify-between">
           <span class="text-xs font-semibold text-muted uppercase tracking-wider">Critical Issues</span>
-          <ShieldAlert class="text-rose-400" size={20} />
+          <ShieldAlert class="text-error" size={20} />
         </div>
-        <div class="text-3xl font-extrabold text-rose-400 mt-2">{report.total_critical}</div>
+        <div class="text-3xl font-extrabold text-error mt-2">{report.total_critical}</div>
         <span class="text-[11px] text-muted mt-1">Requires immediate attention</span>
       </div>
 
@@ -124,9 +124,9 @@
       <div class="p-5 rounded-2xl border border-border bg-surface-input/50 flex flex-col justify-between">
         <div class="flex items-center justify-between">
           <span class="text-xs font-semibold text-muted uppercase tracking-wider">Warnings</span>
-          <AlertTriangle class="text-amber-400" size={20} />
+          <AlertTriangle class="text-warning" size={20} />
         </div>
-        <div class="text-3xl font-extrabold text-amber-400 mt-2">{report.total_warning}</div>
+        <div class="text-3xl font-extrabold text-warning mt-2">{report.total_warning}</div>
         <span class="text-[11px] text-muted mt-1">Recommended fixes</span>
       </div>
 
@@ -164,7 +164,7 @@
     <!-- Findings List -->
     {#if filteredFindings.length === 0}
       <div class="flex flex-col items-center justify-center py-16 border border-dashed border-border rounded-xl text-muted">
-        <CheckCircle2 size={40} class="text-emerald-400 mb-2 opacity-80" />
+        <CheckCircle2 size={40} class="text-running mb-2 opacity-80" />
         <span class="text-sm font-semibold text-primary">No Findings in this Category</span>
         <span class="text-xs text-muted mt-1">Your SSH environment meets security requirements for this filter.</span>
       </div>

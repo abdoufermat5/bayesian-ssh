@@ -1,0 +1,264 @@
+/* ============================================================ */
+/* DESIGN TOKENS — single source of truth                        */
+/* ============================================================ */
+/* The full token catalog is documented in
+   docs/src/design/design-system.md. Rules of this file:
+   - The @theme block below IS the default (zinc) theme.
+   - html.theme-* blocks override ONLY what differs per theme.
+   - Never put raw color literals in components; always consume
+     a token from here (directly or via a components.css class).
+   - `--color-*` names generate Tailwind utilities (bg-/text-/border-).
+   - Plain vars (--bg-terminal, --text-*, --selection-bg …) are read
+     by lib/utils/theme.ts for the xterm palette and are NOT utilities.
+   ============================================================ */
+
+@theme {
+  /* ---- Surfaces -------------------------------------------------
+     surface          — app background (window, page)
+     surface-raised   — elevated layer: popovers, dropdowns, toasts
+     surface-hover    — hover fill for rows / icon buttons
+     surface-input    — input & select fills
+     surface-terminal — terminal embedding surface (xterm background)
+     panel            — cards, tables, side panels (container surfaces)
+     surface-card     — legacy alias of panel (kept for compatibility) */
+  --color-surface: #09090b;
+  --color-surface-raised: #18181b;
+  --color-surface-hover: #27272a;
+  --color-surface-input: #141417;
+  --color-surface-terminal: #0c0d12;
+  --color-panel: #141417;
+  --color-surface-card: #141417;
+
+  /* ---- Borders -------------------------------------------------- */
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-border-hover: rgba(255, 255, 255, 0.16);
+  --color-border-focus: rgba(59, 130, 246, 0.5);
+
+  /* ---- Text ------------------------------------------------------
+     primary   — default foreground
+     secondary — supporting text, labels
+     muted     — metadata, captions, disabled-ish text            */
+  --color-primary: #f4f4f5;
+  --color-secondary: #a1a1aa;
+  --color-muted: #71717a;
+
+  /* ---- Accent (brand / interactive) ----------------------------- */
+  --color-accent: #3b82f6;
+  --color-accent-hover: #2563eb;
+  --color-accent-muted: rgba(59, 130, 246, 0.12);
+
+  /* ---- Feedback / state ------------------------------------------
+     success — completed operation (toast, ping OK, saved)
+     running — live process / connection state (session active)
+     warning — degraded, expiring, attention
+     error   — failure, destructive foreground
+     danger  — legacy alias of error (kept for compatibility)
+     on-accent — text placed on filled accent surfaces           */
+  --color-success: #10b981;
+  --color-running: #34d399;
+  --color-warning: #fbbf24;
+  --color-error: #f87171;
+  --color-danger: #f87171;
+  --color-on-accent: #ffffff;
+
+  /* ---- Overlay (modal backdrop) --------------------------------- */
+  --color-overlay: rgba(0, 0, 0, 0.65);
+
+  /* ---- Typography scale ------------------------------------------
+     2xs — meta labels, table headers, badges     10px / 14px
+     xs  — dense UI rows, status, tabs            11px / 15px
+     sm  — default body & controls                13px / 18px
+     base— section titles, emphasized text        15px / 21px
+     lg  — modal titles                           18px / 25px
+     xl  — page headers                           20px / 28px       */
+  --text-2xs: 0.625rem;
+  --text-2xs--line-height: 0.875rem;
+  --text-xs: 0.6875rem;
+  --text-xs--line-height: 0.9375rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.125rem;
+  --text-base: 0.9375rem;
+  --text-base--line-height: 1.3125rem;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.5625rem;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.75rem;
+
+  /* ---- Fonts ----------------------------------------------------- */
+  --font-sans: "Outfit", "Inter", -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji";
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo,
+    Consolas, "Liberation Mono", monospace;
+
+  /* ---- Radius ------------------------------------------------------
+     xs  4px  — kbd, tags, tiny flags
+     sm  6px  — small chips
+     md  8px  — buttons, inputs, selects (default control radius)
+     lg  12px — cards, tables, panels, empty-state containers
+     xl  16px — modals, toasts, popovers                              */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* ---- Shadows ---------------------------------------------------- */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.5);
+  --shadow-xl: 0 24px 64px rgba(0, 0, 0, 0.6);
+
+  /* ---- Motion ------------------------------------------------------
+     Fast by default: transitions only communicate state and must
+     finish quickly. 100–240 ms, opacity/transform/color only.
+     Respect prefers-reduced-motion (see base.css).                   */
+  --default-transition-duration: 130ms;
+  --default-transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-duration-fast: 100ms;
+  --transition-duration-base: 160ms;
+  --transition-duration-slow: 240ms;
+
+  /* ---- Layout ----------------------------------------------------- */
+  --titlebar-h: 38px;
+  --topbar-h: 52px;
+  --sidebar-w: 240px;
+  --sidebar-w-collapsed: 56px;
+}
+
+/* ============================================================ */
+/* THEME VARIANTS                                                */
+/* ============================================================ */
+/* Each theme overrides the canonical tokens above. Defaults (no
+   class / `theme-zinc`) are the @theme block. The plain `--*`
+   variables feed lib/utils/theme.ts (xterm palette).            */
+
+html.theme-zinc {
+  /* Terminal palette (read by theme.ts) */
+  --bg-terminal: #09090b;
+  --accent-cyan: #22d3ee;
+  --accent-pink: #e879f9;
+  --accent-blue: #60a5fa;
+  --green-emerald: #34d399;
+  --red-rose: #f87171;
+  --yellow-amber: #fbbf24;
+  --selection-bg: rgba(59, 130, 246, 0.25);
+
+  /* Alias vars read by theme.ts (xterm foregrounds) */
+  --text-primary: #f4f4f5;
+  --text-secondary: #cbd5e1;
+  --text-muted: #71717a;
+  --surface-input: #141417;
+}
+
+html.theme-cyberpunk {
+  --color-surface: #061724;
+  --color-surface-raised: #0b2234;
+  --color-surface-hover: #13334a;
+  --color-surface-input: #081d2c;
+  --color-surface-terminal: #061724;
+  --color-panel: #081d2c;
+  --color-surface-card: #081d2c;
+
+  --color-border: rgba(6, 182, 212, 0.15);
+  --color-border-hover: rgba(6, 182, 212, 0.3);
+  --color-border-focus: rgba(6, 182, 212, 0.6);
+
+  --color-primary: #ecfeff;
+  --color-secondary: #a5f3fc;
+  --color-muted: #0891b2;
+
+  --color-accent: #06b6d4;
+  --color-accent-hover: #0284c7;
+  --color-accent-muted: rgba(6, 182, 212, 0.15);
+
+  /* Terminal palette */
+  --bg-terminal: #061724;
+  --accent-cyan: #22d3ee;
+  --accent-pink: #e879f9;
+  --accent-blue: #38bdf8;
+  --green-emerald: #34d399;
+  --red-rose: #f87171;
+  --yellow-amber: #fbbf24;
+  --selection-bg: rgba(6, 182, 212, 0.22);
+
+  --text-primary: #ecfeff;
+  --text-secondary: #a5f3fc;
+  --text-muted: #0891b2;
+  --surface-input: #081d2c;
+}
+
+html.theme-oled {
+  --color-surface: #000000;
+  --color-surface-raised: #0a0a0a;
+  --color-surface-hover: #171717;
+  --color-surface-input: #060606;
+  --color-surface-terminal: #000000;
+  --color-panel: #060606;
+  --color-surface-card: #060606;
+
+  --color-border: rgba(255, 255, 255, 0.06);
+  --color-border-hover: rgba(255, 255, 255, 0.12);
+  --color-border-focus: rgba(96, 165, 250, 0.5);
+
+  --color-primary: #ffffff;
+  --color-secondary: #d4d4d8;
+  --color-muted: #52525b;
+
+  --color-accent: #60a5fa;
+  --color-accent-hover: #3b82f6;
+  --color-accent-muted: rgba(96, 165, 250, 0.12);
+
+  /* Terminal palette */
+  --bg-terminal: #000000;
+  --accent-cyan: #22d3ee;
+  --accent-pink: #e879f9;
+  --accent-blue: #60a5fa;
+  --green-emerald: #34d399;
+  --red-rose: #f87171;
+  --yellow-amber: #fbbf24;
+  --selection-bg: rgba(96, 165, 250, 0.22);
+
+  --text-primary: #ffffff;
+  --text-secondary: #d4d4d8;
+  --text-muted: #52525b;
+  --surface-input: #060606;
+}
+
+html.theme-slate {
+  --color-surface: #0f172a;
+  --color-surface-raised: #1e293b;
+  --color-surface-hover: #334155;
+  --color-surface-input: #141d31;
+  --color-surface-terminal: #0f172a;
+  --color-panel: #141d31;
+  --color-surface-card: #141d31;
+
+  --color-border: rgba(255, 255, 255, 0.07);
+  --color-border-hover: rgba(255, 255, 255, 0.14);
+  --color-border-focus: rgba(56, 189, 248, 0.5);
+
+  --color-primary: #f8fafc;
+  --color-secondary: #cbd5e1;
+  --color-muted: #64748b;
+
+  --color-accent: #38bdf8;
+  --color-accent-hover: #0ea5e9;
+  --color-accent-muted: rgba(56, 189, 248, 0.12);
+
+  /* Terminal palette */
+  --bg-terminal: #0f172a;
+  --accent-cyan: #22d3ee;
+  --accent-pink: #e879f9;
+  --accent-blue: #38bdf8;
+  --green-emerald: #34d399;
+  --red-rose: #f87171;
+  --yellow-amber: #fbbf24;
+  --selection-bg: rgba(56, 189, 248, 0.22);
+
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-muted: #64748b;
+  --surface-input: #141d31;
+}

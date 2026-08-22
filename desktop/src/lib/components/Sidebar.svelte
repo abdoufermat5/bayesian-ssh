@@ -112,9 +112,9 @@
     {#if !sidebarCollapsed}
       <div class="mb-4">
         <div class="flex justify-between items-center mb-1">
-          <span class="text-[10px] font-bold uppercase tracking-wider text-muted px-1">Profile</span>
+          <span class="eyebrow px-1">Profile</span>
           <button
-            class="bg-transparent border-none text-muted cursor-pointer p-0.5 rounded flex items-center transition-colors hover:text-primary hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
+            class="bg-transparent border-none text-muted cursor-pointer p-0.5 rounded flex items-center transition-colors hover:text-primary hover:bg-surface-hover/40 disabled:opacity-50 disabled:cursor-not-allowed"
             onclick={onShowEnvModal}
             title="Manage Profiles"
           >
@@ -133,9 +133,9 @@
     <nav class="flex flex-col gap-0.5 mb-4 shrink-0">
       {#each navItems as item}
         <button
-          class="flex items-center gap-2.5 w-full bg-transparent border-none text-muted py-1.5 px-2.5 rounded-md cursor-pointer text-xs font-medium text-left transition-all duration-100 relative disabled:opacity-50 disabled:cursor-not-allowed
+          class="flex items-center gap-2.5 w-full text-muted py-1.5 px-2.5 rounded-md cursor-pointer text-xs font-medium text-left transition-all duration-100 relative disabled:opacity-50 disabled:cursor-not-allowed
             {sidebarCollapsed ? 'justify-center' : ''}
-            {activeTab === item.tab ? 'text-primary bg-accent/10 border-l-2 border-accent font-semibold' : 'hover:text-primary hover:bg-white/[0.04]'}"
+            {activeTab === item.tab ? 'text-primary bg-accent/10 border-l-2 border-accent font-semibold' : 'hover:text-primary hover:bg-surface-hover/40'}"
           onclick={() => onTabChange(item.tab)}
           title={item.label}
         >
@@ -154,11 +154,11 @@
       {#if onShowSnippetsModal}
         <button
           type="button"
-          class="flex items-center gap-2.5 w-full bg-transparent border-none text-muted py-1.5 px-2.5 rounded-md cursor-pointer text-xs font-medium text-left transition-all duration-100 hover:text-primary hover:bg-white/[0.04] mt-1 disabled:opacity-50 disabled:cursor-not-allowed"
+          class="flex items-center gap-2.5 w-full bg-transparent border-none text-muted py-1.5 px-2.5 rounded-md cursor-pointer text-xs font-medium text-left transition-all duration-100 hover:text-primary hover:bg-surface-hover/40 mt-1 disabled:opacity-50 disabled:cursor-not-allowed"
           onclick={onShowSnippetsModal}
           title="Command Snippets Library"
         >
-          <Code size={16} class="text-amber-400" />
+          <Code size={16} class="text-warning" />
           {#if !sidebarCollapsed}
             <span>Snippets</span>
           {/if}
@@ -172,7 +172,7 @@
     {#if !sidebarCollapsed}
       <!-- Quick Status Indicators -->
       <div class="flex flex-col gap-1.5 pt-2 border-t border-border">
-        <span class="text-[10px] font-bold uppercase tracking-wider text-muted px-1 mb-0.5">Status</span>
+        <span class="eyebrow px-1 mb-0.5">Status</span>
 
         <!-- Agent Status -->
         <button
@@ -181,10 +181,10 @@
           onclick={() => (agentActive ? onShowAgentModal() : onStartAgent())}
         >
           <span class="flex items-center gap-1.5 text-muted">
-            <KeyRound size={13} class={agentActive ? "text-emerald-400" : ""} />
+            <KeyRound size={13} class={agentActive ? "text-running" : ""} />
             Agent
           </span>
-          <span class="font-mono text-[11px] font-semibold {agentActive ? 'text-emerald-400' : 'text-muted'}">
+          <span class="font-mono text-[11px] font-semibold {agentActive ? 'text-running' : 'text-muted'}">
             {agentActive ? `${agentKeys.length} keys` : 'Off'}
           </span>
         </button>
@@ -197,10 +197,10 @@
             onclick={onShowKerberosModal}
           >
             <span class="flex items-center gap-1.5 text-muted">
-              <ShieldCheck size={13} class={kerberosHealth === 'valid' ? 'text-emerald-400' : 'text-amber-400'} />
+              <ShieldCheck size={13} class={kerberosHealth === 'valid' ? 'text-running' : 'text-warning'} />
               Kerberos
             </span>
-            <span class="font-mono text-[11px] font-semibold {kerberosHealth === 'valid' ? 'text-emerald-400' : 'text-amber-400'}">
+            <span class="font-mono text-[11px] font-semibold {kerberosHealth === 'valid' ? 'text-running' : 'text-warning'}">
               {kerberosHealth === 'valid' ? kerberosRemainingLabel : 'Ticket'}
             </span>
           </button>
@@ -225,7 +225,7 @@
       <!-- Tag Filters -->
       {#if allTags.length > 0}
         <div class="pt-2 border-t border-border">
-          <span class="text-[10px] font-bold uppercase tracking-wider text-muted px-1 flex items-center gap-1 mb-1.5">
+          <span class="eyebrow px-1 flex items-center gap-1 mb-1.5">
             <Tag size={11} />
             Tags
           </span>

@@ -124,7 +124,7 @@
     <!-- Header -->
     <div class="flex items-center justify-between gap-4 pb-3 border-b border-border">
         <div class="flex items-center gap-3">
-          <div class="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400">
+          <div class="p-2 rounded-xl bg-warning/10 border border-warning/20 text-warning">
             <Code size={20} />
           </div>
           <div>
@@ -194,7 +194,7 @@
             {/if}
 
             <!-- Code Block with Syntax Accent -->
-            <pre class="bg-surface-terminal p-3 rounded-lg border border-border text-emerald-400 font-mono text-[11px] overflow-x-auto m-0 select-all shadow-inner leading-relaxed">{s.command}</pre>
+            <pre class="bg-surface-terminal p-3 rounded-lg border border-border text-running font-mono text-[11px] overflow-x-auto m-0 select-all shadow-inner leading-relaxed">{s.command}</pre>
 
             <div class="flex items-center justify-end gap-2 pt-1 border-t border-border/40">
               <button
@@ -203,7 +203,7 @@
                 onclick={() => copySnippet(s)}
               >
                 {#if copiedId === s.id}
-                  <Check size={13} class="text-emerald-400" />
+                  <Check size={13} class="text-running" />
                   <span>Copied!</span>
                 {:else}
                   <Copy size={13} />

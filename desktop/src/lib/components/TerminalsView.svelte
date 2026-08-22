@@ -261,7 +261,7 @@
           {#if terminalState.totalSessionCount > 0}
             <button
               type="button"
-              class="inline-flex items-center gap-1.25 py-1.5 px-2.5 mb-1 border border-danger/25 rounded-lg bg-transparent text-red-300 text-[11px] font-semibold cursor-pointer shrink-0 transition-all duration-100 hover:bg-danger/8 hover:border-danger/40 disabled:opacity-50 disabled:cursor-not-allowed"
+              class="inline-flex items-center gap-1.25 py-1.5 px-2.5 mb-1 border border-danger/25 rounded-lg bg-transparent text-error text-[11px] font-semibold cursor-pointer shrink-0 transition-all duration-100 hover:bg-danger/8 hover:border-danger/40 disabled:opacity-50 disabled:cursor-not-allowed"
               onclick={onCloseAll}
               title="Terminate all active and detached SSH sessions"
             >
