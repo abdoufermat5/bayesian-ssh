@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-08-23
+
 ### Security
 - **Content Security Policy**: The desktop app previously shipped with `csp: null` (no policy). A strict CSP is now enforced (`default-src 'self'`, IPC/asset protocols only, `object-src 'none'`, `frame-ancestors 'none'`), so a renderer compromise can no longer invoke arbitrary Tauri commands or load remote content.
 - **ProxyCommand injection fix**: Bastion host, bastion user, and key path are now POSIX shell-quoted before interpolation into `ssh -o ProxyCommand=…` (which runs through `sh -c`). A connection with a malicious bastion/key path could previously execute arbitrary shell commands on the local machine.
