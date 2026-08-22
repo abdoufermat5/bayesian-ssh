@@ -51,6 +51,18 @@ fn rect_center_over(a: &WindowRect, container: &WindowRect) -> bool {
         && center_y <= container.y + container.height as i32
 }
 
+/// Round a byte index down to the nearest UTF-8 char boundary so `String`
+/// slicing never panics on multi-byte characters.
+fn char_boundary_at_or_before(s: &str, mut index: usize) -> usize {
+    if index >= s.len() {
+        return s.len();
+    }
+    while index > 0 && !s.is_char_boundary(index) {
+        index -= 1;
+    }
+    index
+}
+
 fn append_to_output_buffer(
     buffer: &Arc<Mutex<String>>,
     replay_offset: &Arc<Mutex<usize>>,
@@ -61,10 +73,15 @@ fn append_to_output_buffer(
     };
     buffer.push_str(data);
     if buffer.len() > MAX_DETACHED_BUFFER_BYTES {
+        // `String::drain` panics if the range cuts a multi-byte UTF-8 char —
+        // clamp to a char boundary first. Without this, a session printing
+        // non-ASCII output would panic the reader thread and freeze the
+        // session silently.
         let overflow = buffer.len() - MAX_DETACHED_BUFFER_BYTES;
-        buffer.drain(..overflow);
+        let cut = char_boundary_at_or_before(&buffer, overflow);
+        buffer.drain(..cut);
         if let Ok(mut offset) = replay_offset.lock() {
-            *offset = offset.saturating_sub(overflow);
+            *offset = offset.saturating_sub(cut);
         }
     }
 }
@@ -169,7 +186,7 @@ pub fn spawn_pty(
     let replay_offset_clone = Arc::clone(&replay_offset);
 
     // Store in global state — _master keeps the PTY master fd alive for the session duration
-    let mut sessions = state.sessions.lock().unwrap();
+    let mut sessions = state.lock_sessions();
     sessions.insert(
         session_id.clone(),
         PtySession {
@@ -228,7 +245,7 @@ pub fn write_pty(
     session_id: String,
     data: String,
 ) -> Result<(), String> {
-    let mut sessions = state.sessions.lock().unwrap();
+    let mut sessions = state.lock_sessions();
     if let Some(session) = sessions.get_mut(&session_id) {
         bayesian_ssh::services::pty::write_all(session.writer.as_mut(), &data)?;
         Ok(())
@@ -244,7 +261,7 @@ pub fn resize_pty(
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
-    let sessions = state.sessions.lock().unwrap();
+    let sessions = state.lock_sessions();
     let session = sessions
         .get(&session_id)
         .ok_or_else(|| format!("PTY session '{}' not found", session_id))?;
@@ -254,7 +271,7 @@ pub fn resize_pty(
 
 #[tauri::command]
 pub fn seal_session_ui(state: State<'_, PtyState>, session_id: String) -> Result<(), String> {
-    let sessions = state.sessions.lock().unwrap();
+    let sessions = state.lock_sessions();
     let session = sessions
         .get(&session_id)
         .ok_or_else(|| format!("PTY session '{session_id}' not found"))?;
@@ -264,7 +281,7 @@ pub fn seal_session_ui(state: State<'_, PtyState>, session_id: String) -> Result
 
 #[tauri::command]
 pub fn detach_pty(state: State<'_, PtyState>, session_id: String) -> Result<(), String> {
-    let mut sessions = state.sessions.lock().unwrap();
+    let mut sessions = state.lock_sessions();
     let session = sessions
         .get_mut(&session_id)
         .ok_or_else(|| format!("PTY session '{}' not found", session_id))?;
@@ -293,7 +310,7 @@ pub fn open_terminal_window(
     }
 
     {
-        let mut sessions = state.sessions.lock().unwrap();
+        let mut sessions = state.lock_sessions();
         let session = sessions
             .get_mut(&session_id)
             .ok_or_else(|| format!("PTY session '{session_id}' not found"))?;
@@ -324,7 +341,7 @@ pub fn claim_popout_session(
     session_id: String,
     window_label: String,
 ) -> Result<ReattachSessionInfo, String> {
-    let mut sessions = state.sessions.lock().unwrap();
+    let mut sessions = state.lock_sessions();
     let session = sessions
         .get_mut(&session_id)
         .ok_or_else(|| format!("PTY session '{session_id}' not found"))?;
@@ -353,7 +370,7 @@ pub fn claim_popout_session(
 pub fn list_detached_sessions(
     state: State<'_, PtyState>,
 ) -> Result<Vec<DetachedSessionInfo>, String> {
-    let sessions = state.sessions.lock().unwrap();
+    let sessions = state.lock_sessions();
     Ok(sessions
         .iter()
         .filter(|(_, session)| {
@@ -368,7 +385,7 @@ pub fn list_detached_sessions(
 
 #[tauri::command]
 pub fn list_popout_sessions(state: State<'_, PtyState>) -> Result<Vec<PopoutSessionInfo>, String> {
-    let sessions = state.sessions.lock().unwrap();
+    let sessions = state.lock_sessions();
     Ok(sessions
         .iter()
         .filter_map(|(session_id, session)| {
@@ -392,7 +409,7 @@ pub fn dock_popout_session(
     window_label: String,
 ) -> Result<ReattachSessionInfo, String> {
     let info = {
-        let mut sessions = state.sessions.lock().unwrap();
+        let mut sessions = state.lock_sessions();
         let session = sessions
             .get_mut(&session_id)
             .ok_or_else(|| format!("PTY session '{session_id}' not found"))?;
@@ -463,7 +480,7 @@ pub fn focus_terminal_window(
     session_id: String,
 ) -> Result<(), String> {
     let label = {
-        let sessions = state.sessions.lock().unwrap();
+        let sessions = state.lock_sessions();
         sessions
             .get(&session_id)
             .and_then(|session| session.popout_window.clone())
@@ -481,7 +498,7 @@ pub fn reattach_pty(
     state: State<'_, PtyState>,
     session_id: String,
 ) -> Result<ReattachSessionInfo, String> {
-    let mut sessions = state.sessions.lock().unwrap();
+    let mut sessions = state.lock_sessions();
     let session = sessions
         .get_mut(&session_id)
         .ok_or_else(|| format!("PTY session '{}' not found", session_id))?;
@@ -503,7 +520,7 @@ pub fn reattach_pty(
 
 #[tauri::command]
 pub fn count_active_sessions(state: State<'_, PtyState>) -> Result<usize, String> {
-    Ok(state.sessions.lock().unwrap().len())
+    Ok(state.lock_sessions().len())
 }
 
 #[tauri::command]
@@ -514,7 +531,7 @@ pub fn close_pty(
     close_window: Option<bool>,
 ) -> Result<(), String> {
     let session = {
-        let mut sessions = state.sessions.lock().unwrap();
+        let mut sessions = state.lock_sessions();
         sessions.remove(&session_id)
     };
 
@@ -550,7 +567,7 @@ pub fn close_pty(
 #[tauri::command]
 pub fn close_all_ptys(app: AppHandle, state: State<'_, PtyState>) -> Result<usize, String> {
     let session_ids: Vec<String> = {
-        let sessions = state.sessions.lock().unwrap();
+        let sessions = state.lock_sessions();
         sessions.keys().cloned().collect()
     };
 

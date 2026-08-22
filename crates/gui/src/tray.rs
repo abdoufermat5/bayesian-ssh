@@ -98,7 +98,7 @@ pub fn show_main_window(app: &AppHandle) {
 
 pub fn quit_application(app: &AppHandle) {
     if let Some(state) = app.try_state::<PtyState>() {
-        let active_count = state.sessions.lock().unwrap().len();
+        let active_count = state.lock_sessions().len();
         if active_count > 0 {
             show_main_window(app);
             let _ = app.emit("prompt-quit-confirm", ());
@@ -127,6 +127,10 @@ pub fn refresh_tray_menu(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub fn send_desktop_notification(title: String, body: String) -> Result<(), String> {
+    // Strip control characters that could break the shell/script wrappers below.
+    let title: String = title.chars().filter(|c| !c.is_control()).collect();
+    let body: String = body.chars().filter(|c| !c.is_control()).collect();
+
     #[cfg(target_os = "linux")]
     {
         let _ = Command::new("notify-send")
@@ -139,7 +143,12 @@ pub fn send_desktop_notification(title: String, body: String) -> Result<(), Stri
     }
     #[cfg(target_os = "macos")]
     {
-        let script = format!("display notification \"{}\" with title \"{}\"", body, title);
+        // Escape for AppleScript string literals.
+        let script = format!(
+            "display notification \"{}\" with title \"{}\"",
+            body.replace('\\', "\\\\").replace('"', "\\\""),
+            title.replace('\\', "\\\\").replace('"', "\\\"")
+        );
         let _ = Command::new("osascript")
             .arg("-e")
             .arg(&script)
@@ -147,6 +156,8 @@ pub fn send_desktop_notification(title: String, body: String) -> Result<(), Stri
     }
     #[cfg(target_os = "windows")]
     {
+        // Escape single quotes for the PowerShell string literals to prevent
+        // script injection through user-controlled text.
         let script = format!(
             "[void] [System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms'); \
              $objNotifyIcon = New-Object System.Windows.Forms.NotifyIcon; \
@@ -155,7 +166,8 @@ pub fn send_desktop_notification(title: String, body: String) -> Result<(), Stri
              $objNotifyIcon.BalloonTipTitle = '{}'; \
              $objNotifyIcon.Visible = $True; \
              $objNotifyIcon.ShowBalloonTip(5000)",
-            body, title
+            body.replace('\'', "''"),
+            title.replace('\'', "''")
         );
         let _ = Command::new("powershell")
             .arg("-Command")

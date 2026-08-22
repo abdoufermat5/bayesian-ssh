@@ -89,7 +89,10 @@ fn create_bastion_wrapper(bastion: &str) -> Result<PathBuf> {
 
     let template = ensure_scp_wrapper()?;
     let script = std::fs::read_to_string(&template)?;
-    let script = script.replace("BASTION_PLACEHOLDER", bastion);
+    // The bastion hostname is interpolated into a `sh` script — quote it so
+    // a malicious hostname cannot inject shell commands.
+    let quoted = crate::services::transport::subprocess_impl::shell_quote(bastion);
+    let script = script.replace("BASTION_PLACEHOLDER", &quoted);
 
     std::fs::write(&wrapper_path, &script)?;
 

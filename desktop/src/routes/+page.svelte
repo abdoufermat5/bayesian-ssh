@@ -55,13 +55,18 @@
   const kerberosState = getKerberosState();
 
   $effect(() => {
-    if (appState.connections) appState.selectedHostIndex = 0;
+    // Keep the selected index in range when the list shrinks, but do NOT
+    // reset it on every reload — that breaks duplicate-then-edit flows.
+    const list = appState.connections;
+    if (list.length > 0 && appState.selectedHostIndex >= list.length) {
+      appState.selectedHostIndex = 0;
+    }
   });
 
   $effect(() => {
     appState.searchQuery;
     appState.selectedTag;
-    appState.loadConnections();
+    appState.searchConnections();
   });
 
   $effect(() => {
@@ -223,7 +228,6 @@
       selectedTag={appState.selectedTag}
       onTagSelect={(tag) => {
         appState.selectedTag = tag;
-        appState.loadConnections();
       }}
       agentActive={appState.agentActive}
       agentKeys={appState.agentKeys}
@@ -473,7 +477,6 @@
             <TerminalsView
               connections={appState.connections}
               bind:searchQuery={appState.searchQuery}
-              onSearchInput={appState.loadConnections}
               onCloseAll={appState.requestCloseAllSessions}
               onManageSessions={appState.openSessionManager}
             />
@@ -605,6 +608,29 @@
   show={showSnippetsModal}
   onClose={() => (showSnippetsModal = false)}
   onRunSnippet={(cmd) => {
-    notify(`Command ready: ${cmd}`, "info");
+    const tab = terminalState.tabs.find((t) => t.id === terminalState.activeTabId);
+    if (!tab?.term) {
+      // No active terminal — fall back to copying the command.
+      notify("No active terminal — command copied to clipboard", "info");
+      navigator.clipboard.writeText(cmd).catch(() => {});
+      return;
+    }
+    const send = () => {
+      tab.term?.paste(`${cmd}\r`);
+    };
+    if (appState.settings.confirm_snippet_execution !== false) {
+      appState.promptDelete(
+        "Send to active terminal",
+        cmd,
+        async () => send(),
+        {
+          title: "Execute command snippet",
+          confirmLabel: "Execute",
+          warning: "The command will be sent to the currently active SSH session.",
+        },
+      );
+    } else {
+      send();
+    }
   }}
 />

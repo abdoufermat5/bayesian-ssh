@@ -192,9 +192,9 @@
                     class="p-1 rounded text-muted hover:text-primary hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     onclick={(e) => {
                       e.stopPropagation();
-                      onEdit(conn);
+                      onCopyCommand(toSshCommand(conn), conn.id);
                     }}
-                    title="Edit"
+                    title="Copy SSH command"
                   >
                     {#if copiedId === conn.id}
                       <Check size={13} class="text-emerald-400" />

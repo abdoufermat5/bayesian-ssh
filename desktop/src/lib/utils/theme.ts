@@ -44,42 +44,78 @@ export interface XtermTheme {
   foreground: string;
   cursor: string;
   cursorAccent: string;
-  cyan: string;
-  magenta: string;
-  green: string;
+  black: string;
   red: string;
+  green: string;
+  yellow: string;
+  blue: string;
+  magenta: string;
+  cyan: string;
+  white: string;
+  brightBlack: string;
+  brightRed: string;
+  brightGreen: string;
+  brightYellow: string;
+  brightBlue: string;
+  brightMagenta: string;
+  brightCyan: string;
+  brightWhite: string;
+  selectionBackground: string;
 }
 
 export function getCurrentXtermTheme(): XtermTheme {
+  const fallback: XtermTheme = {
+    background: "#0c0d12",
+    foreground: "#cbd5e1",
+    cursor: "#00f0ff",
+    cursorAccent: "#0c0d12",
+    black: "#18181b",
+    red: "#ef4444",
+    green: "#10b981",
+    yellow: "#fbbf24",
+    blue: "#3b82f6",
+    magenta: "#d946ef",
+    cyan: "#00f0ff",
+    white: "#cbd5e1",
+    brightBlack: "#71717a",
+    brightRed: "#f87171",
+    brightGreen: "#34d399",
+    brightYellow: "#fde047",
+    brightBlue: "#60a5fa",
+    brightMagenta: "#e879f9",
+    brightCyan: "#22d3ee",
+    brightWhite: "#f4f4f5",
+    selectionBackground: "rgba(59, 130, 246, 0.25)",
+  };
+
   if (typeof window === "undefined") {
-    return {
-      background: "#0c0d12",
-      foreground: "#cbd5e1",
-      cursor: "#00f0ff",
-      cursorAccent: "#0c0d12",
-      cyan: "#00f0ff",
-      magenta: "#d946ef",
-      green: "#10b981",
-      red: "#ef4444",
-    };
+    return fallback;
   }
 
   const style = getComputedStyle(document.documentElement);
-  const bg = style.getPropertyValue("--bg-terminal").trim() || "#0c0d12";
-  const fg = style.getPropertyValue("--text-primary").trim() || "#cbd5e1";
-  const accent = style.getPropertyValue("--accent-cyan").trim() || "#00f0ff";
-  const pink = style.getPropertyValue("--accent-pink").trim() || "#d946ef";
-  const green = style.getPropertyValue("--green-emerald").trim() || "#10b981";
-  const red = style.getPropertyValue("--red-rose").trim() || "#ef4444";
+  const read = (name: string, fb: string) => style.getPropertyValue(name).trim() || fb;
 
   return {
-    background: bg,
-    foreground: fg,
-    cursor: accent,
-    cursorAccent: bg,
-    cyan: accent,
-    magenta: pink,
-    green,
-    red,
+    background: read("--bg-terminal", fallback.background),
+    foreground: read("--text-primary", fallback.foreground),
+    cursor: read("--accent-cyan", fallback.cursor),
+    cursorAccent: read("--bg-terminal", fallback.cursorAccent),
+    black: read("--surface-input", fallback.black),
+    red: read("--red-rose", fallback.red),
+    green: read("--green-emerald", fallback.green),
+    yellow: read("--yellow-amber", fallback.yellow),
+    blue: read("--accent-blue", fallback.blue),
+    magenta: read("--accent-pink", fallback.magenta),
+    cyan: read("--accent-cyan", fallback.cyan),
+    white: read("--text-secondary", fallback.white),
+    brightBlack: read("--text-muted", fallback.brightBlack),
+    brightRed: read("--red-rose", fallback.brightRed),
+    brightGreen: read("--green-emerald", fallback.brightGreen),
+    brightYellow: read("--yellow-amber", fallback.brightYellow),
+    brightBlue: read("--accent-blue", fallback.brightBlue),
+    brightMagenta: read("--accent-pink", fallback.brightMagenta),
+    brightCyan: read("--accent-cyan", fallback.brightCyan),
+    brightWhite: read("--text-primary", fallback.brightWhite),
+    selectionBackground: read("--selection-bg", fallback.selectionBackground),
   };
 }

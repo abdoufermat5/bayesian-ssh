@@ -21,6 +21,21 @@ pub fn list_ssh_keys() -> Result<Vec<security::SshKeyInfo>, String> {
 
 #[tauri::command]
 pub fn generate_ssh_key(name: String, key_type: Option<String>) -> Result<security::SshKeyInfo, String> {
+    // Reject anything that is not a plain file name: this blocks path
+    // traversal (e.g. "../../etc/cron.d/x") and absolute paths.
+    let name = name.trim().to_string();
+    if name.is_empty()
+        || name.len() > 128
+        || name.contains('/')
+        || name.contains('\\')
+        || name.contains("..")
+        || name.chars().any(|c| !(c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.'))
+    {
+        return Err(
+            "Key name may only contain letters, digits, '_', '-' and '.' (no paths).".to_string(),
+        );
+    }
+
     let ssh_dir = dirs::home_dir()
         .ok_or_else(|| "Could not resolve home directory".to_string())?
         .join(".ssh");
@@ -34,6 +49,9 @@ pub fn generate_ssh_key(name: String, key_type: Option<String>) -> Result<securi
     }
 
     let kt = key_type.unwrap_or_else(|| "ed25519".to_string());
+    if !["ed25519", "rsa", "ecdsa", "dsa", "ed25519-sk", "ecdsa-sk"].contains(&kt.as_str()) {
+        return Err(format!("Unsupported key type: {kt}"));
+    }
 
     let status = Command::new("ssh-keygen")
         .arg("-t")
@@ -327,35 +345,53 @@ pub async fn ping_all_connections() -> Result<Vec<PingResultDto>, String> {
     let database = Database::new(&config).map_err(|e| e.to_string())?;
     let connections = database.list_connections(None, false).map_err(|e| e.to_string())?;
 
-    let mut results = Vec::new();
-    for conn in connections {
-        let start = std::time::Instant::now();
-        let status = tokio::process::Command::new("ssh")
-            .args([
-                "-o", "BatchMode=yes",
-                "-o", "ConnectTimeout=3",
-                "-p", &conn.port.to_string(),
-                &format!("{}@{}", conn.user, conn.host),
-                "exit 0",
-            ])
-            .status()
-            .await;
+    // Ping all hosts concurrently (bounded) so N connections finish in ~one
+    // ConnectTimeout instead of N × ConnectTimeout.
+    const MAX_CONCURRENCY: usize = 16;
+    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENCY));
 
-        let duration = start.elapsed().as_millis() as u64;
-        let (success, err) = match status {
-            Ok(s) if s.success() => (true, None),
-            Ok(s) => (false, Some(format!("Exit status: {}", s))),
-            Err(e) => (false, Some(e.to_string())),
-        };
+    let tasks: Vec<_> = connections
+        .into_iter()
+        .map(|conn| {
+            let semaphore = std::sync::Arc::clone(&semaphore);
+            tokio::spawn(async move {
+                let _permit = semaphore.acquire_owned().await;
+                let start = std::time::Instant::now();
+                let status = tokio::process::Command::new("ssh")
+                    .args([
+                        "-o", "BatchMode=yes",
+                        "-o", "ConnectTimeout=3",
+                        "-p", &conn.port.to_string(),
+                        &format!("{}@{}", conn.user, conn.host),
+                        "exit 0",
+                    ])
+                    .status()
+                    .await;
 
-        results.push(PingResultDto {
-            connection_id: conn.id.to_string(),
-            name: conn.name,
-            host: conn.host,
-            success,
-            latency_ms: duration,
-            error: err,
-        });
+                let duration = start.elapsed().as_millis() as u64;
+                let (success, err) = match status {
+                    Ok(s) if s.success() => (true, None),
+                    Ok(s) => (false, Some(format!("Exit status: {}", s))),
+                    Err(e) => (false, Some(e.to_string())),
+                };
+
+                PingResultDto {
+                    connection_id: conn.id.to_string(),
+                    name: conn.name,
+                    host: conn.host,
+                    success,
+                    latency_ms: duration,
+                    error: err,
+                }
+            })
+        })
+        .collect();
+
+    let mut results = Vec::with_capacity(tasks.len());
+    for task in tasks {
+        if let Ok(result) = task.await {
+            results.push(result);
+        }
     }
 
     Ok(results)

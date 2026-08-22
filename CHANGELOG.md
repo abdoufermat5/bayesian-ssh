@@ -5,6 +5,34 @@ All notable changes to Bayesian SSH will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+- **Content Security Policy**: The desktop app previously shipped with `csp: null` (no policy). A strict CSP is now enforced (`default-src 'self'`, IPC/asset protocols only, `object-src 'none'`, `frame-ancestors 'none'`), so a renderer compromise can no longer invoke arbitrary Tauri commands or load remote content.
+- **ProxyCommand injection fix**: Bastion host, bastion user, and key path are now POSIX shell-quoted before interpolation into `ssh -o ProxyCommand=…` (which runs through `sh -c`). A connection with a malicious bastion/key path could previously execute arbitrary shell commands on the local machine.
+- **Connection input validation**: `add_connection`/`edit_connection` reject control characters, whitespace, quotes, shell metacharacters, and `@` in host/user/bastion fields, and control characters in key paths — preventing ssh argv/ProxyCommand breakage and injection via imported or hand-edited connection data.
+- **Key generation hardening**: `generate_ssh_key` validates the key name (no paths, no traversal) and whitelists `ssh-keygen` key types.
+- **Notification injection fixes**: Desktop notifications sanitize control characters, escape AppleScript string literals (macOS) and PowerShell single quotes (Windows), closing both script-injection vectors.
+- **Terminal web links restricted**: Only `http`/`https` URLs from terminal output reach the system browser; `file:`, `smb:`, and other schemes are ignored.
+
+### Fixed
+- **UTF-8 panic in detached-session buffer**: `String::drain` panicked when the 512 KB replay-buffer trim cut a multi-byte character (non-ASCII output), killing the PTY reader thread and silently freezing the session. Trimming now clamps to char boundaries.
+- **PTY output flooding**: The read loop emitted one IPC event per 4 KB chunk, freezing the UI during high-throughput output (`yes`, `cat bigfile`). Output is now coalesced (32 KB batches, partial reads flush early) and the frontend batches `term.write` calls per frame.
+- **Dropped terminal output on pop-out/reattach**: The pop-out window registered its output listener *after* writing the replay buffer, losing output in between; reattach could lose output while the xterm instance was being created. Both races are fixed (listener-first registration; per-tab pending output queue flushed on mount).
+- **WebGL context loss left a blank terminal**: The renderer now falls back to the Canvas renderer on context loss instead of going permanently blank.
+- **Write-after-dispose crashes**: `term.write`/`term.input` calls are now guarded against terminals disposed concurrently.
+- **Mutex poisoning crash**: All PTY session-map locks survive poisoning (`lock_sessions`) instead of `unwrap()`-panicking the whole app.
+- **Resize storm**: Terminal fitting is throttled to one fit + resize IPC per animation frame, and hidden tabs are skipped.
+- **Ghost tabs**: Detach/pop-out failures now clean up or keep the tab with an explicit error instead of leaving broken state; failed spawns auto-close the error tab after 8 s.
+- **Listener init race**: Terminal event listeners can no longer leak or double-register during startup/teardown races.
+- **Sequential ping storm**: "Ping All" now pings hosts concurrently (bounded at 16) instead of serially (N × 3 s worst case).
+
+### Changed
+- **Full ANSI terminal palette**: xterm now uses a complete 16-color palette + selection color derived from the active app theme (previously the CSS variables were undefined and the terminal silently fell back to fixed colors).
+- **Linux font fallbacks**: Terminal font stack now includes Ubuntu Mono / DejaVu Sans Mono / Liberation Mono so the terminal looks right on distros without JetBrains Mono.
+- **Snippets "Execute in PTY" now actually executes**: The command is sent to the active terminal (with the configured confirmation gate) instead of showing a no-op toast.
+- **Copy button fixed**: In the Hosts list, the copy button copies the ssh command (it was wired to Edit); the duplicate-then-edit flow no longer selects the wrong host.
+
 ## [2.4.0] - 2026-08-15
 
 ### Added

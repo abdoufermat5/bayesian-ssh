@@ -41,12 +41,11 @@
   interface Props {
     connections: Connection[];
     searchQuery: string;
-    onSearchInput: () => void;
     onCloseAll: () => void;
     onManageSessions: () => void;
   }
 
-  let { connections, searchQuery = $bindable(), onSearchInput, onCloseAll, onManageSessions }: Props =
+  let { connections, searchQuery = $bindable(), onCloseAll, onManageSessions }: Props =
     $props();
 
   const terminalState = getTerminalState();
@@ -98,7 +97,6 @@
         type="text"
         placeholder="Search hosts..."
         bind:value={searchQuery}
-        oninput={onSearchInput}
         class="bg-surface-input border border-border text-primary py-1.5 px-2.5 rounded-lg outline-none text-xs transition-all duration-100 hover:border-border-hover focus:border-border-focus focus:shadow-[0_0_0_3px_rgba(59,130,246,0.12)] w-full"
       />
     </div>

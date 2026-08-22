@@ -17,7 +17,12 @@ pub const DEFAULT_COLS: u16 = 80;
 /// `TERM` value forced for xterm.js compatibility (vim/nano/htop rendering).
 pub const TERM_ENV: &str = "xterm-256color";
 /// Size of the chunk read from the PTY master in the read loop.
-pub const READ_CHUNK_SIZE: usize = 4096;
+pub const READ_CHUNK_SIZE: usize = 8192;
+/// Coalesce PTY output into batches of at least this many bytes before
+/// handing it to the caller. High-throughput programs (`yes`, `make -j`,
+/// `cat bigfile`) would otherwise generate thousands of tiny IPC events per
+/// second and freeze the GUI.
+pub const FLUSH_THRESHOLD_BYTES: usize = 32 * 1024;
 
 /// Result of [`spawn`]: the handles needed to drive a PTY session.
 pub struct SpawnedPty {
@@ -102,18 +107,39 @@ pub fn resize(master: &(dyn MasterPty + Send), cols: u16, rows: u16) -> Result<(
         .map_err(|e| e.to_string())
 }
 
-/// Read from the PTY master until EOF, passing each lossy-UTF-8 chunk to
+/// Read from the PTY master until EOF, passing each batch of output to
 /// `on_data`.
 ///
+/// Output is coalesced: bytes accumulate until [`FLUSH_THRESHOLD_BYTES`] is
+/// reached, or a *partial* read (usually the end of an interactive burst)
+/// flushes early. That keeps latency low for interactive prompts while
+/// avoiding an IPC event flood during high-throughput output.
+///
 /// Stops on EOF (0 bytes) or read error, matching the previous GUI read
-/// loop. Chunk size is [`READ_CHUNK_SIZE`].
+/// loop. Any pending buffered output is flushed before stopping.
 pub fn read_loop(reader: &mut (dyn Read + Send), mut on_data: impl FnMut(String)) {
     let mut buf = [0u8; READ_CHUNK_SIZE];
+    let mut pending = String::new();
     loop {
         match reader.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => on_data(String::from_utf8_lossy(&buf[..n]).into_owned()),
-            Err(_) => break,
+            Ok(0) => {
+                if !pending.is_empty() {
+                    on_data(std::mem::take(&mut pending));
+                }
+                break;
+            }
+            Ok(n) => {
+                pending.push_str(&String::from_utf8_lossy(&buf[..n]));
+                if pending.len() >= FLUSH_THRESHOLD_BYTES || n < buf.len() {
+                    on_data(std::mem::take(&mut pending));
+                }
+            }
+            Err(_) => {
+                if !pending.is_empty() {
+                    on_data(std::mem::take(&mut pending));
+                }
+                break;
+            }
         }
     }
 }

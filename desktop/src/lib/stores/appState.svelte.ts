@@ -129,7 +129,7 @@ export class AppStateStore {
     fuzzy_search: false,
     default_key_path: "",
     timezone: "system",
-    terminal_font_family: "JetBrains Mono, Fira Code, Cascadia Code, Consolas, monospace",
+    terminal_font_family: "JetBrains Mono, Fira Code, Cascadia Code, Ubuntu Mono, DejaVu Sans Mono, Liberation Mono, Consolas, monospace",
     terminal_font_size: 13,
     terminal_line_height: 1.18,
     terminal_cursor_style: "block",
@@ -307,7 +307,7 @@ export class AppStateStore {
         fuzzy_search: Boolean(loaded.fuzzy_search),
         default_key_path: (loaded.default_key_path as string) || "",
         timezone: (loaded.timezone as string) || "system",
-        terminal_font_family: (loaded.terminal_font_family as string) || "JetBrains Mono, Fira Code, Cascadia Code, Consolas, monospace",
+        terminal_font_family: (loaded.terminal_font_family as string) || "JetBrains Mono, Fira Code, Cascadia Code, Ubuntu Mono, DejaVu Sans Mono, Liberation Mono, Consolas, monospace",
         terminal_font_size: Number(loaded.terminal_font_size) || 13,
         terminal_line_height: Number(loaded.terminal_line_height) || 1.18,
         terminal_cursor_style: (loaded.terminal_cursor_style as "block" | "bar" | "underline") || "block",
@@ -479,6 +479,18 @@ export class AppStateStore {
     }
   }
 
+  // Debounced search: typing fires one IPC+SQLite query per keystroke
+  // otherwise, which makes the UI janky with large connection lists.
+  private searchTimer: ReturnType<typeof setTimeout> | null = null;
+
+  searchConnections = () => {
+    if (this.searchTimer) clearTimeout(this.searchTimer);
+    this.searchTimer = setTimeout(() => {
+      this.searchTimer = null;
+      void this.loadConnections();
+    }, 150);
+  }
+
   reloadConnectionsAfterMutation = async () => {
     try {
       const allConnections = await invoke<Connection[]>("get_connections", {
@@ -631,15 +643,23 @@ export class AppStateStore {
   }
 
   handleSessionReattach = async (sessionId: string) => {
-    await reattachSession(sessionId);
-    this.showSessionManager = false;
-    this.goToTerminals();
+    try {
+      await reattachSession(sessionId);
+      this.showSessionManager = false;
+      this.goToTerminals();
+    } catch (e: unknown) {
+      notify(String(e), "error");
+    }
   }
 
   handleSessionDock = async (sessionId: string) => {
-    await dockPopoutSession(sessionId);
-    this.showSessionManager = false;
-    this.goToTerminals();
+    try {
+      await dockPopoutSession(sessionId);
+      this.showSessionManager = false;
+      this.goToTerminals();
+    } catch (e: unknown) {
+      notify(String(e), "error");
+    }
   }
 
   handleTerminateAllSessions = async () => {

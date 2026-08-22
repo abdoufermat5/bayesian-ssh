@@ -14,6 +14,9 @@ import {
   attachXtermKeyHandler,
   attachXtermLinuxInputFix,
   attachXtermMouseHandlers,
+  createOutputCoalescer,
+  safeWrite,
+  type OutputCoalescer,
 } from "$lib/utils/terminal-xterm";
 
 export interface TerminalTab {
@@ -26,6 +29,10 @@ export interface TerminalTab {
   compositionGuardCleanup?: () => void;
   mouseCleanup?: () => void;
   showSearch?: boolean;
+  outputCoalescer?: OutputCoalescer;
+  /** Output that arrived while the tab existed but the xterm instance was
+   *  still being created (reattach flow) — flushed once the terminal opens. */
+  pendingOutput?: string[];
 }
 
 export interface DetachedSession {
@@ -99,14 +106,7 @@ export function updateTerminalFontSize(newSize: number) {
   tabs.forEach((tab) => {
     if (tab.term && tab.fitAddon) {
       tab.term.options.fontSize = terminalFontSize;
-      try {
-        tab.fitAddon.fit();
-        invoke("resize_pty", {
-          sessionId: tab.id,
-          cols: tab.term.cols,
-          rows: tab.term.rows,
-        }).catch(() => {});
-      } catch {}
+      fitTerminal(tab.id, tab.term, tab.fitAddon);
     }
   });
 }
@@ -117,6 +117,7 @@ let popoutSessions = $state<PopoutSession[]>([]);
 let activeSessionCount = $state(0);
 let activeTabId = $state<string | null>(null);
 let listenersReady = false;
+let listenersInFlight: Promise<void> | null = null;
 let unlistenOutput: UnlistenFn | null = null;
 let unlistenExit: UnlistenFn | null = null;
 let unlistenSessionClosed: UnlistenFn | null = null;
@@ -135,6 +136,22 @@ function findDetachedSession(sessionId: string): DetachedSession | undefined {
   return detachedSessions.find((s) => s.id === sessionId);
 }
 
+/** Route one PTY output event to its tab, coalesced. */
+function deliverPtyOutput(sessionId: string, data: string) {
+  if (!data) return;
+  const tab = findTab(sessionId);
+  if (!tab) return;
+
+  if (tab.term && tab.outputCoalescer) {
+    tab.outputCoalescer.push(data);
+    return;
+  }
+  // Terminal instance not created yet (reattach race) — queue the output so
+  // it is rendered as soon as the xterm instance mounts.
+  if (!tab.pendingOutput) tab.pendingOutput = [];
+  tab.pendingOutput.push(data);
+}
+
 function linkTerminal(
   tabId: string,
   term: Terminal,
@@ -142,6 +159,7 @@ function linkTerminal(
   searchAddon?: SearchAddon,
   compositionGuardCleanup?: () => void,
   mouseCleanup?: () => void,
+  outputCoalescer?: OutputCoalescer,
 ) {
   const index = tabs.findIndex((t) => t.id === tabId);
   if (index !== -1) {
@@ -150,6 +168,7 @@ function linkTerminal(
     tabs[index].searchAddon = searchAddon;
     tabs[index].compositionGuardCleanup = compositionGuardCleanup;
     tabs[index].mouseCleanup = mouseCleanup;
+    tabs[index].outputCoalescer = outputCoalescer;
     tabs[index].showSearch = false;
   }
 }
@@ -174,17 +193,40 @@ export function closeTerminalSearch(tabId?: string) {
   }
 }
 
+const fitRequests = new Map<string, number>();
+
+function isContainerVisible(container: HTMLElement | null | undefined): boolean {
+  if (!container) return false;
+  // display:none (hidden tab) or detached from the document → skip fitting.
+  return container.isConnected && container.offsetParent !== null;
+}
+
 function fitTerminal(tabId: string, term: Terminal, fitAddon: FitAddon) {
-  try {
-    fitAddon.fit();
-    invoke("resize_pty", {
-      sessionId: tabId,
-      cols: term.cols,
-      rows: term.rows,
-    }).catch(() => {});
-  } catch {
-    // Container may not have dimensions yet.
+  const container = term.element?.parentElement;
+  if (!isContainerVisible(container)) return;
+
+  // Throttle to one fit + resize IPC per animation frame; ResizeObserver
+  // fires continuously while the window is being resized.
+  const pending = fitRequests.get(tabId);
+  if (pending) {
+    cancelAnimationFrame(pending);
   }
+
+  const raf = requestAnimationFrame(() => {
+    fitRequests.delete(tabId);
+    try {
+      fitAddon.fit();
+      if (term.cols === 0 || term.rows === 0) return;
+      invoke("resize_pty", {
+        sessionId: tabId,
+        cols: term.cols,
+        rows: term.rows,
+      }).catch(() => {});
+    } catch {
+      // Container may not have dimensions yet.
+    }
+  });
+  fitRequests.set(tabId, raf);
 }
 
 function attachTerminalIo(tabId: string, term: Terminal) {
@@ -199,7 +241,7 @@ function openTerminalInstance(
   const term = new Terminal({
     cursorBlink: true,
     cursorStyle: "block",
-    fontFamily: "JetBrains Mono, Fira Code, Cascadia Code, Consolas, monospace",
+    fontFamily: "JetBrains Mono, Fira Code, Cascadia Code, Ubuntu Mono, DejaVu Sans Mono, Liberation Mono, Consolas, monospace",
     fontSize: terminalFontSize,
     lineHeight: 1.18,
     scrollback: 10000,
@@ -216,8 +258,9 @@ function openTerminalInstance(
   term.open(container);
   const compositionGuardCleanup = attachXtermLinuxInputFix(container, term);
   const mouseCleanup = attachXtermMouseHandlers(container, term);
+  const outputCoalescer = createOutputCoalescer(term);
 
-  linkTerminal(tabId, term, fitAddon, searchAddon, compositionGuardCleanup, mouseCleanup);
+  linkTerminal(tabId, term, fitAddon, searchAddon, compositionGuardCleanup, mouseCleanup, outputCoalescer);
   attachResizeObserver(tabId, container, term, fitAddon);
   attachTerminalIo(tabId, term);
 
@@ -239,11 +282,25 @@ function openTerminalInstance(
     }
   }, { passive: false });
 
-  if (options?.banner) {
-    term.writeln(options.banner);
-  }
+  // Order matters: replay (older buffered history) first, then any live
+  // output that arrived while this terminal was being created (reattach
+  // race), then the banner.
   if (options?.replay) {
-    term.write(options.replay, () => {
+    safeWrite(term, options.replay, () => {
+      term.scrollToBottom();
+    });
+  }
+
+  const pending = findTab(tabId)?.pendingOutput;
+  if (pending && pending.length > 0) {
+    findTab(tabId)!.pendingOutput = undefined;
+    for (const chunk of pending) {
+      outputCoalescer.push(chunk);
+    }
+  }
+
+  if (options?.banner && !options?.replay) {
+    safeWrite(term, `${options.banner}\r\n`, () => {
       term.scrollToBottom();
     });
   }
@@ -259,16 +316,6 @@ async function sealSessionUi(sessionId: string): Promise<void> {
   } catch {
     // Non-fatal if the backend session is already gone.
   }
-}
-
-function restoreTerminalOutput(term: Terminal, replay?: string) {
-  if (!replay) {
-    term.scrollToBottom();
-    return;
-  }
-  term.write(replay, () => {
-    term.scrollToBottom();
-  });
 }
 
 function attachResizeObserver(tabId: string, container: HTMLElement, term: Terminal, fitAddon: FitAddon) {
@@ -331,17 +378,9 @@ async function mountReattachedSession(info: ReattachSessionPayload): Promise<voi
     throw new Error("Terminal view is not ready. Try again.");
   }
 
-  const term = openTerminalInstance(tab.id, container);
-  const replay = info.buffered_output;
-
-  if (replay) {
-    await new Promise<void>((resolve) => {
-      term.write(replay, () => {
-        term.scrollToBottom();
-        resolve();
-      });
-    });
-  }
+  const term = openTerminalInstance(tab.id, container, {
+    replay: info.buffered_output,
+  });
 
   await tick();
   requestAnimationFrame(() => {
@@ -361,10 +400,16 @@ function removeDetachedSession(sessionId: string) {
 
 function cleanupTabUi(tabId: string) {
   const tab = findTab(tabId);
+  tab?.outputCoalescer?.dispose();
   tab?.compositionGuardCleanup?.();
   tab?.mouseCleanup?.();
   tab?.term?.dispose();
   detachResizeObserver(tabId);
+  const pendingFit = fitRequests.get(tabId);
+  if (pendingFit) {
+    cancelAnimationFrame(pendingFit);
+    fitRequests.delete(tabId);
+  }
   tabs = tabs.filter((t) => t.id !== tabId);
 
   if (activeTabId === tabId) {
@@ -417,70 +462,83 @@ async function syncActiveSessionCount() {
 
 export async function initTerminalListeners(onExit?: ExitCallback) {
   if (listenersReady) return;
-  listenersReady = true;
+  if (listenersInFlight) {
+    // Registration already in progress — wait for it to finish.
+    await listenersInFlight;
+    if (listenersReady) return;
+  }
+
   onSessionExit = onExit ?? null;
 
-  initThemeSyncForTerminals();
+  const registration = (async () => {
+    initThemeSyncForTerminals();
 
-  await syncDetachedSessions();
-  await syncPopoutSessions();
-  await syncActiveSessionCount();
-
-  unlistenOutput = await listen("pty-output", (event) => {
-    const payload = event.payload as { session_id?: string; sessionId?: string; data: string };
-    const sessionId = payload.session_id ?? payload.sessionId;
-    if (!sessionId) return;
-    const term = findTab(sessionId)?.term;
-    if (!term) return;
-    const wasAtBottom = term.buffer.active.baseY + term.rows >= term.buffer.active.length;
-    term.write(payload.data, () => {
-      if (wasAtBottom) {
-        term.scrollToBottom();
-      }
-    });
-  });
-
-  unlistenExit = await listen("pty-exit", (event) => {
-    const sessionId = event.payload as string;
-
-    if (findDetachedSession(sessionId)) {
-      removeDetachedSession(sessionId);
-      onSessionExit?.(sessionId);
-      return;
-    }
-
-    if (popoutSessions.some((s) => s.id === sessionId)) {
-      removePopoutSession(sessionId);
-      onSessionExit?.(sessionId);
-      return;
-    }
-
-    const tab = findTab(sessionId);
-    tab?.term?.writeln("\n\x1b[1;33mSession disconnected.\x1b[0m");
-
-    setTimeout(() => {
-      cleanupTabUi(sessionId);
-    }, 800);
-
-    onSessionExit?.(sessionId);
-  });
-
-  unlistenSessionClosed = await listen("session-closed", async () => {
     await syncDetachedSessions();
     await syncPopoutSessions();
     await syncActiveSessionCount();
-  });
 
-  unlistenSessionDocked = await listen("session-docked", async (event) => {
-    const info = event.payload as ReattachSessionPayload;
-    removePopoutSession(info.session_id);
-    await mountReattachedSession(info);
-    notify(`"${info.connection_name}" docked — output restored`, "success");
-    await syncActiveSessionCount();
-  });
+    unlistenOutput = await listen("pty-output", (event) => {
+      const payload = event.payload as { session_id?: string; sessionId?: string; data: string };
+      const sessionId = payload.session_id ?? payload.sessionId;
+      if (!sessionId) return;
+      deliverPtyOutput(sessionId, payload.data);
+    });
+
+    unlistenExit = await listen("pty-exit", (event) => {
+      const sessionId = event.payload as string;
+
+      if (findDetachedSession(sessionId)) {
+        removeDetachedSession(sessionId);
+        onSessionExit?.(sessionId);
+        return;
+      }
+
+      if (popoutSessions.some((s) => s.id === sessionId)) {
+        removePopoutSession(sessionId);
+        onSessionExit?.(sessionId);
+        return;
+      }
+
+      const tab = findTab(sessionId);
+      // Flush pending output first so the disconnect notice lands after it.
+      tab?.outputCoalescer?.flush();
+      safeWrite(tab?.term, "\n\x1b[1;33mSession disconnected.\x1b[0m\r\n");
+
+      setTimeout(() => {
+        cleanupTabUi(sessionId);
+      }, 800);
+
+      onSessionExit?.(sessionId);
+    });
+
+    unlistenSessionClosed = await listen("session-closed", async () => {
+      await syncDetachedSessions();
+      await syncPopoutSessions();
+      await syncActiveSessionCount();
+    });
+
+    unlistenSessionDocked = await listen("session-docked", async (event) => {
+      const info = event.payload as ReattachSessionPayload;
+      removePopoutSession(info.session_id);
+      await mountReattachedSession(info);
+      notify(`"${info.connection_name}" docked — output restored`, "success");
+      await syncActiveSessionCount();
+    });
+
+    listenersReady = true;
+    listenersInFlight = null;
+  })();
+
+  listenersInFlight = registration;
+  await registration;
 }
 
 export async function teardownTerminalListeners() {
+  // Wait for an in-flight registration to settle before tearing down, so
+  // listeners registered after the teardown can't leak.
+  if (listenersInFlight) {
+    await listenersInFlight.catch(() => {});
+  }
   unlistenOutput?.();
   unlistenExit?.();
   unlistenSessionClosed?.();
@@ -490,6 +548,7 @@ export async function teardownTerminalListeners() {
   unlistenSessionClosed = null;
   unlistenSessionDocked = null;
   listenersReady = false;
+  listenersInFlight = null;
 }
 
 async function waitForTerminalContainer(tabId: string): Promise<HTMLElement | null> {
@@ -532,7 +591,15 @@ export async function connectSSH(conn: Connection): Promise<void> {
     await invoke("spawn_pty", { sessionId: tabId, connectionName: conn.name });
     await syncActiveSessionCount();
   } catch (e: unknown) {
-    term?.writeln(`\n\x1b[1;31mError spawning terminal process: ${String(e)}\x1b[0m`);
+    const message = String(e);
+    safeWrite(term ?? undefined, `\n\x1b[1;31mFailed to start session: ${message}\x1b[0m\r\n`);
+    // Keep the tab open so the user can read the error; auto-close it after
+    // a few seconds unless they interact with it.
+    setTimeout(() => {
+      if (findTab(tabId)?.id === tabId) {
+        cleanupTabUi(tabId);
+      }
+    }, 8000);
   }
 }
 
@@ -541,7 +608,14 @@ export async function detachTab(tabId: string): Promise<void> {
   if (!tab) return;
 
   await sealSessionUi(tabId);
-  await invoke("detach_pty", { sessionId: tabId });
+  try {
+    await invoke("detach_pty", { sessionId: tabId });
+  } catch (e: unknown) {
+    // Session is already gone — don't leave a ghost tab behind.
+    cleanupTabUi(tabId);
+    notify(`Failed to detach "${tab.name}": ${String(e)}`, "error");
+    return;
+  }
 
   cleanupTabUi(tabId);
 
@@ -562,7 +636,13 @@ export async function popOutTab(tabId: string): Promise<void> {
   if (!tab) return;
 
   await sealSessionUi(tabId);
-  await invoke("open_terminal_window", { sessionId: tabId, title: tab.name });
+  try {
+    await invoke("open_terminal_window", { sessionId: tabId, title: tab.name });
+  } catch (e: unknown) {
+    // Window could not be created — keep the tab so the session stays usable.
+    notify(`Failed to open terminal window: ${String(e)}`, "error");
+    return;
+  }
   cleanupTabUi(tabId);
   notify(`"${tab.name}" opened in a separate window — session continues`, "info");
   await syncPopoutSessions();
@@ -573,7 +653,12 @@ export async function popOutDetachedSession(sessionId: string): Promise<void> {
   const session = findDetachedSession(sessionId);
   if (!session) return;
 
-  await invoke("open_terminal_window", { sessionId, title: session.name });
+  try {
+    await invoke("open_terminal_window", { sessionId, title: session.name });
+  } catch (e: unknown) {
+    notify(`Failed to open terminal window: ${String(e)}`, "error");
+    return;
+  }
   removeDetachedSession(sessionId);
   await syncPopoutSessions();
   await syncActiveSessionCount();
@@ -657,10 +742,16 @@ export async function disconnectTab(tabId: string): Promise<void> {
 export async function closeAllTabs(): Promise<number> {
   const count = await invoke<number>("close_all_ptys");
   for (const tab of [...tabs]) {
+    tab.outputCoalescer?.dispose();
     tab.compositionGuardCleanup?.();
+    tab.mouseCleanup?.();
     tab.term?.dispose();
     detachResizeObserver(tab.id);
   }
+  for (const raf of fitRequests.values()) {
+    cancelAnimationFrame(raf);
+  }
+  fitRequests.clear();
   tabs = [];
   detachedSessions = [];
   popoutSessions = [];

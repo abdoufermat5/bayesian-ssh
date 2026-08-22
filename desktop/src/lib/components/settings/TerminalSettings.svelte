@@ -25,14 +25,14 @@
     <CustomSelect
       id="terminal-font-family"
       options={[
-        { value: "JetBrains Mono, Fira Code, Cascadia Code, Consolas, monospace", label: "JetBrains Mono (Recommended)" },
-        { value: "Fira Code, JetBrains Mono, Consolas, monospace", label: "Fira Code" },
-        { value: "Cascadia Code, Consolas, monospace", label: "Cascadia Code" },
-        { value: "Hack, monospace", label: "Hack" },
-        { value: "Consolas, Monaco, monospace", label: "Consolas" },
-        { value: "Courier New, monospace", label: "Courier New" }
+        { value: "JetBrains Mono, Fira Code, Cascadia Code, Ubuntu Mono, DejaVu Sans Mono, Liberation Mono, Consolas, monospace", label: "JetBrains Mono (Recommended)" },
+        { value: "Fira Code, JetBrains Mono, Ubuntu Mono, DejaVu Sans Mono, Liberation Mono, Consolas, monospace", label: "Fira Code" },
+        { value: "Cascadia Code, Ubuntu Mono, DejaVu Sans Mono, Liberation Mono, Consolas, monospace", label: "Cascadia Code" },
+        { value: "Hack, Ubuntu Mono, DejaVu Sans Mono, monospace", label: "Hack" },
+        { value: "Consolas, Ubuntu Mono, DejaVu Sans Mono, Liberation Mono, monospace", label: "Consolas" },
+        { value: "Ubuntu Mono, DejaVu Sans Mono, Liberation Mono, monospace", label: "Ubuntu Mono" }
       ]}
-      value={settings.terminal_font_family ?? "JetBrains Mono, Fira Code, Cascadia Code, Consolas, monospace"}
+      value={settings.terminal_font_family ?? "JetBrains Mono, Fira Code, Cascadia Code, Ubuntu Mono, DejaVu Sans Mono, Liberation Mono, Consolas, monospace"}
       onChange={(val) => {
         settings.terminal_font_family = val;
         onSave();

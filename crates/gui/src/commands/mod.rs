@@ -39,6 +39,15 @@ pub struct PtyState {
     pub sessions: Arc<Mutex<HashMap<String, PtySession>>>,
 }
 
+impl PtyState {
+    /// Lock the session map, surviving a poisoned mutex (a panic while the
+    /// lock was held must not crash the whole GUI — the lock is only ever
+    /// held briefly, so recovering the data is always safe).
+    pub fn lock_sessions(&self) -> std::sync::MutexGuard<'_, HashMap<String, PtySession>> {
+        self.sessions.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
 pub fn get_db_and_config() -> Result<(Database, AppConfig), String> {
     let config = AppConfig::load(None).map_err(|e| e.to_string())?;
     let db = Database::new(&config).map_err(|e| e.to_string())?;
@@ -185,7 +194,7 @@ pub fn default_onboarding_complete() -> bool {
 }
 
 pub fn default_terminal_font_family() -> String {
-    "JetBrains Mono, Fira Code, Cascadia Code, Consolas, monospace".to_string()
+    "JetBrains Mono, Fira Code, Cascadia Code, Ubuntu Mono, DejaVu Sans Mono, Liberation Mono, Consolas, monospace".to_string()
 }
 
 pub fn default_terminal_font_size() -> u32 {

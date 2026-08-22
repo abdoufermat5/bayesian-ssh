@@ -17,6 +17,21 @@ pub struct SubprocessTransport {
     config: AppConfig,
 }
 
+/// POSIX single-quote a value for interpolation into a shell command line
+/// (`sh -c`). `ssh -o ProxyCommand=...` runs its value through the shell, so
+/// any unquoted user-controlled string (bastion host, key path, …) is a
+/// command-injection vector. Single quotes make the value opaque to the
+/// shell; embedded `'` is escaped as `'"'"'`.
+pub(crate) fn shell_quote(value: &str) -> String {
+    if value.is_empty() {
+        return "''".to_string();
+    }
+    if !value.contains(['\'', '\\', ' ', '\t', '\n', '"', '$', '`', ';', '&', '|', '<', '>', '(', ')', '*', '?', '[', ']', '{', '}', '!', '#', '~']) {
+        return value.to_string();
+    }
+    format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
 impl SubprocessTransport {
     pub fn new(config: AppConfig) -> Self {
         Self { config }
@@ -46,12 +61,14 @@ impl SubprocessTransport {
         if let Some(bastion) = &conn.bastion {
             let bu = conn.bastion_user.as_deref().unwrap_or(&conn.user);
             let key_flag = if let Some(k) = &conn.key_path {
-                format!(" -i {k}")
+                format!(" -i {}", shell_quote(k))
             } else {
                 String::new()
             };
             let proxy_cmd = format!(
-                "ssh -tt -o RequestTTY=force{key_flag} -o StrictHostKeyChecking={shkc} -W %h:%p {bu}@{bastion}"
+                "ssh -tt -o RequestTTY=force{key_flag} -o StrictHostKeyChecking={shkc} -W %h:%p {}@{}",
+                shell_quote(bu),
+                shell_quote(bastion)
             );
             argv.push("-o".into());
             argv.push(format!("ProxyCommand={proxy_cmd}"));
@@ -98,12 +115,14 @@ impl SubprocessTransport {
             } else {
                 // ProxyCommand with forced TTY allocation on the bastion connection
                 let key_flag = if let Some(k) = &conn.key_path {
-                    format!(" -i {k}")
+                    format!(" -i {}", shell_quote(k))
                 } else {
                     String::new()
                 };
                 let proxy_cmd = format!(
-                    "ssh -tt -o RequestTTY=force{key_flag} -o StrictHostKeyChecking={shkc} -W %h:%p {bu}@{bastion}"
+                    "ssh -tt -o RequestTTY=force{key_flag} -o StrictHostKeyChecking={shkc} -W %h:%p {}@{}",
+                    shell_quote(bu),
+                    shell_quote(bastion)
                 );
                 argv.push("-o".into());
                 argv.push(format!("ProxyCommand={proxy_cmd}"));

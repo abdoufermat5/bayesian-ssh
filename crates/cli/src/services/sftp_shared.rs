@@ -12,6 +12,7 @@
 use crate::config::AppConfig;
 use crate::database::Database;
 use crate::models::Connection;
+use crate::services::transport::subprocess_impl::shell_quote;
 use serde::{Deserialize, Serialize};
 use std::process::{Command, Output};
 
@@ -59,14 +60,18 @@ fn build_ls_argv(conn: &Connection, path: &str, shkc: &str) -> (Vec<String>, boo
             argv.push(format!("{bu}@{bastion}"));
             argv.push(format!("{}@{}", conn.user, conn.host));
         } else {
-            // Classic jump host via ProxyCommand.
+            // Classic jump host via ProxyCommand (shell-quoted: the value is
+            // executed through `sh -c`, so unquoted connection fields would
+            // be a command-injection vector).
             let key_flag = if let Some(k) = &conn.key_path {
-                format!(" -i {k}")
+                format!(" -i {}", shell_quote(k))
             } else {
                 String::new()
             };
             let proxy_cmd = format!(
-                "ssh -o StrictHostKeyChecking={shkc}{key_flag} -W %h:%p {bu}@{bastion}"
+                "ssh -o StrictHostKeyChecking={shkc}{key_flag} -W %h:%p {}@{}",
+                shell_quote(bu),
+                shell_quote(bastion)
             );
             argv.push("-o".into());
             argv.push(format!("ProxyCommand={proxy_cmd}"));

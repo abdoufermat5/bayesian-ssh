@@ -11,6 +11,8 @@ import {
   attachXtermIo,
   attachXtermKeyHandler,
   attachXtermLinuxInputFix,
+  createOutputCoalescer,
+  safeWrite,
 } from "$lib/utils/terminal-xterm";
 
 export interface PopoutTerminalHandle {
@@ -19,13 +21,15 @@ export interface PopoutTerminalHandle {
   shutdown: (options?: { closeWindow?: boolean }) => Promise<void>;
 }
 
+interface ClaimInfo {
+  session_id: string;
+  connection_name: string;
+  buffered_output: string;
+}
+
 export async function initPopoutTerminal(sessionId: string): Promise<PopoutTerminalHandle> {
   const windowLabel = getCurrentWindow().label;
-  const info = await invoke<{
-    session_id: string;
-    connection_name: string;
-    buffered_output: string;
-  }>("claim_popout_session", { sessionId, windowLabel });
+  const info = await invoke<ClaimInfo>("claim_popout_session", { sessionId, windowLabel });
 
   let term: Terminal | null = null;
   let fitAddon: FitAddon | null = null;
@@ -33,6 +37,7 @@ export async function initPopoutTerminal(sessionId: string): Promise<PopoutTermi
   let unlistenOutput: UnlistenFn | null = null;
   let themeObserver: MutationObserver | null = null;
   let compositionGuardCleanup: (() => void) | null = null;
+  let outputCoalescer: ReturnType<typeof createOutputCoalescer> | null = null;
   let closing = false;
   let popoutFontSize = 13;
 
@@ -41,12 +46,30 @@ export async function initPopoutTerminal(sessionId: string): Promise<PopoutTermi
     throw new Error("Terminal container not found.");
   }
 
+  // Apply saved terminal preferences (font size, family, line height).
+  try {
+    const settings = await invoke<{
+      terminal_font_size?: number;
+      terminal_font_family?: string;
+      terminal_line_height?: number;
+      terminal_cursor_style?: string;
+      terminal_cursor_blink?: boolean;
+    }>("load_desktop_settings");
+    if (settings) {
+      if (typeof settings.terminal_font_size === "number") {
+        popoutFontSize = Math.max(8, Math.min(32, settings.terminal_font_size));
+      }
+    }
+  } catch {
+    // Keep defaults if settings are unavailable.
+  }
+
   term = new Terminal({
     cursorBlink: true,
-    fontFamily: "JetBrains Mono, Courier New, monospace",
+    fontFamily: "JetBrains Mono, Fira Code, Cascadia Code, Ubuntu Mono, DejaVu Sans Mono, Liberation Mono, Consolas, monospace",
     fontSize: popoutFontSize,
     lineHeight: 1.15,
-    scrollback: 5000,
+    scrollback: 10000,
     theme: getCurrentXtermTheme(),
   });
 
@@ -54,21 +77,30 @@ export async function initPopoutTerminal(sessionId: string): Promise<PopoutTermi
   term.loadAddon(fitAddon);
   term.open(container);
   compositionGuardCleanup = attachXtermLinuxInputFix(container, term);
+  outputCoalescer = createOutputCoalescer(term);
   term.focus();
 
   container.addEventListener("mousedown", () => term!.focus());
 
-  if (info.buffered_output && term) {
-    const activeTerm = term;
-    await new Promise<void>((resolve) => {
-      activeTerm.write(info.buffered_output, () => {
-        activeTerm.scrollToBottom();
-        resolve();
-      });
+  // ── Register the live output listener BEFORE writing the replay buffer ──
+  // The backend resumes emitting `pty-output` events as soon as the session
+  // is claimed; any event that arrives before this listener exists is lost.
+  // With the listener registered first, output that arrives while the replay
+  // is being written lands behind it in xterm's write queue, preserving
+  // ordering and dropping nothing.
+  unlistenOutput = await listen("pty-output", (event) => {
+    const payload = event.payload as { session_id?: string; sessionId?: string; data: string };
+    const id = payload.session_id ?? payload.sessionId;
+    if (id !== sessionId) return;
+    outputCoalescer?.push(payload.data);
+  });
+
+  if (info.buffered_output) {
+    safeWrite(term, info.buffered_output, () => {
+      term?.scrollToBottom();
     });
-  } else if (term) {
-    const activeTerm = term;
-    requestAnimationFrame(() => activeTerm.scrollToBottom());
+  } else {
+    requestAnimationFrame(() => term?.scrollToBottom());
   }
 
   attachXtermIo(sessionId, term);
@@ -78,6 +110,7 @@ export async function initPopoutTerminal(sessionId: string): Promise<PopoutTermi
     if (!term || !fitAddon) return;
     try {
       fitAddon.fit();
+      if (term.cols === 0 || term.rows === 0) return;
       invoke("resize_pty", {
         sessionId,
         cols: term.cols,
@@ -86,6 +119,17 @@ export async function initPopoutTerminal(sessionId: string): Promise<PopoutTermi
     } catch {
       // Container may not have dimensions yet.
     }
+  };
+
+  // Throttle refits to one per animation frame (window drags fire a storm
+  // of resize events).
+  let fitRaf: number | null = null;
+  const scheduleFit = () => {
+    if (fitRaf !== null) return;
+    fitRaf = requestAnimationFrame(() => {
+      fitRaf = null;
+      fit();
+    });
   };
 
   // Dynamic theme mutation observer
@@ -104,7 +148,7 @@ export async function initPopoutTerminal(sessionId: string): Promise<PopoutTermi
       popoutFontSize = Math.max(8, Math.min(32, nextSize));
       if (term) {
         term.options.fontSize = popoutFontSize;
-        fit();
+        scheduleFit();
       }
     }
   }, { passive: false });
@@ -117,39 +161,29 @@ export async function initPopoutTerminal(sessionId: string): Promise<PopoutTermi
       popoutFontSize = Math.max(8, Math.min(32, popoutFontSize + 1));
       if (term) {
         term.options.fontSize = popoutFontSize;
-        fit();
+        scheduleFit();
       }
     } else if (e.ctrlKey && e.key === "-") {
       e.preventDefault();
       popoutFontSize = Math.max(8, Math.min(32, popoutFontSize - 1));
       if (term) {
         term.options.fontSize = popoutFontSize;
-        fit();
+        scheduleFit();
       }
     } else if (e.ctrlKey && e.key === "0") {
       e.preventDefault();
       popoutFontSize = 13;
       if (term) {
         term.options.fontSize = popoutFontSize;
-        fit();
+        scheduleFit();
       }
     }
   };
   window.addEventListener("keydown", handleKeydown);
 
-  resizeObserver = new ResizeObserver(() => fit());
+  resizeObserver = new ResizeObserver(() => scheduleFit());
   resizeObserver.observe(container);
   requestAnimationFrame(() => requestAnimationFrame(fit));
-
-  unlistenOutput = await listen("pty-output", (event) => {
-    const payload = event.payload as { session_id?: string; sessionId?: string; data: string };
-    const id = payload.session_id ?? payload.sessionId;
-    if (id !== sessionId || !term) return;
-    const wasAtBottom = term.buffer.active.baseY + term.rows >= term.buffer.active.length;
-    term.write(payload.data, () => {
-      if (wasAtBottom) term?.scrollToBottom();
-    });
-  });
 
   const releaseUi = () => {
     window.removeEventListener("keydown", handleKeydown);
@@ -161,6 +195,12 @@ export async function initPopoutTerminal(sessionId: string): Promise<PopoutTermi
     unlistenOutput = null;
     resizeObserver?.disconnect();
     resizeObserver = null;
+    outputCoalescer?.dispose();
+    outputCoalescer = null;
+    if (fitRaf !== null) {
+      cancelAnimationFrame(fitRaf);
+      fitRaf = null;
+    }
     term?.dispose();
     term = null;
   };
