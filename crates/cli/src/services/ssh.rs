@@ -57,9 +57,9 @@ impl SshService {
                 connection.key_path = Some(key);
             }
 
-            // Update last used timestamp
+            // Update last used timestamp (best-effort — see `touch_connection`).
             connection.update_last_used();
-            self.database.update_connection(&connection)?;
+            self.database.touch_connection(&connection)?;
 
             return self.execute_ssh(&connection).await;
         }
@@ -96,12 +96,13 @@ impl SshService {
         let kind = crate::services::transport::pick_kind(connection, &self.config);
         info!("Using transport: {:?}", kind);
 
-        // Create session record before running.
+        // Create session record before running. Mark it active and record
+        // the pid in one INSERT (previously this was two DB writes: an
+        // insert of the Starting state followed by an update to Active).
         let mut session = Session::new(connection.clone());
         session.transport = Some(format!("{kind:?}").to_lowercase());
-        self.database.add_session(&session)?;
         session.mark_active(std::process::id());
-        self.database.update_session(&session)?;
+        self.database.add_session(&session)?;
 
         let conn = connection.clone();
         let result = crate::services::transport::execute_with_fallback(
@@ -317,9 +318,13 @@ impl SshService {
             conn.key_path = Some(key);
         }
 
-        // Update last used timestamp
+        // Update last used timestamp. We use `touch_connection` (a
+        // best-effort UPDATE on `last_used` only) rather than the full
+        // `update_connection` so a connect that races with a concurrent
+        // `bssh remove` doesn't fail. Storing the session happens in
+        // `execute_ssh` regardless.
         conn.update_last_used();
-        self.database.update_connection(&conn)?;
+        self.database.touch_connection(&conn)?;
 
         // Execute the connection
         self.execute_ssh(&conn).await

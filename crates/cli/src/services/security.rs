@@ -44,7 +44,11 @@ pub fn scan_ssh_keys() -> Result<Vec<SshKeyInfo>, String> {
             if let Some(ext) = path.extension() {
                 if ext == "pub" {
                     let priv_path = path.with_extension("");
-                    let filename = path.file_stem().unwrap_or_default().to_string_lossy().to_string();
+                    let filename = path
+                        .file_stem()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string();
 
                     let key_content = fs::read_to_string(&path).unwrap_or_default();
                     let parts: Vec<&str> = key_content.split_whitespace().collect();
@@ -52,7 +56,10 @@ pub fn scan_ssh_keys() -> Result<Vec<SshKeyInfo>, String> {
                     let comment = parts.get(2).copied().unwrap_or("").to_string();
 
                     let fingerprint = if parts.len() >= 2 {
-                        if let Ok(raw) = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, parts[1]) {
+                        if let Ok(raw) = base64::Engine::decode(
+                            &base64::engine::general_purpose::STANDARD,
+                            parts[1],
+                        ) {
                             fingerprint_sha256(&raw)
                         } else {
                             "INVALID_BASE64".to_string()
@@ -162,14 +169,25 @@ pub fn build_audit_report(config: &AppConfig, connections: &[Connection]) -> Aud
             if let Ok(entries) = fs::read_dir(&ssh_dir) {
                 for entry in entries.flatten() {
                     let path = entry.path();
-                    if path.is_file() && path.extension().is_none_or(|ext| ext != "pub" && ext != "known_hosts" && ext != "config") {
+                    if path.is_file()
+                        && path.extension().is_none_or(|ext| {
+                            ext != "pub" && ext != "known_hosts" && ext != "config"
+                        })
+                    {
                         if let Ok(meta) = fs::metadata(&path) {
                             let mode = meta.permissions().mode() & 0o777;
                             if mode != 0o600 {
                                 findings.push(AuditFindingDto {
                                     severity: "warning".into(),
-                                    title: format!("Insecure Private Key Permissions: {}", path.file_name().unwrap_or_default().to_string_lossy()),
-                                    description: format!("Key file {} mode is {:04o} (expected 0600).", path.display(), mode),
+                                    title: format!(
+                                        "Insecure Private Key Permissions: {}",
+                                        path.file_name().unwrap_or_default().to_string_lossy()
+                                    ),
+                                    description: format!(
+                                        "Key file {} mode is {:04o} (expected 0600).",
+                                        path.display(),
+                                        mode
+                                    ),
                                     remediation: format!("Run 'chmod 600 {}'", path.display()),
                                 });
                             }
@@ -208,7 +226,8 @@ pub fn build_audit_report(config: &AppConfig, connections: &[Connection]) -> Aud
         findings.push(AuditFindingDto {
             severity: "info".into(),
             title: format!("{} Stale Connection(s) (>90 days unused)", stale),
-            description: "Unused connections increase attack surface and clutter server list.".into(),
+            description: "Unused connections increase attack surface and clutter server list."
+                .into(),
             remediation: "Review and remove inactive connections.".into(),
         });
     }

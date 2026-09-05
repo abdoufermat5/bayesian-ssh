@@ -16,6 +16,57 @@ pub struct Session {
     pub exit_code: Option<i32>,
 }
 
+/// Stable, lower-case discriminator stored in the `sessions.status_kind`
+/// column. Used for indexed queries (e.g. "active sessions", "failed
+/// sessions") without parsing the JSON `status` blob.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SessionStatusKind {
+    Starting,
+    Active,
+    Disconnected,
+    Terminated,
+    Error,
+}
+
+impl SessionStatusKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SessionStatusKind::Starting => "starting",
+            SessionStatusKind::Active => "active",
+            SessionStatusKind::Disconnected => "disconnected",
+            SessionStatusKind::Terminated => "terminated",
+            SessionStatusKind::Error => "error",
+        }
+    }
+}
+
+impl std::str::FromStr for SessionStatusKind {
+    type Err = std::convert::Infallible;
+    /// Parse a `status_kind` string back into the enum. Unknown values
+    /// map to `SessionStatusKind::Error` for forward-compatibility.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "starting" => Ok(SessionStatusKind::Starting),
+            "active" => Ok(SessionStatusKind::Active),
+            "disconnected" => Ok(SessionStatusKind::Disconnected),
+            "terminated" => Ok(SessionStatusKind::Terminated),
+            _ => Ok(SessionStatusKind::Error),
+        }
+    }
+}
+
+impl SessionStatus {
+    pub fn kind(&self) -> SessionStatusKind {
+        match self {
+            SessionStatus::Starting => SessionStatusKind::Starting,
+            SessionStatus::Active => SessionStatusKind::Active,
+            SessionStatus::Disconnected => SessionStatusKind::Disconnected,
+            SessionStatus::Terminated => SessionStatusKind::Terminated,
+            SessionStatus::Error(_) => SessionStatusKind::Error,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SessionStatus {
     Starting,

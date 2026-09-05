@@ -24,6 +24,9 @@ pub enum AppError {
     SerializationError(#[from] serde_json::Error),
 }
 
+/// Emit a human-friendly error plus (when possible) a remediation hint to
+/// stderr. Hints are derived from typed `AppError` variants first, then a
+/// couple of well-known wrapped messages as a fallback.
 pub fn report_cli_error(error: &anyhow::Error) {
     eprintln!("Error: {error}");
 
@@ -41,6 +44,13 @@ fn suggestion_for(error: &anyhow::Error) -> Option<&'static str> {
         return Some("check the backup path or run `bssh backup` to create a new backup first");
     }
 
+    if error_contains(error, "Duplicate connection") || error_contains(error, "DuplicateConnection")
+    {
+        return Some(
+            "run `bssh list` to see existing names or `bssh edit <name> --name <new>` to rename",
+        );
+    }
+
     if error_contains(error, "connection") && error_contains(error, "not found") {
         return Some(
             "run `bssh list` to see saved connections or `bssh add <name> <host>` to create one",
@@ -49,6 +59,17 @@ fn suggestion_for(error: &anyhow::Error) -> Option<&'static str> {
 
     if error_contains(error, "permission denied") {
         return Some("check file permissions and ownership for the path shown above");
+    }
+
+    if error_contains(error, "no command supplied") {
+        return Some("pass a remote command after `--`, e.g. `bssh exec web-prod -- uptime`");
+    }
+
+    if error_contains(error, "invalid encrypted payload")
+        || error_contains(error, "wrong passphrase")
+        || error_contains(error, "corrupted file")
+    {
+        return Some("check the passphrase or re-export with `bssh export --passphrase <secret>`");
     }
 
     None

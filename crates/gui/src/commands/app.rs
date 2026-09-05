@@ -31,9 +31,9 @@ pub fn get_env_status() -> EnvStatus {
     let ssh_auth_sock = std::env::var("SSH_AUTH_SOCK").ok();
     let krb5_ccname = std::env::var("KRB5CCNAME").ok();
 
-    let ssh_agent_available = ssh_auth_sock.as_deref().is_some_and(|s| {
-        std::path::Path::new(s).exists()
-    });
+    let ssh_agent_available = ssh_auth_sock
+        .as_deref()
+        .is_some_and(|s| std::path::Path::new(s).exists());
 
     let kerberos_available = krb5_ccname.is_some();
 

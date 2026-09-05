@@ -34,6 +34,7 @@
       <button
         type="button"
         role="switch"
+        aria-label="Toggle SFTP File Browser"
         aria-checked={settings.enable_sftp !== false}
         onclick={() => { settings.enable_sftp = settings.enable_sftp === false ? true : false; onSave(); }}
         class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent/30
@@ -42,7 +43,7 @@
         <span
           class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ease-in-out
             {settings.enable_sftp !== false ? 'translate-x-5' : 'translate-x-0'}"
-        />
+        ></span>
       </button>
     </div>
 
@@ -63,6 +64,7 @@
       <button
         type="button"
         role="switch"
+        aria-label="Toggle Tunnel Studio"
         aria-checked={settings.enable_tunneling !== false}
         onclick={() => { settings.enable_tunneling = settings.enable_tunneling === false ? true : false; onSave(); }}
         class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent/30
@@ -71,7 +73,7 @@
         <span
           class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ease-in-out
             {settings.enable_tunneling !== false ? 'translate-x-5' : 'translate-x-0'}"
-        />
+        ></span>
       </button>
     </div>
   </div>

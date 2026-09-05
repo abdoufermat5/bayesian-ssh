@@ -147,12 +147,13 @@ pub fn spawn_pty(
     // Spawn inside a fresh PTY via the shared module. It inherits env vars so
     // Kerberos tickets (KRB5CCNAME) and ssh-agent (SSH_AUTH_SOCK) are passed
     // down, and forces TERM=xterm-256color for xterm.js compatibility.
-    let spawned = bayesian_ssh::services::pty::spawn(bayesian_ssh::services::pty::PtySpawnOptions {
-        cmd_name,
-        args,
-        rows: bayesian_ssh::services::pty::DEFAULT_ROWS,
-        cols: bayesian_ssh::services::pty::DEFAULT_COLS,
-    })?;
+    let spawned =
+        bayesian_ssh::services::pty::spawn(bayesian_ssh::services::pty::PtySpawnOptions {
+            cmd_name,
+            args,
+            rows: bayesian_ssh::services::pty::DEFAULT_ROWS,
+            cols: bayesian_ssh::services::pty::DEFAULT_COLS,
+        })?;
 
     let child = spawned.child;
 

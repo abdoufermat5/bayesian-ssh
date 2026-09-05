@@ -59,14 +59,22 @@ pub fn find_ssh_agent_socket() -> Option<String> {
             if !dir.is_dir() {
                 continue;
             }
-            let name = dir.file_name().unwrap_or_default().to_string_lossy().to_string();
+            let name = dir
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
             if !name.starts_with("ssh-") {
                 continue;
             }
             if let Ok(files) = std::fs::read_dir(&dir) {
                 for f in files.flatten() {
                     let fp = f.path();
-                    let fname = fp.file_name().unwrap_or_default().to_string_lossy().to_string();
+                    let fname = fp
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string();
                     if fname.starts_with("agent.") {
                         let path_str = fp.to_string_lossy().to_string();
                         if is_valid_socket(&path_str) {
@@ -122,9 +130,7 @@ pub fn find_ssh_agent_socket() -> Option<String> {
     }
 
     // 4. Fallback to GPG agent SSH socket bridge if no standard SSH agent is running
-    let mut gpg_candidates = vec![
-        format!("{runtime_dir}/gnupg/S.gpg-agent.ssh"),
-    ];
+    let mut gpg_candidates = vec![format!("{runtime_dir}/gnupg/S.gpg-agent.ssh")];
     if let Some(home) = dirs::home_dir() {
         gpg_candidates.push(format!("{}/.gnupg/S.gpg-agent.ssh", home.to_string_lossy()));
     }
@@ -139,5 +145,7 @@ pub fn find_ssh_agent_socket() -> Option<String> {
 
 #[cfg(not(unix))]
 pub fn find_ssh_agent_socket() -> Option<String> {
-    std::env::var("SSH_AUTH_SOCK").ok().filter(|s| is_valid_socket(s))
+    std::env::var("SSH_AUTH_SOCK")
+        .ok()
+        .filter(|s| is_valid_socket(s))
 }

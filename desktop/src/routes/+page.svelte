@@ -27,6 +27,7 @@
   import BatchExecModal from "$lib/components/modals/BatchExecModal.svelte";
   import QuitConfirmModal from "$lib/components/modals/QuitConfirmModal.svelte";
   import AppLoader from "$lib/components/AppLoader.svelte";
+  import CommandPalette from "$lib/components/CommandPalette.svelte";
   import Toast from "$lib/components/Toast.svelte";
   import { invoke } from "@tauri-apps/api/core";
 
@@ -83,12 +84,19 @@
   let showBatchExecModal = $state(false);
   let showQuitConfirmModal = $state(false);
   let showSnippetsModal = $state(false);
+  let showCommandPalette = $state(false);
 
   function handleKeydownWithHelp(e: KeyboardEvent) {
     const isEditingInput =
       document.activeElement?.tagName === "INPUT" ||
       document.activeElement?.tagName === "TEXTAREA" ||
       document.activeElement?.getAttribute("contenteditable") === "true";
+
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+      e.preventDefault();
+      showCommandPalette = !showCommandPalette;
+      return;
+    }
 
     if (
       (e.key === "?" && !isEditingInput) ||
@@ -208,6 +216,7 @@
     activeEnv={appState.activeEnv}
     onOpenAbout={() => (showAboutModal = true)}
     onOpenShortcuts={() => (showShortcutsModal = true)}
+    onOpenCommandPalette={() => (showCommandPalette = true)}
   />
 
   <div class="flex flex-1 min-h-0 w-full bg-surface overflow-hidden">
@@ -247,155 +256,56 @@
 
     <main class="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
       <!-- Topbar -->
+      <!-- Executive Topbar -->
       <header
-        class="relative z-30 shrink-0 h-[var(--topbar-h)] border-b border-border flex items-center justify-between gap-3 px-5 bg-surface"
+        class="relative z-30 shrink-0 h-[var(--topbar-h)] border-b border-border flex items-center justify-between gap-4 px-6 bg-surface select-none"
       >
-        <div class="flex items-center gap-2.5 shrink-0 min-w-0">
-          {#if appState.activeTab !== "terminals"}
-            <div class="relative flex items-center bg-surface-input border border-border rounded-lg px-3 py-1.5 w-[280px] transition-colors duration-150 focus-within:border-border-focus focus-within:shadow-[0_0_0_2px_var(--color-accent-muted)]">
-              <Search class="text-muted mr-2 shrink-0" size={16} />
-              <input
-                type="text"
-                placeholder="Search host, alias, or tag... (Press '/' to focus)"
-                bind:value={appState.searchQuery}
-                onkeydown={(e) => {
-                  if (e.key === "Escape") {
-                    appState.searchQuery = "";
-                    (e.target as HTMLInputElement).blur();
-                  }
-                }}
-                class="search-input bg-transparent border-none text-primary outline-none w-full text-xs font-inherit"
-              />
-              {#if appState.searchQuery}
-                <button
-                  type="button"
-                  onclick={() => (appState.searchQuery = "")}
-                  class="bg-transparent border-none text-muted hover:text-primary cursor-pointer flex p-0.5 rounded-full shrink-0 transition-colors outline-none ml-1"
-                  title="Clear search"
-                >
-                  <X size={12} />
-                </button>
-              {/if}
-
-              {#if appState.activeTab !== "connections" && appState.searchQuery.trim().length > 0}
-                <div
-                  class="absolute top-full left-0 mt-1.5 w-[320px] bg-surface-raised border border-border rounded-xl shadow-xl z-50 py-1.5 flex flex-col gap-0.5 max-h-[300px] overflow-y-auto"
-                >
-                  {#if appState.connections.length > 0}
-                    <div class="px-3 py-1 text-[10px] font-bold text-muted uppercase tracking-wider border-b border-border/40 pb-1.5 mb-1 flex items-center gap-1">
-                      <Search size={10} />
-                      <span>Search Results ({appState.connections.length})</span>
-                    </div>
-                    {#each appState.connections as conn}
-                      <div
-                        class="flex items-center justify-between gap-3 px-3 py-1.5 hover:bg-white/[0.03] transition-colors duration-100 group"
-                      >
-                        <div class="flex flex-col min-w-0">
-                          <span class="text-xs font-semibold text-primary overflow-hidden text-ellipsis whitespace-nowrap">{conn.name}</span>
-                          <span class="text-[10px] text-muted font-mono overflow-hidden text-ellipsis whitespace-nowrap">
-                            {conn.user}@{conn.host}:{conn.port}
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          onclick={async () => {
-                            appState.searchQuery = "";
-                            await appState.handleConnect(conn);
-                          }}
-                          class="bg-accent/10 hover:bg-accent text-accent hover:text-white border-none py-1 px-2.5 rounded-md text-[10px] font-semibold cursor-pointer transition-all duration-100 shrink-0"
-                        >
-                          Connect
-                        </button>
-                      </div>
-                    {/each}
-                  {:else}
-                    <div class="px-3 py-4 text-center text-xs text-muted">
-                      No matching hosts found
-                    </div>
-                  {/if}
-                </div>
-              {/if}
-            </div>
-
-            {#if appState.activeTab === "connections"}
-              <div class="flex border border-border rounded-lg p-0.5 bg-white/[0.02]">
-                <button
-                  class="bg-transparent border-none text-muted p-1 rounded-md cursor-pointer flex transition-all duration-150 hover:text-secondary class:active={appState.viewMode === 'list' ? 'text-primary bg-white/10' : ''}"
-                  class:active={appState.viewMode === "list"}
-                  onclick={() => (appState.viewMode = "list")}
-                  title="List View"
-                >
-                  <List size={16} />
-                </button>
-                <button
-                  class="bg-transparent border-none text-muted p-1 rounded-md cursor-pointer flex transition-all duration-150 hover:text-secondary class:active={appState.viewMode === 'grid' ? 'text-primary bg-white/10' : ''}"
-                  class:active={appState.viewMode === "grid"}
-                  onclick={() => (appState.viewMode = "grid")}
-                  title="Grid View"
-                >
-                  <LayoutGrid size={16} />
-                </button>
-              </div>
-            {/if}
-          {:else}
-            <span class="text-xs font-semibold text-secondary">Active SSH Sessions</span>
-            {#if terminalState.externalSessionCount > 0}
-              <button
-                type="button"
-                class="inline-flex items-center gap-1.25 ml-2.5 py-1 px-2.5 rounded-full border border-accent/25 bg-accent/6 text-accent text-[11px] font-semibold cursor-pointer transition-colors duration-150 hover:bg-accent/12"
-                onclick={appState.openSessionManager}
-              >
-                <Layers size={13} />
-                {terminalState.externalSessionCount} away
-              </button>
-            {/if}
+        <!-- Left: Context / View Title -->
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="text-sm font-bold text-primary tracking-tight capitalize">
+            {appState.activeTab === "connections" ? "Hosts" : appState.activeTab}
+          </span>
+          {#if appState.activeTab === "terminals" && terminalState.totalSessionCount > 0}
+            <span class="badge-pill bg-accent/15 text-accent border border-accent/30 text-[10px]">
+              {terminalState.count} active · {terminalState.externalSessionCount} away
+            </span>
           {/if}
         </div>
 
-        <!-- Quick actions (simplified to avoid duplication) -->
-        <div class="flex items-center gap-1.5 flex-1 justify-center min-w-0 overflow-x-auto scrollbar-none">
-          {#if terminalState.totalSessionCount > 0}
-            <button
-              type="button"
-              class="inline-flex items-center gap-1.25 py-1.25 px-2.5 rounded-full border border-border bg-white/[0.02] text-muted text-[11px] font-medium cursor-pointer whitespace-nowrap shrink-0 transition-colors duration-150 hover:border-border-hover hover:text-secondary hover:bg-white/[0.04] class:highlight={appState.activeTab !== 'terminals' ? 'border-accent/20 text-accent' : ''}"
-              class:highlight={appState.activeTab !== "terminals"}
-              onclick={appState.goToTerminals}
-              title="Open terminal tabs"
-            >
-              <TerminalSquare size={14} />
-              <span>Tabs ({terminalState.count})</span>
-            </button>
-          {/if}
+        <!-- Center: Spotlight Command Palette Trigger -->
+        <button
+          type="button"
+          class="flex items-center justify-between gap-3 px-3.5 py-1.5 rounded-xl border border-border bg-surface-input/50 hover:bg-surface-input hover:border-accent/40 text-muted hover:text-primary transition-all cursor-pointer w-72 max-w-sm text-xs shadow-sm"
+          onclick={() => (showCommandPalette = true)}
+          title="Search hosts or commands (⌘K)"
+        >
+          <div class="flex items-center gap-2">
+            <Search size={13} class="text-accent" />
+            <span class="text-xs text-muted">Search hosts, commands...</span>
+          </div>
+          <span class="kbd text-[10px]">⌘K</span>
+        </button>
 
-          {#if terminalState.externalSessionCount > 0}
-            <button
-              type="button"
-              class="inline-flex items-center gap-1.25 py-1.25 px-2.5 rounded-full border border-accent/25 bg-accent/6 text-accent text-[11px] font-medium cursor-pointer whitespace-nowrap shrink-0 transition-colors duration-150 hover:border-accent/35 hover:text-accent hover:bg-accent/10"
-              onclick={appState.openSessionManager}
-              title="Manage background and pop-out sessions"
-            >
-              <Layers size={14} />
-              <span>Sessions ({terminalState.externalSessionCount})</span>
-            </button>
-          {/if}
-        </div>
-
-        <!-- Action buttons -->
+        <!-- Right: Actions -->
         <div class="flex items-center gap-2 shrink-0">
-          {#if terminalState.totalSessionCount > 0}
+          {#if appState.activeTab !== "terminals" && terminalState.totalSessionCount > 0}
             <button
-              class="bg-transparent border border-danger/25 text-error py-1.5 px-3.5 rounded-lg font-semibold cursor-pointer inline-flex items-center gap-1.5 text-xs whitespace-nowrap transition-all duration-150 hover:bg-danger/8 hover:border-danger/40 hover:text-red-200"
-              onclick={appState.requestCloseAllSessions}
+              type="button"
+              class="inline-flex items-center gap-1.5 py-1.5 px-2.5 rounded-lg border border-accent/30 bg-accent/10 text-accent text-xs font-semibold cursor-pointer hover:bg-accent/20 transition-colors"
+              onclick={appState.goToTerminals}
+              title="Switch to active terminal sessions"
             >
-              <OctagonX size={16} />
-              <span>Close all ({terminalState.totalSessionCount})</span>
+              <TerminalSquare size={13} />
+              <span>Terminals ({terminalState.totalSessionCount})</span>
             </button>
           {/if}
+
           <button
-            class="bg-accent border-none text-white py-1.5 px-3.5 rounded-lg font-semibold cursor-pointer inline-flex items-center gap-1.5 text-xs whitespace-nowrap transition-colors duration-150 hover:bg-accent-hover"
+            type="button"
+            class="btn btn-primary shadow-sm"
             onclick={appState.openAddModal}
           >
-            <Plus size={16} />
+            <Plus size={14} />
             <span>New Server</span>
           </button>
         </div>
@@ -633,4 +543,30 @@
       send();
     }
   }}
+/>
+
+<CommandPalette
+  open={showCommandPalette}
+  connections={appState.connections}
+  activeTab={appState.activeTab}
+  settings={appState.settings}
+  onClose={() => (showCommandPalette = false)}
+  onSelectTab={appState.handleTabChange}
+  onConnectHost={appState.handleConnect}
+  onOpenAddModal={appState.openAddModal}
+  onOpenBatchExec={() => (showBatchExecModal = true)}
+  onPingAll={() => {
+    invoke("ping_all_connections").catch(() => {});
+  }}
+  onFixPermissions={async () => {
+    try {
+      const fixed = await invoke("fix_security_permissions");
+      notify(`Repaired ${fixed} key permissions`, "success");
+    } catch (e) {
+      notify(`Fix failed: ${e}`, "error");
+    }
+  }}
+  onOpenKeys={() => appState.handleTabChange("keys")}
+  onOpenSessionManager={appState.openSessionManager}
+  onSelectTheme={appState.handleThemeChange}
 />

@@ -5,25 +5,22 @@
     ChevronRight,
     Copy,
     File,
+    FileArchive,
     FileCode,
     FileText,
     Folder,
     FolderGit2,
-    FolderOpen,
     HardDrive,
     Home,
     Image,
     LayoutGrid,
     List,
-    Lock,
     Power,
     RefreshCw,
     Search,
     Server,
     Shield,
-    Sparkles,
     Terminal,
-    Upload,
   } from "lucide-svelte";
   import { invoke } from "@tauri-apps/api/core";
   import type { Connection } from "$lib/types";
@@ -45,7 +42,7 @@
 
   let { connections }: Props = $props();
 
-  let selectedConnection = $state<Connection | null>(connections.length > 0 ? connections[0] : null);
+  let selectedConnectionId = $state<string | null>(null);
   let currentPath = $state<string>("/");
   let pathInput = $state<string>("/");
   let filterQuery = $state<string>("");
@@ -55,6 +52,13 @@
   let loading = $state<boolean>(false);
   let errorMsg = $state<string | null>(null);
   let copiedPath = $state<string | null>(null);
+
+  const selectedConnection = $derived.by(() => {
+    if (selectedConnectionId) {
+      return connections.find((c) => c.id === selectedConnectionId) ?? connections[0] ?? null;
+    }
+    return connections.length > 0 ? connections[0] : null;
+  });
 
   const quickBookmarks = [
     { label: "Root", path: "/", icon: HardDrive },
@@ -118,45 +122,39 @@
   }
 
   function handleConnectClick() {
-    void loadDirectory(pathInput || "/");
-  }
-
-  function handleDisconnect() {
-    isConnected = false;
-    entries = [];
-    errorMsg = null;
-  }
-
-  function handleNavigate(path: string) {
-    void loadDirectory(path);
-  }
-
-  function handleNavigateUp() {
-    if (currentPath === "/" || currentPath === ".") return;
-    const parts = currentPath.split("/").filter(Boolean);
-    parts.pop();
-    const parentPath = "/" + parts.join("/");
-    handleNavigate(parentPath || "/");
-  }
-
-  function handleSelectConnection(name: string) {
-    const conn = connections.find((c) => c.name === name);
-    if (conn) {
-      selectedConnection = conn;
-      currentPath = "/";
-      pathInput = "/";
+    if (isConnected) {
       isConnected = false;
       entries = [];
       errorMsg = null;
+      notify("Disconnected from SFTP session", "info");
+    } else {
+      loadDirectory(currentPath);
     }
   }
 
-  function copyPathToClipboard(path: string) {
-    navigator.clipboard.writeText(path).then(() => {
-      copiedPath = path;
-      setTimeout(() => (copiedPath = null), 2000);
-      notify(`Copied path: ${path}`, "info");
-    });
+  function navigateUp() {
+    if (currentPath === "/" || currentPath === ".") return;
+    const parts = currentPath.split("/").filter(Boolean);
+    parts.pop();
+    const parent = parts.length === 0 ? "/" : "/" + parts.join("/");
+    loadDirectory(parent);
+  }
+
+  function handleEntryClick(entry: RemoteFileEntry) {
+    if (entry.is_dir) {
+      loadDirectory(entry.path);
+    } else {
+      copyPath(entry.path);
+    }
+  }
+
+  function copyPath(p: string) {
+    navigator.clipboard.writeText(p);
+    copiedPath = p;
+    notify(`Copied remote path: ${p}`, "success");
+    setTimeout(() => {
+      if (copiedPath === p) copiedPath = null;
+    }, 2000);
   }
 
   function formatBytes(bytes: number): string {
@@ -167,417 +165,270 @@
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
   }
 
-  function getFileTypeStyle(entry: RemoteFileEntry) {
-    if (entry.is_dir) {
-      return {
-        icon: Folder,
-        colorClass: "text-warning bg-amber-400/10 border-amber-400/20",
-        badge: "Directory",
-      };
+  function getFileIcon(entry: RemoteFileEntry) {
+    if (entry.is_dir) return Folder;
+    const ext = entry.name.split(".").pop()?.toLowerCase();
+    if (["js", "ts", "py", "rs", "go", "json", "yaml", "yml", "toml", "html", "css"].includes(ext ?? "")) {
+      return FileCode;
     }
-    const name = entry.name.toLowerCase();
-    if (name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".svg") || name.endsWith(".webp") || name.endsWith(".gif")) {
-      return {
-        icon: Image,
-        colorClass: "text-purple-400 bg-purple-400/10 border-purple-400/20",
-        badge: "Image",
-      };
+    if (["zip", "tar", "gz", "bz2", "xz", "7z"].includes(ext ?? "")) {
+      return FileArchive;
     }
-    if (name.endsWith(".json") || name.endsWith(".js") || name.endsWith(".ts") || name.endsWith(".py") || name.endsWith(".rs") || name.endsWith(".html") || name.endsWith(".css") || name.endsWith(".sh")) {
-      return {
-        icon: FileCode,
-        colorClass: "text-cyan-400 bg-cyan-400/10 border-cyan-400/20",
-        badge: "Code",
-      };
+    if (["png", "jpg", "jpeg", "svg", "webp", "gif"].includes(ext ?? "")) {
+      return Image;
     }
-    if (name.endsWith(".txt") || name.endsWith(".log") || name.endsWith(".md") || name.endsWith(".conf") || name.endsWith(".yaml") || name.endsWith(".yml")) {
-      return {
-        icon: FileText,
-        colorClass: "text-running bg-running/10 border-running/20",
-        badge: "Doc",
-      };
-    }
-    if (name.endsWith(".zip") || name.endsWith(".tar") || name.endsWith(".gz") || name.endsWith(".7z") || name.endsWith(".rar")) {
-      return {
-        icon: HardDrive,
-        colorClass: "text-error bg-rose-400/10 border-error/20",
-        badge: "Archive",
-      };
-    }
-    return {
-      icon: File,
-      colorClass: "text-secondary bg-surface-input border-border",
-      badge: "File",
-    };
+    return File;
   }
 </script>
 
-<div class="flex flex-col flex-1 min-h-0 w-full bg-surface p-5 gap-4">
-  <!-- Top Header Bar -->
-  <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shrink-0 pb-1 border-b border-border/40">
-    <div class="flex items-center gap-3">
-      <div class="p-2.5 rounded-xl bg-accent/10 border border-accent/20 text-accent shadow-xs">
-        <HardDrive size={22} />
+<div class="flex flex-col flex-1 min-h-0 w-full overflow-hidden bg-surface select-none">
+  <!-- SFTP Header Control Bar -->
+  <div class="px-6 py-4 border-b border-border flex items-center justify-between gap-4 shrink-0 bg-surface-input/30 flex-wrap">
+    <div class="flex items-center gap-3 min-w-0">
+      <div class="w-8 h-8 rounded-xl bg-accent/15 border border-accent/30 flex items-center justify-center text-accent shrink-0">
+        <HardDrive size={18} />
       </div>
       <div>
-        <h2 class="text-base font-bold text-primary m-0 flex items-center gap-2">
-          <span>SFTP Graphical Explorer</span>
+        <h2 class="text-sm font-bold text-primary tracking-tight m-0 flex items-center gap-2">
+          SFTP File Explorer
           {#if isConnected}
-            <span class="px-2 py-0.5 rounded-full bg-success/10 border border-success/20 text-running text-[10px] font-semibold flex items-center gap-1">
-              <span class="w-1.5 h-1.5 rounded-full bg-running animate-pulse"></span>
+            <span class="badge-pill bg-running/15 text-running border border-running/30 text-[10px]">
               Connected
-            </span>
-          {:else}
-            <span class="px-2 py-0.5 rounded-full bg-surface-input border border-border text-muted text-[10px] font-semibold">
-              Idle
             </span>
           {/if}
         </h2>
-        <p class="text-xs text-muted mt-0.5 m-0">
-          Browse remote filesystems, inspect POSIX permissions, and manage remote directory structure over SSH
-        </p>
+        <p class="text-[11px] text-muted m-0">Remote file browser and path manager over SSH</p>
       </div>
     </div>
 
-    <!-- Host Connection Selector -->
-    <div class="w-72 shrink-0 flex items-center gap-2">
-      <CustomSelect
-        id="sftp-connection-select"
-        options={connections.map((c) => ({ value: c.name, label: `${c.name} (${c.user}@${c.host})` }))}
-        value={selectedConnection?.name ?? ""}
-        onChange={handleSelectConnection}
-      />
+    <!-- Target Server Picker & Connect Toggle -->
+    <div class="flex items-center gap-2">
+      <div class="w-56">
+        <CustomSelect
+          options={connections.map((c) => ({ value: c.id, label: `${c.name} (${c.user}@${c.host})` }))}
+          value={selectedConnection?.id ?? ""}
+          onChange={(val) => {
+            selectedConnectionId = val;
+            isConnected = false;
+            entries = [];
+          }}
+        />
+      </div>
+
+      <button
+        type="button"
+        class="btn {isConnected ? 'btn-danger' : 'btn-primary'} shadow-sm"
+        onclick={handleConnectClick}
+        disabled={!selectedConnection || loading}
+      >
+        {#if loading}
+          <RefreshCw size={13} class="animate-spin" />
+          <span>Connecting...</span>
+        {:else if isConnected}
+          <Power size={13} />
+          <span>Disconnect</span>
+        {:else}
+          <Power size={13} />
+          <span>Connect SFTP</span>
+        {/if}
+      </button>
+
+      {#if isConnected}
+        <button
+          type="button"
+          class="btn-icon p-1.5 border border-border rounded-lg bg-surface hover:text-primary"
+          onclick={() => loadDirectory(currentPath)}
+          disabled={loading}
+          title="Refresh current folder"
+        >
+          <RefreshCw size={14} class={loading ? "animate-spin" : ""} />
+        </button>
+      {/if}
     </div>
   </div>
 
-  {#if !isConnected && !loading && !errorMsg}
-    <!-- Initial Idle Lander Card (No auto-connection!) -->
-    <div class="flex-1 flex flex-col items-center justify-center p-8 bg-surface-card border border-border rounded-xl text-center max-w-xl mx-auto my-auto gap-5 shadow-sm">
-      <div class="p-4 rounded-2xl bg-accent/10 border border-accent/20 text-accent">
-        <FolderOpen size={40} />
-      </div>
-
-      <div class="flex flex-col gap-1 max-w-md">
-        <h3 class="text-lg font-bold text-primary m-0">SFTP Remote Browser</h3>
-        <p class="text-xs text-muted m-0">
-          Select an SSH server host and click <strong class="text-primary">Connect & Browse</strong> to open remote filesystem.
-        </p>
-      </div>
-
-      {#if selectedConnection}
-        <div class="w-full bg-surface-terminal p-3.5 rounded-xl border border-border flex items-center justify-between font-mono text-xs text-primary">
-          <div class="flex items-center gap-2 min-w-0">
-            <Server size={15} class="text-accent shrink-0" />
-            <span class="font-semibold truncate">{selectedConnection.name}</span>
-          </div>
-          <span class="text-muted text-[11px] font-mono truncate">
-            {selectedConnection.user}@{selectedConnection.host}:{selectedConnection.port}
-          </span>
-        </div>
-      {/if}
-
-      <!-- Path Input & Connect Button -->
-      <form
-        class="w-full flex flex-col sm:flex-row items-center gap-2.5"
-        onsubmit={(e) => {
-          e.preventDefault();
-          handleConnectClick();
-        }}
-      >
-        <input
-          type="text"
-          bind:value={pathInput}
-          placeholder="Starting remote directory path (/ or ~)..."
-          class="flex-1 w-full bg-surface-input border border-border text-primary py-2.5 px-3.5 rounded-xl outline-none text-xs font-mono transition-all focus:border-border-focus"
-        />
+  {#if isConnected}
+    <!-- Path Breadcrumb & Bookmarks Bar -->
+    <div class="px-6 py-2 border-b border-border/80 bg-surface-input/10 flex items-center justify-between gap-3 shrink-0 flex-wrap">
+      <!-- Breadcrumb Bar -->
+      <div class="flex items-center gap-1.5 flex-1 min-w-[280px]">
         <button
-          type="submit"
-          class="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-accent text-white font-semibold text-xs cursor-pointer hover:opacity-90 transition-all shadow-sm flex items-center justify-center gap-2 whitespace-nowrap"
+          type="button"
+          class="p-1 rounded-md text-muted hover:text-primary hover:bg-surface-hover border border-border cursor-pointer transition-colors bg-surface"
+          onclick={navigateUp}
+          disabled={currentPath === "/" || currentPath === "."}
+          title="Go to parent directory"
         >
-          <FolderOpen size={16} />
-          <span>Connect & Browse</span>
+          <ArrowLeft size={13} />
         </button>
-      </form>
-    </div>
-  {:else}
-    <!-- Explorer Body Layout -->
-    <div class="flex-1 min-h-0 flex gap-4">
-      <!-- Left Bookmark & Host Sidebar -->
-      <div class="w-56 shrink-0 bg-surface-card border border-border rounded-xl p-3.5 flex flex-col gap-4 hidden lg:flex">
-        <!-- Connection Card -->
-        {#if selectedConnection}
-          <div class="bg-surface-terminal p-3 rounded-lg border border-border flex flex-col gap-2">
-            <div class="flex items-center justify-between">
-              <span class="text-[11px] font-bold text-primary truncate">{selectedConnection.name}</span>
-              <Server size={13} class="text-accent shrink-0" />
-            </div>
-            <span class="font-mono text-[10px] text-muted truncate">
-              {selectedConnection.user}@{selectedConnection.host}:{selectedConnection.port}
-            </span>
-            <button
-              type="button"
-              class="mt-1 w-full py-1 rounded bg-surface-input border border-border text-muted hover:text-danger hover:border-danger/30 text-[10px] font-semibold cursor-pointer transition-colors flex items-center justify-center gap-1"
-              onclick={handleDisconnect}
-            >
-              <Power size={11} />
-              <span>Disconnect</span>
-            </button>
-          </div>
-        {/if}
 
-        <!-- Quick Bookmarks -->
-        <div class="flex flex-col gap-1">
-          <span class="text-[10px] font-bold uppercase tracking-wider text-muted px-1 mb-1">Bookmarks</span>
-          {#each quickBookmarks as bm (bm.path)}
+        <!-- Breadcrumbs -->
+        <div class="flex items-center gap-1 text-xs font-mono bg-surface-input border border-border rounded-lg px-2.5 py-1 max-w-lg overflow-x-auto scrollbar-none">
+          {#each pathBreadcrumbs as crumb, i}
+            {#if i > 0}
+              <ChevronRight size={11} class="text-muted shrink-0" />
+            {/if}
             <button
               type="button"
-              class="flex items-center gap-2.5 w-full px-2.5 py-1.5 rounded-lg text-xs font-medium text-secondary hover:text-primary hover:bg-white/[0.04] transition-all cursor-pointer border border-transparent hover:border-border/60"
-              onclick={() => handleNavigate(bm.path)}
+              class="text-secondary hover:text-primary transition-colors cursor-pointer border-none bg-transparent whitespace-nowrap"
+              onclick={() => loadDirectory(crumb.path)}
             >
-              <bm.icon size={14} class="text-accent/80" />
-              <span>{bm.label}</span>
+              {crumb.label}
             </button>
           {/each}
         </div>
       </div>
 
-      <!-- Main File Pane -->
-      <div class="flex-1 min-w-0 flex flex-col gap-3">
-        <!-- Interactive Action & Breadcrumb Bar -->
-        <div class="bg-surface-card border border-border rounded-xl p-2.5 flex items-center justify-between gap-3 shrink-0">
-          <!-- Left: Up button & Interactive Breadcrumb Pills -->
-          <div class="flex items-center gap-2 min-w-0 flex-1">
-            <button
-              type="button"
-              class="p-1.5 rounded-lg bg-surface-input border border-border text-secondary hover:text-primary hover:border-border-hover cursor-pointer transition-colors disabled:opacity-40 shrink-0"
-              disabled={currentPath === "/" || currentPath === "." || loading}
-              onclick={handleNavigateUp}
-              title="Go to parent directory"
-            >
-              <ArrowLeft size={15} />
-            </button>
-
-            <!-- Breadcrumb Trail -->
-            <div class="flex items-center gap-1 overflow-x-auto scrollbar-none py-0.5">
-              {#each pathBreadcrumbs as crumb, i (crumb.path)}
-                {#if i > 0}
-                  <ChevronRight size={12} class="text-muted shrink-0" />
-                {/if}
-                <button
-                  type="button"
-                  class="px-2 py-1 rounded-md text-xs font-mono font-medium transition-all cursor-pointer whitespace-nowrap
-                    {i === pathBreadcrumbs.length - 1 ? 'bg-accent/15 text-accent border border-accent/30 font-semibold' : 'text-secondary hover:text-primary hover:bg-white/5'}"
-                  onclick={() => handleNavigate(crumb.path)}
-                >
-                  {crumb.label}
-                </button>
-              {/each}
-            </div>
-          </div>
-
-          <!-- Right: Search, Refresh & View Mode Toggle -->
-          <div class="flex items-center gap-2 shrink-0">
-            <div class="relative w-44 hidden md:block">
-              <Search size={13} class="absolute left-2.5 top-2.5 text-muted" />
-              <input
-                type="text"
-                placeholder="Search files..."
-                bind:value={filterQuery}
-                class="w-full bg-surface-input border border-border text-primary py-1.5 pl-8 pr-3 rounded-lg outline-none text-xs transition-all focus:border-border-focus"
-              />
-            </div>
-
-            <!-- View Mode Toggle -->
-            <div class="flex border border-border rounded-lg p-0.5 bg-surface-input">
-              <button
-                type="button"
-                class="p-1 rounded-md cursor-pointer transition-all text-muted hover:text-primary {viewMode === 'list' ? 'bg-accent text-white shadow-xs' : ''}"
-                onclick={() => (viewMode = "list")}
-                title="List View"
-              >
-                <List size={14} />
-              </button>
-              <button
-                type="button"
-                class="p-1 rounded-md cursor-pointer transition-all text-muted hover:text-primary {viewMode === 'grid' ? 'bg-accent text-white shadow-xs' : ''}"
-                onclick={() => (viewMode = "grid")}
-                title="Grid View"
-              >
-                <LayoutGrid size={14} />
-              </button>
-            </div>
-
-            <button
-              type="button"
-              class="p-1.5 rounded-lg bg-surface-input border border-border text-secondary hover:text-primary hover:border-border-hover cursor-pointer transition-colors"
-              onclick={() => loadDirectory(currentPath)}
-              title="Refresh directory"
-            >
-              <RefreshCw size={15} class={loading ? "animate-spin text-accent" : ""} />
-            </button>
-          </div>
-        </div>
-
-        <!-- File Content Explorer Container -->
-        <div class="flex-1 min-h-0 bg-surface-terminal border border-border rounded-xl overflow-y-auto flex flex-col relative">
-          {#if loading}
-            <div class="flex-1 flex flex-col items-center justify-center p-8 text-center text-muted gap-3">
-              <RefreshCw size={32} class="animate-spin text-accent" />
-              <span class="text-xs font-medium">Fetching remote directory contents...</span>
-            </div>
-          {:else if errorMsg}
-            <div class="flex-1 flex flex-col items-center justify-center p-8 text-center text-error gap-2">
-              <Lock size={36} class="text-danger mb-1" />
-              <h4 class="text-sm font-bold m-0 text-primary">Unable to Access Remote Path</h4>
-              <p class="text-xs text-muted max-w-md m-0 font-mono bg-surface-input p-2.5 rounded border border-border leading-relaxed">{errorMsg}</p>
-              <div class="flex items-center gap-2 mt-2">
-                <button
-                  type="button"
-                  class="px-4 py-2 rounded-lg bg-surface-input border border-border text-primary text-xs font-semibold cursor-pointer hover:bg-white/5"
-                  onclick={() => handleNavigate("/")}
-                >
-                  Try Root Path ( / )
-                </button>
-                <button
-                  type="button"
-                  class="px-4 py-2 rounded-lg bg-accent text-white text-xs font-semibold cursor-pointer hover:opacity-90 shadow-sm"
-                  onclick={handleConnectClick}
-                >
-                  Retry Connection
-                </button>
-              </div>
-            </div>
-          {:else if filteredEntries.length === 0}
-            <div class="flex-1 flex flex-col items-center justify-center p-8 text-center text-muted gap-2">
-              <Folder size={36} class="text-muted/50 mb-1" />
-              <span class="text-xs font-semibold text-secondary">No files or directories found</span>
-            </div>
-          {:else if viewMode === "list"}
-            <!-- List View Table -->
-            <div class="w-full text-xs text-left">
-              <div class="grid grid-cols-12 gap-2 px-4 py-2.5 font-bold text-muted uppercase tracking-wider border-b border-border bg-surface-card/80 sticky top-0 backdrop-blur-md z-10 text-[10px]">
-                <span class="col-span-6 sm:col-span-5">Name</span>
-                <span class="col-span-2 hidden sm:block">Size</span>
-                <span class="col-span-3 hidden md:block">Permissions</span>
-                <span class="col-span-3 sm:col-span-2 md:col-span-2 text-right">Actions</span>
-              </div>
-
-              <div class="divide-y divide-border/40">
-                {#each filteredEntries as entry (entry.path)}
-                  {@const typeStyle = getFileTypeStyle(entry)}
-                  {@const IconComponent = typeStyle.icon}
-                  <div
-                    class="grid grid-cols-12 gap-2 px-4 py-2.5 items-center hover:bg-white/[0.04] transition-colors group cursor-pointer"
-                    onclick={() => entry.is_dir && handleNavigate(entry.path)}
-                    role="button"
-                    tabindex="0"
-                    onkeydown={(e) => e.key === "Enter" && entry.is_dir && handleNavigate(entry.path)}
-                  >
-                    <!-- Name & Color Icon Badge -->
-                    <div class="col-span-6 sm:col-span-5 flex items-center gap-2.5 min-w-0">
-                      <div class="p-1 rounded border shrink-0 {typeStyle.colorClass}">
-                        <IconComponent size={14} />
-                      </div>
-                      <span class="font-mono text-xs text-primary truncate font-medium group-hover:text-accent transition-colors">
-                        {entry.name}
-                      </span>
-                    </div>
-
-                    <!-- File Size -->
-                    <div class="col-span-2 hidden sm:block font-mono text-muted text-[11px]">
-                      {entry.is_dir ? "--" : formatBytes(entry.size)}
-                    </div>
-
-                    <!-- POSIX Permissions Badge -->
-                    <div class="col-span-3 hidden md:block font-mono text-[11px]">
-                      <span class="px-2 py-0.5 rounded bg-surface-input border border-border text-muted">
-                        {entry.permissions}
-                      </span>
-                    </div>
-
-                    <!-- Quick Row Actions -->
-                    <div class="col-span-3 sm:col-span-2 md:col-span-2 flex items-center justify-end gap-1" onclick={(e) => e.stopPropagation()} role="none">
-                      <button
-                        type="button"
-                        class="p-1.5 rounded text-muted hover:text-primary hover:bg-white/10 transition-colors"
-                        title="Copy remote path"
-                        onclick={() => copyPathToClipboard(entry.path)}
-                      >
-                        {#if copiedPath === entry.path}
-                          <Check size={14} class="text-running" />
-                        {:else}
-                          <Copy size={14} />
-                        {/if}
-                      </button>
-                    </div>
-                  </div>
-                {/each}
-              </div>
-            </div>
-          {:else}
-            <!-- Grid View Cards -->
-            <div class="p-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-              {#each filteredEntries as entry (entry.path)}
-                {@const typeStyle = getFileTypeStyle(entry)}
-                {@const IconComponent = typeStyle.icon}
-                <div
-                  class="bg-surface-card border border-border rounded-xl p-3 flex flex-col justify-between gap-3 hover:border-border-hover hover:shadow-md transition-all group cursor-pointer relative"
-                  onclick={() => entry.is_dir && handleNavigate(entry.path)}
-                  role="button"
-                  tabindex="0"
-                  onkeydown={(e) => e.key === "Enter" && entry.is_dir && handleNavigate(entry.path)}
-                >
-                  <div class="flex items-start justify-between gap-2">
-                    <div class="p-2 rounded-lg border {typeStyle.colorClass}">
-                      <IconComponent size={20} />
-                    </div>
-                    <span class="px-1.5 py-0.5 rounded bg-surface-input border border-border text-[9px] font-semibold text-muted">
-                      {typeStyle.badge}
-                    </span>
-                  </div>
-
-                  <div class="flex flex-col min-w-0">
-                    <span class="font-mono text-xs font-semibold text-primary truncate group-hover:text-accent transition-colors" title={entry.name}>
-                      {entry.name}
-                    </span>
-                    <span class="font-mono text-[10px] text-muted mt-0.5">
-                      {entry.is_dir ? "Directory" : formatBytes(entry.size)}
-                    </span>
-                  </div>
-
-                  <div class="flex items-center justify-between pt-2 border-t border-border/40 text-[10px] text-muted font-mono" onclick={(e) => e.stopPropagation()} role="none">
-                    <span>{entry.permissions}</span>
-                    <button
-                      type="button"
-                      class="p-1 rounded text-muted hover:text-primary transition-colors"
-                      title="Copy path"
-                      onclick={() => copyPathToClipboard(entry.path)}
-                    >
-                      {#if copiedPath === entry.path}
-                        <Check size={12} class="text-running" />
-                      {:else}
-                        <Copy size={12} />
-                      {/if}
-                    </button>
-                  </div>
-                </div>
-              {/each}
-            </div>
-          {/if}
-        </div>
-
-        <!-- Bottom Directory Summary Footer Bar -->
-        <div class="bg-surface-card border border-border rounded-xl px-4 py-2 flex items-center justify-between text-xs text-muted shrink-0">
-          <div class="flex items-center gap-3">
-            <span class="font-medium text-primary">{entries.length} items total</span>
-            <span>•</span>
-            <span>{summary.dirs} folders</span>
-            <span>•</span>
-            <span>{summary.files} files</span>
-          </div>
-          <span class="font-mono text-[11px] font-semibold text-accent">Total: {formatBytes(summary.totalSize)}</span>
-        </div>
+      <!-- Quick Bookmarks -->
+      <div class="flex items-center gap-1 overflow-x-auto scrollbar-none">
+        {#each quickBookmarks as bm}
+          <button
+            type="button"
+            class="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold text-muted hover:text-primary hover:bg-surface-hover border border-border/70 transition-colors cursor-pointer bg-surface"
+            onclick={() => loadDirectory(bm.path)}
+          >
+            <bm.icon size={11} />
+            <span>{bm.label}</span>
+          </button>
+        {/each}
       </div>
+
+      <!-- Search Filter in Directory -->
+      <div class="relative flex items-center bg-surface-input border border-border rounded-lg px-2 py-1 w-48">
+        <Search size={12} class="text-muted mr-1.5 shrink-0" />
+        <input
+          type="text"
+          placeholder="Filter files..."
+          bind:value={filterQuery}
+          class="bg-transparent border-none text-xs text-primary outline-none w-full placeholder:text-muted"
+        />
+      </div>
+    </div>
+
+    <!-- File Browser Table Area -->
+    <div class="flex-1 min-h-0 overflow-y-auto px-6 py-3 scrollbar-none">
+      {#if loading}
+        <div class="py-20 flex flex-col items-center justify-center text-muted gap-2">
+          <RefreshCw size={24} class="text-accent animate-spin" />
+          <span class="text-xs">Reading remote directory...</span>
+        </div>
+      {:else if errorMsg}
+        <div class="p-4 rounded-xl border border-error/30 bg-error/10 text-error text-xs">
+          <p class="font-bold mb-1">Failed to read directory</p>
+          <p class="font-mono">{errorMsg}</p>
+        </div>
+      {:else if filteredEntries.length > 0}
+        <div class="border border-border rounded-xl overflow-hidden bg-surface-input/30 shadow-sm">
+          <!-- Table Header -->
+          <div class="flex items-center px-4 py-2 bg-surface-input/80 border-b border-border text-[10px] font-bold text-muted uppercase tracking-wider">
+            <div class="flex-[4]">Name</div>
+            <div class="flex-[1.5]">Size</div>
+            <div class="flex-[1.5]">Permissions</div>
+            <div class="flex-[2] hidden sm:block">Modified</div>
+            <div class="w-16 text-right">Action</div>
+          </div>
+
+          <!-- Table Rows -->
+          <div class="divide-y divide-border/60">
+            {#each filteredEntries as entry}
+              {@const Icon = getFileIcon(entry)}
+              <div
+                class="flex items-center px-4 py-2 text-xs text-secondary hover:bg-white/[0.04] hover:text-primary transition-colors cursor-pointer group"
+                onclick={() => handleEntryClick(entry)}
+                role="row"
+                tabindex="0"
+                onkeydown={(e) => e.key === "Enter" && handleEntryClick(entry)}
+              >
+                <!-- File Name & Icon -->
+                <div class="flex-[4] flex items-center gap-2.5 min-w-0">
+                  <Icon
+                    size={15}
+                    class={entry.is_dir ? "text-accent shrink-0" : "text-muted shrink-0"}
+                  />
+                  <span class="truncate {entry.is_dir ? 'font-semibold text-primary' : 'font-normal'}">
+                    {entry.name}
+                  </span>
+                </div>
+
+                <!-- Size -->
+                <div class="flex-[1.5] font-mono text-[11px] text-muted">
+                  {entry.is_dir ? "—" : formatBytes(entry.size)}
+                </div>
+
+                <!-- Permissions -->
+                <div class="flex-[1.5] font-mono text-[10px] text-muted">
+                  <span class="px-1.5 py-0.5 rounded bg-surface border border-border/70">
+                    {entry.permissions || "rw-r--r--"}
+                  </span>
+                </div>
+
+                <!-- Modified Date -->
+                <div class="flex-[2] hidden sm:block font-mono text-[11px] text-muted truncate">
+                  {entry.modified || "—"}
+                </div>
+
+                <!-- Copy Path Action -->
+                <div class="w-16 flex justify-end">
+                  <button
+                    type="button"
+                    class="p-1 rounded text-muted hover:text-primary hover:bg-surface-hover transition-colors border-none bg-transparent cursor-pointer"
+                    onclick={(e) => {
+                      e.stopPropagation();
+                      copyPath(entry.path);
+                    }}
+                    title="Copy full remote path"
+                  >
+                    {#if copiedPath === entry.path}
+                      <Check size={12} class="text-running" />
+                    {:else}
+                      <Copy size={12} />
+                    {/if}
+                  </button>
+                </div>
+              </div>
+            {/each}
+          </div>
+        </div>
+      {:else}
+        <div class="py-16 flex flex-col items-center justify-center text-muted gap-2 border border-dashed border-border rounded-xl">
+          <Folder size={32} class="opacity-30" />
+          <p class="text-xs font-semibold text-primary">Empty Directory</p>
+          <p class="text-[11px]">No files or folders found in {currentPath}</p>
+        </div>
+      {/if}
+    </div>
+
+    <!-- Summary Footer -->
+    <div class="px-6 py-2 border-t border-border bg-surface-input/40 flex items-center justify-between text-[11px] text-muted shrink-0">
+      <div class="flex items-center gap-4">
+        <span>{summary.dirs} folders</span>
+        <span>{summary.files} files</span>
+        <span>Total: {formatBytes(summary.totalSize)}</span>
+      </div>
+      <div class="font-mono text-[10px]">
+        {currentPath}
+      </div>
+    </div>
+  {:else}
+    <!-- Not Connected Splash -->
+    <div class="flex-1 flex flex-col items-center justify-center p-12 text-center select-none">
+      <div class="w-16 h-16 rounded-2xl bg-accent/10 border border-accent/25 flex items-center justify-center text-accent mb-4 shadow-sm">
+        <HardDrive size={32} />
+      </div>
+      <h3 class="text-base font-bold text-primary mb-1.5">Remote File Browser</h3>
+      <p class="text-xs text-muted max-w-sm leading-relaxed mb-6">
+        Select an SSH host and connect to explore directories, inspect files, and copy remote paths directly within the application.
+      </p>
+      {#if selectedConnection}
+        <button
+          type="button"
+          class="btn btn-primary px-4 py-2"
+          onclick={handleConnectClick}
+        >
+          <Power size={14} />
+          <span>Connect to {selectedConnection.name}</span>
+        </button>
+      {/if}
     </div>
   {/if}
 </div>

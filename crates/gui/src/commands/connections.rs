@@ -1,5 +1,7 @@
 use super::get_db_and_config;
-use bayesian_ssh::models::Connection;
+use bayesian_ssh::models::{Connection, Session, SessionStatus};
+use chrono::Utc;
+use std::collections::HashMap;
 use uuid::Uuid;
 
 fn friendly_db_error(e: impl std::fmt::Display) -> String {
@@ -34,15 +36,17 @@ fn validate_host_field(field: &str, label: &str, allow_ipv6_brackets: bool) -> R
         if !trimmed.ends_with(']') {
             return Err(format!("{label} has an invalid bracketed IPv6 literal."));
         }
-        if trimmed[1..trimmed.len() - 1].contains('[') || trimmed[1..trimmed.len() - 1].contains(']')
+        if trimmed[1..trimmed.len() - 1].contains('[')
+            || trimmed[1..trimmed.len() - 1].contains(']')
         {
             return Err(format!("{label} has an invalid bracketed IPv6 literal."));
         }
         return Ok(());
     }
-    if trimmed.chars().any(|c| {
-        c.is_control() || INVALID_HOST_CHARS.contains(&c)
-    }) {
+    if trimmed
+        .chars()
+        .any(|c| c.is_control() || INVALID_HOST_CHARS.contains(&c))
+    {
         return Err(format!(
             "{label} contains invalid characters (spaces, quotes, shell metacharacters, or '@' are not allowed)."
         ));
@@ -58,7 +62,10 @@ fn validate_user_field(field: &str, label: &str) -> Result<(), String> {
     if trimmed.len() > 64 {
         return Err(format!("{label} is too long (max 64 characters)."));
     }
-    if trimmed.chars().any(|c| c.is_control() || INVALID_USER_CHARS.contains(&c)) {
+    if trimmed
+        .chars()
+        .any(|c| c.is_control() || INVALID_USER_CHARS.contains(&c))
+    {
         return Err(format!(
             "{label} contains invalid characters (spaces, quotes, shell metacharacters, or '@' are not allowed)."
         ));
@@ -77,7 +84,10 @@ fn validate_key_path_field(field: &Option<String>) -> Result<(), String> {
     if trimmed.len() > 4096 {
         return Err("Key path is too long.".to_string());
     }
-    if trimmed.chars().any(|c| c.is_control() || c == '\'' || c == '"' || c == '`' || c == '$') {
+    if trimmed
+        .chars()
+        .any(|c| c.is_control() || c == '\'' || c == '"' || c == '`' || c == '$')
+    {
         return Err("Key path contains invalid characters.".to_string());
     }
     Ok(())
@@ -256,7 +266,9 @@ pub async fn run_batch_command(
     timeout_secs: Option<u64>,
 ) -> Result<Vec<BatchExecHostResult>, String> {
     let (db, config) = get_db_and_config()?;
-    let all_conns = db.list_connections(None, false).map_err(|e| e.to_string())?;
+    let all_conns = db
+        .list_connections(None, false)
+        .map_err(|e| e.to_string())?;
 
     let targets: Vec<Connection> = all_conns
         .into_iter()
@@ -279,7 +291,10 @@ pub async fn run_batch_command(
             .map(|conn| {
                 let is_prod = conn.name.to_lowercase().contains("prod")
                     || conn.tags.iter().any(|t| t.to_lowercase().contains("prod"));
-                let stdout_msg = format!("[DRY RUN PREVIEW] Would execute '{}' on {}@{}", command, conn.user, conn.host);
+                let stdout_msg = format!(
+                    "[DRY RUN PREVIEW] Would execute '{}' on {}@{}",
+                    command, conn.user, conn.host
+                );
                 BatchExecHostResult {
                     connection_id: conn.id.to_string(),
                     name: conn.name,
@@ -297,6 +312,11 @@ pub async fn run_batch_command(
         return Ok(results);
     }
 
+    let conn_lookup: HashMap<String, Connection> = targets
+        .iter()
+        .map(|c| (c.id.to_string(), c.clone()))
+        .collect();
+
     let mut tasks = Vec::new();
     for conn in targets {
         let cfg_clone = config.clone();
@@ -312,11 +332,15 @@ pub async fn run_batch_command(
             let conn_for_closure = conn.clone();
             let cmd_for_exec = cmd_clone.clone();
 
-            let exec_future = bayesian_ssh::services::transport::execute_with_fallback(&conn_for_ref, &cfg_clone, move |transport| {
-                let c = conn_for_closure.clone();
-                let cm = cmd_for_exec.clone();
-                Box::pin(async move { transport.exec(&c, &cm).await })
-            });
+            let exec_future = bayesian_ssh::services::transport::execute_with_fallback(
+                &conn_for_ref,
+                &cfg_clone,
+                move |transport| {
+                    let c = conn_for_closure.clone();
+                    let cm = cmd_for_exec.clone();
+                    Box::pin(async move { transport.exec(&c, &cm).await })
+                },
+            );
 
             match tokio::time::timeout(timeout_dur, exec_future).await {
                 Ok(Ok(output)) => {
@@ -372,6 +396,24 @@ pub async fn run_batch_command(
     for task in tasks {
         if let Ok(res) = task.await {
             results.push(res);
+        }
+    }
+
+    for res in &results {
+        if let Some(conn) = conn_lookup.get(&res.connection_id) {
+            let now = Utc::now();
+            let started_at = now - chrono::Duration::milliseconds(res.duration_ms as i64);
+            let session = Session {
+                id: Uuid::new_v4(),
+                connection: conn.clone(),
+                transport: Some("batch-command".to_string()),
+                started_at,
+                ended_at: Some(now),
+                status: SessionStatus::Terminated,
+                pid: None,
+                exit_code: Some(res.exit_code),
+            };
+            let _ = db.add_session(&session);
         }
     }
 

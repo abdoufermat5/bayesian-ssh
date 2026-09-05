@@ -1,48 +1,54 @@
 use crate::database::Database;
-use crate::models::Session;
+use crate::models::{Session, SessionStatusKind};
 use anyhow::Result;
 use rusqlite::params;
 
 impl Database {
+    // ──────────────────────────────────────────────────────────────────────────
     // Session management
+    // ──────────────────────────────────────────────────────────────────────────
+
     pub fn add_session(&self, session: &Session) -> Result<()> {
         self.conn.execute(
-            "INSERT INTO sessions (id, connection_id, started_at, ended_at, status, pid, exit_code, transport)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO sessions (id, connection_id, started_at, ended_at, status, status_kind, pid, exit_code, transport)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 session.id.to_string(),
                 session.connection.id.to_string(),
                 session.started_at.to_rfc3339(),
                 session.ended_at.map(|d| d.to_rfc3339()),
                 serde_json::to_string(&session.status)?,
+                session.status.kind().as_str(),
                 session.pid,
                 session.exit_code,
                 session.transport.as_deref(),
             ],
         )?;
-
         Ok(())
     }
 
     pub fn update_session(&self, session: &Session) -> Result<()> {
         self.conn.execute(
-            "UPDATE sessions SET 
-             ended_at = ?, status = ?, pid = ?, exit_code = ?, transport = ?
+            "UPDATE sessions SET
+             ended_at = ?, status = ?, status_kind = ?, pid = ?, exit_code = ?, transport = ?
              WHERE id = ?",
             params![
                 session.ended_at.map(|d| d.to_rfc3339()),
                 serde_json::to_string(&session.status)?,
+                session.status.kind().as_str(),
                 session.pid,
                 session.exit_code,
                 session.transport.as_deref(),
                 session.id.to_string(),
             ],
         )?;
-
         Ok(())
     }
 
+    // ──────────────────────────────────────────────────────────────────────────
     // Session history retrieval
+    // ──────────────────────────────────────────────────────────────────────────
+
     pub fn get_session_history(
         &self,
         connection_filter: Option<&str>,
@@ -59,30 +65,38 @@ impl Database {
              JOIN connections c ON s.connection_id = c.id
              WHERE 1=1",
         );
-        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        let mut sql_params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
 
         if let Some(conn_name) = connection_filter {
-            query.push_str(" AND (c.name LIKE ? OR c.id = ?)");
-            params.push(Box::new(format!("%{}%", conn_name)));
-            params.push(Box::new(conn_name.to_string()));
+            // Escape LIKE wildcards in the user-supplied filter; compare
+            // by id (exact) and by name (LIKE) only against the escaped form.
+            query.push_str(" AND (c.name LIKE ? ESCAPE '\\' OR c.id = ?)");
+            let escaped = escape_like(conn_name);
+            sql_params.push(Box::new(format!("%{}%", escaped)));
+            sql_params.push(Box::new(conn_name.to_string()));
         }
 
         if let Some(d) = days {
             let cutoff = Utc::now() - Duration::days(d as i64);
             query.push_str(" AND s.started_at >= ?");
-            params.push(Box::new(cutoff.to_rfc3339()));
+            sql_params.push(Box::new(cutoff.to_rfc3339()));
         }
 
         if show_failed_only {
-            query.push_str(" AND (s.status LIKE '%Error%' OR s.exit_code != 0)");
+            // Use the structured `status_kind` column so a future
+            // `SessionStatus::Error("...")` variant doesn't accidentally
+            // match unrelated status names.
+            query.push_str(
+                " AND (s.status_kind = 'error' OR (s.exit_code IS NOT NULL AND s.exit_code != 0))",
+            );
         }
 
         query.push_str(" ORDER BY s.started_at DESC LIMIT ?");
-        params.push(Box::new(limit as i64));
+        sql_params.push(Box::new(limit as i64));
 
         let mut stmt = self.conn.prepare(&query)?;
         let mut rows = stmt.query(rusqlite::params_from_iter(
-            params.iter().map(|p| p.as_ref()),
+            sql_params.iter().map(|p| p.as_ref()),
         ))?;
 
         let mut entries = Vec::new();
@@ -101,7 +115,6 @@ impl Database {
 
             let status: SessionStatus = serde_json::from_str(&status_json)
                 .unwrap_or(SessionStatus::Error("unknown".to_string()));
-
             let duration = ended_at.map(|end| end - started_at);
 
             entries.push(SessionHistoryEntry {
@@ -113,11 +126,13 @@ impl Database {
                 duration,
             });
         }
-
         Ok(entries)
     }
 
+    // ──────────────────────────────────────────────────────────────────────────
     // Active session management
+    // ──────────────────────────────────────────────────────────────────────────
+
     #[allow(clippy::type_complexity)]
     pub fn get_active_sessions(
         &self,
@@ -126,11 +141,10 @@ impl Database {
             "SELECT c.name, s.pid, s.started_at
              FROM sessions s
              JOIN connections c ON s.connection_id = c.id
-             WHERE s.ended_at IS NULL AND s.status LIKE '%Active%'
+             WHERE s.ended_at IS NULL AND s.status_kind = 'active'
              ORDER BY s.started_at DESC",
         )?;
         let mut rows = stmt.query([])?;
-
         let mut sessions = Vec::new();
         while let Some(row) = rows.next()? {
             let started_str: String = row.get(2)?;
@@ -150,13 +164,13 @@ impl Database {
             "SELECT s.id, c.name, s.pid, s.started_at
              FROM sessions s
              JOIN connections c ON s.connection_id = c.id
-             WHERE s.ended_at IS NULL AND s.status LIKE '%Active%'
-               AND (c.name LIKE ? OR c.id = ?)
+             WHERE s.ended_at IS NULL AND s.status_kind = 'active'
+               AND (c.name LIKE ? ESCAPE '\\' OR c.id = ?)
              ORDER BY s.started_at DESC",
         )?;
-        let like_pattern = format!("%{}%", target);
+        let escaped = escape_like(target);
+        let like_pattern = format!("%{}%", escaped);
         let mut rows = stmt.query(params![like_pattern, target])?;
-
         let mut sessions = Vec::new();
         while let Some(row) = rows.next()? {
             let started_str: String = row.get(3)?;
@@ -182,10 +196,11 @@ impl Database {
 
     pub fn mark_session_terminated(&self, session_id: &str, exit_code: i32) -> Result<()> {
         self.conn.execute(
-            "UPDATE sessions SET ended_at = ?, status = ?, exit_code = ? WHERE id = ?",
+            "UPDATE sessions SET ended_at = ?, status = ?, status_kind = ?, exit_code = ? WHERE id = ?",
             params![
                 chrono::Utc::now().to_rfc3339(),
-                "\"Terminated\"",
+                serde_json::to_string(&crate::models::SessionStatus::Terminated)?,
+                SessionStatusKind::Terminated.as_str(),
                 exit_code,
                 session_id
             ],
@@ -195,9 +210,29 @@ impl Database {
 
     pub fn mark_all_sessions_terminated(&self) -> Result<()> {
         self.conn.execute(
-            "UPDATE sessions SET ended_at = ?, status = ?, exit_code = -1 WHERE ended_at IS NULL",
-            params![chrono::Utc::now().to_rfc3339(), "\"Terminated\""],
+            "UPDATE sessions
+             SET ended_at = ?, status = ?, status_kind = ?, exit_code = -1
+             WHERE ended_at IS NULL",
+            params![
+                chrono::Utc::now().to_rfc3339(),
+                serde_json::to_string(&crate::models::SessionStatus::Terminated)?,
+                SessionStatusKind::Terminated.as_str(),
+            ],
         )?;
         Ok(())
     }
+}
+
+fn escape_like(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\\' | '%' | '_' => {
+                out.push('\\');
+                out.push(c);
+            }
+            other => out.push(other),
+        }
+    }
+    out
 }

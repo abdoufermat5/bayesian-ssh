@@ -15,7 +15,7 @@
     Shield,
     Sparkles,
     Trash2,
-    Workflow,
+    X,
   } from "lucide-svelte";
   import type { Connection } from "$lib/types";
   import CustomSelect from "$lib/components/ui/CustomSelect.svelte";
@@ -38,10 +38,12 @@
 
   let { connections }: Props = $props();
 
+  const defaultHostName = $derived(connections.length > 0 ? connections[0].name : "production-srv1");
+
   let tunnels = $state<TunnelRule[]>([
     {
       id: "1",
-      connectionName: connections.length > 0 ? connections[0].name : "production-srv1",
+      connectionName: "production-srv1",
       type: "local",
       localPort: 8080,
       remoteHost: "localhost",
@@ -50,14 +52,14 @@
     },
     {
       id: "2",
-      connectionName: connections.length > 0 ? connections[0].name : "production-srv1",
+      connectionName: "production-srv1",
       type: "socks5",
       localPort: 1080,
       active: true,
     },
     {
       id: "3",
-      connectionName: connections.length > 0 ? connections[0].name : "production-srv1",
+      connectionName: "production-srv1",
       type: "local",
       localPort: 5432,
       remoteHost: "db.internal",
@@ -67,7 +69,7 @@
   ]);
 
   let showAddModal = $state(false);
-  let newConnName = $state(connections.length > 0 ? connections[0].name : "");
+  let newConnName = $state("");
   let newType = $state<"local" | "remote" | "socks5">("local");
   let newLocalPort = $state(8080);
   let newRemoteHost = $state("localhost");
@@ -100,320 +102,342 @@
     notify("Tunnel rule deleted", "info");
   }
 
-  function applyPreset(p: typeof presets[0]) {
+  function applyPreset(p: typeof presets[number]) {
     newType = p.type;
     newLocalPort = p.local;
-    if (p.type !== "socks5") {
-      newRemoteHost = p.remoteHost || "localhost";
-      newRemotePort = p.remotePort || 80;
-    }
+    if (p.remoteHost) newRemoteHost = p.remoteHost;
+    if (p.remotePort) newRemotePort = p.remotePort;
   }
 
   function handleAddTunnel() {
-    if (!newConnName) return;
+    const host = newConnName || defaultHostName;
     const rule: TunnelRule = {
-      id: String(Date.now()),
-      connectionName: newConnName,
+      id: Date.now().toString(),
+      connectionName: host,
       type: newType,
-      localPort: newLocalPort,
-      remoteHost: newType !== "socks5" ? newRemoteHost : undefined,
-      remotePort: newType !== "socks5" ? newRemotePort : undefined,
+      localPort: Number(newLocalPort),
+      remoteHost: newType === "socks5" ? undefined : newRemoteHost,
+      remotePort: newType === "socks5" ? undefined : Number(newRemotePort),
       active: true,
     };
     tunnels = [...tunnels, rule];
     showAddModal = false;
-    notify(`Created ${newType.toUpperCase()} tunnel on port ${newLocalPort}`, "success");
+    notify(`Created ${rule.type.toUpperCase()} tunnel on port ${rule.localPort}`, "success");
   }
 
-  function copyTunnelCommand(t: TunnelRule) {
-    const conn = connections.find((c) => c.name === t.connectionName);
-    const hostStr = conn ? `${conn.user}@${conn.host}` : t.connectionName;
-    let cmd = "";
-    if (t.type === "local") {
-      cmd = `ssh -N -L ${t.localPort}:${t.remoteHost || "localhost"}:${t.remotePort || 80} ${hostStr}`;
-    } else if (t.type === "socks5") {
-      cmd = `ssh -N -D ${t.localPort} ${hostStr}`;
+  function copyConnectionString(t: TunnelRule) {
+    let str = "";
+    if (t.type === "socks5") {
+      str = `socks5://127.0.0.1:${t.localPort}`;
     } else {
-      cmd = `ssh -N -R ${t.remotePort}:${t.remoteHost || "localhost"}:${t.localPort} ${hostStr}`;
+      str = `http://localhost:${t.localPort}`;
     }
-
-    navigator.clipboard.writeText(cmd).then(() => {
-      copiedId = t.id;
-      setTimeout(() => (copiedId = null), 2000);
-      notify(`Copied SSH tunnel command to clipboard`, "info");
-    });
+    navigator.clipboard.writeText(str);
+    copiedId = t.id;
+    notify(`Copied connection address: ${str}`, "success");
+    setTimeout(() => {
+      if (copiedId === t.id) copiedId = null;
+    }, 2000);
   }
 
-  function openLocalUrl(port: number) {
-    window.open(`http://localhost:${port}`, "_blank");
-  }
+  const activeCount = $derived(tunnels.filter((t) => t.active).length);
 </script>
 
-<div class="flex flex-col flex-1 min-h-0 w-full bg-surface p-5 gap-5">
-  <!-- Top Header Bar -->
-  <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shrink-0 pb-1 border-b border-border/40">
+<div class="flex flex-col flex-1 min-h-0 w-full overflow-hidden bg-surface select-none">
+  <!-- Header Bar -->
+  <div class="px-6 py-4 border-b border-border flex items-center justify-between gap-4 shrink-0 bg-surface-input/30">
     <div class="flex items-center gap-3">
-      <div class="p-2.5 rounded-xl bg-accent/10 border border-accent/20 text-accent shadow-xs">
-        <Network size={22} />
+      <div class="w-8 h-8 rounded-xl bg-accent/15 border border-accent/30 flex items-center justify-center text-accent shrink-0">
+        <Network size={18} />
       </div>
       <div>
-        <h2 class="text-base font-bold text-primary m-0 flex items-center gap-2">
-          <span>SSH Tunnel & Port Forwarding Studio</span>
-          <span class="px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-[10px] font-semibold flex items-center gap-1">
-            <Workflow size={11} />
-            Visual Proxy Pipeline
+        <h2 class="text-sm font-bold text-primary tracking-tight m-0 flex items-center gap-2">
+          Tunnel Studio
+          <span class="badge-pill bg-accent/15 text-accent border border-accent/30 text-[10px]">
+            {activeCount} active
           </span>
         </h2>
-        <p class="text-xs text-muted mt-0.5 m-0">
-          Configure Local (-L), Remote (-R), and Dynamic SOCKS5 (-D) encrypted SSH tunnels with live flow telemetry
-        </p>
+        <p class="text-[11px] text-muted m-0">SSH Port Forwarding &amp; Dynamic SOCKS5 Proxies</p>
       </div>
     </div>
 
     <button
       type="button"
-      class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-accent text-white text-xs font-semibold cursor-pointer hover:opacity-90 transition-all shadow-sm"
-      onclick={() => (showAddModal = true)}
+      class="btn btn-primary shadow-sm"
+      onclick={() => {
+        newConnName = defaultHostName;
+        showAddModal = true;
+      }}
     >
-      <Plus size={16} />
+      <Plus size={14} />
       <span>New Tunnel</span>
     </button>
   </div>
 
-  <!-- Tunnel Cards Grid -->
-  <div class="flex-1 min-h-0 overflow-y-auto grid grid-cols-1 lg:grid-cols-2 gap-4 pr-1">
-    {#each tunnels as t (t.id)}
-      <div
-        class="bg-surface-card border border-border rounded-xl p-4 flex flex-col gap-4 shadow-sm hover:border-border-hover transition-all relative overflow-hidden group"
+  <!-- Presets Strip -->
+  <div class="px-6 py-2.5 border-b border-border/80 bg-surface-input/10 flex items-center gap-2 overflow-x-auto shrink-0 scrollbar-none">
+    <span class="eyebrow text-[10px] whitespace-nowrap">Quick Presets:</span>
+    {#each presets as p}
+      <button
+        type="button"
+        class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold text-secondary hover:text-primary hover:bg-surface-hover border border-border transition-colors cursor-pointer whitespace-nowrap bg-surface"
+        onclick={() => {
+          applyPreset(p);
+          newConnName = defaultHostName;
+          showAddModal = true;
+        }}
       >
-        <!-- Top Status Row -->
-        <div class="flex items-center justify-between gap-3">
-          <div class="flex items-center gap-2.5">
-            {#if t.active}
-              <div class="relative flex h-3 w-3 items-center justify-center">
-                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-running opacity-75"></span>
-                <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-success"></span>
-              </div>
-            {:else}
-              <div class="h-2.5 w-2.5 rounded-full bg-muted"></div>
-            {/if}
-
-            <span class="text-xs font-bold text-primary uppercase tracking-wider">
-              {t.type === "socks5" ? "Dynamic SOCKS5 (-D)" : t.type === "local" ? "Local Forward (-L)" : "Remote Forward (-R)"}
-            </span>
-          </div>
-
-          <!-- Power Toggle Button -->
-          <button
-            type="button"
-            class="px-3 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition-all flex items-center gap-1.5
-              {t.active ? 'bg-success/10 border-success/30 text-running hover:bg-success/20' : 'bg-surface-input border-border text-muted hover:text-primary'}"
-            onclick={() => toggleTunnel(t.id)}
-          >
-            <Power size={13} />
-            <span>{t.active ? "Active" : "Disabled"}</span>
-          </button>
-        </div>
-
-        <!-- Visual Flow Diagram Card -->
-        <div class="bg-surface-terminal p-3.5 rounded-xl border border-border flex items-center justify-between gap-3 font-mono text-xs text-primary shadow-inner">
-          <!-- Client Local Endpoint -->
-          <div class="flex items-center gap-2 min-w-0">
-            <div class="p-1.5 rounded bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 shrink-0">
-              <Globe size={14} />
-            </div>
-            <div class="flex flex-col min-w-0">
-              <span class="text-[10px] text-muted">Local</span>
-              <span class="font-bold text-xs truncate">127.0.0.1:{t.localPort}</span>
-            </div>
-          </div>
-
-          <!-- Flow Arrow / Tunnel Pipe -->
-          <div class="flex flex-col items-center justify-center shrink-0 px-2">
-            <span class="text-[9px] text-accent font-bold uppercase tracking-wider mb-0.5">SSH Tunnel</span>
-            <div class="flex items-center gap-1 text-accent">
-              <span class="w-4 h-[2px] bg-accent/40 rounded"></span>
-              <ArrowRight size={14} class={t.active ? "animate-pulse text-accent" : "text-muted"} />
-              <span class="w-4 h-[2px] bg-accent/40 rounded"></span>
-            </div>
-          </div>
-
-          <!-- Target Remote Endpoint -->
-          <div class="flex items-center gap-2 min-w-0 justify-end text-right">
-            <div class="flex flex-col min-w-0">
-              <span class="text-[10px] text-muted">Target</span>
-              <span class="font-bold text-xs truncate">
-                {t.type === "socks5" ? "SOCKS5 Proxy" : `${t.remoteHost}:${t.remotePort}`}
-              </span>
-            </div>
-            <div class="p-1.5 rounded bg-warning/10 border border-warning/20 text-warning shrink-0">
-              <Server size={14} />
-            </div>
-          </div>
-        </div>
-
-        <!-- Host Name & Action Toolbar -->
-        <div class="flex items-center justify-between pt-1 border-t border-border/40 text-xs">
-          <span class="text-muted flex items-center gap-1.5 text-[11px] font-medium">
-            <Server size={13} class="text-accent" />
-            <span>Host: <strong class="text-primary font-semibold">{t.connectionName}</strong></span>
-          </span>
-
-          <div class="flex items-center gap-1">
-            {#if t.type === "local" && t.active}
-              <button
-                type="button"
-                class="px-2.5 py-1 rounded-lg bg-surface-input border border-border text-secondary hover:text-primary text-[11px] font-medium flex items-center gap-1 transition-all"
-                title="Open local endpoint in browser"
-                onclick={() => openLocalUrl(t.localPort)}
-              >
-                <ExternalLink size={13} />
-                <span>Open URL</span>
-              </button>
-            {/if}
-
-            <button
-              type="button"
-              class="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-white/10 transition-colors"
-              title="Copy SSH tunnel command"
-              onclick={() => copyTunnelCommand(t)}
-            >
-              {#if copiedId === t.id}
-                <Check size={14} class="text-running" />
-              {:else}
-                <Copy size={14} />
-              {/if}
-            </button>
-
-            <button
-              type="button"
-              class="p-1.5 rounded-lg text-muted hover:text-danger hover:bg-danger/10 transition-colors"
-              title="Delete tunnel rule"
-              onclick={() => deleteTunnel(t.id)}
-            >
-              <Trash2 size={14} />
-            </button>
-          </div>
-        </div>
-      </div>
+        <Sparkles size={11} class="text-warning" />
+        <span>{p.label}</span>
+      </button>
     {/each}
+  </div>
+
+  <!-- Active Tunnels List -->
+  <div class="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-3 scrollbar-none">
+    {#if tunnels.length > 0}
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+        {#each tunnels as t (t.id)}
+          <div
+            class="rounded-xl border p-4 transition-all duration-fast flex flex-col justify-between
+              {t.active
+                ? 'border-accent/40 bg-surface-input/60 shadow-sm'
+                : 'border-border bg-surface-input/20 opacity-70'}"
+          >
+            <!-- Card Header -->
+            <div>
+              <div class="flex items-center justify-between gap-2 mb-3">
+                <div class="flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full {t.active ? 'bg-running' : 'bg-muted/40'}"></span>
+                  <span class="font-bold text-xs text-primary uppercase tracking-wider font-mono">
+                    {t.type} tunnel
+                  </span>
+                  <span class="badge-pill bg-surface border border-border text-secondary text-[10px]">
+                    {t.connectionName}
+                  </span>
+                </div>
+
+                <!-- Active Toggle Switch -->
+                <button
+                  type="button"
+                  role="switch"
+                  aria-label="Toggle Tunnel"
+                  aria-checked={t.active}
+                  onclick={() => toggleTunnel(t.id)}
+                  class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-fast focus:outline-none
+                    {t.active ? 'bg-accent' : 'bg-surface-hover border-border'}"
+                >
+                  <span
+                    class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-fast
+                      {t.active ? 'translate-x-4' : 'translate-x-0'}"
+                  ></span>
+                </button>
+              </div>
+
+              <!-- Visual Flow Route Diagram -->
+              <div class="p-3 rounded-lg bg-surface border border-border/70 flex items-center justify-between gap-2 font-mono text-xs mb-3">
+                <div class="flex flex-col">
+                  <span class="text-[9px] uppercase tracking-wider text-muted font-sans font-bold">Local Endpoint</span>
+                  <span class="font-semibold text-primary">127.0.0.1:{t.localPort}</span>
+                </div>
+
+                <div class="flex flex-col items-center gap-0.5 px-2">
+                  <ArrowRight size={14} class={t.active ? "text-accent animate-pulse" : "text-muted"} />
+                  <span class="text-[9px] text-muted font-sans font-semibold">via SSH</span>
+                </div>
+
+                <div class="flex flex-col text-right">
+                  <span class="text-[9px] uppercase tracking-wider text-muted font-sans font-bold">Remote Target</span>
+                  {#if t.type === "socks5"}
+                    <span class="font-semibold text-cyan-400">Dynamic Proxy</span>
+                  {:else}
+                    <span class="font-semibold text-primary">{t.remoteHost}:{t.remotePort}</span>
+                  {/if}
+                </div>
+              </div>
+            </div>
+
+            <!-- Footer Quick Actions -->
+            <div class="flex items-center justify-between pt-2 border-t border-border/60">
+              <span class="text-[10px] text-muted">
+                {t.active ? "🟢 Forwarding traffic" : "⚪ Stopped"}
+              </span>
+
+              <div class="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  class="btn-icon p-1 text-muted hover:text-primary transition-colors cursor-pointer border-none bg-transparent"
+                  onclick={() => copyConnectionString(t)}
+                  title="Copy local connection address"
+                >
+                  {#if copiedId === t.id}
+                    <Check size={13} class="text-running" />
+                  {:else}
+                    <Copy size={13} />
+                  {/if}
+                </button>
+
+                <button
+                  type="button"
+                  class="btn-icon p-1 text-muted hover:text-error hover:bg-error/15 transition-colors cursor-pointer border-none bg-transparent"
+                  onclick={() => deleteTunnel(t.id)}
+                  title="Delete tunnel rule"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            </div>
+          </div>
+        {/each}
+      </div>
+    {:else}
+      <div class="py-20 flex flex-col items-center justify-center text-muted border border-dashed border-border rounded-2xl bg-surface-input/10">
+        <div class="w-12 h-12 rounded-2xl bg-accent/10 border border-accent/25 flex items-center justify-center text-accent mb-3">
+          <Network size={24} />
+        </div>
+        <h3 class="text-sm font-bold text-primary mb-1">No Active SSH Tunnels</h3>
+        <p class="text-xs text-muted max-w-sm text-center mb-4 leading-relaxed">
+          Forward local ports securely through your SSH connection or establish a dynamic SOCKS5 proxy.
+        </p>
+        <button
+          type="button"
+          class="btn btn-primary"
+          onclick={() => (showAddModal = true)}
+        >
+          <Plus size={14} />
+          <span>Create First Tunnel</span>
+        </button>
+      </div>
+    {/if}
   </div>
 </div>
 
-<!-- New Tunnel Modal -->
+<!-- Add Tunnel Modal -->
 {#if showAddModal}
   <ModalShell
-    open={showAddModal}
+    open={true}
     title="Create SSH Tunnel Rule"
     onClose={() => (showAddModal = false)}
     width="md"
-    panelClass="p-6 gap-5"
   >
-    <div class="flex items-center justify-between pb-2 border-b border-border">
-      <h3 class="text-base font-bold text-primary m-0 flex items-center gap-2">
-        <Network size={18} class="text-accent" />
-        <span>Create SSH Tunnel Rule</span>
-      </h3>
+    <div class="px-6 py-4 border-b border-border flex items-center justify-between">
+      <h3 class="text-base font-bold text-primary m-0">Create SSH Tunnel</h3>
+      <button
+        type="button"
+        class="text-muted hover:text-primary p-1 rounded-md border-none bg-transparent cursor-pointer"
+        onclick={() => (showAddModal = false)}
+      >
+        <X size={16} />
+      </button>
     </div>
 
-      <!-- Presets Selector -->
+    <div class="p-6 flex flex-col gap-4">
+      <!-- Target Host -->
       <div class="flex flex-col gap-1.5">
-        <span class="text-xs font-semibold text-secondary">Quick Presets</span>
-        <div class="grid grid-cols-2 gap-2">
-          {#each presets as p (p.label)}
-            <button
-              type="button"
-              class="px-2.5 py-1.5 rounded-lg bg-surface-input border border-border text-secondary hover:text-primary hover:border-accent/40 text-[11px] font-medium cursor-pointer transition-all text-left truncate"
-              onclick={() => applyPreset(p)}
-            >
-              ⚡ {p.label}
-            </button>
-          {/each}
+        <label for="tunnel-conn-select" class="text-[11px] font-semibold text-muted uppercase tracking-wider">SSH Host Connection</label>
+        <CustomSelect
+          id="tunnel-conn-select"
+          options={connections.map((c) => ({ value: c.name, label: `${c.name} (${c.user}@${c.host})` }))}
+          value={newConnName}
+          onChange={(val) => (newConnName = val)}
+        />
+      </div>
+
+      <!-- Tunnel Type -->
+      <div class="flex flex-col gap-1.5">
+        <span class="text-[11px] font-semibold text-muted uppercase tracking-wider">Forwarding Type</span>
+        <div class="grid grid-cols-3 gap-2">
+          <button
+            type="button"
+            class="p-2.5 rounded-lg border text-xs font-semibold cursor-pointer transition-all text-center
+              {newType === 'local' ? 'border-accent bg-accent/15 text-primary' : 'border-border bg-surface-input text-muted'}"
+            onclick={() => (newType = 'local')}
+          >
+            Local (-L)
+          </button>
+          <button
+            type="button"
+            class="p-2.5 rounded-lg border text-xs font-semibold cursor-pointer transition-all text-center
+              {newType === 'socks5' ? 'border-accent bg-accent/15 text-primary' : 'border-border bg-surface-input text-muted'}"
+            onclick={() => (newType = 'socks5')}
+          >
+            SOCKS5 (-D)
+          </button>
+          <button
+            type="button"
+            class="p-2.5 rounded-lg border text-xs font-semibold cursor-pointer transition-all text-center
+              {newType === 'remote' ? 'border-accent bg-accent/15 text-primary' : 'border-border bg-surface-input text-muted'}"
+            onclick={() => (newType = 'remote')}
+          >
+            Remote (-R)
+          </button>
         </div>
       </div>
 
-      <div class="flex flex-col gap-4">
-        <!-- Target Connection -->
+      <!-- Ports Configuration -->
+      <div class="grid grid-cols-2 gap-3">
         <div class="flex flex-col gap-1.5">
-          <label for="new-tunnel-conn" class="text-xs font-semibold text-secondary">SSH Server Host</label>
-          <CustomSelect
-            id="new-tunnel-conn"
-            options={connections.map((c) => ({ value: c.name, label: `${c.name} (${c.user}@${c.host})` }))}
-            value={newConnName}
-            onChange={(val) => (newConnName = val)}
+          <label for="local-port-input" class="text-[11px] font-semibold text-muted uppercase tracking-wider">Local Port</label>
+          <input
+            id="local-port-input"
+            type="number"
+            bind:value={newLocalPort}
+            class="input"
+            placeholder="8080"
           />
-        </div>
-
-        <!-- Tunnel Type -->
-        <div class="flex flex-col gap-1.5">
-          <label for="new-tunnel-type" class="text-xs font-semibold text-secondary">Tunnel Mode</label>
-          <CustomSelect
-            id="new-tunnel-type"
-            options={[
-              { value: "local", label: "Local Forward (-L) - Expose Remote Service Locally" },
-              { value: "socks5", label: "Dynamic SOCKS5 (-D) - Full Proxy Adapter" },
-              { value: "remote", label: "Remote Forward (-R) - Expose Local Port to Remote" },
-            ]}
-            value={newType}
-            onChange={(val) => (newType = val as "local" | "remote" | "socks5")}
-          />
-        </div>
-
-        <!-- Ports Grid -->
-        <div class="grid grid-cols-2 gap-3">
-          <div class="flex flex-col gap-1.5">
-            <label for="new-tunnel-localport" class="text-xs font-semibold text-secondary">Local Port</label>
-            <input
-              id="new-tunnel-localport"
-              type="number"
-              bind:value={newLocalPort}
-              class="bg-surface-input border border-border text-primary py-2 px-3 rounded-lg outline-none text-xs font-mono"
-            />
-          </div>
-
-          {#if newType !== "socks5"}
-            <div class="flex flex-col gap-1.5">
-              <label for="new-tunnel-remoteport" class="text-xs font-semibold text-secondary">Remote Port</label>
-              <input
-                id="new-tunnel-remoteport"
-                type="number"
-                bind:value={newRemotePort}
-                class="bg-surface-input border border-border text-primary py-2 px-3 rounded-lg outline-none text-xs font-mono"
-              />
-            </div>
-          {/if}
         </div>
 
         {#if newType !== "socks5"}
           <div class="flex flex-col gap-1.5">
-            <label for="new-tunnel-remotehost" class="text-xs font-semibold text-secondary">Remote Host Endpoint</label>
+            <label for="remote-port-input" class="text-[11px] font-semibold text-muted uppercase tracking-wider">Remote Port</label>
             <input
-              id="new-tunnel-remotehost"
-              type="text"
-              bind:value={newRemoteHost}
-              placeholder="localhost"
-              class="bg-surface-input border border-border text-primary py-2 px-3 rounded-lg outline-none text-xs font-mono"
+              id="remote-port-input"
+              type="number"
+              bind:value={newRemotePort}
+              class="input"
+              placeholder="80"
             />
           </div>
         {/if}
       </div>
 
-      <!-- Action Buttons -->
-      <div class="flex items-center justify-end gap-3 pt-2 border-t border-border">
+      {#if newType !== "socks5"}
+        <div class="flex flex-col gap-1.5">
+          <label for="remote-host-input" class="text-[11px] font-semibold text-muted uppercase tracking-wider">Remote Host</label>
+          <input
+            id="remote-host-input"
+            type="text"
+            bind:value={newRemoteHost}
+            class="input"
+            placeholder="localhost or db.internal"
+          />
+        </div>
+      {/if}
+
+      <!-- Visual Preview -->
+      <div class="p-3 rounded-lg bg-surface-input border border-border/80 font-mono text-xs flex items-center justify-between text-muted">
+        <span>127.0.0.1:{newLocalPort}</span>
+        <ArrowRight size={13} class="text-accent" />
+        <span>{newType === 'socks5' ? 'Dynamic SOCKS5' : `${newRemoteHost}:${newRemotePort}`}</span>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="flex justify-end gap-2 pt-2 border-t border-border">
         <button
           type="button"
-          class="px-4 py-2 rounded-lg bg-surface-input border border-border text-secondary text-xs font-semibold cursor-pointer hover:bg-white/5"
+          class="btn btn-secondary"
           onclick={() => (showAddModal = false)}
         >
           Cancel
         </button>
         <button
           type="button"
-          class="px-4 py-2 rounded-lg bg-accent text-white text-xs font-semibold cursor-pointer hover:opacity-90 shadow-sm"
+          class="btn btn-primary"
           onclick={handleAddTunnel}
         >
-          Create Tunnel
+          Add Tunnel
         </button>
       </div>
+    </div>
   </ModalShell>
 {/if}

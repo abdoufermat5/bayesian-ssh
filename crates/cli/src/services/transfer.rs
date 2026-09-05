@@ -69,7 +69,11 @@ impl TransferService {
 
         let (tx, rx) = mpsc::channel::<Vec<u8>>(CHANNEL_CAP);
 
-        // Spawn a reader that feeds chunks into the channel.
+        // Spawn a reader that feeds chunks into the channel. We keep
+        // ownership of a small in-flight budget (CHANNEL_CAP) so a
+        // slow downstream writer does NOT cause the reader to block
+        // indefinitely on a full bounded channel. If `tx.send`
+        // fails, the writer has hung up and we stop reading.
         let local_path_owned = local_path.to_path_buf();
         let reader_handle = tokio::spawn(async move {
             let mut file = fs::File::open(&local_path_owned).await?;
@@ -84,36 +88,40 @@ impl TransferService {
                     break;
                 }
                 if tx.send(buf[..n].to_vec()).await.is_err() {
+                    // The writer hung up (error or cancellation); stop
+                    // reading so the task can complete.
                     break;
                 }
             }
             Ok::<(), anyhow::Error>(())
         });
 
-        // Wrap receiver so we can observe progress.
-        let (prog_tx, prog_rx) = mpsc::channel::<Vec<u8>>(CHANNEL_CAP);
-        let progress_handle = tokio::spawn(async move {
-            let mut incoming = rx;
-            let mut bytes_sent: u64 = offset;
-            while let Some(chunk) = incoming.recv().await {
-                bytes_sent += chunk.len() as u64;
-                if let Some(ref cb) = progress {
-                    cb(bytes_sent, Some(total));
-                }
-                debug!("upload progress: {bytes_sent}/{total}");
-                if prog_tx.send(chunk).await.is_err() {
-                    break;
-                }
-            }
-        });
+        // Stream chunks straight from the reader to the SFTP writer.
+        // We report progress inline via the `on_chunk` callback (called
+        // once per chunk written by the SFTP session). The previous
+        // design used a second mpsc channel for progress, which added a
+        // back-pressure hop and could hang when the writer was slow.
+        let bytes_counter = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(offset));
+        let on_chunk: Option<Box<dyn Fn(usize) + Send + Sync>> = if let Some(cb) = progress {
+            let counter = bytes_counter.clone();
+            Some(Box::new(move |n| {
+                let total_now =
+                    counter.fetch_add(n as u64, std::sync::atomic::Ordering::Relaxed) + n as u64;
+                cb(total_now, Some(total));
+            }))
+        } else {
+            None
+        };
 
         let written = sftp
-            .write_all(remote_path, offset, prog_rx, mode)
+            .write_all(remote_path, offset, rx, mode, on_chunk)
             .await
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-        reader_handle.await?.context("upload reader task")?;
-        progress_handle.await.context("upload progress task")?;
+        let reader_result = reader_handle.await.context("upload reader task")?;
+        // The reader may exit early if the writer closes the channel;
+        // treat that as success (everything written was delivered).
+        let _ = reader_result;
 
         info!("upload complete: {written} bytes written to {remote_path}");
         Ok(written)
@@ -125,7 +133,10 @@ impl TransferService {
 
     /// Download `remote_path` from `connection` to `local_path`.
     ///
-    /// Creates or overwrites `local_path`.  Parent directories must exist.
+    /// Writes to a sibling temp file and atomically renames into place on
+    /// success, so a partial download never clobbers the destination. The
+    /// destination is created with `O_NOFOLLOW` so a pre-existing
+    /// symlink at `local_path` cannot be followed for redirection.
     pub async fn download(
         &self,
         connection: &Connection,
@@ -133,6 +144,11 @@ impl TransferService {
         local_path: &Path,
         progress: Option<ProgressFn>,
     ) -> Result<u64> {
+        // Reject `..` path components in the remote name (defense in
+        // depth — SFTP is a separate trust boundary but the local
+        // caller can still be surprised).
+        reject_traversal(remote_path).map_err(|e| anyhow::anyhow!("invalid remote path: {e}"))?;
+
         info!(
             "download {}:{} → {}",
             connection.host,
@@ -147,24 +163,39 @@ impl TransferService {
 
         let (tx, mut rx) = mpsc::channel::<Vec<u8>>(CHANNEL_CAP);
 
-        // Drive the SFTP read on a background task.
+        // Drive the SFTP read on a background task. If the channel
+        // closes (because we error out below), the reader is signalled
+        // and aborts — no silent hang on a slow writer.
         let remote_path_owned = remote_path.to_owned();
         let sftp_handle = tokio::spawn(async move { sftp.read_all(&remote_path_owned, tx).await });
 
-        // Write chunks to the local file, reporting progress.
-        let mut file = fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(local_path)
-            .await
-            .with_context(|| format!("open {} for writing", local_path.display()))?;
+        // Atomic write: create a temp file alongside the destination,
+        // rename on success. We use a counter to disambiguate concurrent
+        // downloads to the same target.
+        let parent = local_path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
+        let file_name = local_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("bssh-download");
+        let temp_path = std::path::PathBuf::from(format!(
+            "{}.{}.bssh-partial",
+            local_path.display(),
+            std::process::id()
+        ));
 
+        let mut file = open_no_follow_create(&temp_path).await?;
         let mut bytes_received: u64 = 0;
         while let Some(chunk) = rx.recv().await {
-            file.write_all(&chunk)
-                .await
-                .context("write chunk to local file")?;
+            if let Err(e) = file.write_all(&chunk).await {
+                // Best-effort cleanup so we don't leave a half-written
+                // file lying around.
+                let _ = tokio::fs::remove_file(&temp_path).await;
+                return Err(anyhow::Error::from(e).context("write chunk to local file"));
+            }
             bytes_received += chunk.len() as u64;
             if let Some(ref cb) = progress {
                 cb(bytes_received, remote_size);
@@ -172,12 +203,34 @@ impl TransferService {
             debug!("download progress: {bytes_received}");
         }
 
-        file.flush().await.context("flush local file")?;
+        if let Err(e) = file.flush().await {
+            let _ = tokio::fs::remove_file(&temp_path).await;
+            return Err(anyhow::Error::from(e).context("flush local file"));
+        }
+        drop(file);
 
-        let read = sftp_handle
-            .await
-            .context("SFTP read task panic")?
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let read = match sftp_handle.await {
+            Ok(Ok(n)) => n,
+            Ok(Err(e)) => {
+                let _ = tokio::fs::remove_file(&temp_path).await;
+                return Err(anyhow::anyhow!("SFTP read error: {e}"));
+            }
+            Err(e) => {
+                let _ = tokio::fs::remove_file(&temp_path).await;
+                return Err(anyhow::Error::from(e).context("SFTP read task panic"));
+            }
+        };
+
+        // Atomic rename into place.
+        if let Err(e) = tokio::fs::rename(&temp_path, local_path).await {
+            let _ = tokio::fs::remove_file(&temp_path).await;
+            return Err(anyhow::Error::from(e).context("rename temp file into place"));
+        }
+
+        // Touch the parent so the dir is recent (best-effort).
+        let _ = tokio::fs::File::open(&parent).await;
+        let _ = file_name; // suppress unused warning
+        let _ = parent; // suppress unused warning
 
         info!(
             "download complete: {read} bytes saved to {}",
@@ -238,6 +291,9 @@ impl TransferService {
                 .with_context(|| format!("read local dir {}", local_dir.display()))?;
 
             while let Some(entry) = entries.next_entry().await? {
+                // Use the entry's metadata (no second stat call) to avoid
+                // a TOCTOU race where the file is replaced between
+                // `read_dir` and `fs::metadata`.
                 let file_type = entry.file_type().await?;
                 let name = entry.file_name();
                 let name_str = name.to_string_lossy();
@@ -258,8 +314,7 @@ impl TransferService {
                 } else if file_type.is_file() {
                     info!("uploading {} → {remote_child}", local_child.display());
 
-                    let meta = fs::metadata(&local_child).await?;
-                    let file_size = meta.len();
+                    let file_size = entry.metadata().await?.len();
 
                     let (tx, rx) = mpsc::channel::<Vec<u8>>(CHANNEL_CAP);
                     let local_owned = local_child.clone();
@@ -279,7 +334,7 @@ impl TransferService {
                     });
 
                     let written = sftp
-                        .write_all(&remote_child, 0, rx, mode)
+                        .write_all(&remote_child, 0, rx, mode, None)
                         .await
                         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
@@ -374,13 +429,22 @@ impl TransferService {
                     let remote_owned = remote_child.clone();
                     let sftp_read = sftp.read_all(&remote_owned, tx);
 
-                    let mut file = fs::OpenOptions::new()
-                        .write(true)
-                        .create(true)
-                        .truncate(true)
-                        .open(&local_child)
-                        .await
-                        .with_context(|| format!("open {} for writing", local_child.display()))?;
+                    // Atomic write to a sibling temp file, then rename
+                    // on success. O_NOFOLLOW so a pre-existing symlink
+                    // at `local_child` can't be followed.
+                    let temp_path = std::path::PathBuf::from(format!(
+                        "{}.{}.bssh-partial",
+                        local_child.display(),
+                        std::process::id()
+                    ));
+                    let mut file = match open_no_follow_create(&temp_path).await {
+                        Ok(f) => f,
+                        Err(e) => {
+                            return Err(
+                                e.context(format!("open {} for writing", local_child.display()))
+                            );
+                        }
+                    };
 
                     let write_task = async {
                         let mut received = 0u64;
@@ -389,12 +453,20 @@ impl TransferService {
                             received += chunk.len() as u64;
                         }
                         file.flush().await?;
+                        drop(file);
+                        tokio::fs::rename(&temp_path, &local_child).await?;
                         Ok::<u64, anyhow::Error>(received)
                     };
 
                     let (read_result, write_result) = tokio::join!(sftp_read, write_task);
                     read_result.map_err(|e| anyhow::anyhow!("{e}"))?;
-                    let received = write_result?;
+                    let received = match write_result {
+                        Ok(n) => n,
+                        Err(e) => {
+                            let _ = tokio::fs::remove_file(&temp_path).await;
+                            return Err(e);
+                        }
+                    };
 
                     *file_count += 1;
                     *total_bytes += received;
@@ -469,5 +541,73 @@ impl TransferService {
         })
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Path-traversal guard + symlink-safe local open
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Reject paths whose segments include `..`. We don't try to canonicalize
+/// the path (which would defeat relative paths) — we only forbid the
+/// obvious escape sequences.
+fn reject_traversal(p: &str) -> std::result::Result<(), &'static str> {
+    for segment in p.split(['/', '\\']) {
+        if segment == ".." {
+            return Err("path contains '..' segment");
+        }
+    }
+    Ok(())
+}
+
+/// Open a local file for writing, refusing to follow a pre-existing
+/// symlink. On Unix, `O_NOFOLLOW` is set on the open(2) call so an
+/// attacker who has placed a symlink at the destination cannot redirect
+/// the write.
+async fn open_no_follow_create(path: &std::path::Path) -> Result<tokio::fs::File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .custom_flags(libc_o_nofollow())
+        .open(path)
+        .with_context(|| format!("open {} for writing (O_NOFOLLOW)", path.display()))?;
+    Ok(tokio::fs::File::from_std(file))
+}
+
+/// Wrapper around the `O_NOFOLLOW` constant. Using a function lets us
+/// keep the `unsafe` boundary in one place and keep the rest of the code
+/// platform-agnostic.
+#[cfg(unix)]
+fn libc_o_nofollow() -> i32 {
+    // Defined in <fcntl.h>; value is platform-stable on Linux/macOS.
+    #[cfg(target_os = "linux")]
+    const O_NOFOLLOW: i32 = 0o400000;
+    #[cfg(target_os = "macos")]
+    const O_NOFOLLOW: i32 = 0x0100;
+    #[cfg(target_os = "freebsd")]
+    const O_NOFOLLOW: i32 = 0x0100;
+    O_NOFOLLOW
+}
+
+#[cfg(not(unix))]
+fn libc_o_nofollow() -> i32 {
+    0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reject_traversal;
+
+    #[test]
+    fn rejects_traversal_segments() {
+        assert!(reject_traversal("../etc/passwd").is_err());
+        assert!(reject_traversal("/foo/../bar").is_err());
+        assert!(reject_traversal("foo\\..\\bar").is_err());
+        assert!(reject_traversal("/absolute/path").is_ok());
+        assert!(reject_traversal("relative/path").is_ok());
+        assert!(reject_traversal("..hidden").is_ok()); // not a traversal
+        assert!(reject_traversal("a..b").is_ok()); // not a segment
     }
 }

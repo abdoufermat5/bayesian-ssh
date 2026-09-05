@@ -91,7 +91,9 @@ pub fn spawn(options: PtySpawnOptions<'_>) -> Result<SpawnedPty, String> {
 
 /// Write data to the PTY master and flush it immediately.
 pub fn write_all(writer: &mut (dyn Write + Send), data: &str) -> Result<(), String> {
-    writer.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
+    writer
+        .write_all(data.as_bytes())
+        .map_err(|e| e.to_string())?;
     writer.flush().map_err(|e| e.to_string())
 }
 

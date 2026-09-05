@@ -285,7 +285,7 @@ export function attachXtermLinuxInputFix(
 }
 
 export interface OutputCoalescer {
-  /** Queue PTY output; it is written to the terminal on the next flush. */
+  /** Queue PTY output; it is written to the terminal on the next animation frame. */
   push: (data: string) => void;
   /** Immediately write everything queued so far (e.g. before a scroll). */
   flush: () => void;
@@ -294,6 +294,7 @@ export interface OutputCoalescer {
 }
 
 const MAX_WRITE_CHUNK = 64 * 1024;
+const MAX_QUEUE_BYTES = 2 * 1024 * 1024;
 
 /**
  * Coalesce PTY output events into a single `term.write` per animation frame.
@@ -302,69 +303,81 @@ const MAX_WRITE_CHUNK = 64 * 1024;
  * high-throughput output; writing each one to xterm individually janks the
  * UI and can crash the webview under load. This batches them while keeping
  * ordering intact and drops cleanly once the terminal is disposed.
+ *
+ * Uses `requestAnimationFrame` instead of `setTimeout` so flushes are
+ * aligned with the browser's repaint cycle — reducing dropped frames and
+ * giving the smoothest possible scroll experience.
  */
 export function createOutputCoalescer(
   term: Terminal,
   options?: { onFlush?: () => void },
 ): OutputCoalescer {
-  let pending: string[] = [];
-  let pendingBytes = 0;
-  let timer: ReturnType<typeof setTimeout> | null = null;
+  let pending = "";
+  let rafId: number | null = null;
   let disposed = false;
 
-  const flush = () => {
-    if (timer) {
-      clearTimeout(timer);
-      timer = null;
+  const isTermAlive = () => {
+    try {
+      return !(term as Terminal & { isDisposed?: boolean }).isDisposed;
+    } catch {
+      return false;
     }
-    if (disposed || pending.length === 0) return;
-    const chunks = pending;
-    pending = [];
-    pendingBytes = 0;
+  };
 
-    const writeChunk = (index: number) => {
-      if (disposed) return;
-      const data = chunks[index];
-      if (!data) {
+  const writeChunked = (data: string) => {
+    if (disposed || !isTermAlive()) return;
+    if (data.length <= MAX_WRITE_CHUNK) {
+      term.write(data, () => options?.onFlush?.());
+      return;
+    }
+    let offset = 0;
+    const writeNext = () => {
+      if (disposed || !isTermAlive()) return;
+      const chunk = data.slice(offset, offset + MAX_WRITE_CHUNK);
+      if (!chunk) {
         options?.onFlush?.();
         return;
       }
-      try {
-        if ((term as Terminal & { isDisposed?: boolean }).isDisposed) return;
-        term.write(data, () => {
-          writeChunk(index + 1);
-        });
-      } catch {
-        // Terminal disposed concurrently.
-      }
+      offset += MAX_WRITE_CHUNK;
+      term.write(chunk, writeNext);
     };
-    writeChunk(0);
+    writeNext();
+  };
+
+  const flush = () => {
+    if (rafId !== null) {
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+    if (disposed || !pending) return;
+    const data = pending;
+    pending = "";
+    writeChunked(data);
   };
 
   return {
     push(data: string) {
       if (disposed || !data) return;
-      pending.push(data);
-      pendingBytes += data.length;
-      if (!timer) {
-        // ~2 frames of latency — imperceptible interactively, a 30-60x
-        // reduction in IPC decode + render work under heavy output.
-        timer = setTimeout(flush, 32);
-      }
-      // If a single burst is huge, write it in bounded pieces immediately
-      // instead of letting the queue grow without limit.
-      if (pendingBytes >= 256 * 1024) {
+      pending += data;
+      // If queue is dangerously large, flush immediately to prevent OOM.
+      if (pending.length >= MAX_QUEUE_BYTES) {
         flush();
+        return;
+      }
+      if (rafId === null) {
+        rafId = requestAnimationFrame(() => {
+          rafId = null;
+          flush();
+        });
       }
     },
     flush,
     dispose() {
       disposed = true;
-      pending = [];
-      pendingBytes = 0;
-      if (timer) {
-        clearTimeout(timer);
-        timer = null;
+      pending = "";
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
       }
     },
   };

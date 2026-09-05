@@ -1,12 +1,12 @@
 <script lang="ts">
   import {
-    Layers,
-    KeyRound,
-    ShieldCheck,
-    TerminalSquare,
     FileText,
+    KeyRound,
+    Layers,
     Palette,
+    ShieldCheck,
     Sliders,
+    TerminalSquare,
   } from "lucide-svelte";
   import type { DesktopSettings, EnvInfo, WorkspaceInfo } from "$lib/types";
   import ProfilesSettings from "./settings/ProfilesSettings.svelte";
@@ -44,89 +44,45 @@
   }: Props = $props();
 
   let activeCategory = $state("workspace");
+
+  const categories = [
+    { id: "workspace", label: "Profiles & Workspace", icon: Layers },
+    { id: "ssh_agent", label: "SSH Agent & Defaults", icon: KeyRound },
+    { id: "kerberos", label: "Kerberos GSSAPI", icon: ShieldCheck },
+    { id: "terminal", label: "Terminal Emulation", icon: TerminalSquare },
+    { id: "logs", label: "Session Logs", icon: FileText },
+    { id: "appearance", label: "Appearance & Locale", icon: Palette },
+    { id: "features", label: "Features Flags", icon: Sliders },
+  ];
 </script>
 
-<div class="flex flex-1 min-h-0 w-full overflow-hidden bg-surface">
+<div class="flex flex-1 min-h-0 w-full overflow-hidden bg-surface select-none">
   <!-- Settings Sidebar -->
-  <div class="w-60 min-w-60 border-r border-border flex flex-col shrink-0 bg-surface">
-    <div class="px-5 pt-6 pb-4">
-      <h2 class="text-xs font-bold tracking-widest text-muted uppercase">Settings</h2>
+  <div class="w-64 min-w-64 border-r border-border flex flex-col shrink-0 bg-surface-input/20">
+    <div class="px-5 pt-6 pb-3">
+      <span class="eyebrow text-[10px]">Preferences</span>
+      <h2 class="text-base font-bold tracking-tight text-primary mt-0.5">Settings</h2>
     </div>
-    <div class="flex-1 overflow-y-auto px-2.5 pb-4 flex flex-col gap-0.5 select-none">
-      <button
-        type="button"
-        class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] font-medium cursor-pointer transition-all duration-100 text-left outline-none
-          {activeCategory === 'workspace' ? 'bg-white/[0.04] text-primary font-semibold' : 'text-secondary bg-transparent hover:bg-white/[0.02] hover:text-primary'}"
-        onclick={() => (activeCategory = "workspace")}
-      >
-        <Layers size={15} class="text-muted" />
-        <span>Profiles & Workspace</span>
-      </button>
 
-      <button
-        type="button"
-        class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] font-medium cursor-pointer transition-all duration-100 text-left outline-none
-          {activeCategory === 'ssh_agent' ? 'bg-white/[0.04] text-primary font-semibold' : 'text-secondary bg-transparent hover:bg-white/[0.02] hover:text-primary'}"
-        onclick={() => (activeCategory = "ssh_agent")}
-      >
-        <KeyRound size={15} class="text-muted" />
-        <span>SSH Agent & Defaults</span>
-      </button>
-
-      <button
-        type="button"
-        class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] font-medium cursor-pointer transition-all duration-100 text-left outline-none
-          {activeCategory === 'kerberos' ? 'bg-white/[0.04] text-primary font-semibold' : 'text-secondary bg-transparent hover:bg-white/[0.02] hover:text-primary'}"
-        onclick={() => (activeCategory = "kerberos")}
-      >
-        <ShieldCheck size={15} class="text-muted" />
-        <span>Kerberos GSSAPI</span>
-      </button>
-
-      <button
-        type="button"
-        class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] font-medium cursor-pointer transition-all duration-100 text-left outline-none
-          {activeCategory === 'terminal' ? 'bg-white/[0.04] text-primary font-semibold' : 'text-secondary bg-transparent hover:bg-white/[0.02] hover:text-primary'}"
-        onclick={() => (activeCategory = "terminal")}
-      >
-        <TerminalSquare size={15} class="text-muted" />
-        <span>Terminal Emulation</span>
-      </button>
-
-      <button
-        type="button"
-        class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] font-medium cursor-pointer transition-all duration-100 text-left outline-none
-          {activeCategory === 'logs' ? 'bg-white/[0.04] text-primary font-semibold' : 'text-secondary bg-transparent hover:bg-white/[0.02] hover:text-primary'}"
-        onclick={() => (activeCategory = "logs")}
-      >
-        <FileText size={15} class="text-muted" />
-        <span>Session Logs</span>
-      </button>
-
-      <button
-        type="button"
-        class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] font-medium cursor-pointer transition-all duration-100 text-left outline-none
-          {activeCategory === 'appearance' ? 'bg-white/[0.04] text-primary font-semibold' : 'text-secondary bg-transparent hover:bg-white/[0.02] hover:text-primary'}"
-        onclick={() => (activeCategory = "appearance")}
-      >
-        <Palette size={15} class="text-muted" />
-        <span>Appearance & Locale</span>
-      </button>
-
-      <button
-        type="button"
-        class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] font-medium cursor-pointer transition-all duration-100 text-left outline-none
-          {activeCategory === 'features' ? 'bg-white/[0.04] text-primary font-semibold' : 'text-secondary bg-transparent hover:bg-white/[0.02] hover:text-primary'}"
-        onclick={() => (activeCategory = "features")}
-      >
-        <Sliders size={15} class="text-muted" />
-        <span>Features</span>
-      </button>
+    <div class="flex-1 overflow-y-auto px-3 pb-4 flex flex-col gap-1 select-none scrollbar-none">
+      {#each categories as cat}
+        <button
+          type="button"
+          class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium cursor-pointer transition-all duration-fast text-left outline-none border
+            {activeCategory === cat.id
+              ? 'border-accent/35 bg-accent/15 text-primary font-semibold shadow-sm'
+              : 'border-transparent text-secondary bg-transparent hover:bg-surface-hover hover:text-primary'}"
+          onclick={() => (activeCategory = cat.id)}
+        >
+          <cat.icon size={15} class={activeCategory === cat.id ? "text-accent" : "text-muted"} />
+          <span class="truncate">{cat.label}</span>
+        </button>
+      {/each}
     </div>
   </div>
 
   <!-- Settings Content Panel -->
-  <div class="flex-1 min-h-0 overflow-y-auto bg-surface/30 px-8 py-7 overscroll-contain">
+  <div class="flex-1 min-h-0 overflow-y-auto bg-surface px-8 py-7 overscroll-contain scrollbar-none">
     {#if activeCategory === "workspace"}
       <ProfilesSettings
         bind:settings

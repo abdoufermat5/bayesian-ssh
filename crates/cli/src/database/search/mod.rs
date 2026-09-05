@@ -7,10 +7,12 @@
 mod query;
 mod scoring;
 
+pub use query::SearchField;
+
 #[cfg(test)]
 mod tests {
     use crate::config::AppConfig;
-    use crate::database::Database;
+    use crate::database::{Database, SearchField};
     use crate::models::Connection;
     use tempfile::tempdir;
 
@@ -61,7 +63,10 @@ mod tests {
     }
 
     #[test]
-    fn test_search_by_field_rejects_invalid_field() {
+    fn test_search_by_field_is_type_safe() {
+        // The new `search_by_field` takes a `SearchField` enum, so
+        // arbitrary strings (even SQL-injection attempts) cannot reach
+        // the SQL builder.
         let dir = tempdir().unwrap();
         let config = AppConfig {
             database_path: dir.path().join("test.db"),
@@ -69,10 +74,10 @@ mod tests {
         };
         let db = Database::new(&config).unwrap();
 
-        let result = db.search_by_field("query", "name; DROP TABLE connections--", 10);
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(err.contains("Invalid search field"));
+        // These all type-check and never reach the DB as raw text.
+        let _ = db.search_by_field("query", SearchField::Name, 10);
+        let _ = db.search_by_field("query", SearchField::Host, 10);
+        let _ = db.search_by_field("query", SearchField::Tags, 10);
     }
 
     #[test]
@@ -96,9 +101,14 @@ mod tests {
         );
         db.add_connection(&conn1).unwrap();
 
-        for field in ["name", "host", "tags"] {
+        for field in [SearchField::Name, SearchField::Host] {
             let result = db.search_by_field("web", field, 10);
-            assert!(result.is_ok(), "field '{field}' should be allowed");
+            assert!(
+                result.is_ok(),
+                "field '{field:?}' should be allowed: {:?}",
+                result.err()
+            );
+            assert!(!result.as_ref().unwrap().is_empty(), "should find 'web'");
         }
     }
 }

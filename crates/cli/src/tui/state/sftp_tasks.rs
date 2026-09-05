@@ -234,7 +234,7 @@ impl App {
                 let _size = meta.len();
                 let mode = 0o644u32;
                 let (chunk_tx, chunk_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(16);
-                let write_fut = sftp.write_all(&remote_path, 0, chunk_rx, mode);
+                let write_fut = sftp.write_all(&remote_path, 0, chunk_rx, mode, None);
                 let read_fut = async {
                     let mut buf = vec![0u8; 32 * 1024];
                     let mut total = 0u64;
@@ -651,7 +651,7 @@ fn upload_dir_recursive<'a>(
                 let mut file = tokio::fs::File::open(&local_child).await?;
                 let mode = 0o644u32;
                 let (chunk_tx, chunk_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(16);
-                let write_fut = sftp.write_all(&remote_child, 0, chunk_rx, mode);
+                let write_fut = sftp.write_all(&remote_child, 0, chunk_rx, mode, None);
                 let read_fut = async {
                     let mut buf = vec![0u8; 32 * 1024];
                     let mut total = 0u64;

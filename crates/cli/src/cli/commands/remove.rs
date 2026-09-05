@@ -66,7 +66,14 @@ pub async fn execute(
                 } else {
                     format!(" [{}]", conn.tags.join(", "))
                 };
-                println!("  {:<3} {}@{}:{}{}", i + 1, conn.name, conn.user, conn.host, tags);
+                println!(
+                    "  {:<3} {}@{}:{}{}",
+                    i + 1,
+                    conn.name,
+                    conn.user,
+                    conn.host,
+                    tags
+                );
             }
             println!("\nUse `bssh remove <name>` or `bssh remove --tag <tag>`.");
             return Ok(());

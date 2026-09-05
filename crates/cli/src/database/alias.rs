@@ -5,7 +5,10 @@ use rusqlite::params;
 use tracing::info;
 
 impl Database {
+    // ──────────────────────────────────────────────────────────────────────────
     // Alias management
+    // ──────────────────────────────────────────────────────────────────────────
+
     pub fn add_alias(&self, alias: &str, connection_id: &str) -> Result<()> {
         self.conn.execute(
             "INSERT OR REPLACE INTO aliases (alias, connection_id, created_at)
@@ -28,7 +31,6 @@ impl Database {
             .conn
             .prepare("SELECT alias FROM aliases WHERE connection_id = ?")?;
         let mut rows = stmt.query(params![connection_id])?;
-
         let mut aliases = Vec::new();
         while let Some(row) = rows.next()? {
             aliases.push(row.get(0)?);
@@ -52,9 +54,11 @@ impl Database {
             placeholders
         );
         let mut stmt = self.conn.prepare(&sql)?;
-        let params: Vec<&dyn rusqlite::ToSql> =
-            connection_ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
-        let mut rows = stmt.query(rusqlite::params_from_iter(params.iter()))?;
+        let sql_params: Vec<&dyn rusqlite::ToSql> = connection_ids
+            .iter()
+            .map(|id| id as &dyn rusqlite::ToSql)
+            .collect();
+        let mut rows = stmt.query(rusqlite::params_from_iter(sql_params.iter()))?;
         while let Some(row) = rows.next()? {
             let conn_id: String = row.get(0)?;
             let alias: String = row.get(1)?;
@@ -65,8 +69,8 @@ impl Database {
 
     pub fn get_connection_by_alias(&self, alias: &str) -> Result<Option<Connection>> {
         let mut stmt = self.conn.prepare(
-            "SELECT c.id, c.name, c.host, c.user, c.port, c.bastion, c.bastion_user, 
-                    c.use_kerberos, c.key_path, c.created_at, c.last_used, c.tags
+            "SELECT c.id, c.name, c.host, c.user, c.port, c.bastion, c.bastion_user,
+                    c.use_kerberos, c.key_path, c.created_at, c.last_used
              FROM connections c
              JOIN aliases a ON c.id = a.connection_id
              WHERE a.alias = ?",
@@ -80,13 +84,11 @@ impl Database {
         }
     }
 
-    /// Enhanced get_connection that also checks aliases
+    /// Enhanced get_connection that also checks aliases.
     pub fn get_connection_or_alias(&self, name_or_alias: &str) -> Result<Option<Connection>> {
-        // First try direct lookup
         if let Some(conn) = self.get_connection(name_or_alias)? {
             return Ok(Some(conn));
         }
-        // Then try alias lookup
         self.get_connection_by_alias(name_or_alias)
     }
 }
@@ -155,5 +157,39 @@ mod tests {
         let db = Database::new(&config).unwrap();
         let map = db.get_aliases_for_connections(&[]).unwrap();
         assert!(map.is_empty());
+    }
+
+    #[test]
+    fn test_duplicate_name_rejected() {
+        let dir = tempdir().unwrap();
+        let config = AppConfig {
+            database_path: dir.path().join("test.db"),
+            ..Default::default()
+        };
+        let db = Database::new(&config).unwrap();
+
+        let conn1 = Connection::new(
+            "shared".into(),
+            "a.example.com".into(),
+            "u".into(),
+            22,
+            None,
+            None,
+            false,
+            None,
+        );
+        let conn2 = Connection::new(
+            "shared".into(),
+            "b.example.com".into(),
+            "u".into(),
+            22,
+            None,
+            None,
+            false,
+            None,
+        );
+        db.add_connection(&conn1).unwrap();
+        let result = db.add_connection(&conn2);
+        assert!(result.is_err(), "expected duplicate name to fail");
     }
 }

@@ -2,18 +2,18 @@ mod commands;
 mod kerberos;
 mod tray;
 
+use bayesian_ssh::services::agent;
 use commands::{
     add_connection, add_key_to_agent, check_popout_main_overlap, claim_popout_session,
     close_all_ptys, close_pty, complete_onboarding, count_active_sessions, create_environment,
-    detach_pty, dock_popout_session, edit_connection, focus_terminal_window, get_active_env,
-    get_agent_status, get_connections, get_history, get_stats, get_workspace_info,
+    detach_pty, dock_popout_session, edit_connection, focus_terminal_window, force_quit_app,
+    get_active_env, get_agent_status, get_connections, get_history, get_stats, get_workspace_info,
     import_ssh_config, list_detached_sessions, list_environments, list_popout_sessions,
     load_desktop_settings, needs_onboarding, open_terminal_window, pick_key_file,
-    pick_ssh_config_file, quit_app, force_quit_app, reattach_pty, remove_connection, remove_environment,
+    pick_ssh_config_file, quit_app, reattach_pty, remove_connection, remove_environment,
     resize_pty, save_desktop_settings, save_workspace_config, seal_session_ui, set_active_env,
     spawn_pty, start_agent, write_pty, PtyState,
 };
-use bayesian_ssh::services::agent;
 use kerberos::{acquire_kerberos_ticket, get_kerberos_status, renew_kerberos_ticket};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -154,7 +154,11 @@ fn init_shell_env() {
             std::env::set_var("SSH_AUTH_SOCK", &sock);
             // Also propagate into the systemd user session for child processes
             let _ = std::process::Command::new("systemctl")
-                .args(["--user", "set-environment", &format!("SSH_AUTH_SOCK={sock}")])
+                .args([
+                    "--user",
+                    "set-environment",
+                    &format!("SSH_AUTH_SOCK={sock}"),
+                ])
                 .output();
         }
     }
@@ -187,7 +191,12 @@ fn apply_env_vars(text: &str) {
             if KEYS.contains(&key) {
                 // Don't downgrade an already-good SSH_AUTH_SOCK from the
                 // socket we found in Strategy 3.
-                if key == "SSH_AUTH_SOCK" && std::env::var("SSH_AUTH_SOCK").as_deref().map(agent::is_valid_socket).unwrap_or(false) {
+                if key == "SSH_AUTH_SOCK"
+                    && std::env::var("SSH_AUTH_SOCK")
+                        .as_deref()
+                        .map(agent::is_valid_socket)
+                        .unwrap_or(false)
+                {
                     continue;
                 }
                 std::env::set_var(key, val);
@@ -195,4 +204,3 @@ fn apply_env_vars(text: &str) {
         }
     }
 }
-

@@ -155,8 +155,7 @@ pub async fn execute_copy(config: AppConfig, target: String, key: Option<String>
     } else if let Some(ref k) = conn.key_path {
         PathBuf::from(format!("{}.pub", k))
     } else {
-        let home = dirs::home_dir()
-            .ok_or_else(|| anyhow!("Could not resolve home directory"))?;
+        let home = dirs::home_dir().ok_or_else(|| anyhow!("Could not resolve home directory"))?;
         let default_ed25519 = home.join(".ssh/id_ed25519.pub");
         let default_rsa = home.join(".ssh/id_rsa.pub");
         if default_ed25519.exists() {

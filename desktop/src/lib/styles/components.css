@@ -234,6 +234,20 @@
     @apply relative flex flex-col rounded-xl border border-border bg-surface shadow-xl;
     animation: modal-enter 0.25s var(--ease-out) forwards;
   }
+
+  /* ---- Modern Cards & Panels --------------------------------------- */
+  .panel-glass {
+    @apply rounded-xl border border-border bg-panel/80 backdrop-blur-md;
+  }
+  .metric-tile {
+    @apply flex flex-col gap-1 rounded-xl border border-border bg-surface-input/50 p-3.5 transition-colors duration-fast hover:border-border-hover;
+  }
+  .server-card {
+    @apply flex flex-col justify-between rounded-xl border border-border bg-surface-input/40 p-4 transition-all duration-fast hover:border-accent/40 hover:bg-surface-input hover:shadow-md;
+  }
+  .badge-pill {
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-2xs font-semibold;
+  }
 }
 
 /* ---- Utilities ---------------------------------------------------- */

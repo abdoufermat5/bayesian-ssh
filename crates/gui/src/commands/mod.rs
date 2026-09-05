@@ -44,7 +44,9 @@ impl PtyState {
     /// lock was held must not crash the whole GUI — the lock is only ever
     /// held briefly, so recovering the data is always safe).
     pub fn lock_sessions(&self) -> std::sync::MutexGuard<'_, HashMap<String, PtySession>> {
-        self.sessions.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.sessions
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }
 

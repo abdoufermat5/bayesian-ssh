@@ -24,5 +24,12 @@ pub fn acquire_kerberos_ticket(
     lifetime: Option<String>,
     renew_lifetime: Option<String>,
 ) -> Result<kerberos::KerberosStatus, String> {
-    kerberos::acquire_ticket(principal, password, forwardable, proxiable, lifetime, renew_lifetime)
+    kerberos::acquire_ticket(
+        principal,
+        password,
+        forwardable,
+        proxiable,
+        lifetime,
+        renew_lifetime,
+    )
 }

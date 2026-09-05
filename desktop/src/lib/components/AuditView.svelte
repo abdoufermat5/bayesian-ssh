@@ -1,14 +1,26 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import { ShieldCheck, ShieldAlert, AlertTriangle, Info, RefreshCw, CheckCircle2, Wrench } from "lucide-svelte";
-  import type { AuditReport, AuditFinding } from "$lib/types";
+  import {
+    AlertTriangle,
+    Check,
+    CheckCircle2,
+    Copy,
+    Info,
+    RefreshCw,
+    Shield,
+    ShieldAlert,
+    ShieldCheck,
+    Wrench,
+  } from "lucide-svelte";
+  import type { AuditFinding, AuditReport } from "$lib/types";
   import { notify } from "$lib/stores/notifications.svelte";
 
   let report = $state<AuditReport | null>(null);
   let loading = $state(true);
   let fixing = $state(false);
   let activeFilter = $state<"all" | "critical" | "warning" | "info">("all");
+  let copiedRemediation = $state<string | null>(null);
 
   async function runAudit() {
     loading = true;
@@ -34,6 +46,15 @@
     }
   }
 
+  function copyCode(code: string) {
+    navigator.clipboard.writeText(code);
+    copiedRemediation = code;
+    notify("Copied remediation command", "success");
+    setTimeout(() => {
+      if (copiedRemediation === code) copiedRemediation = null;
+    }, 2000);
+  }
+
   onMount(() => {
     runAudit();
   });
@@ -42,9 +63,9 @@
     report?.findings.filter((f) => activeFilter === "all" || f.severity === activeFilter) ?? []
   );
 
-  function getGradeColor(grade: string) {
+  function getGradeClass(grade: string) {
     if (grade.startsWith("A")) return "text-running border-success/30 bg-success/10";
-    if (grade.startsWith("B")) return "text-blue-400 border-blue-500/30 bg-blue-500/10";
+    if (grade.startsWith("B")) return "text-accent border-accent/30 bg-accent/10";
     if (grade.startsWith("C")) return "text-warning border-warning/30 bg-warning/10";
     return "text-error border-error/30 bg-error/10";
   }
@@ -56,139 +77,208 @@
       case "warning":
         return { label: "WARNING", class: "text-warning bg-warning/15 border-warning/30", icon: AlertTriangle };
       case "info":
-        return { label: "INFO", class: "text-blue-400 bg-blue-500/15 border-blue-500/30", icon: Info };
+        return { label: "INFO", class: "text-accent bg-accent/15 border-accent/30", icon: Info };
     }
   }
 </script>
 
-<div class="flex flex-col flex-1 h-full min-h-0 overflow-y-auto p-6 bg-surface text-primary">
-  <!-- Header -->
-  <div class="flex items-center justify-between mb-6 pb-4 border-b border-border">
-    <div>
-      <h1 class="text-xl font-bold tracking-tight flex items-center gap-2 text-primary">
-        <ShieldCheck class="text-accent" size={24} />
-        Security Auditor
-      </h1>
-      <p class="text-xs text-muted mt-1">
-        Comprehensive automated audit of your SSH identity files, strict host key settings, private key permissions, and connection freshness.
-      </p>
+<div class="flex flex-col flex-1 h-full min-h-0 overflow-y-auto px-6 py-5 bg-surface text-primary select-none scrollbar-none">
+  <!-- Header Bar -->
+  <div class="flex items-center justify-between gap-4 pb-4 border-b border-border shrink-0 flex-wrap">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-xl bg-accent/15 border border-accent/30 flex items-center justify-center text-accent shrink-0">
+        <ShieldCheck size={18} />
+      </div>
+      <div>
+        <h2 class="text-sm font-bold text-primary tracking-tight m-0">Security Auditor</h2>
+        <p class="text-[11px] text-muted m-0">Identity files, strict host keys, file permissions, and posture</p>
+      </div>
     </div>
+
     <div class="flex items-center gap-2">
       <button
-        class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/20 text-running border border-success/30 text-xs font-semibold cursor-pointer transition-all hover:bg-success/30 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+        type="button"
+        class="btn bg-running/15 text-running border border-running/30 hover:bg-running/25 shadow-sm"
         onclick={fixPermissions}
         disabled={loading || fixing}
       >
-        <Wrench size={14} class={fixing ? "animate-spin" : ""} />
-        Fix All Insecure Permissions
+        <Wrench size={13} class={fixing ? "animate-spin" : ""} />
+        <span>Fix All Permissions</span>
       </button>
+
       <button
-        class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-semibold cursor-pointer transition-all hover:opacity-90 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+        type="button"
+        class="btn btn-secondary"
         onclick={runAudit}
         disabled={loading}
       >
-        <RefreshCw size={14} class={loading ? "animate-spin" : ""} />
-        Re-run Audit
+        <RefreshCw size={13} class={loading ? "animate-spin" : ""} />
+        <span>Re-scan</span>
       </button>
     </div>
   </div>
 
   {#if loading}
-    <div class="flex flex-col items-center justify-center py-20 text-muted">
-      <RefreshCw class="animate-spin mb-3 text-accent" size={32} />
-      <span class="text-xs font-medium">Auditing system configuration & key permissions...</span>
+    <div class="py-24 flex flex-col items-center justify-center text-muted gap-2">
+      <RefreshCw size={28} class="text-accent animate-spin" />
+      <span class="text-xs font-semibold text-primary">Auditing system security posture...</span>
+      <span class="text-[11px]">Inspecting identity files, file permissions, and SSH configuration</span>
     </div>
   {:else if report}
-    <!-- Score Overview Banner -->
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-      <!-- Score Circle Card -->
-      <div class="p-5 rounded-2xl border border-border bg-surface-input/50 flex flex-col items-center justify-center text-center">
-        <div class="text-xs font-semibold text-muted uppercase tracking-wider mb-2">Security Score</div>
-        <div class="text-4xl font-extrabold text-primary mb-1">{report.score}<span class="text-sm text-muted font-normal">/100</span></div>
-        <span class="px-2.5 py-0.5 rounded-full text-xs font-bold border mt-1 {getGradeColor(report.grade)}">
-          Grade: {report.grade} ({report.rating})
-        </span>
+    <!-- Scorecard & Overview Tiles -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-3.5 my-4 shrink-0">
+      <!-- Grade Card -->
+      <div class="rounded-xl border p-4 flex items-center gap-4 bg-surface-input/50 {getGradeClass(report.grade)}">
+        <div class="w-14 h-14 rounded-2xl flex items-center justify-center border font-mono text-2xl font-black shrink-0 {getGradeClass(report.grade)}">
+          {report.grade}
+        </div>
+        <div class="min-w-0">
+          <span class="eyebrow text-[10px]">Posture Rating</span>
+          <h3 class="text-base font-bold truncate leading-tight mt-0.5">{report.rating}</h3>
+          <span class="text-[11px] font-mono text-muted">{report.score}/100 score</span>
+        </div>
       </div>
 
       <!-- Critical Card -->
-      <div class="p-5 rounded-2xl border border-border bg-surface-input/50 flex flex-col justify-between">
-        <div class="flex items-center justify-between">
-          <span class="text-xs font-semibold text-muted uppercase tracking-wider">Critical Issues</span>
-          <ShieldAlert class="text-error" size={20} />
+      <div class="metric-tile">
+        <span class="eyebrow flex items-center justify-between text-error">
+          Critical Issues
+          <ShieldAlert size={12} />
+        </span>
+        <div class="flex items-baseline gap-2 mt-0.5">
+          <span class="text-xl font-bold tracking-tight {report.total_critical > 0 ? 'text-error' : 'text-primary'}">
+            {report.total_critical}
+          </span>
+          <span class="text-[11px] text-muted">require attention</span>
         </div>
-        <div class="text-3xl font-extrabold text-error mt-2">{report.total_critical}</div>
-        <span class="text-[11px] text-muted mt-1">Requires immediate attention</span>
       </div>
 
       <!-- Warning Card -->
-      <div class="p-5 rounded-2xl border border-border bg-surface-input/50 flex flex-col justify-between">
-        <div class="flex items-center justify-between">
-          <span class="text-xs font-semibold text-muted uppercase tracking-wider">Warnings</span>
-          <AlertTriangle class="text-warning" size={20} />
+      <div class="metric-tile">
+        <span class="eyebrow flex items-center justify-between text-warning">
+          Warnings
+          <AlertTriangle size={12} />
+        </span>
+        <div class="flex items-baseline gap-2 mt-0.5">
+          <span class="text-xl font-bold tracking-tight {report.total_warning > 0 ? 'text-warning' : 'text-primary'}">
+            {report.total_warning}
+          </span>
+          <span class="text-[11px] text-muted">best practices</span>
         </div>
-        <div class="text-3xl font-extrabold text-warning mt-2">{report.total_warning}</div>
-        <span class="text-[11px] text-muted mt-1">Recommended fixes</span>
       </div>
 
       <!-- Info Card -->
-      <div class="p-5 rounded-2xl border border-border bg-surface-input/50 flex flex-col justify-between">
-        <div class="flex items-center justify-between">
-          <span class="text-xs font-semibold text-muted uppercase tracking-wider">Informational</span>
-          <Info class="text-blue-400" size={20} />
+      <div class="metric-tile">
+        <span class="eyebrow flex items-center justify-between text-accent">
+          Passed / Info
+          <CheckCircle2 size={12} />
+        </span>
+        <div class="flex items-baseline gap-2 mt-0.5">
+          <span class="text-xl font-bold tracking-tight text-primary">
+            {report.total_info}
+          </span>
+          <span class="text-[11px] text-muted">checks recorded</span>
         </div>
-        <div class="text-3xl font-extrabold text-blue-400 mt-2">{report.total_info}</div>
-        <span class="text-[11px] text-muted mt-1">Best-practice suggestions</span>
       </div>
     </div>
 
-    <!-- Filter Tabs & Findings -->
-    <div class="flex items-center justify-between mb-4">
-      <div class="flex items-center gap-1.5 bg-surface-input p-1 rounded-xl border border-border">
-        {#each [
-          { id: "all", label: `All (${report.findings.length})` },
-          { id: "critical", label: `Critical (${report.total_critical})` },
-          { id: "warning", label: `Warnings (${report.total_warning})` },
-          { id: "info", label: `Info (${report.total_info})` },
-        ] as filter}
-          <button
-            class="px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-all border-none disabled:opacity-50 disabled:cursor-not-allowed
-              {activeFilter === filter.id ? 'bg-accent text-white shadow-sm' : 'text-muted hover:text-primary hover:bg-white/5'}"
-            onclick={() => (activeFilter = filter.id as typeof activeFilter)}
-          >
-            {filter.label}
-          </button>
-        {/each}
-      </div>
+    <!-- Findings Filter Tabs -->
+    <div class="flex items-center gap-1.5 pb-2 border-b border-border/80 shrink-0">
+      <button
+        type="button"
+        class="text-xs px-2.5 py-1 rounded-lg font-semibold transition-colors cursor-pointer border
+          {activeFilter === 'all'
+            ? 'border-accent/40 bg-accent/15 text-accent'
+            : 'border-transparent text-muted hover:text-primary hover:bg-surface-hover'}"
+        onclick={() => (activeFilter = "all")}
+      >
+        All Findings ({report.findings.length})
+      </button>
+
+      {#if report.total_critical > 0}
+        <button
+          type="button"
+          class="text-xs px-2.5 py-1 rounded-lg font-semibold transition-colors cursor-pointer border
+            {activeFilter === 'critical'
+              ? 'border-error/40 bg-error/15 text-error'
+              : 'border-transparent text-muted hover:text-error hover:bg-error/10'}"
+          onclick={() => (activeFilter = "critical")}
+        >
+          Critical ({report.total_critical})
+        </button>
+      {/if}
+
+      {#if report.total_warning > 0}
+        <button
+          type="button"
+          class="text-xs px-2.5 py-1 rounded-lg font-semibold transition-colors cursor-pointer border
+            {activeFilter === 'warning'
+              ? 'border-warning/40 bg-warning/15 text-warning'
+              : 'border-transparent text-muted hover:text-warning hover:bg-warning/10'}"
+          onclick={() => (activeFilter = "warning")}
+        >
+          Warnings ({report.total_warning})
+        </button>
+      {/if}
+
+      {#if report.total_info > 0}
+        <button
+          type="button"
+          class="text-xs px-2.5 py-1 rounded-lg font-semibold transition-colors cursor-pointer border
+            {activeFilter === 'info'
+              ? 'border-accent/40 bg-accent/15 text-accent'
+              : 'border-transparent text-muted hover:text-primary hover:bg-surface-hover'}"
+          onclick={() => (activeFilter = "info")}
+        >
+          Informational ({report.total_info})
+        </button>
+      {/if}
     </div>
 
     <!-- Findings List -->
-    {#if filteredFindings.length === 0}
-      <div class="flex flex-col items-center justify-center py-16 border border-dashed border-border rounded-xl text-muted">
-        <CheckCircle2 size={40} class="text-running mb-2 opacity-80" />
-        <span class="text-sm font-semibold text-primary">No Findings in this Category</span>
-        <span class="text-xs text-muted mt-1">Your SSH environment meets security requirements for this filter.</span>
-      </div>
-    {:else}
-      <div class="space-y-3">
-        {#each filteredFindings as finding}
-          {@const badge = getSeverityBadge(finding.severity)}
-          <div class="p-4 rounded-xl border border-border bg-surface-input/50 space-y-2 transition-all hover:border-border-hover">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <span class="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider border {badge.class}">
-                  <badge.icon size={11} />
-                  {badge.label}
-                </span>
-                <span class="font-bold text-sm text-primary">{finding.title}</span>
-              </div>
-            </div>
-            <p class="text-xs text-muted leading-relaxed">{finding.description}</p>
-            <div class="flex items-start gap-1.5 p-2.5 rounded-lg bg-black/20 border border-white/5 text-xs text-accent font-mono">
-              <span class="font-bold text-primary shrink-0 font-sans">Remediation:</span> {finding.remediation}
+    <div class="space-y-3 pt-3 flex-1">
+      {#each filteredFindings as finding}
+        {@const badge = getSeverityBadge(finding.severity)}
+        <div class="rounded-xl border border-border bg-surface-input/30 p-4 transition-all hover:border-border-hover">
+          <div class="flex items-start justify-between gap-3 mb-2">
+            <div class="flex items-center gap-2.5 min-w-0">
+              <span class="badge-pill {badge.class}">
+                <badge.icon size={11} />
+                {badge.label}
+              </span>
+              <h4 class="text-xs font-bold text-primary truncate m-0">{finding.title}</h4>
             </div>
           </div>
-        {/each}
-      </div>
-    {/if}
+
+          <p class="text-xs text-secondary leading-relaxed mb-3 m-0">
+            {finding.description}
+          </p>
+
+          {#if finding.remediation}
+            <div class="p-2.5 rounded-lg bg-surface border border-border/80 flex items-center justify-between gap-2 font-mono text-[11px] text-accent">
+              <span class="truncate">{finding.remediation}</span>
+              <button
+                type="button"
+                class="p-1 text-muted hover:text-primary rounded hover:bg-surface-hover border-none bg-transparent cursor-pointer shrink-0"
+                onclick={() => copyCode(finding.remediation)}
+                title="Copy command"
+              >
+                {#if copiedRemediation === finding.remediation}
+                  <Check size={12} class="text-running" />
+                {:else}
+                  <Copy size={12} />
+                {/if}
+              </button>
+            </div>
+          {/if}
+        </div>
+      {:else}
+        <div class="py-16 flex flex-col items-center justify-center text-muted gap-2 border border-dashed border-border rounded-xl">
+          <CheckCircle2 size={32} class="text-running" />
+          <p class="text-xs font-semibold text-primary">No findings in this category</p>
+          <p class="text-[11px]">All checked parameters are compliant.</p>
+        </div>
+      {/each}
+    </div>
   {/if}
 </div>

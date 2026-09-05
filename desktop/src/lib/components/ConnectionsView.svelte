@@ -1,17 +1,25 @@
 <script lang="ts">
   import {
-    Plus,
-    Trash2,
+    Activity,
+    ArrowUpDown,
+    Check,
+    CheckCircle2,
+    Copy,
+    CopyPlus,
     Edit2,
+    HardDrive,
+    LayoutGrid,
+    List,
     Play,
+    Plus,
+    RefreshCw,
+    Search,
     Server,
     Shield,
-    Copy,
-    Check,
-    RefreshCw,
-    CopyPlus,
     Terminal,
-    Activity,
+    Trash2,
+    X,
+    Zap,
   } from "lucide-svelte";
   import { invoke } from "@tauri-apps/api/core";
   import type { Connection } from "$lib/types";
@@ -39,7 +47,7 @@
 
   let {
     connections,
-    viewMode,
+    viewMode = $bindable("list"),
     selectedHostIndex,
     copiedId,
     justDuplicatedId,
@@ -58,6 +66,9 @@
   let pinging = $state(false);
   let pingResults = $state<Record<string, { latency_ms: number; success: boolean }>>({});
   let connectingHostId = $state<string | null>(null);
+  let sortBy = $state<"bayesian" | "name" | "recent" | "host">("bayesian");
+  let filterQuery = $state("");
+  let selectedTagFilter = $state<string | null>(null);
 
   async function handleConnectHost(conn: Connection) {
     connectingHostId = conn.id;
@@ -79,83 +90,265 @@
         if (r.success) reachable++;
       }
       pingResults = map;
-      notify(`Ping completed: ${reachable}/${results.length} hosts reachable!`, "success");
+      notify(`Ping completed: ${reachable}/${results.length} reachable hosts`, "success");
     } catch (err) {
       notify(`Ping failed: ${err}`, "error");
     } finally {
       pinging = false;
     }
   }
+
+  // Extract all unique tags
+  const tags = $derived.by(() => {
+    const s = new Set<string>();
+    connections.forEach((c) => c.tags.forEach((t) => s.add(t)));
+    return Array.from(s).sort();
+  });
+
+  // Filtered & Sorted connections
+  const processedConnections = $derived.by(() => {
+    let list = [...connections];
+
+    if (filterQuery.trim()) {
+      const q = filterQuery.toLowerCase();
+      list = list.filter(
+        (c) =>
+          c.name.toLowerCase().includes(q) ||
+          c.host.toLowerCase().includes(q) ||
+          c.user.toLowerCase().includes(q) ||
+          c.tags.some((t) => t.toLowerCase().includes(q)),
+      );
+    }
+
+    if (selectedTagFilter) {
+      list = list.filter((c) => c.tags.includes(selectedTagFilter!));
+    }
+
+    if (sortBy === "name") {
+      list.sort((a, b) => a.name.localeCompare(b.name));
+    } else if (sortBy === "recent") {
+      list.sort((a, b) => (b.last_used ?? "").localeCompare(a.last_used ?? ""));
+    } else if (sortBy === "host") {
+      list.sort((a, b) => a.host.localeCompare(b.host));
+    }
+    // "bayesian" keeps the ranking returned from the bayesian-ssh engine
+
+    return list;
+  });
+
+  // Bayesian top host
+  const topHost = $derived.by(() => {
+    return connections.length > 0 ? connections[0] : null;
+  });
+
+  const reachableCount = $derived.by(() => {
+    return Object.values(pingResults).filter((r) => r.success).length;
+  });
 </script>
 
-<div class="flex flex-col flex-1 min-h-0 w-full overflow-hidden bg-surface">
-  <!-- Header -->
-  <div class="shrink-0 px-6 pt-5 pb-3 flex justify-between items-center border-b border-border">
-    <div>
-      <h2 class="text-base font-bold tracking-tight text-primary flex items-center gap-2 m-0">
-        <Server size={18} class="text-accent" />
-        SSH Connections
-        <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/20">
-          {connections.length}
-        </span>
-      </h2>
-      <span class="text-muted text-xs mt-0.5 block">Bayesian-ranked hosts based on frequency and recency</span>
+<div class="flex flex-col flex-1 min-h-0 w-full overflow-hidden bg-surface select-none">
+  <!-- Top Executive Metric Bar -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 px-6 pt-5 pb-3 shrink-0">
+    <div class="metric-tile">
+      <span class="eyebrow flex items-center justify-between">
+        Total Hosts
+        <Server size={12} class="text-accent" />
+      </span>
+      <div class="flex items-baseline gap-2 mt-0.5">
+        <span class="text-xl font-bold tracking-tight text-primary">{connections.length}</span>
+        <span class="text-[11px] text-muted">configured</span>
+      </div>
     </div>
 
+    <div class="metric-tile">
+      <span class="eyebrow flex items-center justify-between">
+        Reachable
+        <Activity size={12} class="text-running" />
+      </span>
+      <div class="flex items-baseline gap-2 mt-0.5">
+        <span class="text-xl font-bold tracking-tight text-running">
+          {Object.keys(pingResults).length > 0 ? `${reachableCount}/${connections.length}` : '—'}
+        </span>
+        <span class="text-[11px] text-muted">live ping</span>
+      </div>
+    </div>
+
+    <div class="metric-tile">
+      <span class="eyebrow flex items-center justify-between">
+        Bayesian Pick
+        <Zap size={12} class="text-warning" />
+      </span>
+      <div class="flex items-baseline gap-1.5 mt-0.5 min-w-0">
+        <span class="text-sm font-bold text-primary truncate max-w-[140px]">
+          {topHost ? topHost.name : 'None'}
+        </span>
+        <span class="text-[10px] text-accent font-mono">Rank #1</span>
+      </div>
+    </div>
+
+    <div class="metric-tile">
+      <span class="eyebrow flex items-center justify-between">
+        Tags Active
+        <Shield size={12} class="text-secondary" />
+      </span>
+      <div class="flex items-baseline gap-2 mt-0.5">
+        <span class="text-xl font-bold tracking-tight text-primary">{tags.length}</span>
+        <span class="text-[11px] text-muted">categories</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filter, Search & View Controls Bar -->
+  <div class="px-6 py-2.5 flex items-center justify-between gap-3 border-y border-border/80 bg-surface-input/20 shrink-0 flex-wrap">
+    <div class="flex items-center gap-2 flex-1 min-w-[260px]">
+      <!-- Local search input -->
+      <div class="relative flex items-center bg-surface-input border border-border rounded-lg px-2.5 py-1.5 w-full max-w-sm focus-within:border-accent">
+        <Search size={14} class="text-muted mr-2 shrink-0" />
+        <input
+          type="text"
+          placeholder="Filter hosts by name, host, port..."
+          bind:value={filterQuery}
+          class="bg-transparent border-none text-xs text-primary outline-none w-full placeholder:text-muted"
+        />
+        {#if filterQuery}
+          <button
+            type="button"
+            onclick={() => (filterQuery = "")}
+            class="text-muted hover:text-primary p-0.5 border-none bg-transparent cursor-pointer"
+          >
+            <X size={12} />
+          </button>
+        {/if}
+      </div>
+
+      <!-- Tag Quick Filter Pills -->
+      {#if tags.length > 0}
+        <div class="hidden lg:flex items-center gap-1 overflow-x-auto max-w-md scrollbar-none">
+          <button
+            type="button"
+            class="text-[10px] px-2 py-1 rounded-md cursor-pointer transition-all border
+              {selectedTagFilter === null
+                ? 'border-accent/40 bg-accent/20 text-accent font-bold'
+                : 'border-border bg-surface text-muted hover:text-primary hover:border-border-hover'}"
+            onclick={() => (selectedTagFilter = null)}
+          >
+            All
+          </button>
+          {#each tags.slice(0, 5) as t}
+            <button
+              type="button"
+              class="text-[10px] px-2 py-1 rounded-md cursor-pointer transition-all border whitespace-nowrap
+                {selectedTagFilter === t
+                  ? 'border-accent/40 bg-accent/20 text-accent font-bold'
+                  : 'border-border bg-surface text-muted hover:text-primary hover:border-border-hover'}"
+              onclick={() => (selectedTagFilter = selectedTagFilter === t ? null : t)}
+            >
+              #{t}
+            </button>
+          {/each}
+        </div>
+      {/if}
+    </div>
+
+    <!-- Actions & View Mode Toggle -->
     <div class="flex items-center gap-2">
+      <!-- Sort Selector -->
+      <div class="flex items-center gap-1 bg-surface-input border border-border rounded-lg px-2 py-1 text-xs">
+        <ArrowUpDown size={12} class="text-muted" />
+        <select
+          bind:value={sortBy}
+          class="bg-transparent border-none text-xs text-secondary outline-none cursor-pointer pr-1"
+        >
+          <option value="bayesian" class="bg-surface text-primary">Bayesian Rank</option>
+          <option value="name" class="bg-surface text-primary">Name (A-Z)</option>
+          <option value="recent" class="bg-surface text-primary">Most Recent</option>
+          <option value="host" class="bg-surface text-primary">Host IP</option>
+        </select>
+      </div>
+
+      <!-- View Switcher (List / Grid) -->
+      <div class="flex border border-border rounded-lg p-0.5 bg-surface-input">
+        <button
+          type="button"
+          class="p-1 rounded-md cursor-pointer border-none transition-colors
+            {viewMode === 'list' ? 'bg-surface-hover text-primary shadow-sm' : 'bg-transparent text-muted hover:text-secondary'}"
+          onclick={() => (viewMode = "list")}
+          title="Table List View"
+          aria-label="Table List View"
+        >
+          <List size={14} />
+        </button>
+        <button
+          type="button"
+          class="p-1 rounded-md cursor-pointer border-none transition-colors
+            {viewMode === 'grid' ? 'bg-surface-hover text-primary shadow-sm' : 'bg-transparent text-muted hover:text-secondary'}"
+          onclick={() => (viewMode = "grid")}
+          title="Grid Cards View"
+          aria-label="Grid Cards View"
+        >
+          <LayoutGrid size={14} />
+        </button>
+      </div>
+
+      <!-- Ping All button -->
+      <button
+        type="button"
+        class="bg-surface-input border border-border text-secondary hover:text-primary hover:border-border-hover px-2.5 py-1.5 rounded-lg cursor-pointer flex items-center gap-1.5 text-xs font-semibold transition-all"
+        onclick={pingAllHosts}
+        disabled={pinging}
+        title="Ping all saved hosts"
+      >
+        <Activity size={13} class={pinging ? "animate-spin text-accent" : "text-running"} />
+        <span class="hidden sm:inline">Ping All</span>
+      </button>
+
+      <!-- Batch Exec button -->
       {#if onOpenBatchExec}
         <button
-          class="bg-surface-input border border-border text-muted px-2.5 py-1.5 rounded-md cursor-pointer flex items-center gap-1.5 text-xs font-semibold transition-all hover:border-border-hover hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed"
+          type="button"
+          class="bg-surface-input border border-border text-secondary hover:text-primary hover:border-border-hover px-2.5 py-1.5 rounded-lg cursor-pointer flex items-center gap-1.5 text-xs font-semibold transition-all"
           onclick={onOpenBatchExec}
           title="Safe Multi-Host Batch Execution"
         >
-          <Terminal size={14} class="text-accent" />
-          Batch Exec
+          <Terminal size={13} class="text-accent" />
+          <span class="hidden sm:inline">Batch</span>
         </button>
       {/if}
+
+      <!-- New Server Primary Button -->
       <button
-        class="bg-surface-input border border-border text-muted px-2.5 py-1.5 rounded-md cursor-pointer flex items-center gap-1.5 text-xs font-semibold transition-all hover:border-border-hover hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed"
-        onclick={pingAllHosts}
-        disabled={pinging}
-        title="Ping all hosts"
-      >
-        <Activity size={14} class={pinging ? "animate-spin text-accent" : "text-running"} />
-        Ping All
-      </button>
-      <button
-        class="bg-surface-input border border-border text-muted p-1.5 rounded-md cursor-pointer flex transition-all hover:border-border-hover hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed"
-        onclick={onRefresh}
-        title="Refresh Connections"
-      >
-        <RefreshCw size={14} />
-      </button>
-      <button
-        class="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-accent text-white text-xs font-semibold cursor-pointer shadow-sm hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        type="button"
+        class="btn btn-primary shadow-sm"
         onclick={onAddHost}
       >
         <Plus size={14} />
-        Add Host
+        <span>Add Host</span>
       </button>
     </div>
   </div>
 
-  <!-- Content -->
+  <!-- Main Content View Area -->
   <div class="flex-1 min-h-0 overflow-y-auto px-6 py-4 scrollbar-none">
-    {#if connections.length > 0}
+    {#if processedConnections.length > 0}
       {#if viewMode === "list"}
-        <div class="border border-border rounded-lg overflow-hidden bg-surface-input/30">
-          <div class="flex bg-surface-input border-b border-border text-[10px] font-bold text-muted uppercase tracking-wider px-3.5 py-2">
-            <div class="flex-[2]">Name</div>
-            <div class="flex-[2.5]">Target Address</div>
-            <div class="flex-[2]">Tags</div>
-            <div class="flex-[1.5]">Last Used</div>
-            <div class="flex-[1.5] text-right">Actions</div>
+        <!-- Modern Dense Table List -->
+        <div class="border border-border rounded-xl overflow-hidden bg-surface-input/30 shadow-sm">
+          <!-- Table Header -->
+          <div class="flex items-center px-4 py-2.5 bg-surface-input/80 border-b border-border text-[10px] font-bold text-muted uppercase tracking-wider">
+            <div class="w-12 text-center">Rank</div>
+            <div class="flex-[3]">Host Name</div>
+            <div class="flex-[3.5]">Target Address</div>
+            <div class="flex-[2] hidden md:block">Tags</div>
+            <div class="flex-[2] hidden lg:block">Last Used</div>
+            <div class="flex-[2] text-right">Actions</div>
           </div>
 
+          <!-- Table Rows -->
           <div class="divide-y divide-border/60">
-            {#each connections as conn, index}
+            {#each processedConnections as conn, index}
+              {@const ping = pingResults[conn.id]}
               <div
-                class="flex items-center px-3.5 py-2 text-xs text-secondary cursor-pointer outline-none transition-colors hover:bg-white/[0.04] hover:text-primary group
+                class="flex items-center px-4 py-2.5 text-xs text-secondary cursor-pointer outline-none transition-all hover:bg-white/[0.04] hover:text-primary group
                   {selectedHostIndex === index ? 'bg-accent/10 text-primary font-semibold' : ''}
                   {justDuplicatedId === conn.id ? 'animate-flash' : ''}"
                 onclick={() => onSelectHost(index)}
@@ -164,37 +357,70 @@
                 tabindex="0"
                 onkeydown={(e) => e.key === "Enter" && onConnect(conn)}
               >
-                <div class="flex-[2] flex items-center gap-2 font-medium text-primary">
-                  <span class="w-2 h-2 rounded-full {conn.last_used ? 'bg-running' : 'bg-muted/40'} shrink-0"></span>
+                <!-- Rank Index -->
+                <div class="w-12 text-center font-mono text-[11px] text-muted">
+                  #{index + 1}
+                </div>
+
+                <!-- Host Name & Badges -->
+                <div class="flex-[3] flex items-center gap-2 font-semibold text-primary min-w-0">
+                  <!-- Live Ping Indicator / Status Dot -->
+                  {#if ping}
+                    <span
+                      class="w-2 h-2 rounded-full shrink-0 {ping.success ? 'bg-running' : 'bg-error'}"
+                      title={ping.success ? `Reachable: ${ping.latency_ms}ms` : 'Host unreachable'}
+                    ></span>
+                  {:else}
+                    <span class="w-2 h-2 rounded-full shrink-0 {conn.last_used ? 'bg-running/70' : 'bg-muted/40'}"></span>
+                  {/if}
+
                   <span class="truncate">{conn.name}</span>
+
                   {#if conn.use_kerberos}
-                    <span class="text-[9px] px-1 py-0.2 rounded bg-accent/15 border border-accent/25 text-accent font-bold uppercase tracking-wider">krb5</span>
+                    <span class="badge-pill bg-accent/15 border border-accent/30 text-accent text-[9px] uppercase">
+                      krb5
+                    </span>
                   {/if}
                   {#if conn.bastion}
-                    <span class="text-[9px] px-1 py-0.2 rounded bg-cyan-500/15 border border-cyan-500/25 text-cyan-400 font-bold uppercase tracking-wider">jump</span>
+                    <span class="badge-pill bg-cyan-500/15 border border-cyan-500/30 text-cyan-400 text-[9px] uppercase">
+                      jump
+                    </span>
+                  {/if}
+                  {#if ping?.success}
+                    <span class="badge-pill bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 font-mono text-[9px]">
+                      {ping.latency_ms}ms
+                    </span>
                   {/if}
                 </div>
 
-                <div class="flex-[2.5] font-mono text-[11px] text-muted truncate">{conn.user}@{conn.host}:{conn.port}</div>
+                <!-- Target Address -->
+                <div class="flex-[3.5] font-mono text-[11px] text-muted truncate">
+                  {conn.user}@{conn.host}:{conn.port}
+                </div>
 
-                <div class="flex-[2] flex gap-1 flex-wrap">
+                <!-- Tags -->
+                <div class="flex-[2] hidden md:flex gap-1 flex-wrap">
                   {#each conn.tags as tag}
-                    <span class="text-[10px] bg-white/[0.04] border border-border text-muted px-1.5 py-0.2 rounded font-mono">#{tag}</span>
+                    <span class="tag">#{tag}</span>
                   {/each}
                 </div>
 
-                <div class="flex-[1.5] text-muted text-[11px]">
+                <!-- Last Used -->
+                <div class="flex-[2] hidden lg:block text-muted text-[11px]">
                   {conn.last_used ? formatDate(conn.last_used, timezone) : "Never"}
                 </div>
 
-                <div class="flex-[1.5] flex justify-end gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
+                <!-- Actions Hover Toolbar -->
+                <div class="flex-[2] flex justify-end items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
                   <button
-                    class="p-1 rounded text-muted hover:text-primary hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    type="button"
+                    class="btn-icon p-1 text-muted hover:text-primary transition-colors"
                     onclick={(e) => {
                       e.stopPropagation();
                       onCopyCommand(toSshCommand(conn), conn.id);
                     }}
-                    title="Copy SSH command"
+                    title="Copy SSH Command"
+                    aria-label="Copy SSH Command"
                   >
                     {#if copiedId === conn.id}
                       <Check size={13} class="text-running" />
@@ -202,50 +428,62 @@
                       <Copy size={13} />
                     {/if}
                   </button>
+
                   <button
-                    class="p-1 rounded text-muted hover:text-primary hover:bg-white/10 transition-colors"
+                    type="button"
+                    class="btn-icon p-1 text-muted hover:text-primary transition-colors"
                     onclick={(e) => {
                       e.stopPropagation();
                       onEdit(conn);
                     }}
-                    title="Edit"
+                    title="Edit Connection"
+                    aria-label="Edit Connection"
                   >
                     <Edit2 size={13} />
                   </button>
+
                   <button
-                    class="p-1 rounded text-muted hover:text-primary hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    type="button"
+                    class="btn-icon p-1 text-muted hover:text-primary transition-colors"
                     onclick={(e) => {
                       e.stopPropagation();
                       onDuplicate(conn);
                     }}
-                    title="Duplicate"
+                    title="Duplicate Connection"
+                    aria-label="Duplicate Connection"
                   >
                     <CopyPlus size={13} />
                   </button>
+
                   <button
-                    class="p-1 rounded text-muted hover:text-error hover:bg-error/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    type="button"
+                    class="btn-icon p-1 text-muted hover:text-error hover:bg-error/10 transition-colors"
                     onclick={(e) => {
                       e.stopPropagation();
                       onDelete(conn);
                     }}
-                    title="Delete"
+                    title="Delete Connection"
+                    aria-label="Delete Connection"
                   >
                     <Trash2 size={13} />
                   </button>
+
+                  <!-- Connect Primary Trigger -->
                   <button
-                    class="p-1 px-2 rounded bg-accent/15 text-accent font-semibold hover:bg-accent hover:text-white transition-all flex items-center gap-1 text-[11px] disabled:opacity-50 disabled:cursor-not-allowed"
+                    type="button"
+                    class="px-2.5 py-1 rounded-md bg-accent/15 border border-accent/30 text-accent font-semibold hover:bg-accent hover:text-white transition-all flex items-center gap-1 text-[11px] ml-1"
                     onclick={(e) => {
                       e.stopPropagation();
                       handleConnectHost(conn);
                     }}
                     disabled={connectingHostId !== null}
-                    title="Connect"
+                    title="Open SSH Terminal"
                   >
                     {#if connectingHostId === conn.id}
                       <RefreshCw size={11} class="animate-spin" />
                       <span>Connecting...</span>
                     {:else}
-                      <Play size={11} fill="currentColor" />
+                      <Play size={10} fill="currentColor" />
                       <span>Connect</span>
                     {/if}
                   </button>
@@ -254,13 +492,13 @@
             {/each}
           </div>
         </div>
-      {/if}
-
-      {#if viewMode === "grid"}
-        <div class="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
-          {#each connections as conn, index}
+      {:else}
+        <!-- Modern Grid Cards View -->
+        <div class="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3.5">
+          {#each processedConnections as conn, index}
+            {@const ping = pingResults[conn.id]}
             <div
-              class="bg-surface-input/50 border border-border rounded-lg p-3.5 flex flex-col justify-between transition-all hover:border-border-hover hover:bg-surface-input group relative
+              class="server-card relative group
                 {selectedHostIndex === index ? 'border-accent bg-accent/5' : ''}"
               onclick={() => onSelectHost(index)}
               ondblclick={() => onConnect(conn)}
@@ -269,49 +507,65 @@
               onkeydown={(e) => e.key === "Enter" && onConnect(conn)}
             >
               <div>
-                <div class="flex items-center justify-between mb-2">
+                <!-- Card Header -->
+                <div class="flex items-center justify-between gap-2 mb-2">
                   <div class="flex items-center gap-2 min-w-0">
-                    <span class="w-2 h-2 rounded-full {conn.last_used ? 'bg-running' : 'bg-muted/40'} shrink-0"></span>
-                    <span class="font-bold text-xs text-primary truncate">{conn.name}</span>
+                    <span class="w-2.5 h-2.5 rounded-full shrink-0 {ping ? (ping.success ? 'bg-running' : 'bg-error') : (conn.last_used ? 'bg-running' : 'bg-muted/40')}"></span>
+                    <span class="font-bold text-sm text-primary truncate">{conn.name}</span>
                   </div>
-                  <div class="flex items-center gap-1">
+                  <div class="flex items-center gap-1 shrink-0">
                     {#if conn.use_kerberos}
-                      <span class="text-[9px] px-1 py-0.2 rounded bg-accent/15 border border-accent/25 text-accent font-bold">krb5</span>
+                      <span class="badge-pill bg-accent/15 border border-accent/25 text-accent text-[9px]">krb5</span>
                     {/if}
                     {#if conn.bastion}
-                      <span class="text-[9px] px-1 py-0.2 rounded bg-cyan-500/15 border border-cyan-500/25 text-cyan-400 font-bold">jump</span>
+                      <span class="badge-pill bg-cyan-500/15 border border-cyan-500/25 text-cyan-400 text-[9px]">jump</span>
+                    {/if}
+                    {#if ping?.success}
+                      <span class="badge-pill bg-emerald-500/15 text-emerald-400 font-mono text-[9px]">
+                        {ping.latency_ms}ms
+                      </span>
                     {/if}
                   </div>
                 </div>
 
-                <div class="font-mono text-[11px] text-muted truncate mb-2">{conn.user}@{conn.host}:{conn.port}</div>
+                <!-- Host Address -->
+                <div class="font-mono text-xs text-muted truncate mb-2.5">
+                  {conn.user}@{conn.host}:{conn.port}
+                </div>
 
+                <!-- Tags -->
                 {#if conn.tags.length > 0}
                   <div class="flex flex-wrap gap-1 mb-3">
                     {#each conn.tags as tag}
-                      <span class="text-[10px] bg-white/[0.04] border border-border text-muted px-1.5 py-0.2 rounded font-mono">#{tag}</span>
+                      <span class="tag">#{tag}</span>
                     {/each}
                   </div>
                 {/if}
               </div>
 
-              <div class="flex items-center justify-between pt-2 border-t border-white/5 mt-2">
+              <!-- Card Footer Actions -->
+              <div class="flex items-center justify-between pt-3 border-t border-border/60 mt-3">
                 <span class="text-[10px] text-muted">
-                  {conn.last_used ? formatDate(conn.last_used, timezone) : "Never"}
+                  {conn.last_used ? formatDate(conn.last_used, timezone) : "Never used"}
                 </span>
+
                 <div class="flex items-center gap-1">
                   <button
-                    class="p-1 rounded text-muted hover:text-primary hover:bg-white/10 transition-colors"
+                    type="button"
+                    class="p-1 rounded text-muted hover:text-primary hover:bg-surface-hover transition-colors border-none bg-transparent cursor-pointer"
                     onclick={(e) => {
                       e.stopPropagation();
                       onEdit(conn);
                     }}
                     title="Edit"
+                    aria-label="Edit"
                   >
                     <Edit2 size={12} />
                   </button>
+
                   <button
-                    class="px-2 py-1 rounded bg-accent text-white text-[11px] font-semibold hover:opacity-90 transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    type="button"
+                    class="px-2.5 py-1 rounded-md bg-accent text-white text-xs font-semibold hover:bg-accent-hover transition-all flex items-center gap-1.5 cursor-pointer border-none"
                     onclick={(e) => {
                       e.stopPropagation();
                       handleConnectHost(conn);
@@ -319,7 +573,7 @@
                     disabled={connectingHostId !== null}
                   >
                     {#if connectingHostId === conn.id}
-                      <RefreshCw size={10} class="animate-spin" />
+                      <RefreshCw size={11} class="animate-spin" />
                       <span>Connecting...</span>
                     {:else}
                       <Play size={10} fill="currentColor" />
@@ -333,17 +587,40 @@
         </div>
       {/if}
     {:else}
-      <div class="flex flex-col items-center justify-center py-20 text-muted border border-dashed border-border rounded-xl">
-        <Server size={36} class="mb-3 opacity-40 text-accent" />
-        <span class="text-sm font-semibold text-primary mb-1">No SSH Connections</span>
-        <span class="text-xs max-w-sm text-center mb-4">Add your first remote host or import connections from OpenSSH config.</span>
-        <button
-          class="flex items-center gap-1.5 px-3.5 py-2 rounded-md bg-accent text-white text-xs font-semibold cursor-pointer shadow-sm hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-          onclick={onAddHost}
-        >
-          <Plus size={14} />
-          Add Connection
-        </button>
+      <!-- Empty State -->
+      <div class="flex flex-col items-center justify-center py-20 text-muted border border-dashed border-border rounded-2xl bg-surface-input/10">
+        <div class="w-12 h-12 rounded-2xl bg-accent/10 border border-accent/25 flex items-center justify-center text-accent mb-3">
+          <Server size={24} />
+        </div>
+        <h3 class="text-sm font-bold text-primary mb-1">
+          {filterQuery || selectedTagFilter ? "No matching SSH connections" : "No SSH Connections Configured"}
+        </h3>
+        <p class="text-xs text-muted max-w-sm text-center mb-4 leading-relaxed">
+          {filterQuery || selectedTagFilter
+            ? "Try changing your search query or tag filter."
+            : "Add your first remote host or import existing connections from your OpenSSH configuration."}
+        </p>
+        {#if filterQuery || selectedTagFilter}
+          <button
+            type="button"
+            class="btn btn-secondary"
+            onclick={() => {
+              filterQuery = "";
+              selectedTagFilter = null;
+            }}
+          >
+            Clear Filters
+          </button>
+        {:else}
+          <button
+            type="button"
+            class="btn btn-primary"
+            onclick={onAddHost}
+          >
+            <Plus size={14} />
+            <span>Add First Connection</span>
+          </button>
+        {/if}
       </div>
     {/if}
   </div>

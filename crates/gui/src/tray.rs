@@ -13,7 +13,9 @@ const TRAY_ICON: tauri::image::Image<'static> = include_image!("icons/32x32.png"
 use crate::commands::{close_all_ptys, get_db_and_config, PtyState};
 
 pub fn build_tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
-    let show_i = MenuItemBuilder::new("Open Bayesian SSH").id("show").build(app)?;
+    let show_i = MenuItemBuilder::new("Open Bayesian SSH")
+        .id("show")
+        .build(app)?;
     let quit_i = MenuItemBuilder::new("Quit").id("quit").build(app)?;
 
     let mut submenu_builder = SubmenuBuilder::new(app, "Quick Connect");
@@ -149,10 +151,7 @@ pub fn send_desktop_notification(title: String, body: String) -> Result<(), Stri
             body.replace('\\', "\\\\").replace('"', "\\\""),
             title.replace('\\', "\\\\").replace('"', "\\\"")
         );
-        let _ = Command::new("osascript")
-            .arg("-e")
-            .arg(&script)
-            .spawn();
+        let _ = Command::new("osascript").arg("-e").arg(&script).spawn();
     }
     #[cfg(target_os = "windows")]
     {

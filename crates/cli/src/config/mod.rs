@@ -193,7 +193,11 @@ impl AppConfig {
 
         let config_file = env_dir.join("config.json");
         let content = serde_json::to_string_pretty(self)?;
-        std::fs::write(&config_file, content)?;
+
+        // Atomic write: write to a temp file in the same directory, then
+        // rename into place. A crash mid-write can no longer corrupt the
+        // config (previously `fs::write` truncated in place).
+        atomic_write_json(&config_file, &content)?;
         enforce_secure_file(&config_file);
 
         Ok(())
@@ -267,4 +271,30 @@ pub fn enforce_secure_file(path: &std::path::Path) {
         }
     }
     let _ = path;
+}
+
+/// Atomically write `content` to `path` via a temp file + rename.
+///
+/// Unlike `fs::write` (which truncates the destination in place), this
+/// guarantees the destination is either fully replaced or untouched, even
+/// if the process is killed mid-write. Uses `tempfile::NamedTempFile` so
+/// the temp file is world-unique and cleaned up automatically.
+fn atomic_write_json(path: &std::path::Path, content: &str) -> Result<()> {
+    use std::io::Write;
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| std::path::Path::new("."));
+
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)
+        .map_err(|e| anyhow::anyhow!("create temp config file: {e}"))?;
+    tmp.write_all(content.as_bytes())
+        .map_err(|e| anyhow::anyhow!("write temp config: {e}"))?;
+    tmp.flush()
+        .map_err(|e| anyhow::anyhow!("flush temp config: {e}"))?;
+    tmp.as_file().sync_all().ok();
+
+    tmp.persist(path)
+        .map_err(|e| anyhow::anyhow!("rename temp config into place: {}", e.error))?;
+    Ok(())
 }

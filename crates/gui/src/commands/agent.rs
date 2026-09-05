@@ -120,14 +120,19 @@ pub fn add_key_to_agent(key_path: String) -> Result<String, String> {
     let resolved_key = expand_path(&key_path);
 
     if !resolved_key.exists() {
-        return Err(format!("Key file does not exist: {}", resolved_key.display()));
+        return Err(format!(
+            "Key file does not exist: {}",
+            resolved_key.display()
+        ));
     }
 
     let socket = match resolve_active_socket() {
         Some(s) => s,
         None => {
             let status = start_agent()?;
-            status.socket_path.ok_or_else(|| "Failed to auto-start SSH agent".to_string())?
+            status
+                .socket_path
+                .ok_or_else(|| "Failed to auto-start SSH agent".to_string())?
         }
     };
 
@@ -170,7 +175,9 @@ pub fn add_key_to_agent(key_path: String) -> Result<String, String> {
                         .output()
                     {
                         if new_output.status.success() {
-                            let out_str = String::from_utf8_lossy(&new_output.stdout).trim().to_string();
+                            let out_str = String::from_utf8_lossy(&new_output.stdout)
+                                .trim()
+                                .to_string();
                             if out_str.is_empty() {
                                 return Ok(format!(
                                     "Successfully added key {} (started new ssh-agent)",
@@ -214,5 +221,3 @@ mod tests {
         assert!(res.unwrap_err().contains("Key file does not exist"));
     }
 }
-
-

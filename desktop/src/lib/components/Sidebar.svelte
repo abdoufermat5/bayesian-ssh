@@ -1,19 +1,19 @@
 <script lang="ts">
   import {
-    Code,
-    HardDrive,
-    Network,
-    TerminalSquare,
-    Server,
-    Clock,
-    Settings,
-    FolderPlus,
     ChevronLeft,
     ChevronRight,
-    Layers,
+    Clock,
+    Code,
+    FolderPlus,
+    HardDrive,
     KeyRound,
+    Layers,
+    Network,
+    Server,
+    Settings,
     ShieldCheck,
     Tag,
+    TerminalSquare,
   } from "lucide-svelte";
   import type { AppTab, ConnectionStats, DesktopSettings, EnvInfo } from "$lib/types";
   import CustomSelect from "$lib/components/ui/CustomSelect.svelte";
@@ -82,7 +82,6 @@
     settings,
   }: Props = $props();
 
-  // Main Navigation items — filtered by feature flags from settings
   const navItems = $derived([
     { tab: "connections" as AppTab, icon: Server, label: "Hosts" },
     { tab: "terminals" as AppTab, icon: TerminalSquare, label: "Terminals", badge: terminalCount },
@@ -93,57 +92,74 @@
     { tab: "history" as AppTab, icon: Clock, label: "Logs" },
     { tab: "settings" as AppTab, icon: Settings, label: "Settings" },
   ]);
-
-  function handleSessionsClick() {
-    onGoToTerminals();
-    if (externalSessionCount > 0) {
-      onShowSessionManager();
-    }
-  }
 </script>
 
 <aside
-  class="flex flex-col border-r border-border bg-surface shrink-0 relative z-20 overflow-visible min-h-0 transition-all duration-300 ease-out"
-  style="width: {sidebarCollapsed ? 'var(--sidebar-w-collapsed)' : 'var(--sidebar-w)'}; padding: {sidebarCollapsed ? '12px 6px' : '14px 10px'};"
+  class="flex flex-col border-r border-border bg-surface shrink-0 relative z-20 overflow-visible min-h-0 transition-all duration-200 select-none"
+  style="width: {sidebarCollapsed ? 'var(--sidebar-w-collapsed)' : 'var(--sidebar-w)'};"
 >
-  <!-- Header -->
-  <div class="shrink-0">
-    <!-- Profile Selector -->
+  <!-- Top Profile Header -->
+  <div class="p-3 border-b border-border/80 shrink-0">
     {#if !sidebarCollapsed}
-      <div class="mb-4">
-        <div class="flex justify-between items-center mb-1">
-          <span class="eyebrow px-1">Profile</span>
-          <button
-            class="bg-transparent border-none text-muted cursor-pointer p-0.5 rounded flex items-center transition-colors hover:text-primary hover:bg-surface-hover/40 disabled:opacity-50 disabled:cursor-not-allowed"
-            onclick={onShowEnvModal}
-            title="Manage Profiles"
-          >
-            <FolderPlus size={13} />
-          </button>
-        </div>
-          <CustomSelect
-            options={environments.map((env) => ({ value: env.name, label: env.name }))}
-            value={activeEnv}
-            onChange={(val) => onSwitchEnv(val)}
-          />
-        </div>
-      {/if}
+      <div class="flex items-center justify-between gap-1 mb-1.5 px-0.5">
+        <span class="eyebrow flex items-center gap-1">Workspace</span>
+        <button
+          type="button"
+          class="text-muted hover:text-primary p-1 rounded-md hover:bg-surface-hover transition-colors cursor-pointer border-none bg-transparent"
+          onclick={onShowEnvModal}
+          title="Manage Environments"
+          aria-label="Manage Environments"
+        >
+          <FolderPlus size={13} />
+        </button>
+      </div>
+      <CustomSelect
+        options={environments.map((env) => ({ value: env.name, label: env.name }))}
+        value={activeEnv}
+        onChange={(val) => onSwitchEnv(val)}
+      />
+    {:else}
+      <div class="flex justify-center py-1">
+        <button
+          type="button"
+          class="w-8 h-8 rounded-lg bg-surface-input border border-border flex items-center justify-center text-muted hover:text-accent hover:border-accent/40 transition-colors cursor-pointer"
+          onclick={onShowEnvModal}
+          title={`Profile: ${activeEnv}`}
+          aria-label={`Profile: ${activeEnv}`}
+        >
+          <span class="text-[11px] font-bold uppercase">{activeEnv.slice(0, 2)}</span>
+        </button>
+      </div>
+    {/if}
+  </div>
 
-    <!-- Main Navigation -->
-    <nav class="flex flex-col gap-0.5 mb-4 shrink-0">
+  <!-- Primary Navigation Items -->
+  <div class="flex-1 min-h-0 overflow-y-auto px-2 py-3 flex flex-col gap-1 scrollbar-none">
+    {#if !sidebarCollapsed}
+      <span class="eyebrow px-2 mb-1 text-[10px]">Navigation</span>
+    {/if}
+
+    <nav class="flex flex-col gap-0.5">
       {#each navItems as item}
         <button
-          class="flex items-center gap-2.5 w-full text-muted py-1.5 px-2.5 rounded-md cursor-pointer text-xs font-medium text-left transition-all duration-100 relative disabled:opacity-50 disabled:cursor-not-allowed
-            {sidebarCollapsed ? 'justify-center' : ''}
-            {activeTab === item.tab ? 'text-primary bg-accent/10 border-l-2 border-accent font-semibold' : 'hover:text-primary hover:bg-surface-hover/40'}"
+          type="button"
+          class="flex items-center gap-2.5 w-full py-2 px-2.5 rounded-lg cursor-pointer text-xs font-medium text-left transition-all duration-fast relative border
+            {sidebarCollapsed ? 'justify-center px-0' : ''}
+            {activeTab === item.tab
+              ? 'border-accent/30 bg-accent/15 text-primary font-semibold shadow-sm'
+              : 'border-transparent text-secondary hover:text-primary hover:bg-surface-hover'}"
           onclick={() => onTabChange(item.tab)}
           title={item.label}
+          aria-label={item.label}
         >
-          <item.icon size={16} class={activeTab === item.tab ? "text-accent" : ""} />
+          <item.icon
+            size={16}
+            class={activeTab === item.tab ? "text-accent" : "text-muted"}
+          />
           {#if !sidebarCollapsed}
-            <span>{item.label}</span>
+            <span class="truncate">{item.label}</span>
             {#if item.badge && item.badge > 0}
-              <span class="ml-auto min-w-[16px] h-[16px] px-1 rounded-full bg-accent/20 text-accent text-[10px] font-bold inline-flex items-center justify-center">
+              <span class="ml-auto badge-pill bg-accent/20 text-accent border border-accent/30">
                 {item.badge}
               </span>
             {/if}
@@ -154,113 +170,157 @@
       {#if onShowSnippetsModal}
         <button
           type="button"
-          class="flex items-center gap-2.5 w-full bg-transparent border-none text-muted py-1.5 px-2.5 rounded-md cursor-pointer text-xs font-medium text-left transition-all duration-100 hover:text-primary hover:bg-surface-hover/40 mt-1 disabled:opacity-50 disabled:cursor-not-allowed"
+          class="flex items-center gap-2.5 w-full py-2 px-2.5 rounded-lg cursor-pointer text-xs font-medium text-left transition-all duration-fast border border-transparent text-secondary hover:text-primary hover:bg-surface-hover mt-1
+            {sidebarCollapsed ? 'justify-center px-0' : ''}"
           onclick={onShowSnippetsModal}
-          title="Command Snippets Library"
+          title="Command Snippets"
+          aria-label="Command Snippets"
         >
-          <Code size={16} class="text-warning" />
+          <Code size={16} class="text-warning/80" />
           {#if !sidebarCollapsed}
             <span>Snippets</span>
           {/if}
         </button>
       {/if}
     </nav>
+
+    <!-- Tag Filter Chips (when tags exist and expanded) -->
+    {#if !sidebarCollapsed && allTags.length > 0}
+      <div class="mt-4 pt-3 border-t border-border/60">
+        <span class="eyebrow px-2 mb-1.5 flex items-center gap-1">
+          <Tag size={10} />
+          Filter Tags
+        </span>
+        <div class="flex flex-wrap gap-1 px-1">
+          <button
+            type="button"
+            class="text-[10px] py-0.5 px-2 rounded-md cursor-pointer transition-all border
+              {selectedTag === null
+                ? 'border-accent/40 bg-accent/20 text-accent font-semibold'
+                : 'border-border bg-surface-input/60 text-muted hover:text-primary hover:border-border-hover'}"
+            onclick={() => onTagSelect(null)}
+          >
+            All
+          </button>
+          {#each allTags as tag}
+            <button
+              type="button"
+              class="text-[10px] py-0.5 px-2 rounded-md cursor-pointer transition-all border truncate max-w-[120px]
+                {selectedTag === tag
+                  ? 'border-accent/40 bg-accent/20 text-accent font-semibold'
+                  : 'border-border bg-surface-input/60 text-muted hover:text-primary hover:border-border-hover'}"
+              onclick={() => onTagSelect(tag)}
+            >
+              #{tag}
+            </button>
+          {/each}
+        </div>
+      </div>
+    {/if}
   </div>
 
-  <!-- Scrollable Runtime & Filters -->
-  <div class="flex-1 min-h-0 overflow-y-auto flex flex-col gap-4 scrollbar-none">
+  <!-- Bottom Status Tray Dock -->
+  <div class="p-2 border-t border-border/80 bg-surface-input/30 flex flex-col gap-1.5 shrink-0">
     {#if !sidebarCollapsed}
-      <!-- Quick Status Indicators -->
-      <div class="flex flex-col gap-1.5 pt-2 border-t border-border">
-        <span class="eyebrow px-1 mb-0.5">Status</span>
-
-        <!-- Agent Status -->
+      <!-- Status Pills -->
+      <div class="flex flex-col gap-1">
+        <!-- SSH Agent -->
         <button
           type="button"
-          class="flex items-center justify-between py-1.5 px-2 rounded-md border text-xs cursor-pointer transition-all border-border bg-surface-input/60 hover:bg-surface-input disabled:opacity-50 disabled:cursor-not-allowed"
+          class="flex items-center justify-between py-1.5 px-2.5 rounded-lg border border-border/70 bg-surface text-xs cursor-pointer transition-all hover:bg-surface-hover hover:border-border-hover"
           onclick={() => (agentActive ? onShowAgentModal() : onStartAgent())}
+          title="SSH Agent Status"
         >
-          <span class="flex items-center gap-1.5 text-muted">
-            <KeyRound size={13} class={agentActive ? "text-running" : ""} />
-            Agent
+          <span class="flex items-center gap-2 text-secondary text-[11px]">
+            <KeyRound size={13} class={agentActive ? "text-running" : "text-muted"} />
+            SSH Agent
           </span>
-          <span class="font-mono text-[11px] font-semibold {agentActive ? 'text-running' : 'text-muted'}">
-            {agentActive ? `${agentKeys.length} keys` : 'Off'}
+          <span class="font-mono text-[10px] font-semibold {agentActive ? 'text-running' : 'text-muted'}">
+            {agentActive ? `${agentKeys.length} keys` : 'Inactive'}
           </span>
         </button>
 
-        <!-- Kerberos Status -->
+        <!-- Kerberos GSSAPI -->
         {#if kerberosHealth !== "unavailable"}
           <button
             type="button"
-            class="flex items-center justify-between py-1.5 px-2 rounded-md border text-xs cursor-pointer transition-all border-border bg-surface-input/60 hover:bg-surface-input disabled:opacity-50 disabled:cursor-not-allowed"
+            class="flex items-center justify-between py-1.5 px-2.5 rounded-lg border border-border/70 bg-surface text-xs cursor-pointer transition-all hover:bg-surface-hover hover:border-border-hover"
             onclick={onShowKerberosModal}
+            title="Kerberos Ticket Status"
           >
-            <span class="flex items-center gap-1.5 text-muted">
+            <span class="flex items-center gap-2 text-secondary text-[11px]">
               <ShieldCheck size={13} class={kerberosHealth === 'valid' ? 'text-running' : 'text-warning'} />
               Kerberos
             </span>
-            <span class="font-mono text-[11px] font-semibold {kerberosHealth === 'valid' ? 'text-running' : 'text-warning'}">
+            <span class="font-mono text-[10px] font-semibold {kerberosHealth === 'valid' ? 'text-running' : 'text-warning'}">
               {kerberosHealth === 'valid' ? kerberosRemainingLabel : 'Ticket'}
             </span>
           </button>
         {/if}
 
-        <!-- Detached Sessions Badge -->
+        <!-- Detached / Away Sessions -->
         {#if externalSessionCount > 0}
           <button
             type="button"
-            class="flex items-center justify-between py-1.5 px-2 rounded-md border border-accent/30 bg-accent/10 text-accent text-xs font-semibold cursor-pointer hover:bg-accent/15 disabled:opacity-50 disabled:cursor-not-allowed"
+            class="flex items-center justify-between py-1.5 px-2.5 rounded-lg border border-accent/40 bg-accent/15 text-accent text-xs font-semibold cursor-pointer hover:bg-accent/25 transition-all"
             onclick={onShowSessionManager}
+            title="Background SSH Sessions"
           >
-            <span class="flex items-center gap-1.5">
+            <span class="flex items-center gap-1.5 text-[11px]">
               <Layers size={13} />
               Background
             </span>
-            <span class="text-[10px] font-bold">{externalSessionCount} away</span>
+            <span class="badge-pill bg-accent/30 text-accent font-bold">
+              {externalSessionCount} away
+            </span>
           </button>
         {/if}
       </div>
-
-      <!-- Tag Filters -->
-      {#if allTags.length > 0}
-        <div class="pt-2 border-t border-border">
-          <span class="eyebrow px-1 flex items-center gap-1 mb-1.5">
-            <Tag size={11} />
-            Tags
-          </span>
-          <div class="flex flex-wrap gap-1">
-            <button
-              class="text-[11px] py-0.5 px-2 rounded cursor-pointer transition-all border disabled:opacity-50 disabled:cursor-not-allowed
-                {selectedTag === null
-                  ? 'border-accent bg-accent/15 text-accent font-semibold'
-                  : 'border-border bg-surface-input text-muted hover:text-primary hover:border-border-hover'}"
-              onclick={() => onTagSelect(null)}
-            >
-              All
-            </button>
-            {#each allTags as tag}
-              <button
-                class="text-[11px] py-0.5 px-2 rounded cursor-pointer transition-all border disabled:opacity-50 disabled:cursor-not-allowed
-                  {selectedTag === tag
-                    ? 'border-accent bg-accent/15 text-accent font-semibold'
-                    : 'border-border bg-surface-input text-muted hover:text-primary hover:border-border-hover'}"
-                onclick={() => onTagSelect(tag)}
-              >
-                #{tag}
-              </button>
-            {/each}
-          </div>
-        </div>
-      {/if}
+    {:else}
+      <!-- Collapsed Status Icons -->
+      <div class="flex flex-col items-center gap-1.5 py-1">
+        <button
+          type="button"
+          class="w-7 h-7 rounded-md flex items-center justify-center text-muted hover:text-primary transition-colors cursor-pointer border-none bg-transparent"
+          onclick={() => (agentActive ? onShowAgentModal() : onStartAgent())}
+          title={`Agent: ${agentActive ? `${agentKeys.length} keys` : 'Off'}`}
+          aria-label="SSH Agent Status"
+        >
+          <KeyRound size={14} class={agentActive ? "text-running" : "text-muted"} />
+        </button>
+        {#if kerberosHealth !== "unavailable"}
+          <button
+            type="button"
+            class="w-7 h-7 rounded-md flex items-center justify-center text-muted hover:text-primary transition-colors cursor-pointer border-none bg-transparent"
+            onclick={onShowKerberosModal}
+            title={`Kerberos: ${kerberosRemainingLabel}`}
+            aria-label="Kerberos Status"
+          >
+            <ShieldCheck size={14} class={kerberosHealth === 'valid' ? "text-running" : "text-warning"} />
+          </button>
+        {/if}
+        {#if externalSessionCount > 0}
+          <button
+            type="button"
+            class="w-7 h-7 rounded-md flex items-center justify-center text-accent hover:bg-accent/20 transition-colors cursor-pointer border-none bg-accent/10"
+            onclick={onShowSessionManager}
+            title={`${externalSessionCount} background sessions`}
+            aria-label="Background Sessions"
+          >
+            <Layers size={14} />
+          </button>
+        {/if}
+      </div>
     {/if}
   </div>
 
-  <!-- Sidebar Toggle -->
+  <!-- Collapse Toggle Button -->
   <button
-    class="absolute top-1/2 -right-3 -translate-y-1/2 bg-surface-raised border border-border-hover text-secondary cursor-pointer w-[24px] h-[24px] rounded-full flex items-center justify-center z-50 shadow-md transition-all hover:text-accent hover:border-accent disabled:opacity-50 disabled:cursor-not-allowed"
+    type="button"
+    class="absolute top-1/2 -right-3 -translate-y-1/2 bg-surface-raised border border-border-hover text-secondary cursor-pointer w-6 h-6 rounded-full flex items-center justify-center z-50 shadow-md transition-all hover:text-accent hover:border-accent"
     onclick={onToggleSidebar}
     title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+    aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
   >
     {#if sidebarCollapsed}
       <ChevronRight size={13} />

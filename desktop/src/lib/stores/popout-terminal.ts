@@ -4,9 +4,10 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-
+import type { DesktopSettings } from "$lib/types";
 import { getCurrentXtermTheme } from "$lib/utils/theme";
 import { isTerminalFocused } from "$lib/utils/terminal-focus";
+import { buildTerminalOptions } from "$lib/stores/terminal.svelte";
 import {
   attachXtermIo,
   attachXtermKeyHandler,
@@ -39,39 +40,24 @@ export async function initPopoutTerminal(sessionId: string): Promise<PopoutTermi
   let compositionGuardCleanup: (() => void) | null = null;
   let outputCoalescer: ReturnType<typeof createOutputCoalescer> | null = null;
   let closing = false;
-  let popoutFontSize = 13;
 
   const container = await waitForContainer("terminal-popout-root");
   if (!container) {
     throw new Error("Terminal container not found.");
   }
 
-  // Apply saved terminal preferences (font size, family, line height).
+  // Apply saved terminal preferences (font size, family, line height, cursor style, scrollback).
+  let settings: DesktopSettings | undefined;
   try {
-    const settings = await invoke<{
-      terminal_font_size?: number;
-      terminal_font_family?: string;
-      terminal_line_height?: number;
-      terminal_cursor_style?: string;
-      terminal_cursor_blink?: boolean;
-    }>("load_desktop_settings");
-    if (settings) {
-      if (typeof settings.terminal_font_size === "number") {
-        popoutFontSize = Math.max(8, Math.min(32, settings.terminal_font_size));
-      }
+    const loaded = await invoke<DesktopSettings>("load_desktop_settings");
+    if (loaded && typeof loaded === "object") {
+      settings = loaded;
     }
   } catch {
     // Keep defaults if settings are unavailable.
   }
 
-  term = new Terminal({
-    cursorBlink: true,
-    fontFamily: "JetBrains Mono, Fira Code, Cascadia Code, Ubuntu Mono, DejaVu Sans Mono, Liberation Mono, Consolas, monospace",
-    fontSize: popoutFontSize,
-    lineHeight: 1.15,
-    scrollback: 10000,
-    theme: getCurrentXtermTheme(),
-  });
+  term = new Terminal(buildTerminalOptions(settings) as ConstructorParameters<typeof Terminal>[0]);
 
   fitAddon = new FitAddon();
   term.loadAddon(fitAddon);
@@ -142,41 +128,35 @@ export async function initPopoutTerminal(sessionId: string): Promise<PopoutTermi
 
   // Ctrl + Mouse Wheel zoom
   container.addEventListener("wheel", (e) => {
-    if (e.ctrlKey) {
+    if (e.ctrlKey && term) {
       e.preventDefault();
-      const nextSize = e.deltaY < 0 ? popoutFontSize + 1 : popoutFontSize - 1;
-      popoutFontSize = Math.max(8, Math.min(32, nextSize));
-      if (term) {
-        term.options.fontSize = popoutFontSize;
-        scheduleFit();
-      }
+      const current = term.options.fontSize ?? 13;
+      const newSize = e.deltaY < 0 ? current + 1 : current - 1;
+      const clamped = Math.max(8, Math.min(32, newSize));
+      term.options.fontSize = clamped;
+      scheduleFit();
     }
   }, { passive: false });
 
   // Keyboard shortcut zoom — skip when xterm has focus so vim/nano keys aren't stolen
   const handleKeydown = (e: KeyboardEvent) => {
-    if (isTerminalFocused()) return;
+    if (isTerminalFocused() || !term) return;
+    const current = term.options.fontSize ?? 13;
     if (e.ctrlKey && (e.key === "=" || e.key === "+")) {
       e.preventDefault();
-      popoutFontSize = Math.max(8, Math.min(32, popoutFontSize + 1));
-      if (term) {
-        term.options.fontSize = popoutFontSize;
-        scheduleFit();
-      }
+      const clamped = Math.max(8, Math.min(32, current + 1));
+      term.options.fontSize = clamped;
+      scheduleFit();
     } else if (e.ctrlKey && e.key === "-") {
       e.preventDefault();
-      popoutFontSize = Math.max(8, Math.min(32, popoutFontSize - 1));
-      if (term) {
-        term.options.fontSize = popoutFontSize;
-        scheduleFit();
-      }
+      const clamped = Math.max(8, Math.min(32, current - 1));
+      term.options.fontSize = clamped;
+      scheduleFit();
     } else if (e.ctrlKey && e.key === "0") {
       e.preventDefault();
-      popoutFontSize = 13;
-      if (term) {
-        term.options.fontSize = popoutFontSize;
-        scheduleFit();
-      }
+      const resetSize = settings?.terminal_font_size ?? 13;
+      term.options.fontSize = resetSize;
+      scheduleFit();
     }
   };
   window.addEventListener("keydown", handleKeydown);

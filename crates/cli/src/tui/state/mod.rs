@@ -262,7 +262,8 @@ impl App {
             Some(self.history_filter.as_str())
         };
         self.history_entries =
-            self.db.get_session_history(filter, 100, None, self.history_show_failed_only)?;
+            self.db
+                .get_session_history(filter, 100, None, self.history_show_failed_only)?;
         if self.history_selected >= self.history_entries.len() {
             self.history_selected = self.history_entries.len().saturating_sub(1);
         }

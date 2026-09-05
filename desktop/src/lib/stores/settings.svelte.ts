@@ -10,7 +10,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { DesktopSettings, EnvInfo, WorkspaceInfo } from "$lib/types";
 import { notify } from "$lib/stores/notifications.svelte";
 import { applyTheme } from "$lib/utils/theme";
-import { applyThemeToAllTerminals } from "$lib/stores/terminal.svelte";
+import { applyThemeToAllTerminals, registerSettingsGetter } from "$lib/stores/terminal.svelte";
 import {
   startKerberosMonitoring,
   stopKerberosMonitoring,
@@ -41,6 +41,8 @@ let settings = $state<DesktopSettings>({
   enable_sftp: true,
   enable_tunneling: true,
 });
+
+registerSettingsGetter(() => settings);
 
 let workspace = $state<WorkspaceInfo>({
   active_env: "default",

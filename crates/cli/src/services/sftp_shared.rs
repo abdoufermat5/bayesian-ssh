@@ -114,9 +114,7 @@ fn run_interactive_ls(argv: &[String], path: &str) -> Result<Output, String> {
     use std::sync::mpsc;
     use std::time::Duration;
 
-    let (cmd_name, args) = argv
-        .split_first()
-        .ok_or("empty argv")?;
+    let (cmd_name, args) = argv.split_first().ok_or("empty argv")?;
 
     let marker = format!("BSSH_SFTP_{:016x}", rand_marker());
     let marker_start = format!("{marker}_START");
@@ -162,15 +160,10 @@ fn run_interactive_ls(argv: &[String], path: &str) -> Result<Output, String> {
     let silence_timeout = Duration::from_millis(1500);
     let start = std::time::Instant::now();
     let mut drained: Vec<u8> = Vec::new();
-    loop {
-        match rx.recv_timeout(silence_timeout) {
-            Ok(chunk) => {
-                drained.extend_from_slice(&chunk);
-                if start.elapsed() > drain_timeout {
-                    break;
-                }
-            }
-            Err(_) => break, // silence_timeout elapsed → connection is ready
+    while let Ok(chunk) = rx.recv_timeout(silence_timeout) {
+        drained.extend_from_slice(&chunk);
+        if start.elapsed() > drain_timeout {
+            break;
         }
     }
 
@@ -215,13 +208,13 @@ fn run_interactive_ls(argv: &[String], path: &str) -> Result<Output, String> {
         }
         if capture {
             // Skip PTY-echoed control commands (they have a shell prompt prefix)
-            let has_prompt = trimmed.contains("% ") || trimmed.contains("$ ") || trimmed.contains("# ");
-            let is_echo = has_prompt && (
-                trimmed.contains("stty cols") ||
-                trimmed.contains(&marker_start) ||
-                trimmed.contains(&marker_end) ||
-                trimmed.contains(&ls_cmd)
-            );
+            let has_prompt =
+                trimmed.contains("% ") || trimmed.contains("$ ") || trimmed.contains("# ");
+            let is_echo = has_prompt
+                && (trimmed.contains("stty cols")
+                    || trimmed.contains(&marker_start)
+                    || trimmed.contains(&marker_end)
+                    || trimmed.contains(&ls_cmd));
             if !is_echo {
                 clean_lines.push(line.trim_end_matches('\r'));
             }
@@ -326,7 +319,9 @@ fn parse_sftp_output(output: &Output, path: &str) -> Result<Vec<RemoteFileEntry>
     }
 
     entries.sort_by(|a, b| {
-        b.is_dir.cmp(&a.is_dir).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+        b.is_dir
+            .cmp(&a.is_dir)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
 
     Ok(entries)
@@ -360,9 +355,7 @@ pub fn list_remote_directory(
     let output = if is_interactive {
         run_interactive_ls(&argv, &path)?
     } else {
-        let (cmd_name, args) = argv
-            .split_first()
-            .ok_or("empty argv")?;
+        let (cmd_name, args) = argv.split_first().ok_or("empty argv")?;
         Command::new(cmd_name)
             .args(args)
             .output()

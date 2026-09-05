@@ -59,6 +59,35 @@
   let activeResultIndex = $state<number>(0);
   let copied = $state<boolean>(false);
   let initialized = $state<boolean>(false);
+  let exportFormat = $state<"md" | "csv" | "json" | "txt">("md");
+  let history = $state<BatchRunRecord[]>([]);
+  let templates = $state<CommandTemplate[]>([]);
+  let showTemplates = $state<boolean>(false);
+
+  interface BatchRunRecord {
+    id: string;
+    timestamp: number;
+    command: string;
+    targetCount: number;
+    dryRun: boolean;
+    results: BatchExecHostResult[];
+    durationMs: number;
+  }
+
+  interface CommandTemplate {
+    id: string;
+    name: string;
+    command: string;
+  }
+
+  const DEFAULT_TEMPLATES: CommandTemplate[] = [
+    { id: "uptime", name: "System Uptime", command: "uptime" },
+    { id: "disk", name: "Disk Usage", command: "df -h" },
+    { id: "memory", name: "Memory", command: "free -m" },
+    { id: "load", name: "Load Average", command: "cat /proc/loadavg" },
+    { id: "hostname", name: "Hostname", command: "hostname -f" },
+    { id: "ssh-ver", name: "SSH Version", command: "ssh -V 2>&1" },
+  ];
 
   // ─── resize / fullscreen state ─────────────────────────────────────────────
   let isFullscreen = $state<boolean>(false);
@@ -78,10 +107,11 @@
     if (show && !initialized) {
       selectedIds = connections.map((c) => c.id);
       initialized = true;
-      // Fetch env status once when modal opens
       invoke<EnvStatus>("get_env_status")
         .then((s) => (envStatus = s))
         .catch(() => {});
+      loadHistory();
+      loadTemplates();
     } else if (!show) {
       initialized = false;
       results = null;
@@ -149,6 +179,51 @@
       .map((c) => c.id);
   }
 
+   // ─── localStorage helpers ─────────────────────────────────────────────────
+   function loadHistory() {
+     try {
+       const raw = localStorage.getItem("bayesian-ssh-batch-history");
+       if (raw) history = JSON.parse(raw).slice(-100);
+     } catch {
+       history = [];
+     }
+   }
+
+   function saveHistory() {
+     try {
+       localStorage.setItem("bayesian-ssh-batch-history", JSON.stringify(history.slice(-100)));
+     } catch {
+       // ignore quota errors
+     }
+   }
+
+   function loadTemplates() {
+     try {
+       const raw = localStorage.getItem("bayesian-ssh-batch-templates");
+       if (raw) {
+         const parsed = JSON.parse(raw) as CommandTemplate[];
+         templates = [...DEFAULT_TEMPLATES, ...parsed.filter((t) => !DEFAULT_TEMPLATES.some((d) => d.id === t.id))];
+       } else {
+         templates = [...DEFAULT_TEMPLATES];
+       }
+     } catch {
+       templates = [...DEFAULT_TEMPLATES];
+     }
+   }
+
+   function saveTemplates() {
+     try {
+       const custom = templates.filter((t) => !DEFAULT_TEMPLATES.some((d) => d.id === t.id));
+       localStorage.setItem("bayesian-ssh-batch-templates", JSON.stringify(custom));
+     } catch {}
+   }
+
+   function saveTemplate(name: string, cmd: string) {
+     const id = `user-${Date.now()}`;
+     templates = [...templates, { id, name, command: cmd }];
+     saveTemplates();
+   }
+
   async function executeBatch() {
     if (selectedIds.length === 0) {
       notify("Please select at least one target host.", "error");
@@ -161,6 +236,7 @@
 
     running = true;
     results = null;
+    const startedAt = Date.now();
     try {
       const res = await invoke<BatchExecHostResult[]>("run_batch_command", {
         connectionIds: selectedIds,
@@ -170,6 +246,17 @@
       });
       results = res;
       activeResultIndex = 0;
+      const record: BatchRunRecord = {
+        id: crypto.randomUUID(),
+        timestamp: startedAt,
+        command: command.trim(),
+        targetCount: selectedIds.length,
+        dryRun,
+        results: res,
+        durationMs: Date.now() - startedAt,
+      };
+      history = [...history, record].slice(-100);
+      saveHistory();
       notify(
         dryRun
           ? `Dry-run preview ready for ${res.length} host(s).`
@@ -183,14 +270,106 @@
     }
   }
 
-  function copyActiveOutput() {
-    if (!results || !results[activeResultIndex]) return;
-    const active = results[activeResultIndex];
-    const text = `Host: ${active.name} (${active.user}@${active.host})\nExit Code: ${active.exit_code}\nSTDOUT:\n${active.stdout}\nSTDERR:\n${active.stderr}`;
-    navigator.clipboard.writeText(text);
-    copied = true;
-    setTimeout(() => (copied = false), 2000);
+  function parseStructuredOutput(stdout: string): unknown {
+    const trimmed = stdout.trim();
+    if (!trimmed) return [];
+
+    const lines = trimmed.split(/\r?\n/).filter((l) => l.trim());
+
+    const tryJsonLines = (): unknown[] | null => {
+      const out: unknown[] = [];
+      for (const line of lines) {
+        const s = line.trim();
+        if ((s.startsWith("{") && s.endsWith("}")) || (s.startsWith("[") && s.endsWith("]"))) {
+          try {
+            out.push(JSON.parse(s));
+          } catch {
+            return null;
+          }
+        }
+      }
+      return out.length ? out : null;
+    };
+
+    const tryColumnTable = (): { headers: string[]; rows: string[][] } | null => {
+      if (lines.length < 2) return null;
+      const headerMatch = lines[0].match(/^(.*?)(\s{2,}|\t)(.*?)$/);
+      if (!headerMatch) return null;
+      const firstRow = lines[1];
+      if (!firstRow.match(/^(\S+\s+){2,}/)) return null;
+      const sep = /\s{2,}|\t/.test(lines[0]) ? /\s{2,}|\t/ : /\t/;
+      const headers = lines[0].split(sep).map((s) => s.trim()).filter(Boolean);
+      const rows = lines.slice(1).map((l) => l.split(sep).map((s) => s.trim()));
+      if (headers.length >= 2 && rows.length > 0) return { headers, rows };
+      return null;
+    };
+
+    const tryKeyValueTable = (): { headers: string[]; rows: Record<string, string>[] } | null => {
+      const row: Record<string, string> = {};
+      for (const line of lines) {
+        const m = line.match(/^([^=:\s]+)\s*[=:]\s*(.+)$/);
+        if (!m) return null;
+        row[m[1].trim()] = m[2].trim();
+      }
+      if (Object.keys(row).length >= 2) return { headers: Object.keys(row), rows: [row] };
+      return null;
+    };
+
+    return tryJsonLines() ?? tryColumnTable() ?? tryKeyValueTable() ?? lines;
   }
+
+  function exportResults(): void {
+    if (!results || results.length === 0) return;
+    let content: string;
+    if (exportFormat === "json") {
+      content = JSON.stringify({ command, dryRun, results: results.map((r) => ({ ...r, parsed: parseStructuredOutput(r.stdout) })) }, null, 2);
+    } else if (exportFormat === "csv") {
+      const esc = (s: string) => `"${s.replace(/"/g, '""')}"`;
+      const lines = ["name,host,user,exit_code,duration_ms,success,stdout,stderr"];
+      for (const r of results) {
+        lines.push([
+          esc(r.name), esc(r.host), esc(r.user),
+          r.exit_code, r.duration_ms, r.success,
+          esc(r.stdout), esc(r.stderr),
+        ].join(","));
+      }
+      content = lines.join("\n");
+    } else if (exportFormat === "txt") {
+      content = results.map(r => `=== ${r.name} (${r.user}@${r.host}) ===\nexit ${r.exit_code} · ${r.duration_ms}ms\nstdout:\n${r.stdout}\nstderr:\n${r.stderr}\n`).join("\n");
+    } else {
+      content = results.map(r => `| ${r.name} | ${r.user}@${r.host} | ${r.exit_code} | ${r.duration_ms}ms | ${r.success ? "✅" : "❌"} |`).join("\n");
+      content = `| Host | User@Host | Exit | Duration | Result |\n|---|--|--|--|--|\n${content}`;
+    }
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const ext = exportFormat === "csv" ? "csv" : exportFormat === "json" ? "json" : "txt";
+    a.download = `batch-exec_${new Date().toISOString().slice(0, 19).replace(/[:.]/g, "-")}.${ext}`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+   function handleModalKeydown(e: KeyboardEvent) {
+     if (e.target instanceof HTMLInputElement) return;
+     const isMod = e.ctrlKey || e.metaKey;
+     if (isMod && e.key === "Enter" && !running) {
+       e.preventDefault();
+       executeBatch();
+     } else if (isMod && e.shiftKey && e.key.toLowerCase() === "d") {
+       e.preventDefault();
+       dryRun = !dryRun;
+     }
+   }
+
+   function copyActiveOutput() {
+     if (!results || !results[activeResultIndex]) return;
+     const active = results[activeResultIndex];
+     const text = `Host: ${active.name} (${active.user}@${active.host})\nExit Code: ${active.exit_code}\nSTDOUT:\n${active.stdout}\nSTDERR:\n${active.stderr}`;
+     navigator.clipboard.writeText(text);
+     copied = true;
+     setTimeout(() => (copied = false), 2000);
+   }
 
   // ─── resize drag handlers ──────────────────────────────────────────────────
   function startResize(e: MouseEvent) {
@@ -216,7 +395,11 @@
   }
 </script>
 
-<svelte:window onmousemove={onMouseMove} onmouseup={stopResize} />
+<svelte:window
+  onmousemove={onMouseMove}
+  onmouseup={stopResize}
+  onkeydown={(e) => { if (show) handleModalKeydown(e); }}
+/>
 
 {#if show}
   <ModalShell
@@ -230,6 +413,7 @@
       : `width:${modalWidth}px;height:${modalHeight}px;max-width:calc(100vw - 32px);max-height:calc(100vh - 32px)`}
     panelClass="overflow-hidden text-primary transition-[width,height] duration-150"
   >
+    <div class="flex flex-col h-full w-full min-h-0 overflow-hidden">
       <!-- ── HEADER ─────────────────────────────────────────────────────── -->
       <div class="px-5 py-3 flex items-center justify-between border-b border-border bg-surface-input/30 shrink-0 select-none">
         <div class="flex items-center gap-2.5">
@@ -387,37 +571,101 @@
               class="w-full px-3 py-2 rounded-xl bg-surface-input border border-border text-sm font-mono text-primary focus:border-accent focus:outline-none shadow-inner"
               onkeydown={(e) => { if (e.key === "Enter" && !running) executeBatch(); }}
             />
-            <!-- presets -->
-            <div class="flex items-center gap-1.5 flex-wrap">
-              <span class="text-[10px] text-muted font-medium">Presets:</span>
-              {#each ["uptime", "df -h", "free -m", "w", "docker ps", "systemctl status"] as preset}
-                <button
-                  class="px-2 py-0.5 rounded-lg bg-surface-input border border-border text-[10px] font-mono text-muted hover:text-accent hover:border-accent/40 transition-all cursor-pointer"
-                  onclick={() => (command = preset)}
-                >
-                  {preset}
-                </button>
-              {/each}
-            </div>
+             <!-- presets + templates -->
+             <div class="flex items-center gap-1.5 flex-wrap">
+               <span class="text-[10px] text-muted font-medium">Presets:</span>
+               {#each ["uptime", "df -h", "free -m", "w", "docker ps", "systemctl status"] as preset}
+                 <button
+                   class="px-2 py-0.5 rounded-lg bg-surface-input border border-border text-[10px] font-mono text-muted hover:text-accent hover:border-accent/40 transition-all cursor-pointer"
+                   onclick={() => (command = preset)}
+                 >
+                   {preset}
+                 </button>
+               {/each}
+               <button
+                 class="px-2 py-0.5 rounded-lg bg-surface-input border border-border text-[10px] font-mono text-muted hover:text-primary hover:border-border-hover transition-all cursor-pointer"
+                 onclick={() => (showTemplates = !showTemplates)}
+                 title="Saved templates"
+               >
+                 Templates ▼
+               </button>
+             </div>
+             {#if showTemplates}
+               <div class="flex flex-col gap-1 mt-2">
+                 {#each templates as tmpl (tmpl.id)}
+                   <div class="flex items-center gap-1">
+                     <button
+                       class="px-2 py-0.5 rounded-lg bg-surface-input border border-border text-[10px] font-mono text-primary hover:bg-accent/10 cursor-pointer flex-1 text-left"
+                       onclick={() => { command = tmpl.command; }}
+                       title={tmpl.name}
+                     >
+                       {tmpl.command}
+                     </button>
+                     <button
+                       class="p-0.5 rounded text-[10px] text-muted hover:text-error cursor-pointer"
+                       onclick={(e) => {
+                         e.stopPropagation();
+                         if (tmpl.id.startsWith("user-")) {
+                           templates = templates.filter((t) => t.id !== tmpl.id);
+                           saveTemplates();
+                         }
+                       }}
+                       title="Remove custom template"
+                     >
+                       🗑
+                     </button>
+                   </div>
+                 {/each}
+               </div>
+             {/if}
           </div>
 
           <!-- run button row -->
           <div class="flex items-center justify-between mb-3 shrink-0">
-            <span class="text-xs text-muted">Targeting <strong class="text-primary">{selectedIds.length}</strong> server(s)</span>
-            <button
-              class="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow cursor-pointer border-none disabled:opacity-50 disabled:cursor-not-allowed
-                {dryRun ? 'bg-accent text-white hover:opacity-90' : hasProductionTarget ? 'bg-amber-500 text-black hover:bg-amber-400' : 'bg-success text-black hover:bg-running'}"
-              onclick={executeBatch}
-              disabled={running}
-            >
-              {#if running}
-                <RefreshCw size={13} class="animate-spin" />
-                Executing…
-              {:else}
-                <Play size={13} />
-                {dryRun ? "Preview Dry Run" : "Execute Batch Command"}
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-muted">Targeting <strong class="text-primary">{selectedIds.length}</strong> server(s)</span>
+              <button
+                class="px-2 py-1 rounded bg-surface-input border border-border text-[10px] text-muted hover:text-primary hover:border-border-hover cursor-pointer transition-all"
+                onclick={() => {
+                  if (command.trim()) {
+                    saveTemplate("Custom", command.trim());
+                    notify("Template saved", "success");
+                  }
+                }}
+                title="Save current command as template"
+              >
+                Save Template
+              </button>
+            </div>
+            <div class="flex items-center gap-2">
+              {#if results && results.length > 0 && !running}
+                <select
+                  bind:value={exportFormat}
+                  class="px-2 py-1 rounded-lg bg-surface-input border border-border text-xs text-primary focus:border-accent focus:outline-none"
+                  onchange={exportResults}
+                  title="Export results"
+                >
+                  <option value="md">Export MD</option>
+                  <option value="csv">Export CSV</option>
+                  <option value="json">Export JSON</option>
+                  <option value="txt">Export TXT</option>
+                </select>
               {/if}
-            </button>
+              <button
+                class="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow cursor-pointer border-none disabled:opacity-50 disabled:cursor-not-allowed
+                  {dryRun ? 'bg-accent text-white hover:opacity-90' : hasProductionTarget ? 'bg-amber-500 text-black hover:bg-amber-400' : 'bg-success text-black hover:bg-running'}"
+                onclick={executeBatch}
+                disabled={running}
+              >
+                {#if running}
+                  <RefreshCw size={13} class="animate-spin" />
+                  Executing…
+                {:else}
+                  <Play size={13} />
+                  {dryRun ? "Preview Dry Run" : "Execute Batch Command"}
+                {/if}
+              </button>
+            </div>
           </div>
 
           <!-- results -->
@@ -505,10 +753,40 @@
               <p class="text-sm text-muted m-0">Running on {selectedIds.length} host(s)…</p>
             </div>
           {/if}
+          </div>
         </div>
-      </div>
 
-      <!-- ── RESIZE HANDLE ──────────────────────────────────────────────── -->
+        <!-- ── HISTORY BAR ────────────────────────────────────────────── -->
+        {#if history.length > 0}
+          <div class="absolute bottom-0 left-0 right-0 bg-surface-input/50 border-t border-border text-xs z-10">
+            <div class="flex items-center gap-2 px-3 py-1.5">
+              <span class="text-[9px] font-bold text-muted uppercase">History</span>
+              <div class="flex-1 flex items-center gap-1 overflow-x-auto">
+                {#each history.slice(-5).reverse() as h}
+                  <button
+                    class="px-2 py-0.5 rounded-lg bg-surface border border-border text-[9px] font-mono text-primary hover:bg-accent/10 cursor-pointer shrink-0"
+                    onclick={() => {
+                      command = h.command;
+                      dryRun = h.dryRun;
+                      results = null;
+                    }}
+                    title={new Date(h.timestamp).toLocaleString()}
+                  >
+                    <span class={h.dryRun ? "text-accent" : "text-success"}>{h.dryRun ? "DRY" : "RUN"}</span>
+                    {" "}
+                    {h.command.length > 40 ? h.command.slice(0, 40) + "…" : h.command}
+                    {" · "}
+                    <span class="text-muted">{h.targetCount}h</span>
+                    {" · "}
+                    <span class="text-muted">{h.durationMs}ms</span>
+                  </button>
+                {/each}
+              </div>
+            </div>
+          </div>
+        {/if}
+
+        <!-- ── RESIZE HANDLE ──────────────────────────────────────────────── -->
       {#if !isFullscreen}
         <button
           type="button"
@@ -519,5 +797,6 @@
           style="background: linear-gradient(135deg, transparent 50%, var(--color-accent, #6366f1) 50%) !important; border-bottom-right-radius: 1rem;"
         ></button>
       {/if}
+    </div>
   </ModalShell>
 {/if}

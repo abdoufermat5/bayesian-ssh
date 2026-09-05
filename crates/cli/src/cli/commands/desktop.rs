@@ -21,7 +21,9 @@ pub async fn execute(_config: AppConfig) -> Result<()> {
             exe_path.pop(); // Directory containing current binary
 
             let same_dir_gui = exe_path.join("bayesian-ssh-gui");
-            let release_dir_gui = exe_path.parent().map(|p| p.join("release").join("bayesian-ssh-gui"));
+            let release_dir_gui = exe_path
+                .parent()
+                .map(|p| p.join("release").join("bayesian-ssh-gui"));
 
             if let Some(rel_gui) = release_dir_gui {
                 if rel_gui.exists() {

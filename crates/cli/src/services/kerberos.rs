@@ -45,12 +45,27 @@ impl Krb5Config {
     }
 }
 
+/// System directories that must NOT contain user-writable `klist`/`kinit`
+/// binaries. If a command resolves to anything under these roots, we refuse
+/// to use it (an attacker who can write to `$PATH` could otherwise plant a
+/// credential-harvesting binary that gets run before the real `/usr/bin`).
 fn resolve_command(name: &str) -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("PATH") {
         for dir in std::env::split_paths(&path) {
             let candidate = dir.join(name);
             if candidate.is_file() {
-                return Some(candidate);
+                // Keep only system-owned binaries found via PATH.
+                let path_str = candidate.to_string_lossy();
+                if !path_str.starts_with("/home/")
+                    && !path_str.starts_with("/Users/")
+                    && !path_str.starts_with("/tmp")
+                    && !path_str.starts_with("/var/tmp")
+                    && !path_str.starts_with("/run")
+                    && !path_str.starts_with("/usr/local/bin")
+                    && !path_str.starts_with("/opt/")
+                {
+                    return Some(candidate);
+                }
             }
         }
     }
@@ -58,14 +73,12 @@ fn resolve_command(name: &str) -> Option<PathBuf> {
     for path in [
         "/usr/bin",
         "/usr/sbin",
-        "/usr/local/bin",
         "/usr/local/sbin",
         "/usr/lib/mit/bin",
         "/usr/lib/mit/sbin",
         "/usr/libexec/krb5/bin",
         "/usr/heimdal/bin",
         "/usr/heimdal/sbin",
-        "/opt/local/bin",
         "/opt/local/sbin",
     ] {
         let full_path = PathBuf::from(path).join(name);
@@ -114,7 +127,10 @@ fn parse_krb5_libdefaults(content: &str) -> (Option<String>, Option<String>, Opt
             in_libdefaults = trimmed.eq_ignore_ascii_case("[libdefaults]");
             continue;
         }
-        if !in_libdefaults || trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with(';')
+        if !in_libdefaults
+            || trimmed.is_empty()
+            || trimmed.starts_with('#')
+            || trimmed.starts_with(';')
         {
             continue;
         }
@@ -191,7 +207,9 @@ fn current_uid_string() -> Option<String> {
     {
         let status_output = Command::new("id").arg("-u").output().ok()?;
         if status_output.status.success() {
-            let uid = String::from_utf8_lossy(&status_output.stdout).trim().to_string();
+            let uid = String::from_utf8_lossy(&status_output.stdout)
+                .trim()
+                .to_string();
             if !uid.is_empty() {
                 return Some(uid);
             }
@@ -203,9 +221,7 @@ fn current_uid_string() -> Option<String> {
 
 fn expand_ccache_template(template: &str) -> String {
     let uid = current_uid_string().unwrap_or_else(|| "0".to_string());
-    template
-        .replace("%{uid}", &uid)
-        .replace("%{euid}", &uid)
+    template.replace("%{uid}", &uid).replace("%{euid}", &uid)
 }
 
 fn resolve_cache_path(config: &Krb5Config, klist_output: Option<&str>) -> Option<String> {
@@ -280,7 +296,11 @@ fn infer_suggested_principal(config: &Krb5Config) -> Option<String> {
     Some(format!("{user}@{realm}"))
 }
 
-fn enrich_status(mut status: KerberosStatus, config: &Krb5Config, klist_output: Option<&str>) -> KerberosStatus {
+fn enrich_status(
+    mut status: KerberosStatus,
+    config: &Krb5Config,
+    klist_output: Option<&str>,
+) -> KerberosStatus {
     status.client_configured = config.is_configured();
     status.config_path = config.config_path.clone();
     status.default_realm = config.default_realm.clone();
@@ -294,7 +314,11 @@ fn enrich_status(mut status: KerberosStatus, config: &Krb5Config, klist_output: 
     status
 }
 
-fn base_status(tools_available: bool, config: &Krb5Config, klist_output: Option<&str>) -> KerberosStatus {
+fn base_status(
+    tools_available: bool,
+    config: &Krb5Config,
+    klist_output: Option<&str>,
+) -> KerberosStatus {
     enrich_status(
         KerberosStatus {
             tools_available,
@@ -314,7 +338,28 @@ fn base_status(tools_available: bool, config: &Krb5Config, klist_output: Option<
 
 fn parse_klist_datetime(value: &str) -> Option<DateTime<Local>> {
     let trimmed = value.trim();
-    for fmt in ["%m/%d/%Y %H:%M:%S", "%m/%d/%y %H:%M:%S"] {
+    // klist output varies with the client library AND locale. We try a
+    // broad set of formats rather than assuming a single one:
+    //  - MIT (C locale):      "01/02/2025 12:34:56"
+    //  - MIT (year only 2):   "01/02/25  12:34:56"
+    //  - ISO-8601 style:      "2025-01-02 12:34:56"
+    //  - European order:      "02/01/2025 12:34:56"
+    //  - RFC822-ish (kinit):  "2025-01-02T12:34:56"
+    //  - Long month name:     "Jan 02 12:34:56 2025", "2 Jan 2025 12:34:56"
+    for fmt in [
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S",
+        "%m/%d/%Y %H:%M:%S",
+        "%m/%d/%y %H:%M:%S",
+        "%d/%m/%Y %H:%M:%S",
+        "%d/%m/%y %H:%M:%S",
+        "%Y-%m-%d %H:%M:%S%.f",
+        "%b %d %H:%M:%S %Y",
+        "%d %b %Y %H:%M:%S",
+        "%B %d %H:%M:%S %Y",
+        "%d %B %Y %H:%M:%S",
+        "%F %T",
+    ] {
         if let Ok(naive) = NaiveDateTime::parse_from_str(trimmed, fmt) {
             if let Some(local) = Local.from_local_datetime(&naive).single() {
                 return Some(local);
@@ -425,7 +470,8 @@ fn parse_klist_output(output: &str, valid: bool, config: &Krb5Config) -> Kerbero
 }
 
 fn run_kinit(args: &[&str], password: Option<&str>) -> Result<(), String> {
-    let kinit_path = resolve_command("kinit").ok_or_else(|| "kinit command not found".to_string())?;
+    let kinit_path =
+        resolve_command("kinit").ok_or_else(|| "kinit command not found".to_string())?;
     let mut command = Command::new(kinit_path);
     command.args(args);
     command.stdin(Stdio::piped());
@@ -597,7 +643,7 @@ mod tests {
     fn parses_cache_path_from_klist_error() {
         let output = "klist: No credentials cache found (filename: /tmp/krb5cc_1000)";
         assert_eq!(
-            parse_cache_path_from_klist(&output).as_deref(),
+            parse_cache_path_from_klist(output).as_deref(),
             Some("/tmp/krb5cc_1000")
         );
     }

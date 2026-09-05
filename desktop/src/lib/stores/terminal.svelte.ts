@@ -4,7 +4,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import type { SearchAddon } from "@xterm/addon-search";
-import type { Connection } from "$lib/types";
+import type { Connection, DesktopSettings } from "$lib/types";
 import { ensureKerberosForConnection } from "$lib/stores/kerberos.svelte";
 import { notify } from "$lib/stores/notifications.svelte";
 import { getCurrentXtermTheme } from "$lib/utils/theme";
@@ -18,6 +18,36 @@ import {
   safeWrite,
   type OutputCoalescer,
 } from "$lib/utils/terminal-xterm";
+
+type SettingsGetter = () => DesktopSettings | undefined;
+let _settingsGetter: SettingsGetter | null = null;
+
+export function registerSettingsGetter(getter: SettingsGetter) {
+  _settingsGetter = getter;
+}
+
+export function getTerminalSettings(): DesktopSettings | undefined {
+  return _settingsGetter?.();
+}
+
+export function buildTerminalOptions(settings?: DesktopSettings): Record<string, unknown> {
+  const s = settings ?? _settingsGetter?.();
+  return {
+    cursorBlink: s?.terminal_cursor_blink ?? true,
+    cursorStyle: (s?.terminal_cursor_style ?? "block") as "block" | "bar" | "underline" | undefined,
+    fontFamily:
+      s?.terminal_font_family ||
+      "JetBrains Mono, Fira Code, Cascadia Code, Ubuntu Mono, DejaVu Sans Mono, Liberation Mono, Consolas, monospace",
+    fontSize: s?.terminal_font_size ?? 13,
+    lineHeight: s?.terminal_line_height ?? 1.18,
+    scrollback: s?.terminal_scrollback ?? 10000,
+    smoothScrollDuration: 120,
+    fontLigatures: true,
+    fontWeight: "normal",
+    theme: getCurrentXtermTheme(),
+    allowProposedApi: true,
+  };
+}
 
 export interface TerminalTab {
   id: string;
@@ -66,9 +96,6 @@ export function initThemeSyncForTerminals() {
   });
   observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
 }
-
-import type { DesktopSettings } from "$lib/types";
-
 export function applyThemeToAllTerminals(settings?: DesktopSettings) {
   const currentTheme = getCurrentXtermTheme();
   tabs.forEach((tab) => {
@@ -103,6 +130,10 @@ export function getTerminalFontSize(): number {
 
 export function updateTerminalFontSize(newSize: number) {
   terminalFontSize = Math.max(8, Math.min(32, newSize));
+  const settings = getTerminalSettings();
+  if (settings?.terminal_font_size !== terminalFontSize) {
+    settings!.terminal_font_size = terminalFontSize;
+  }
   tabs.forEach((tab) => {
     if (tab.term && tab.fitAddon) {
       tab.term.options.fontSize = terminalFontSize;
@@ -137,6 +168,8 @@ function findDetachedSession(sessionId: string): DetachedSession | undefined {
 }
 
 /** Route one PTY output event to its tab, coalesced. */
+const MAX_PENDING_OUTPUT_BYTES = 256 * 1024;
+
 function deliverPtyOutput(sessionId: string, data: string) {
   if (!data) return;
   const tab = findTab(sessionId);
@@ -146,10 +179,18 @@ function deliverPtyOutput(sessionId: string, data: string) {
     tab.outputCoalescer.push(data);
     return;
   }
-  // Terminal instance not created yet (reattach race) — queue the output so
-  // it is rendered as soon as the xterm instance mounts.
   if (!tab.pendingOutput) tab.pendingOutput = [];
+  if (getPendingOutputBytes(tab.pendingOutput) + data.length > MAX_PENDING_OUTPUT_BYTES) {
+    console.warn("pendingOutput queue exceeded limit, dropping oldest chunks");
+    while (tab.pendingOutput.length > 0 && getPendingOutputBytes(tab.pendingOutput) + data.length > MAX_PENDING_OUTPUT_BYTES) {
+      tab.pendingOutput.shift();
+    }
+  }
   tab.pendingOutput.push(data);
+}
+
+function getPendingOutputBytes(chunks: string[]): number {
+  return chunks.reduce((sum, c) => sum + c.length, 0);
 }
 
 function linkTerminal(
@@ -238,17 +279,7 @@ function openTerminalInstance(
   container: HTMLElement,
   options?: { banner?: string; replay?: string },
 ): Terminal {
-  const term = new Terminal({
-    cursorBlink: true,
-    cursorStyle: "block",
-    fontFamily: "JetBrains Mono, Fira Code, Cascadia Code, Ubuntu Mono, DejaVu Sans Mono, Liberation Mono, Consolas, monospace",
-    fontSize: terminalFontSize,
-    lineHeight: 1.18,
-    scrollback: 10000,
-    smoothScrollDuration: 120,
-    theme: getCurrentXtermTheme(),
-    allowProposedApi: true,
-  });
+  const term = new Terminal(buildTerminalOptions() as ConstructorParameters<typeof Terminal>[0]);
 
   const fitAddon = new FitAddon();
   term.loadAddon(fitAddon);

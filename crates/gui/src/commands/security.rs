@@ -20,7 +20,10 @@ pub fn list_ssh_keys() -> Result<Vec<security::SshKeyInfo>, String> {
 }
 
 #[tauri::command]
-pub fn generate_ssh_key(name: String, key_type: Option<String>) -> Result<security::SshKeyInfo, String> {
+pub fn generate_ssh_key(
+    name: String,
+    key_type: Option<String>,
+) -> Result<security::SshKeyInfo, String> {
     // Reject anything that is not a plain file name: this blocks path
     // traversal (e.g. "../../etc/cron.d/x") and absolute paths.
     let name = name.trim().to_string();
@@ -29,7 +32,9 @@ pub fn generate_ssh_key(name: String, key_type: Option<String>) -> Result<securi
         || name.contains('/')
         || name.contains('\\')
         || name.contains("..")
-        || name.chars().any(|c| !(c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.'))
+        || name
+            .chars()
+            .any(|c| !(c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.'))
     {
         return Err(
             "Key name may only contain letters, digits, '_', '-' and '.' (no paths).".to_string(),
@@ -70,7 +75,9 @@ pub fn generate_ssh_key(name: String, key_type: Option<String>) -> Result<securi
     bayesian_ssh::config::enforce_secure_file(&key_path);
     let pub_key_path = PathBuf::from(format!("{}.pub", key_path.display()));
     if pub_key_path.exists() {
-        let mut perms = fs::metadata(&pub_key_path).map_err(|e| e.to_string())?.permissions();
+        let mut perms = fs::metadata(&pub_key_path)
+            .map_err(|e| e.to_string())?
+            .permissions();
         perms.set_mode(0o644);
         let _ = fs::set_permissions(&pub_key_path, perms);
     }
@@ -101,8 +108,8 @@ pub fn copy_ssh_key_to_target(target: String, key_path: Option<String>) -> Resul
     } else if let Some(ref k) = conn.key_path {
         PathBuf::from(format!("{k}.pub"))
     } else {
-        let home = dirs::home_dir()
-            .ok_or_else(|| "Could not resolve home directory".to_string())?;
+        let home =
+            dirs::home_dir().ok_or_else(|| "Could not resolve home directory".to_string())?;
         let default_ed25519 = home.join(".ssh/id_ed25519.pub");
         let default_rsa = home.join(".ssh/id_rsa.pub");
         if default_ed25519.exists() {
@@ -110,12 +117,17 @@ pub fn copy_ssh_key_to_target(target: String, key_path: Option<String>) -> Resul
         } else if default_rsa.exists() {
             default_rsa
         } else {
-            return Err("No public key found. Generate one first using the Key Manager.".to_string());
+            return Err(
+                "No public key found. Generate one first using the Key Manager.".to_string(),
+            );
         }
     };
 
     if !pub_key_path.exists() {
-        return Err(format!("Public key file not found: {}", pub_key_path.display()));
+        return Err(format!(
+            "Public key file not found: {}",
+            pub_key_path.display()
+        ));
     }
 
     let pub_key_content = fs::read_to_string(&pub_key_path)
@@ -160,7 +172,9 @@ pub fn copy_ssh_key_to_target(target: String, key_path: Option<String>) -> Resul
 pub fn run_security_audit() -> Result<security::AuditReportDto, String> {
     let config = AppConfig::load(None).map_err(|e| e.to_string())?;
     let database = Database::new(&config).map_err(|e| e.to_string())?;
-    let connections = database.list_connections(None, false).map_err(|e| e.to_string())?;
+    let connections = database
+        .list_connections(None, false)
+        .map_err(|e| e.to_string())?;
 
     Ok(security::build_audit_report(&config, &connections))
 }
@@ -233,7 +247,8 @@ pub fn export_connections_payload(
     };
 
     if let Some(path_str) = output_path {
-        std::fs::write(&path_str, &bytes).map_err(|e| format!("Failed to write export file: {e}"))?;
+        std::fs::write(&path_str, &bytes)
+            .map_err(|e| format!("Failed to write export file: {e}"))?;
         bayesian_ssh::config::enforce_secure_file(std::path::Path::new(&path_str));
         Ok(format!(
             "Exported {} environment(s) and {} connection(s) to {}",
@@ -343,7 +358,9 @@ pub struct PingResultDto {
 pub async fn ping_all_connections() -> Result<Vec<PingResultDto>, String> {
     let config = AppConfig::load(None).map_err(|e| e.to_string())?;
     let database = Database::new(&config).map_err(|e| e.to_string())?;
-    let connections = database.list_connections(None, false).map_err(|e| e.to_string())?;
+    let connections = database
+        .list_connections(None, false)
+        .map_err(|e| e.to_string())?;
 
     // Ping all hosts concurrently (bounded) so N connections finish in ~one
     // ConnectTimeout instead of N × ConnectTimeout.
@@ -359,9 +376,12 @@ pub async fn ping_all_connections() -> Result<Vec<PingResultDto>, String> {
                 let start = std::time::Instant::now();
                 let status = tokio::process::Command::new("ssh")
                     .args([
-                        "-o", "BatchMode=yes",
-                        "-o", "ConnectTimeout=3",
-                        "-p", &conn.port.to_string(),
+                        "-o",
+                        "BatchMode=yes",
+                        "-o",
+                        "ConnectTimeout=3",
+                        "-p",
+                        &conn.port.to_string(),
                         &format!("{}@{}", conn.user, conn.host),
                         "exit 0",
                     ])

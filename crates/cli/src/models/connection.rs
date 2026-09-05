@@ -64,6 +64,18 @@ impl Connection {
         self.tags.retain(|t| t != tag);
     }
 
+    /// Normalize a tag: trim whitespace, reject empty values, escape
+    /// surrounding quotes. Used everywhere user-supplied tag strings cross
+    /// the SQL boundary.
+    pub fn normalize_tag(tag: &str) -> Option<String> {
+        let t = tag.trim().trim_matches('"').trim_matches('\'').trim();
+        if t.is_empty() {
+            None
+        } else {
+            Some(t.to_string())
+        }
+    }
+
     pub fn to_ssh_command(&self) -> String {
         let mut cmd = String::new();
 

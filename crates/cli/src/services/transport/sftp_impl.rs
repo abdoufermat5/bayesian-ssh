@@ -149,6 +149,7 @@ impl SftpSession for RusshSftpSession {
         offset: u64,
         mut source: mpsc::Receiver<Vec<u8>>,
         mode: u32,
+        on_chunk: Option<Box<dyn Fn(usize) + Send + Sync>>,
     ) -> Result<u64, TransportError> {
         // Open or create the file; seek to `offset` for resume support.
         let attrs = russh_sftp::protocol::FileAttributes {
@@ -182,6 +183,9 @@ impl SftpSession for RusshSftpSession {
                 .await
                 .map_err(|e| TransportError::Permanent(anyhow!("SFTP write: {e}")))?;
             total += chunk.len() as u64;
+            if let Some(cb) = on_chunk.as_ref() {
+                cb(chunk.len());
+            }
             debug!(
                 "sftp write_all: {} bytes to {path} (total {total})",
                 chunk.len()

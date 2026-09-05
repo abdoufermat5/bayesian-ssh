@@ -26,7 +26,10 @@ pub(crate) fn shell_quote(value: &str) -> String {
     if value.is_empty() {
         return "''".to_string();
     }
-    if !value.contains(['\'', '\\', ' ', '\t', '\n', '"', '$', '`', ';', '&', '|', '<', '>', '(', ')', '*', '?', '[', ']', '{', '}', '!', '#', '~']) {
+    if !value.contains([
+        '\'', '\\', ' ', '\t', '\n', '"', '$', '`', ';', '&', '|', '<', '>', '(', ')', '*', '?',
+        '[', ']', '{', '}', '!', '#', '~',
+    ]) {
         return value.to_string();
     }
     format!("'{}'", value.replace('\'', "'\"'\"'"))
@@ -193,10 +196,8 @@ impl SubprocessTransport {
         let marker_start = format!("{marker}_START");
         let marker_end = format!("{marker}_END");
 
-        let mut argv = Self::build_shell_argv_with_shkc(
-            conn,
-            &self.config.transport.strict_host_key_checking,
-        );
+        let mut argv =
+            Self::build_shell_argv_with_shkc(conn, &self.config.transport.strict_host_key_checking);
         if let Some(pos) = argv.iter().position(|a| a == "-t" || a == "-tt") {
             argv[pos] = "-tt".into();
         }
@@ -341,7 +342,11 @@ impl SshTransport for SubprocessTransport {
             return self.run_interactive_exec(conn, command).await;
         }
 
-        let argv = Self::build_exec_argv(conn, command, &self.config.transport.strict_host_key_checking);
+        let argv = Self::build_exec_argv(
+            conn,
+            command,
+            &self.config.transport.strict_host_key_checking,
+        );
         let (cmd_name, args) = argv
             .split_first()
             .ok_or_else(|| TransportError::permanent(anyhow::anyhow!("empty argv")))?;
@@ -449,10 +454,8 @@ impl SshTransport for SubprocessTransport {
     }
 
     async fn run_interactive(&self, conn: &Connection) -> Result<i32, TransportError> {
-        let argv = Self::build_shell_argv_with_shkc(
-            conn,
-            &self.config.transport.strict_host_key_checking,
-        );
+        let argv =
+            Self::build_shell_argv_with_shkc(conn, &self.config.transport.strict_host_key_checking);
         let (cmd_name, args) = argv
             .split_first()
             .ok_or_else(|| TransportError::permanent(anyhow::anyhow!("empty argv")))?;
@@ -537,7 +540,8 @@ mod tests {
 
     #[test]
     fn argv_simple() {
-        let argv = SubprocessTransport::build_exec_argv(&c(false, None, None), "uptime", "accept-new");
+        let argv =
+            SubprocessTransport::build_exec_argv(&c(false, None, None), "uptime", "accept-new");
         assert_eq!(argv[0], "ssh");
         assert!(argv.contains(&"-p".to_string()));
         assert!(argv.contains(&"2222".to_string()));
@@ -551,22 +555,29 @@ mod tests {
 
     #[test]
     fn argv_kerberos_adds_k_flag() {
-        let argv = SubprocessTransport::build_exec_argv(&c(true, None, None), "uptime", "accept-new");
+        let argv =
+            SubprocessTransport::build_exec_argv(&c(true, None, None), "uptime", "accept-new");
         assert!(argv.contains(&"-K".to_string()));
     }
 
     #[test]
     fn argv_bastion_uses_proxy_command() {
-        let argv =
-            SubprocessTransport::build_exec_argv(&c(false, Some("b.example"), None), "uptime", "accept-new");
+        let argv = SubprocessTransport::build_exec_argv(
+            &c(false, Some("b.example"), None),
+            "uptime",
+            "accept-new",
+        );
         assert!(argv.iter().any(|a| a.contains("ProxyCommand=")));
         assert!(argv.iter().any(|a| a.contains("alice@b.example")));
     }
 
     #[test]
     fn argv_kerberos_bastion_uses_proxy_command() {
-        let argv =
-            SubprocessTransport::build_exec_argv(&c(true, Some("b.example"), None), "ls -l /tmp", "accept-new");
+        let argv = SubprocessTransport::build_exec_argv(
+            &c(true, Some("b.example"), None),
+            "ls -l /tmp",
+            "accept-new",
+        );
         assert!(argv.iter().any(|a| a.contains("ProxyCommand=")));
         assert!(argv.contains(&"-K".to_string()));
         assert!(argv.iter().any(|a| a.contains("alice@b.example")));
@@ -575,8 +586,11 @@ mod tests {
 
     #[test]
     fn argv_key_path_uses_i_flag() {
-        let argv =
-            SubprocessTransport::build_exec_argv(&c(false, None, Some("/k/id_ed25519")), "uptime", "accept-new");
+        let argv = SubprocessTransport::build_exec_argv(
+            &c(false, None, Some("/k/id_ed25519")),
+            "uptime",
+            "accept-new",
+        );
         assert!(argv.contains(&"-i".to_string()));
         assert!(argv.contains(&"/k/id_ed25519".to_string()));
     }

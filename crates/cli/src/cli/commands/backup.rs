@@ -1,4 +1,5 @@
 use crate::config::AppConfig;
+use crate::database::Database;
 use anyhow::{Context, Result};
 use std::fs;
 use std::path::PathBuf;
@@ -28,7 +29,14 @@ pub async fn execute(output: Option<String>, config: AppConfig) -> Result<()> {
         db_path, backup_path
     );
 
-    fs::copy(db_path, &backup_path).context("Failed to copy database file")?;
+    // Use SQLite's online backup API (VACUUM INTO) instead of a raw
+    // `fs::copy`. A running WAL-mode database can otherwise be copied
+    // mid-checkpoint, producing an inconsistent snapshot. VACUUM INTO
+    // produces a consistent, standalone copy.
+    let db = Database::new(&config).context("open database for backup")?;
+    db.vacuum_into(&backup_path)
+        .context("backup database via VACUUM INTO")?;
+
     crate::config::enforce_secure_file(&backup_path);
 
     println!(

@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.1] - 2026-09-05
+
+### Security
+- **Encrypted backups/exports rebuilt on AES-256-GCM + Argon2id**: The previous homegrown SHA-256 keystream "encryption" has been replaced with a vetted authenticated construction. New payloads use a versioned format (v2); legacy v1 backups still decrypt. Tampered ciphertext, wrong passphrases, and truncated payloads now fail loudly.
+- **Kerberos helpers no longer resolve from user-writable paths**: `klist`/`kinit` are only executed from system-owned directories; a planted binary in `~/bin` or a writable `$PATH` entry can no longer harvest Kerberos passwords.
+- **Path traversal defence on transfers**: Remote paths containing `..` segments are rejected, and local download targets are written via a temp file + `O_NOFOLLOW` atomic rename, so a pre-existing symlink cannot redirect the write.
+- **Duplicate-name protection**: Adding/renaming a connection onto an existing name now fails with a clear error instead of silently overwriting rows (was `INSERT OR REPLACE`).
+
+### Fixed
+- **Tag search false positives**: `bssh list -t <tag>`, `bssh search tag:/@<tag>`, and `bssh exec -t <tag>` matched substrings inside the JSON tag array (e.g. `db` matched `dba`). Tags are now a normalized `connection_tags` join table with exact matching.
+- **Transfer hang on slow SFTP writers**: A second progress channel added a back-pressure hop that could block uploads indefinitely; progress is now reported inline via an `on_chunk` callback.
+- **Non-atomic partial downloads**: Single-file and recursive downloads previously truncated/overwrote the destination on a mid-transfer error; they now write to a temp file and rename only on success.
+- **Concurrent `remove` no longer bricks `connect`**: Recency updates on connect are best-effort, so a connect racing a delete no longer fails.
+- **Double write on session start**: SSH sessions were INSERTed as `Starting` then updated to `Active`; they are now recorded Active in a single INSERT.
+- **`status` queries are now deterministic**: Session outcome filters use a structured `status_kind` column instead of `LIKE '%Error%'` over a JSON blob.
+- **SQLite backups are consistent**: `bssh backup` uses `VACUUM INTO` instead of a raw file copy, safe against WAL-mode checkpoints mid-copy.
+- **LIKE wildcard injection**: `%`/`_`/`\` in connection-name filters are escaped instead of acting as wildcards.
+
+### Changed
+- **Schema migrations tracked**: The database now uses SQLite `user_version` with ordered migrations (v1 → v2 → v3) instead of ad-hoc column checks; existing databases migrate in place.
+- **Atomic config writes**: `config.json` is written via temp file + rename so a crash cannot corrupt settings.
+- **Broader `klist` date parsing**: Accepts ISO-8601, `%d/%m/%Y`, long/short month-name formats and more, instead of only American `%m/%d/%Y`.
+- **Stats & ranking use single queries**: `bssh stats` and Bayesian ranking batch-aggregate session data (one `GROUP BY`) instead of issuing 2×N queries; tag statistics come from one grouped query.
+- **Type-safe search field selection**: Column names for search are now an enum, eliminating any string-interpolated SQL path.
+
+### Added
+- **Tamper tests for the encrypted format**: roundtrip, wrong-passphrase, flipped-ciphertext, flipped-AAD, and legacy-v1-decryption tests.
+- **Path-traversal unit tests** for the transfer guard.
+
 ## [2.5.0] - 2026-08-23
 
 ### Security

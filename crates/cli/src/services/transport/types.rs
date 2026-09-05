@@ -109,12 +109,15 @@ pub trait SftpSession: Send + Sync {
         sink: mpsc::Sender<Vec<u8>>,
     ) -> Result<u64, TransportError>;
     /// Stream-based write. `offset` supports resume; pass 0 for fresh write.
+    /// `on_chunk` is called for every chunk just written to the remote;
+    /// implementations must not block inside the callback.
     async fn write_all(
         &self,
         path: &str,
         offset: u64,
         source: mpsc::Receiver<Vec<u8>>,
         mode: u32,
+        on_chunk: Option<Box<dyn Fn(usize) + Send + Sync>>,
     ) -> Result<u64, TransportError>;
 }
 
