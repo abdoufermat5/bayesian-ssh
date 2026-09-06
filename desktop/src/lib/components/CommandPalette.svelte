@@ -250,7 +250,7 @@
 {#if open}
   <!-- Backdrop -->
   <div
-    class="fixed inset-0 z-[200] flex items-start justify-center pt-[12vh] bg-black/70 backdrop-blur-md transition-opacity duration-fast"
+    class="fixed inset-0 z-[200] flex items-start justify-center p-4 pt-12 sm:pt-[10vh] bg-black/70 backdrop-blur-md transition-opacity duration-fast"
     role="presentation"
     onclick={(e) => {
       if (e.target === e.currentTarget) onClose();
@@ -258,7 +258,7 @@
   >
     <!-- Palette Container -->
     <div
-      class="w-full max-w-xl rounded-2xl border border-white/10 bg-surface-raised/95 shadow-2xl overflow-hidden flex flex-col max-h-[70vh] animate-in fade-in zoom-in-95 duration-150"
+      class="w-full max-w-xl rounded-2xl border border-white/10 bg-surface-raised/95 shadow-2xl overflow-hidden flex flex-col max-h-[82vh] sm:max-h-[70vh] animate-in fade-in zoom-in-95 duration-150"
       role="dialog"
       aria-modal="true"
       aria-label="Command Palette"
@@ -293,24 +293,24 @@
           {#each filteredItems as item, index}
             <button
               type="button"
-              class="w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border text-left cursor-pointer transition-all duration-fast
+              class="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg border text-left cursor-pointer transition-all duration-fast
                 {selectedIndex === index
-                  ? 'border-accent/35 bg-accent/15 text-primary shadow-sm'
+                  ? 'border-border-strong bg-surface-active text-primary shadow-sm'
                   : 'border-transparent text-secondary bg-transparent hover:bg-surface-hover hover:text-primary'}"
               onmouseenter={() => (selectedIndex = index)}
               onclick={item.action}
             >
               <div class="flex items-center gap-3 min-w-0">
                 <div
-                  class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border
+                  class="w-6 h-6 rounded-md flex items-center justify-center shrink-0 border
                     {selectedIndex === index
-                      ? 'bg-accent text-white border-accent'
+                      ? 'bg-surface-elevated text-accent border-border-strong'
                       : 'bg-surface-input border-border text-muted'}"
                 >
-                  <item.icon size={14} />
+                  <item.icon size={13} />
                 </div>
                 <div class="flex flex-col min-w-0">
-                  <span class="text-xs font-semibold truncate leading-tight {selectedIndex === index ? 'text-primary' : ''}">
+                  <span class="text-xs font-medium truncate leading-tight {selectedIndex === index ? 'text-primary font-semibold' : ''}">
                     {item.title}
                   </span>
                   {#if item.subtitle}
@@ -322,11 +322,11 @@
               </div>
 
               <div class="flex items-center gap-2 shrink-0">
-                <span class="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-surface border border-border/60 text-muted">
+                <span class="text-[9px] uppercase font-mono tracking-wider px-1.5 py-0.5 rounded bg-surface border border-border text-muted">
                   {item.category}
                 </span>
                 {#if item.badge}
-                  <span class="badge-pill bg-accent/20 text-accent border border-accent/30">
+                  <span class="badge badge-subtle text-[10px]">
                     {item.badge}
                   </span>
                 {/if}

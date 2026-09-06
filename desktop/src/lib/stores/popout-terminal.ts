@@ -74,11 +74,19 @@ export async function initPopoutTerminal(sessionId: string): Promise<PopoutTermi
   // With the listener registered first, output that arrives while the replay
   // is being written lands behind it in xterm's write queue, preserving
   // ordering and dropping nothing.
-  unlistenOutput = await listen("pty-output", (event) => {
-    const payload = event.payload as { session_id?: string; sessionId?: string; data: string };
-    const id = payload.session_id ?? payload.sessionId;
-    if (id !== sessionId) return;
-    outputCoalescer?.push(payload.data);
+  let unlistenExit: UnlistenFn | null = null;
+  unlistenOutput = await listen(`pty-output:${sessionId}`, (event) => {
+    const data = typeof event.payload === "string" ? event.payload : (event.payload as any)?.data;
+    if (data) {
+      outputCoalescer?.push(data);
+    }
+  });
+
+  unlistenExit = await listen(`pty-exit:${sessionId}`, () => {
+    outputCoalescer?.flush();
+    if (term) {
+      safeWrite(term, "\n\x1b[1;33mSession disconnected.\x1b[0m\r\n");
+    }
   });
 
   if (info.buffered_output) {
@@ -173,6 +181,8 @@ export async function initPopoutTerminal(sessionId: string): Promise<PopoutTermi
     themeObserver = null;
     unlistenOutput?.();
     unlistenOutput = null;
+    unlistenExit?.();
+    unlistenExit = null;
     resizeObserver?.disconnect();
     resizeObserver = null;
     outputCoalescer?.dispose();
@@ -209,21 +219,6 @@ export async function initPopoutTerminal(sessionId: string): Promise<PopoutTermi
 export async function dockPopoutToMain(sessionId: string): Promise<void> {
   const windowLabel = getCurrentWindow().label;
   await invoke("dock_popout_session", { sessionId, windowLabel });
-}
-
-export interface PopoutMainOverlap {
-  overlaps: boolean;
-  overlap_ratio: number;
-  center_over_main: boolean;
-  should_dock: boolean;
-}
-
-export async function checkPopoutMainOverlap(
-  windowLabel: string,
-): Promise<PopoutMainOverlap> {
-  return invoke<PopoutMainOverlap>("check_popout_main_overlap", {
-    popoutWindowLabel: windowLabel,
-  });
 }
 
 async function waitForContainer(elementId: string): Promise<HTMLElement | null> {

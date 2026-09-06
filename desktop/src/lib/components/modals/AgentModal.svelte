@@ -18,20 +18,22 @@
   onClose={onClose}
   width="md"
 >
-  <div class="flex justify-between items-center px-6 py-5 border-b border-border">
-      <h2 class="text-base font-semibold tracking-tight m-0 text-primary">SSH Agent Manager</h2>
+  <div class="modal-header">
+      <h2 class="modal-title">SSH Agent Manager</h2>
       <button
-        class="bg-transparent border-none text-muted cursor-pointer flex p-1 rounded-md transition-all duration-100 hover:text-primary hover:bg-white/5"
+        type="button"
+        class="modal-close"
         onclick={onClose}
+        aria-label="Close"
       >
         <X size={18} />
       </button>
     </div>
 
-    <div class="px-6 py-5 flex flex-col gap-4 max-h-[60vh] overflow-y-auto">
-      <div class="bg-surface-raised border border-border rounded-xl p-4 flex flex-col gap-2">
+    <div class="modal-body flex flex-col gap-4">
+      <div class="settings-section">
         <div class="flex justify-between items-center">
-          <span class="text-[10px] font-bold tracking-wider text-secondary uppercase">Agent Status</span>
+          <span class="settings-section-title">Agent Status</span>
           <span class="text-xs font-semibold text-accent">ACTIVE</span>
         </div>
         {#if agentSocket}
@@ -43,16 +45,17 @@
 
       <div class="flex flex-col">
         <div class="flex justify-between items-center mb-2">
-          <span class="text-[10px] font-bold tracking-wider text-secondary uppercase">LOADED KEYS ({agentKeys.length})</span>
+          <span class="settings-section-title">LOADED KEYS ({agentKeys.length})</span>
           <button
-            class="bg-accent border-none text-white py-1.5 px-3 rounded-lg font-semibold cursor-pointer inline-flex items-center gap-1.5 text-xs transition-colors duration-150 hover:bg-accent-hover"
+            type="button"
+            class="btn btn-primary btn-sm"
             onclick={onAddKey}
           >
             <Plus size={12} /> Add Key File
           </button>
         </div>
 
-        <div class="max-h-[200px] overflow-y-auto border border-border rounded-lg bg-surface-input divide-y divide-border">
+        <div class="max-h-[200px] overflow-y-auto rounded-md border border-border bg-surface-input divide-y divide-border">
           {#if agentKeys.length === 0}
             <div class="p-6 text-center text-muted text-xs">
               No keys currently loaded in the SSH Agent.
@@ -68,9 +71,10 @@
       </div>
     </div>
 
-    <div class="flex justify-end gap-2 px-6 py-4 border-t border-border">
+    <div class="modal-footer">
       <button
-        class="py-2 px-4 rounded-lg text-[13px] font-semibold cursor-pointer bg-transparent border border-border text-secondary transition-all duration-100 hover:border-border-hover hover:text-primary hover:bg-white/[0.03]"
+        type="button"
+        class="btn btn-secondary"
         onclick={onClose}
       >
         Close

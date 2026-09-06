@@ -95,22 +95,22 @@
 </script>
 
 <aside
-  class="flex flex-col border-r border-border bg-surface shrink-0 relative z-20 overflow-visible min-h-0 transition-all duration-200 select-none"
+  class="sidebar-shell"
   style="width: {sidebarCollapsed ? 'var(--sidebar-w-collapsed)' : 'var(--sidebar-w)'};"
 >
-  <!-- Top Profile Header -->
-  <div class="p-3 border-b border-border/80 shrink-0">
+  <!-- Top Profile / Workspace Header -->
+  <div class="p-2.5 border-b border-border shrink-0">
     {#if !sidebarCollapsed}
-      <div class="flex items-center justify-between gap-1 mb-1.5 px-0.5">
-        <span class="eyebrow flex items-center gap-1">Workspace</span>
+      <div class="flex items-center justify-between gap-1 mb-1.5 px-1">
+        <span class="eyebrow text-[10px]">Workspace</span>
         <button
           type="button"
-          class="text-muted hover:text-primary p-1 rounded-md hover:bg-surface-hover transition-colors cursor-pointer border-none bg-transparent"
+          class="btn-icon p-1 h-6 w-6"
           onclick={onShowEnvModal}
           title="Manage Environments"
           aria-label="Manage Environments"
         >
-          <FolderPlus size={13} />
+          <FolderPlus size={12} />
         </button>
       </div>
       <CustomSelect
@@ -122,44 +122,42 @@
       <div class="flex justify-center py-1">
         <button
           type="button"
-          class="w-8 h-8 rounded-lg bg-surface-input border border-border flex items-center justify-center text-muted hover:text-accent hover:border-accent/40 transition-colors cursor-pointer"
+          class="icon-tile text-xs font-bold uppercase hover:border-border-hover"
           onclick={onShowEnvModal}
           title={`Profile: ${activeEnv}`}
           aria-label={`Profile: ${activeEnv}`}
         >
-          <span class="text-[11px] font-bold uppercase">{activeEnv.slice(0, 2)}</span>
+          <span class="text-[10px] font-mono font-semibold">{activeEnv.slice(0, 2).toUpperCase()}</span>
         </button>
       </div>
     {/if}
   </div>
 
   <!-- Primary Navigation Items -->
-  <div class="flex-1 min-h-0 overflow-y-auto px-2 py-3 flex flex-col gap-1 scrollbar-none">
+  <div class="flex-1 min-h-0 overflow-y-auto px-2 py-2.5 flex flex-col gap-0.5 scrollbar-none">
     {#if !sidebarCollapsed}
-      <span class="eyebrow px-2 mb-1 text-[10px]">Navigation</span>
+      <span class="eyebrow px-2 mb-1 text-[10px]">Views</span>
     {/if}
 
     <nav class="flex flex-col gap-0.5">
       {#each navItems as item}
         <button
           type="button"
-          class="flex items-center gap-2.5 w-full py-2 px-2.5 rounded-lg cursor-pointer text-xs font-medium text-left transition-all duration-fast relative border
+          class="nav-item
             {sidebarCollapsed ? 'justify-center px-0' : ''}
-            {activeTab === item.tab
-              ? 'border-accent/30 bg-accent/15 text-primary font-semibold shadow-sm'
-              : 'border-transparent text-secondary hover:text-primary hover:bg-surface-hover'}"
+            {activeTab === item.tab ? 'nav-item-active' : ''}"
           onclick={() => onTabChange(item.tab)}
           title={item.label}
           aria-label={item.label}
         >
           <item.icon
-            size={16}
-            class={activeTab === item.tab ? "text-accent" : "text-muted"}
+            size={15}
+            class={activeTab === item.tab ? "text-primary" : "text-muted"}
           />
           {#if !sidebarCollapsed}
             <span class="truncate">{item.label}</span>
             {#if item.badge && item.badge > 0}
-              <span class="ml-auto badge-pill bg-accent/20 text-accent border border-accent/30">
+              <span class="ml-auto px-1.5 py-0.2 rounded-full font-mono text-[10px] font-medium bg-white/10 text-primary">
                 {item.badge}
               </span>
             {/if}
@@ -170,13 +168,13 @@
       {#if onShowSnippetsModal}
         <button
           type="button"
-          class="flex items-center gap-2.5 w-full py-2 px-2.5 rounded-lg cursor-pointer text-xs font-medium text-left transition-all duration-fast border border-transparent text-secondary hover:text-primary hover:bg-surface-hover mt-1
+          class="nav-item mt-1 text-muted
             {sidebarCollapsed ? 'justify-center px-0' : ''}"
           onclick={onShowSnippetsModal}
           title="Command Snippets"
           aria-label="Command Snippets"
         >
-          <Code size={16} class="text-warning/80" />
+          <Code size={15} />
           {#if !sidebarCollapsed}
             <span>Snippets</span>
           {/if}
@@ -186,18 +184,16 @@
 
     <!-- Tag Filter Chips (when tags exist and expanded) -->
     {#if !sidebarCollapsed && allTags.length > 0}
-      <div class="mt-4 pt-3 border-t border-border/60">
+      <div class="mt-3 pt-2.5 border-t border-border/60">
         <span class="eyebrow px-2 mb-1.5 flex items-center gap-1">
           <Tag size={10} />
-          Filter Tags
+          Tags
         </span>
-        <div class="flex flex-wrap gap-1 px-1">
+        <div class="flex flex-wrap gap-1 px-1 max-h-32 overflow-y-auto scrollbar-none">
           <button
             type="button"
-            class="text-[10px] py-0.5 px-2 rounded-md cursor-pointer transition-all border
-              {selectedTag === null
-                ? 'border-accent/40 bg-accent/20 text-accent font-semibold'
-                : 'border-border bg-surface-input/60 text-muted hover:text-primary hover:border-border-hover'}"
+            class="filter-chip
+              {selectedTag === null ? 'filter-chip-active' : 'filter-chip-idle'}"
             onclick={() => onTagSelect(null)}
           >
             All
@@ -205,11 +201,10 @@
           {#each allTags as tag}
             <button
               type="button"
-              class="text-[10px] py-0.5 px-2 rounded-md cursor-pointer transition-all border truncate max-w-[120px]
-                {selectedTag === tag
-                  ? 'border-accent/40 bg-accent/20 text-accent font-semibold'
-                  : 'border-border bg-surface-input/60 text-muted hover:text-primary hover:border-border-hover'}"
+              class="filter-chip truncate max-w-[110px]
+                {selectedTag === tag ? 'filter-chip-active' : 'filter-chip-idle'}"
               onclick={() => onTagSelect(tag)}
+              title={`#${tag}`}
             >
               #{tag}
             </button>
@@ -219,23 +214,22 @@
     {/if}
   </div>
 
-  <!-- Bottom Status Tray Dock -->
-  <div class="p-2 border-t border-border/80 bg-surface-input/30 flex flex-col gap-1.5 shrink-0">
+  <!-- Bottom System Status Tray -->
+  <div class="p-2 border-t border-border bg-surface-input/30 flex flex-col gap-1 shrink-0">
     {#if !sidebarCollapsed}
-      <!-- Status Pills -->
-      <div class="flex flex-col gap-1">
+      <div class="flex flex-col gap-0.5">
         <!-- SSH Agent -->
         <button
           type="button"
-          class="flex items-center justify-between py-1.5 px-2.5 rounded-lg border border-border/70 bg-surface text-xs cursor-pointer transition-all hover:bg-surface-hover hover:border-border-hover"
+          class="status-card"
           onclick={() => (agentActive ? onShowAgentModal() : onStartAgent())}
           title="SSH Agent Status"
         >
-          <span class="flex items-center gap-2 text-secondary text-[11px]">
-            <KeyRound size={13} class={agentActive ? "text-running" : "text-muted"} />
+          <span class="flex items-center gap-2 text-secondary text-xs">
+            <span class="status-dot status-dot-sm {agentActive ? 'bg-success' : 'bg-muted/40'}"></span>
             SSH Agent
           </span>
-          <span class="font-mono text-[10px] font-semibold {agentActive ? 'text-running' : 'text-muted'}">
+          <span class="font-mono text-[10px] text-muted">
             {agentActive ? `${agentKeys.length} keys` : 'Inactive'}
           </span>
         </button>
@@ -244,15 +238,15 @@
         {#if kerberosHealth !== "unavailable"}
           <button
             type="button"
-            class="flex items-center justify-between py-1.5 px-2.5 rounded-lg border border-border/70 bg-surface text-xs cursor-pointer transition-all hover:bg-surface-hover hover:border-border-hover"
+            class="status-card"
             onclick={onShowKerberosModal}
             title="Kerberos Ticket Status"
           >
-            <span class="flex items-center gap-2 text-secondary text-[11px]">
-              <ShieldCheck size={13} class={kerberosHealth === 'valid' ? 'text-running' : 'text-warning'} />
+            <span class="flex items-center gap-2 text-secondary text-xs">
+              <span class="status-dot status-dot-sm {kerberosHealth === 'valid' ? 'bg-success' : 'bg-warning'}"></span>
               Kerberos
             </span>
-            <span class="font-mono text-[10px] font-semibold {kerberosHealth === 'valid' ? 'text-running' : 'text-warning'}">
+            <span class="font-mono text-[10px] text-muted truncate max-w-[80px]">
               {kerberosHealth === 'valid' ? kerberosRemainingLabel : 'Ticket'}
             </span>
           </button>
@@ -262,70 +256,78 @@
         {#if externalSessionCount > 0}
           <button
             type="button"
-            class="flex items-center justify-between py-1.5 px-2.5 rounded-lg border border-accent/40 bg-accent/15 text-accent text-xs font-semibold cursor-pointer hover:bg-accent/25 transition-all"
+            class="status-card border border-border bg-surface-raised font-medium text-primary hover:bg-surface-hover"
             onclick={onShowSessionManager}
             title="Background SSH Sessions"
           >
-            <span class="flex items-center gap-1.5 text-[11px]">
-              <Layers size={13} />
+            <span class="flex items-center gap-1.5 text-xs">
+              <Layers size={12} class="text-accent" />
               Background
             </span>
-            <span class="badge-pill bg-accent/30 text-accent font-bold">
+            <span class="px-1.5 py-0.2 rounded-full font-mono text-[10px] bg-accent/15 text-accent">
               {externalSessionCount} away
             </span>
           </button>
         {/if}
       </div>
-    {:else}
-      <!-- Collapsed Status Icons -->
-      <div class="flex flex-col items-center gap-1.5 py-1">
+
+      <!-- Collapse button in footer row -->
+      <div class="flex items-center justify-between pt-1 border-t border-border/40 mt-1 px-1">
+        <span class="text-[10px] font-mono text-muted/60">bssh v2.5.2</span>
         <button
           type="button"
-          class="w-7 h-7 rounded-md flex items-center justify-center text-muted hover:text-primary transition-colors cursor-pointer border-none bg-transparent"
+          class="btn-icon h-6 w-6 p-0 text-muted hover:text-primary"
+          onclick={onToggleSidebar}
+          title="Collapse sidebar"
+          aria-label="Collapse sidebar"
+        >
+          <ChevronLeft size={13} />
+        </button>
+      </div>
+    {:else}
+      <!-- Collapsed Status Icons -->
+      <div class="flex flex-col items-center gap-1 py-1">
+        <button
+          type="button"
+          class="btn-icon h-7 w-7 p-0"
           onclick={() => (agentActive ? onShowAgentModal() : onStartAgent())}
           title={`Agent: ${agentActive ? `${agentKeys.length} keys` : 'Off'}`}
           aria-label="SSH Agent Status"
         >
-          <KeyRound size={14} class={agentActive ? "text-running" : "text-muted"} />
+          <KeyRound size={13} class={agentActive ? "text-success" : "text-muted"} />
         </button>
         {#if kerberosHealth !== "unavailable"}
           <button
             type="button"
-            class="w-7 h-7 rounded-md flex items-center justify-center text-muted hover:text-primary transition-colors cursor-pointer border-none bg-transparent"
+            class="btn-icon h-7 w-7 p-0"
             onclick={onShowKerberosModal}
             title={`Kerberos: ${kerberosRemainingLabel}`}
             aria-label="Kerberos Status"
           >
-            <ShieldCheck size={14} class={kerberosHealth === 'valid' ? "text-running" : "text-warning"} />
+            <ShieldCheck size={13} class={kerberosHealth === 'valid' ? "text-success" : "text-warning"} />
           </button>
         {/if}
         {#if externalSessionCount > 0}
           <button
             type="button"
-            class="w-7 h-7 rounded-md flex items-center justify-center text-accent hover:bg-accent/20 transition-colors cursor-pointer border-none bg-accent/10"
+            class="btn-icon h-7 w-7 bg-surface-raised p-0 text-accent hover:bg-surface-hover"
             onclick={onShowSessionManager}
             title={`${externalSessionCount} background sessions`}
             aria-label="Background Sessions"
           >
-            <Layers size={14} />
+            <Layers size={13} />
           </button>
         {/if}
+        <button
+          type="button"
+          class="btn-icon h-7 w-7 p-0 mt-1 border-t border-border/40 text-muted hover:text-primary"
+          onclick={onToggleSidebar}
+          title="Expand sidebar"
+          aria-label="Expand sidebar"
+        >
+          <ChevronRight size={13} />
+        </button>
       </div>
     {/if}
   </div>
-
-  <!-- Collapse Toggle Button -->
-  <button
-    type="button"
-    class="absolute top-1/2 -right-3 -translate-y-1/2 bg-surface-raised border border-border-hover text-secondary cursor-pointer w-6 h-6 rounded-full flex items-center justify-center z-50 shadow-md transition-all hover:text-accent hover:border-accent"
-    onclick={onToggleSidebar}
-    title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-    aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-  >
-    {#if sidebarCollapsed}
-      <ChevronRight size={13} />
-    {:else}
-      <ChevronLeft size={13} />
-    {/if}
-  </button>
 </aside>

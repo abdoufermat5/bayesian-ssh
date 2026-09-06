@@ -106,21 +106,18 @@
   }
 </script>
 
-<div class="flex flex-col flex-1 h-full min-h-0 overflow-y-auto px-6 py-5 bg-surface text-primary select-none scrollbar-none">
-  <!-- Header -->
-  <div class="flex items-center justify-between gap-4 pb-4 border-b border-border shrink-0 flex-wrap">
-    <div class="flex items-center gap-3">
-      <div class="w-8 h-8 rounded-xl bg-accent/15 border border-accent/30 flex items-center justify-center text-accent shrink-0">
-        <KeyRound size={18} />
+<div class="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-surface text-[13px] text-primary select-none">
+  <div class="view-header">
+    <div class="flex min-w-0 items-center gap-3">
+      <div class="icon-tile rounded-md">
+        <KeyRound size={16} />
       </div>
-      <div>
-        <h2 class="text-sm font-bold text-primary tracking-tight m-0 flex items-center gap-2">
-          SSH Keychain &amp; Identities
-          <span class="badge-pill bg-accent/15 text-accent border border-accent/30 text-[10px]">
-            {keys.length} keys
-          </span>
+      <div class="min-w-0">
+        <h2 class="m-0 flex items-center gap-2 truncate text-sm font-bold tracking-tight text-primary">
+          SSH Keys
+          <span class="badge badge-subtle">{keys.length} keys</span>
         </h2>
-        <p class="text-[11px] text-muted m-0">Cryptographic key pairs, fingerprints, and remote deployment</p>
+        <p class="m-0 truncate text-xs text-muted">Local identities, fingerprints, permissions, and deployment</p>
       </div>
     </div>
 
@@ -147,46 +144,45 @@
     </div>
   </div>
 
-  <!-- Key List -->
-  <div class="py-4 space-y-3 flex-1">
+  <div class="view-content">
     {#if loading}
-      <div class="py-24 flex flex-col items-center justify-center text-muted gap-2">
-        <RefreshCw size={28} class="text-accent animate-spin" />
+      <div class="empty-state">
+        <RefreshCw size={24} class="animate-spin text-accent" />
         <span class="text-xs font-semibold text-primary">Scanning ~/.ssh identities...</span>
       </div>
     {:else if keys.length > 0}
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+      <div class="grid grid-cols-1 gap-3 xl:grid-cols-2">
         {#each keys as key}
-          <div class="rounded-xl border border-border bg-surface-input/30 p-4 transition-all hover:border-border-hover hover:bg-surface-input/50 flex flex-col justify-between">
-            <div>
-              <!-- Key Card Header -->
-              <div class="flex items-center justify-between gap-2 mb-2">
-                <div class="flex items-center gap-2 min-w-0">
-                  <KeyRound size={15} class="text-accent shrink-0" />
-                  <span class="font-bold text-sm text-primary truncate">{key.name}</span>
-                </div>
-                <div class="flex items-center gap-1.5 shrink-0">
-                  <span class="badge-pill bg-accent/15 border border-accent/30 text-accent font-mono text-[9px] uppercase">
-                    {key.key_type}
-                  </span>
-                  {#if key.is_secure}
-                    <span class="badge-pill bg-running/15 text-running border border-running/30 text-[9px]">
-                      <ShieldCheck size={10} /> 0600
-                    </span>
-                  {:else}
-                    <span class="badge-pill bg-error/15 text-error border border-error/30 text-[9px]">
-                      <ShieldAlert size={10} /> {key.private_key_permission}
-                    </span>
-                  {/if}
+          <section class="panel flex min-w-0 flex-col overflow-hidden">
+            <div class="flex items-start justify-between gap-3 border-b border-border/70 px-4 py-3">
+              <div class="flex min-w-0 items-center gap-2">
+                <KeyRound size={14} class="shrink-0 text-accent" />
+                <div class="min-w-0">
+                  <h3 class="m-0 truncate text-sm font-semibold text-primary">{key.name}</h3>
+                  <p class="m-0 truncate font-mono text-xs text-muted">{key.comment || "No comment"}</p>
                 </div>
               </div>
+              <div class="flex shrink-0 items-center gap-1.5">
+                <span class="tag uppercase">{key.key_type}</span>
+                  {#if key.is_secure}
+                  <span class="badge badge-success">
+                    <ShieldCheck size={10} /> 0600
+                    </span>
+                  {:else}
+                  <span class="badge badge-error">
+                    <ShieldAlert size={10} /> {key.private_key_permission}
+                    </span>
+                  {/if}
+              </div>
+            </div>
 
-              <!-- Fingerprint row -->
-              <div class="p-2 rounded-lg bg-surface border border-border/80 flex items-center justify-between gap-2 font-mono text-[10px] text-muted mb-3">
-                <span class="truncate">{key.fingerprint}</span>
+            <div class="grid gap-2 px-4 py-3">
+              <div class="flex min-w-0 items-center gap-2 rounded-md border border-border/80 bg-surface-input px-2.5 py-2">
+                <span class="w-20 shrink-0 table-header">Fingerprint</span>
+                <span class="min-w-0 flex-1 truncate font-mono text-xs text-muted">{key.fingerprint}</span>
                 <button
                   type="button"
-                  class="p-0.5 rounded text-muted hover:text-primary hover:bg-surface-hover border-none bg-transparent cursor-pointer shrink-0"
+                  class="btn-icon shrink-0"
                   onclick={() => copyToClipboard(key.fingerprint)}
                   title="Copy SHA256 Fingerprint"
                 >
@@ -198,54 +194,50 @@
                 </button>
               </div>
 
-              <!-- File Paths -->
-              <div class="space-y-1 text-[11px] text-muted font-mono mb-3">
-                <div class="truncate">
-                  <span class="text-[9px] uppercase font-sans font-bold text-muted/70">Public: </span>
-                  {key.public_key_path}
+              <div class="grid gap-1 font-mono text-xs text-muted">
+                <div class="flex min-w-0 items-center gap-2">
+                  <span class="w-16 shrink-0 table-header">Public</span>
+                  <span class="min-w-0 flex-1 truncate" title={key.public_key_path}>
+                    {key.public_key_path}
+                  </span>
                 </div>
                 {#if key.private_key_path}
-                  <div class="truncate">
-                    <span class="text-[9px] uppercase font-sans font-bold text-muted/70">Private: </span>
-                    {key.private_key_path}
+                  <div class="flex min-w-0 items-center gap-2">
+                    <span class="w-16 shrink-0 table-header">Private</span>
+                    <span class="min-w-0 flex-1 truncate" title={key.private_key_path}>
+                      {key.private_key_path}
+                    </span>
                   </div>
                 {/if}
               </div>
             </div>
 
-            <!-- Footer Action Buttons -->
-            <div class="flex items-center justify-between pt-2.5 border-t border-border/60">
-              <span class="text-[10px] text-muted truncate max-w-[150px]">
-                {key.comment || "No comment"}
-              </span>
-
+            <div class="flex items-center justify-end gap-2 border-t border-border/60 px-4 py-3">
               <button
                 type="button"
-                class="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-accent/15 hover:bg-accent hover:text-white text-accent text-xs font-semibold transition-all cursor-pointer border border-accent/30"
+                class="btn btn-secondary"
                 onclick={() => {
                   selectedKeyPath = key.public_key_path;
                   showCopyModal = true;
                 }}
               >
                 <Send size={11} />
-                <span>Deploy (ssh-copy-id)</span>
+                <span>Deploy</span>
               </button>
             </div>
-          </div>
+          </section>
         {/each}
       </div>
     {:else}
-      <div class="py-20 flex flex-col items-center justify-center text-muted border border-dashed border-border rounded-2xl bg-surface-input/10">
-        <div class="w-12 h-12 rounded-2xl bg-accent/10 border border-accent/25 flex items-center justify-center text-accent mb-3">
-          <KeyRound size={24} />
+      <div class="empty-state empty-state-dashed">
+        <div class="empty-state-icon">
+          <KeyRound size={22} />
         </div>
-        <h3 class="text-sm font-bold text-primary mb-1">No SSH Keys Found</h3>
-        <p class="text-xs text-muted max-w-sm text-center mb-4 leading-relaxed">
-          No identity files were detected in ~/.ssh. Generate a modern Ed25519 key pair to start passwordless authentication.
-        </p>
+        <h3 class="empty-state-title">No SSH keys found</h3>
+        <p class="empty-state-desc">No identity files were detected in ~/.ssh.</p>
         <button
           type="button"
-          class="btn btn-primary"
+          class="btn btn-primary empty-state-action"
           onclick={() => (showGenerateModal = true)}
         >
           <Plus size={14} />
@@ -264,20 +256,24 @@
     onClose={() => (showGenerateModal = false)}
     width="md"
   >
-    <div class="px-6 py-4 border-b border-border flex items-center justify-between">
-      <h3 class="text-base font-bold text-primary m-0">Generate SSH Key Pair</h3>
+    <div class="modal-header">
+      <div>
+        <h3 class="modal-title">Generate SSH Key Pair</h3>
+        <p class="modal-subtitle">Create a new cryptographic key pair in ~/.ssh</p>
+      </div>
       <button
         type="button"
-        class="text-muted hover:text-primary p-1 rounded-md border-none bg-transparent cursor-pointer"
+        class="modal-close-btn"
         onclick={() => (showGenerateModal = false)}
+        aria-label="Close dialog"
       >
         <X size={16} />
       </button>
     </div>
 
-    <div class="p-6 flex flex-col gap-4">
+    <div class="modal-body space-y-4">
       <div class="flex flex-col gap-1.5">
-        <label for="gen-key-name" class="text-[11px] font-semibold text-muted uppercase tracking-wider">Key Name</label>
+        <label for="gen-key-name" class="table-header">Key Name</label>
         <input
           id="gen-key-name"
           type="text"
@@ -289,51 +285,51 @@
       </div>
 
       <div class="flex flex-col gap-1.5">
-        <span class="text-[11px] font-semibold text-muted uppercase tracking-wider">Cryptographic Algorithm</span>
-        <div class="grid grid-cols-2 gap-2">
+        <span class="table-header">Cryptographic Algorithm</span>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <button
             type="button"
             class="p-3 rounded-lg border text-left cursor-pointer transition-all
-              {genKeyType === 'ed25519' ? 'border-accent bg-accent/15 text-primary' : 'border-border bg-surface-input text-muted'}"
+              {genKeyType === 'ed25519' ? 'border-accent/50 bg-surface-active text-primary' : 'border-border bg-surface-input text-muted hover:border-border-strong'}"
             onclick={() => (genKeyType = 'ed25519')}
           >
-            <div class="font-bold text-xs">Ed25519 (Recommended)</div>
+            <div class="font-semibold text-xs text-primary">Ed25519 (Recommended)</div>
             <div class="text-[10px] text-muted mt-0.5">Modern, high-security 256-bit curve</div>
           </button>
           <button
             type="button"
             class="p-3 rounded-lg border text-left cursor-pointer transition-all
-              {genKeyType === 'rsa' ? 'border-accent bg-accent/15 text-primary' : 'border-border bg-surface-input text-muted'}"
+              {genKeyType === 'rsa' ? 'border-accent/50 bg-surface-active text-primary' : 'border-border bg-surface-input text-muted hover:border-border-strong'}"
             onclick={() => (genKeyType = 'rsa')}
           >
-            <div class="font-bold text-xs">RSA 4096-bit</div>
+            <div class="font-semibold text-xs text-primary">RSA 4096-bit</div>
             <div class="text-[10px] text-muted mt-0.5">Legacy compatibility standard</div>
           </button>
         </div>
       </div>
+    </div>
 
-      <div class="flex justify-end gap-2 pt-3 border-t border-border">
-        <button
-          type="button"
-          class="btn btn-secondary"
-          onclick={() => (showGenerateModal = false)}
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          class="btn btn-primary"
-          onclick={handleGenerateKey}
-          disabled={generating}
-        >
-          {#if generating}
-            <RefreshCw size={13} class="animate-spin" />
-            <span>Generating...</span>
-          {:else}
-            <span>Generate Key Pair</span>
-          {/if}
-        </button>
-      </div>
+    <div class="modal-footer">
+      <button
+        type="button"
+        class="btn btn-secondary"
+        onclick={() => (showGenerateModal = false)}
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        class="btn btn-primary"
+        onclick={handleGenerateKey}
+        disabled={generating}
+      >
+        {#if generating}
+          <RefreshCw size={13} class="animate-spin" />
+          <span>Generating...</span>
+        {:else}
+          <span>Generate Key Pair</span>
+        {/if}
+      </button>
     </div>
   </ModalShell>
 {/if}
@@ -346,20 +342,24 @@
     onClose={() => (showCopyModal = false)}
     width="md"
   >
-    <div class="px-6 py-4 border-b border-border flex items-center justify-between">
-      <h3 class="text-base font-bold text-primary m-0">Deploy Key (ssh-copy-id)</h3>
+    <div class="modal-header">
+      <div>
+        <h3 class="modal-title">Deploy Key (ssh-copy-id)</h3>
+        <p class="modal-subtitle">Authorize this public key on a remote server</p>
+      </div>
       <button
         type="button"
-        class="text-muted hover:text-primary p-1 rounded-md border-none bg-transparent cursor-pointer"
+        class="modal-close-btn"
         onclick={() => (showCopyModal = false)}
+        aria-label="Close dialog"
       >
         <X size={16} />
       </button>
     </div>
 
-    <div class="p-6 flex flex-col gap-4">
+    <div class="modal-body space-y-4">
       <div class="flex flex-col gap-1.5">
-        <label for="copy-key-select" class="text-[11px] font-semibold text-muted uppercase tracking-wider">Target Host</label>
+        <label for="copy-key-select" class="table-header">Target Host</label>
         <CustomSelect
           id="copy-key-select"
           options={connections.map((c) => ({ value: `${c.user}@${c.host}`, label: `${c.name} (${c.user}@${c.host})` }))}
@@ -371,30 +371,30 @@
       <div class="p-3 rounded-lg bg-surface-input border border-border/70 text-xs text-secondary leading-relaxed">
         This executes <code class="font-mono text-accent">ssh-copy-id</code> to append this public key to the remote server's <code class="font-mono text-accent">~/.ssh/authorized_keys</code> file, enabling passwordless authentication.
       </div>
+    </div>
 
-      <div class="flex justify-end gap-2 pt-2 border-t border-border">
-        <button
-          type="button"
-          class="btn btn-secondary"
-          onclick={() => (showCopyModal = false)}
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          class="btn btn-primary"
-          onclick={handleCopyKey}
-          disabled={copying || !selectedTarget}
-        >
-          {#if copying}
-            <RefreshCw size={13} class="animate-spin" />
-            <span>Deploying...</span>
-          {:else}
-            <Send size={13} />
-            <span>Deploy to Host</span>
-          {/if}
-        </button>
-      </div>
+    <div class="modal-footer">
+      <button
+        type="button"
+        class="btn btn-secondary"
+        onclick={() => (showCopyModal = false)}
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        class="btn btn-primary"
+        onclick={handleCopyKey}
+        disabled={copying || !selectedTarget}
+      >
+        {#if copying}
+          <RefreshCw size={13} class="animate-spin" />
+          <span>Deploying...</span>
+        {:else}
+          <Send size={13} />
+          <span>Deploy to Host</span>
+        {/if}
+      </button>
     </div>
   </ModalShell>
 {/if}

@@ -127,7 +127,7 @@
 
 {#if open}
   <div
-    class="modal-overlay backdrop-blur-sm {overlayClass}"
+    class="modal-overlay {overlayClass}"
     style={overlayStyle}
     role="presentation"
     onpointerdown={(e) => {

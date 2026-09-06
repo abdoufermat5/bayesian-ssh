@@ -34,17 +34,17 @@
   });
 </script>
 
-<div class="flex flex-col gap-6 max-w-2xl">
+<div class="settings-page">
   <div>
-    <h3 class="text-base font-semibold text-primary m-0">Appearance & Locale</h3>
-    <p class="text-xs text-muted mt-1">Configure active UI color theme and application timezone</p>
+    <h3 class="settings-heading">Appearance & Locale</h3>
+    <p class="settings-desc">Configure active UI color theme and application timezone</p>
   </div>
 
-  <div class="h-px bg-border/50"></div>
+  <div class="settings-divider"></div>
 
-  <div class="flex flex-col gap-1.5">
-    <label id="settings-theme-label" for="settings-theme" class="text-xs font-semibold text-secondary">Active UI Theme</label>
-    <span class="text-[11px] text-muted">Choose your preferred visual style and colors</span>
+  <div class="field">
+    <label id="settings-theme-label" for="settings-theme" class="field-label">Active UI Theme</label>
+    <span class="field-meta">Choose your preferred visual style and colors</span>
     <CustomSelect
       id="settings-theme"
       options={[
@@ -58,16 +58,16 @@
     />
   </div>
 
-  <div class="flex flex-col gap-2">
-    <label for="settings-timezone" class="text-xs font-semibold text-secondary">Application Timezone</label>
-    <span class="text-[11px] text-muted">Dates and times across logs and metrics are displayed in this timezone</span>
+  <div class="field">
+    <label for="settings-timezone" class="field-label">Application Timezone</label>
+    <span class="field-meta">Dates and times across logs and metrics are displayed in this timezone</span>
     <div class="flex flex-col gap-1.5 mt-1">
       <input
         id="settings-timezone-filter"
         type="text"
         placeholder="Filter timezones..."
         bind:value={timezoneFilter}
-        class="bg-surface-input border border-border text-primary py-2 px-3 rounded-lg outline-none text-[13px] transition-all duration-100 hover:border-border-hover focus:border-border-focus focus:shadow-[0_0_0_3px_rgba(59,130,246,0.12)]"
+        class="input"
       />
       <CustomSelect
         id="settings-timezone"

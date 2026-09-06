@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.2] - 2026-09-06
+
+### Fixed
+- **Desktop UI responsiveness and overflow**: Enforced minimum window constraints (780x520) in Tauri configuration to prevent UI clipping on resize; added responsive window resize handler auto-collapsing the sidebar below 860px; prevented window control overlap on compact screens.
+- **Search & filter split-brain state**: Unified topbar search input, sidebar tag filter, and connections view state with two-way bindings.
+- **Long identifier handling**: Added full hover tooltips and truncation across connection names, hostnames, usernames, file paths, and tags; prevented grid card height ballooning with tag count limits (`+N more` chips).
+- **Responsive views**: Made table columns in Connections, History, and SFTP views hide gracefully on compact viewports; eliminated rigid horizontal minimum widths (`min-w-[760px]`, `min-w-[780px]`); made SFTP path breadcrumbs wrap cleanly.
+- **Audit findings command formatting**: Made remediation command snippets selectable, scrollable horizontally (`overflow-x-auto select-text`), and responsive on small window sizes.
+
+### Changed
+- **Modal & dialog architecture**: Standardized modals across ConnectionModal, DetachedSessionsModal, BatchExecModal, KeysView, and TunnelStudio with uniform header, body, and footer structure; enlarged connection edit dialog and added live tag chips preview with quick-delete buttons.
+- **Design tokens & styling**: Added missing Tailwind theme tokens (`--color-surface-elevated`, `--color-surface-active`, `--color-surface-subtle`, `--color-border-strong`) and `.badge-subtle` utility class.
+
 ## [2.5.1] - 2026-09-05
 
 ### Security

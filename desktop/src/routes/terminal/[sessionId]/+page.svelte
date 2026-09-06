@@ -6,7 +6,6 @@
   import { page } from "$app/state";
   import TerminalWindowTitleBar from "$lib/components/TerminalWindowTitleBar.svelte";
   import {
-    checkPopoutMainOverlap,
     dockPopoutToMain,
     initPopoutTerminal,
     type PopoutTerminalHandle,
@@ -15,48 +14,15 @@
 
   let connectionName = $state("Terminal");
   let loadError = $state<string | null>(null);
-  let dockHintActive = $state(false);
 
   const sessionId = $derived(page.params.sessionId ?? "");
 
   let closing = false;
   let unlistenClose: (() => void) | undefined;
   let unlistenDocked: (() => void) | undefined;
-  let unlistenMoved: (() => void) | undefined;
   let handle: PopoutTerminalHandle | null = null;
   let initPromise: Promise<void> | null = null;
-  let overlapCheckTimer: ReturnType<typeof setTimeout> | undefined;
-  let overlapCheckInFlight = false;
   const win = getCurrentWindow();
-
-  async function checkDragDock() {
-    if (closing || !handle || !sessionId || overlapCheckInFlight) return;
-
-    overlapCheckInFlight = true;
-    try {
-      const overlap = await checkPopoutMainOverlap(win.label);
-      if (closing) return;
-
-      dockHintActive = overlap.overlaps && !overlap.should_dock;
-
-      if (overlap.should_dock) {
-        dockHintActive = false;
-        await dockToMain();
-      }
-    } catch {
-      dockHintActive = false;
-    } finally {
-      overlapCheckInFlight = false;
-    }
-  }
-
-  function scheduleDragDockCheck() {
-    if (closing || overlapCheckTimer) return;
-    overlapCheckTimer = setTimeout(() => {
-      overlapCheckTimer = undefined;
-      void checkDragDock();
-    }, 80);
-  }
 
   async function shutdownAndDestroy() {
     if (closing) return;
@@ -65,12 +31,6 @@
     unlistenClose = undefined;
     unlistenDocked?.();
     unlistenDocked = undefined;
-    unlistenMoved?.();
-    unlistenMoved = undefined;
-    if (overlapCheckTimer) {
-      clearTimeout(overlapCheckTimer);
-      overlapCheckTimer = undefined;
-    }
 
     if (initPromise) {
       await initPromise.catch(() => {});
@@ -90,12 +50,6 @@
     unlistenClose = undefined;
     unlistenDocked?.();
     unlistenDocked = undefined;
-    unlistenMoved?.();
-    unlistenMoved = undefined;
-    if (overlapCheckTimer) {
-      clearTimeout(overlapCheckTimer);
-      overlapCheckTimer = undefined;
-    }
 
     try {
       await invoke("seal_session_ui", { sessionId });
@@ -139,19 +93,6 @@
       })
       .catch(() => {});
 
-    void win
-      .onMoved(() => {
-        scheduleDragDockCheck();
-      })
-      .then((unlisten) => {
-        if (closing) {
-          unlisten();
-          return;
-        }
-        unlistenMoved = unlisten;
-      })
-      .catch(() => {});
-
     initPromise = (async () => {
       if (!sessionId) {
         loadError = "Missing session id.";
@@ -168,8 +109,6 @@
         unlistenClose = undefined;
         unlistenDocked?.();
         unlistenDocked = undefined;
-        unlistenMoved?.();
-        unlistenMoved = undefined;
       });
 
       try {
@@ -188,34 +127,55 @@
       cancelled = true;
       if (!closing) {
         unlistenClose?.();
-        unlistenMoved?.();
-        if (overlapCheckTimer) {
-          clearTimeout(overlapCheckTimer);
-        }
         void handle?.shutdown({ closeWindow: false });
       }
     };
   });
 </script>
 
-<div
-  class="h-[100dvh] flex flex-col overflow-hidden bg-surface-terminal transition-all duration-150
-    {dockHintActive ? 'shadow-[inset_0_0_0_2px_rgba(59,130,246,0.45)]' : ''}"
->
+<div class="terminal-popout-shell">
   <TerminalWindowTitleBar
     title={connectionName}
-    dockHintActive={dockHintActive}
     onDock={dockToMain}
     onClose={() => getCurrentWindow().close()}
   />
 
   {#if loadError}
-    <div class="flex-1 flex items-center justify-center text-muted text-xs">
+    <div class="terminal-popout-error">
       <p>{loadError}</p>
     </div>
   {:else}
-    <div class="flex-1 min-h-0 p-1 box-border">
-      <div id="terminal-popout-root" class="w-full h-full"></div>
+    <div class="terminal-popout-body">
+      <div id="terminal-popout-root" class="terminal-popout-target"></div>
     </div>
   {/if}
 </div>
+
+<style>
+  .terminal-popout-shell {
+    display: flex;
+    height: 100dvh;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--color-surface-terminal);
+  }
+
+  .terminal-popout-body {
+    box-sizing: border-box;
+    flex: 1;
+    min-height: 0;
+    padding: 4px;
+    background: var(--color-surface-terminal);
+  }
+
+  .terminal-popout-error {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    color: var(--color-muted);
+    font-size: 12px;
+    text-align: center;
+  }
+</style>

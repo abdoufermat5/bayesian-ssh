@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { X, Key } from "lucide-svelte";
+  import { X, Key, Tag } from "lucide-svelte";
   import ModalShell from "$lib/components/ui/ModalShell.svelte";
 
   interface Props {
@@ -33,155 +33,204 @@
     onSave,
     onBrowseKey,
   }: Props = $props();
+
+  const parsedTags = $derived(
+    modalTagsString
+      ? modalTagsString
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean)
+      : [],
+  );
+
+  function removeTag(tagToRemove: string) {
+    modalTagsString = parsedTags.filter((t) => t !== tagToRemove).join(", ");
+  }
 </script>
 
 <ModalShell
   open={true}
   title={isEditing ? "Edit Connection" : "New SSH Connection"}
   onClose={onClose}
-  width="md"
+  panelClass="w-full max-w-xl"
 >
-  <div class="flex justify-between items-center px-6 py-5 border-b border-border">
-      <h2 class="text-base font-semibold tracking-tight m-0 text-primary">
-        {isEditing ? "Edit Connection" : "New SSH Connection"}
-      </h2>
-      <button
-        class="bg-transparent border-none text-muted cursor-pointer flex p-1 rounded-md transition-all duration-100 hover:text-primary hover:bg-white/5"
-        onclick={onClose}
-      >
-        <X size={18} />
-      </button>
+  <div class="modal-header">
+    <h2 class="modal-title">
+      {isEditing ? "Edit Connection" : "New SSH Connection"}
+    </h2>
+    <button
+      type="button"
+      class="modal-close"
+      onclick={onClose}
+      aria-label="Close"
+    >
+      <X size={18} />
+    </button>
+  </div>
+
+  <div class="modal-body flex flex-col gap-4">
+    <!-- Connection Name -->
+    <div class="field">
+      <label for="c-name" class="field-label">Connection Name</label>
+      <input
+        id="c-name"
+        type="text"
+        placeholder="e.g. Production Cluster Gateway"
+        bind:value={modalName}
+        class="input"
+      />
     </div>
 
-    <div class="px-6 py-5 flex flex-col gap-4 max-h-[60vh] overflow-y-auto">
-      <div class="flex gap-3">
-        <div class="flex flex-col gap-1.5 flex-[2]">
-          <label for="c-name" class="text-[11px] font-semibold text-muted uppercase tracking-wider pl-0.5">Connection Name</label>
-          <input
-            id="c-name"
-            type="text"
-            placeholder="e.g. Server Production"
-            bind:value={modalName}
-            class="bg-surface-input border border-border text-primary py-2 px-3 rounded-lg outline-none text-[13px] transition-all duration-100 hover:border-border-hover focus:border-border-focus focus:shadow-[0_0_0_3px_rgba(59,130,246,0.12)]"
-          />
-        </div>
-        <div class="flex flex-col gap-1.5 flex-[3]">
-          <label for="c-host" class="text-[11px] font-semibold text-muted uppercase tracking-wider pl-0.5">Hostname / IP Address</label>
-          <input
-            id="c-host"
-            type="text"
-            placeholder="e.g. 192.168.1.50"
-            bind:value={modalHost}
-            class="bg-surface-input border border-border text-primary py-2 px-3 rounded-lg outline-none text-[13px] transition-all duration-100 hover:border-border-hover focus:border-border-focus focus:shadow-[0_0_0_3px_rgba(59,130,246,0.12)]"
-          />
-        </div>
+    <!-- Host and Port -->
+    <div class="flex gap-3">
+      <div class="field flex-1">
+        <label for="c-host" class="field-label">Hostname / IP Address</label>
+        <input
+          id="c-host"
+          type="text"
+          placeholder="e.g. 192.168.1.50 or ec2-host.aws.com"
+          bind:value={modalHost}
+          class="input font-mono text-xs"
+        />
+      </div>
+      <div class="field w-28 shrink-0">
+        <label for="c-port" class="field-label">Port</label>
+        <input
+          id="c-port"
+          type="number"
+          bind:value={modalPort}
+          class="input font-mono text-xs"
+          placeholder="22"
+        />
+      </div>
+    </div>
+
+    <!-- Username & Identity File -->
+    <div class="flex gap-3">
+      <div class="field w-40 shrink-0">
+        <label for="c-user" class="field-label">SSH Username</label>
+        <input
+          id="c-user"
+          type="text"
+          placeholder="root"
+          bind:value={modalUser}
+          class="input font-mono text-xs"
+        />
       </div>
 
-      <div class="flex gap-3">
-        <div class="flex flex-col gap-1.5 flex-1">
-          <label for="c-user" class="text-[11px] font-semibold text-muted uppercase tracking-wider pl-0.5">SSH Username</label>
-          <input
-            id="c-user"
-            type="text"
-            placeholder="root"
-            bind:value={modalUser}
-            class="bg-surface-input border border-border text-primary py-2 px-3 rounded-lg outline-none text-[13px] transition-all duration-100 hover:border-border-hover focus:border-border-focus focus:shadow-[0_0_0_3px_rgba(59,130,246,0.12)]"
-          />
-        </div>
-        <div class="flex flex-col gap-1.5 flex-1">
-          <label for="c-port" class="text-[11px] font-semibold text-muted uppercase tracking-wider pl-0.5">Port</label>
-          <input
-            id="c-port"
-            type="number"
-            bind:value={modalPort}
-            class="bg-surface-input border border-border text-primary py-2 px-3 rounded-lg outline-none text-[13px] transition-all duration-100 hover:border-border-hover focus:border-border-focus focus:shadow-[0_0_0_3px_rgba(59,130,246,0.12)]"
-          />
-        </div>
-      </div>
-
-      <div class="flex flex-col gap-1.5">
-        <label for="c-key" class="text-[11px] font-semibold text-muted uppercase tracking-wider pl-0.5">Identity File (SSH Private Key)</label>
+      <div class="field flex-1">
+        <label for="c-key" class="field-label">Identity File (Private Key)</label>
         <div class="flex gap-2">
           <input
             id="c-key"
             type="text"
-            placeholder="Path to SSH key file"
+            placeholder="~/.ssh/id_ed25519"
             bind:value={modalKeyPath}
-            class="flex-1 bg-surface-input border border-border text-primary py-2 px-3 rounded-lg outline-none text-[13px] transition-all duration-100 hover:border-border-hover focus:border-border-focus focus:shadow-[0_0_0_3px_rgba(59,130,246,0.12)]"
+            class="input flex-1 font-mono text-xs"
           />
           <button
-            class="bg-white/[0.04] border border-border text-secondary px-3.5 rounded-lg cursor-pointer font-semibold flex items-center gap-1.5 text-xs whitespace-nowrap transition-all duration-100 hover:border-border-hover hover:text-primary hover:bg-white/[0.06]"
+            type="button"
+            class="btn btn-secondary shrink-0"
             onclick={onBrowseKey}
+            title="Browse SSH key file"
           >
-            <Key size={14} /> Browse
+            <Key size={13} />
+            <span>Browse</span>
           </button>
         </div>
       </div>
+    </div>
 
-      <div
-        class="flex items-center gap-2 text-[13px] cursor-pointer select-none text-secondary py-1"
-        onclick={() => (modalUseKerberos = !modalUseKerberos)}
-        role="presentation"
-      >
+    <!-- Kerberos Authentication -->
+    <div
+      class="flex cursor-pointer items-center gap-2.5 rounded-lg border border-border/60 bg-surface-input/40 px-3 py-2 text-xs text-secondary select-none hover:bg-surface-hover/50 transition-colors"
+      onclick={() => (modalUseKerberos = !modalUseKerberos)}
+      role="presentation"
+    >
+      <input
+        id="c-krb"
+        type="checkbox"
+        bind:checked={modalUseKerberos}
+        onclick={(e) => e.stopPropagation()}
+        class="cursor-pointer accent-accent w-4 h-4"
+      />
+      <label for="c-krb" class="cursor-pointer font-medium text-primary">Enable Kerberos / GSSAPI Authentication</label>
+    </div>
+
+    <!-- Bastion Jump Host -->
+    <div class="settings-section-title my-1">
+      <span>BASTION JUMP HOST (OPTIONAL)</span>
+      <span class="flex-1 h-px bg-border"></span>
+    </div>
+
+    <div class="flex gap-3">
+      <div class="field flex-1">
+        <label for="c-bastion" class="field-label">Bastion Hostname</label>
         <input
-          id="c-krb"
-          type="checkbox"
-          bind:checked={modalUseKerberos}
-          onclick={(e) => e.stopPropagation()}
-          class="cursor-pointer accent-accent w-[16px] h-[16px]"
-        />
-        <label for="c-krb" class="cursor-pointer">Enable Kerberos / GSSAPI Authentication</label>
-      </div>
-
-      <div class="text-[10px] font-bold tracking-widest text-muted uppercase flex items-center gap-2.5 my-2">
-        <span>BASTION JUMP HOST (OPTIONAL)</span>
-        <span class="flex-1 h-px bg-border"></span>
-      </div>
-
-      <div class="flex gap-3">
-        <div class="flex flex-col gap-1.5 flex-1">
-          <label for="c-bastion" class="text-[11px] font-semibold text-muted uppercase tracking-wider pl-0.5">Bastion Address</label>
-          <input
-            id="c-bastion"
-            type="text"
-            placeholder="bastion.internal"
-            bind:value={modalBastion}
-            class="bg-surface-input border border-border text-primary py-2 px-3 rounded-lg outline-none text-[13px] transition-all duration-100 hover:border-border-hover focus:border-border-focus focus:shadow-[0_0_0_3px_rgba(59,130,246,0.12)]"
-          />
-        </div>
-        <div class="flex flex-col gap-1.5 flex-1">
-          <label for="c-bastion-user" class="text-[11px] font-semibold text-muted uppercase tracking-wider pl-0.5">Bastion Username</label>
-          <input
-            id="c-bastion-user"
-            type="text"
-            placeholder="jumpuser"
-            bind:value={modalBastionUser}
-            class="bg-surface-input border border-border text-primary py-2 px-3 rounded-lg outline-none text-[13px] transition-all duration-100 hover:border-border-hover focus:border-border-focus focus:shadow-[0_0_0_3px_rgba(59,130,246,0.12)]"
-          />
-        </div>
-      </div>
-
-      <div class="flex flex-col gap-1.5">
-        <label for="c-tags" class="text-[11px] font-semibold text-muted uppercase tracking-wider pl-0.5">Tags (Separated by commas)</label>
-        <input
-          id="c-tags"
+          id="c-bastion"
           type="text"
-          placeholder="e.g. backend, aws, production"
-          bind:value={modalTagsString}
-          class="bg-surface-input border border-border text-primary py-2 px-3 rounded-lg outline-none text-[13px] transition-all duration-100 hover:border-border-hover focus:border-border-focus focus:shadow-[0_0_0_3px_rgba(59,130,246,0.12)]"
+          placeholder="bastion.internal.corp"
+          bind:value={modalBastion}
+          class="input font-mono text-xs"
+        />
+      </div>
+      <div class="field w-40 shrink-0">
+        <label for="c-bastion-user" class="field-label">Bastion User</label>
+        <input
+          id="c-bastion-user"
+          type="text"
+          placeholder="jumpuser"
+          bind:value={modalBastionUser}
+          class="input font-mono text-xs"
         />
       </div>
     </div>
 
-    <div class="flex justify-end gap-2 px-6 py-4 border-t border-border">
+    <!-- Tags -->
+    <div class="field">
+      <label for="c-tags" class="field-label flex items-center gap-1">
+        <Tag size={12} class="text-muted" />
+        <span>Tags (Separated by commas)</span>
+      </label>
+      <input
+        id="c-tags"
+        type="text"
+        placeholder="e.g. backend, aws, production"
+        bind:value={modalTagsString}
+        class="input"
+      />
+      {#if parsedTags.length > 0}
+        <div class="flex flex-wrap gap-1 mt-1.5">
+          {#each parsedTags as tag}
+            <span class="tag flex items-center gap-1">
+              <span>#{tag}</span>
+              <button
+                type="button"
+                class="text-muted hover:text-error cursor-pointer border-none bg-transparent p-0 inline-flex items-center"
+                onclick={() => removeTag(tag)}
+                title={`Remove #${tag}`}
+                aria-label={`Remove #${tag}`}
+              >
+                <X size={10} />
+              </button>
+            </span>
+          {/each}
+        </div>
+      {/if}
+    </div>
+  </div>
+
+    <div class="modal-footer">
       <button
-        class="py-2 px-4 rounded-lg text-[13px] font-semibold cursor-pointer bg-transparent border border-border text-secondary transition-all duration-100 hover:border-border-hover hover:text-primary hover:bg-white/[0.03]"
+        type="button"
+        class="btn btn-secondary"
         onclick={onClose}
       >
         Cancel
       </button>
       <button
-        class="py-2 px-4 rounded-lg text-[13px] font-semibold cursor-pointer bg-accent border-none text-white transition-colors duration-100 hover:bg-accent-hover"
+        type="button"
+        class="btn btn-primary"
         onclick={onSave}
       >
         Save Server

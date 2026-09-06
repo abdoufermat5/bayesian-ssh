@@ -21,18 +21,18 @@
   }
 </script>
 
-<div class="flex flex-col gap-6 max-w-2xl">
+<div class="settings-page">
   <div>
-    <h3 class="text-base font-semibold text-primary m-0">Session Logs</h3>
-    <p class="text-xs text-muted mt-1">Configure automatic history logs and application diagnostic logs</p>
+    <h3 class="settings-heading">Session Logs</h3>
+    <p class="settings-desc">Configure automatic history logs and application diagnostic logs</p>
   </div>
 
-  <div class="h-px bg-border/50"></div>
+  <div class="settings-divider"></div>
 
-  <div class="flex items-center justify-between gap-4 py-1">
-    <div class="flex flex-col gap-0.5">
-      <span class="text-xs font-semibold text-secondary">Record Session History</span>
-      <span class="text-[11px] text-muted leading-snug">Save SSH session connection events to the workspace database</span>
+  <div class="setting-row">
+    <div class="setting-row-main">
+      <span class="setting-title">Record Session History</span>
+      <span class="setting-meta">Save SSH session connection events to the workspace database</span>
     </div>
     <input
       type="checkbox"
@@ -48,9 +48,9 @@
     />
   </div>
 
-  <div class="flex flex-col gap-1.5">
-    <label for="settings-max-history" class="text-xs font-semibold text-secondary">Maximum Log Entries</label>
-    <span class="text-[11px] text-muted">Maximum count of historical session records kept in the database</span>
+  <div class="field">
+    <label for="settings-max-history" class="field-label">Maximum Log Entries</label>
+    <span class="field-meta">Maximum count of historical session records kept in the database</span>
     <input
       id="settings-max-history"
       type="number"
@@ -59,13 +59,13 @@
       step="50"
       bind:value={workspace.max_history_size}
       onchange={saveWorkspace}
-      class="bg-surface-input border border-border text-primary py-2 px-3 rounded-lg outline-none text-[13px] transition-all duration-100 hover:border-border-hover focus:border-border-focus focus:shadow-[0_0_0_3px_rgba(59,130,246,0.12)] mt-1"
+      class="input mt-1"
     />
   </div>
 
-  <div class="flex flex-col gap-1.5">
-    <label id="settings-log-level-label" for="settings-log-level" class="text-xs font-semibold text-secondary">Application Log Level</label>
-    <span class="text-[11px] text-muted">Controls backend diagnostic log granularity</span>
+  <div class="field">
+    <label id="settings-log-level-label" for="settings-log-level" class="field-label">Application Log Level</label>
+    <span class="field-meta">Controls backend diagnostic log granularity</span>
     <CustomSelect
       id="settings-log-level"
       options={[

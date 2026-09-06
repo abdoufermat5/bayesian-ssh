@@ -123,22 +123,20 @@
   >
     <!-- Header -->
     <div class="flex items-center justify-between gap-4 pb-3 border-b border-border">
-        <div class="flex items-center gap-3">
-          <div class="p-2 rounded-xl bg-warning/10 border border-warning/20 text-warning">
-            <Code size={20} />
-          </div>
-          <div>
-            <h3 class="text-base font-bold text-primary m-0 flex items-center gap-2">
-              <span>Command Snippets & Automation Library</span>
-              <span class="px-2 py-0.5 rounded-full bg-accent/15 text-accent text-[10px] font-semibold">
-                {filteredSnippets.length} Ready
-              </span>
-            </h3>
-            <p class="text-xs text-muted mt-0.5 m-0">
-              One-click sysadmin & DevOps command automation templates
-            </p>
-          </div>
+      <div class="flex items-center gap-3">
+        <div class="icon-tile rounded-md">
+          <Code size={16} />
         </div>
+        <div>
+          <h3 class="text-sm font-bold text-primary m-0 flex items-center gap-2">
+            <span>Snippets & Automation Library</span>
+            <span class="badge badge-subtle">{filteredSnippets.length} ready</span>
+          </h3>
+          <p class="text-xs text-muted mt-0.5 m-0">
+            One-click sysadmin & DevOps command automation templates
+          </p>
+        </div>
+      </div>
 
         <button
           type="button"
@@ -165,8 +163,7 @@
           {#each categories as cat (cat)}
             <button
               type="button"
-              class="px-3 py-1 rounded-lg text-[11px] font-semibold cursor-pointer transition-all whitespace-nowrap border
-                {selectedCategory === cat ? 'bg-accent text-white border-accent shadow-xs' : 'bg-surface-input border-border text-secondary hover:text-primary'}"
+              class="filter-chip {selectedCategory === cat ? 'filter-chip-active' : 'filter-chip-idle'}"
               onclick={() => (selectedCategory = cat)}
             >
               {cat}
@@ -178,13 +175,13 @@
       <!-- Snippets Cards Stream -->
       <div class="flex-1 overflow-y-auto flex flex-col gap-3 pr-1">
         {#each filteredSnippets as s (s.id)}
-          <div class="bg-surface-card border border-border rounded-xl p-4 flex flex-col gap-3 hover:border-border-hover transition-all group relative">
+          <div class="panel p-4 flex flex-col gap-3">
             <div class="flex items-center justify-between gap-2">
               <div class="flex items-center gap-2">
-                <Terminal size={15} class="text-accent shrink-0" />
-                <span class="text-xs font-bold text-primary">{s.title}</span>
+                <Terminal size={14} class="text-accent shrink-0" />
+                <span class="text-xs font-semibold text-primary">{s.title}</span>
               </div>
-              <span class="px-2 py-0.5 rounded-md bg-surface-input border border-border text-[10px] font-semibold text-muted">
+              <span class="tag text-[10px]">
                 {s.category}
               </span>
             </div>
@@ -194,29 +191,29 @@
             {/if}
 
             <!-- Code Block with Syntax Accent -->
-            <pre class="bg-surface-terminal p-3 rounded-lg border border-border text-running font-mono text-[11px] overflow-x-auto m-0 select-all shadow-inner leading-relaxed">{s.command}</pre>
+            <pre class="bg-surface-terminal p-3 rounded-lg border border-border text-secondary font-mono text-[11px] overflow-x-auto m-0 select-all leading-relaxed">{s.command}</pre>
 
-            <div class="flex items-center justify-end gap-2 pt-1 border-t border-border/40">
+            <div class="flex items-center justify-end gap-2 pt-1 border-t border-border/50">
               <button
                 type="button"
-                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-input border border-border text-secondary hover:text-primary text-[11px] font-semibold cursor-pointer transition-all"
+                class="btn btn-secondary btn-sm"
                 onclick={() => copySnippet(s)}
               >
                 {#if copiedId === s.id}
-                  <Check size={13} class="text-running" />
+                  <Check size={12} class="text-running" />
                   <span>Copied!</span>
                 {:else}
-                  <Copy size={13} />
+                  <Copy size={12} />
                   <span>Copy</span>
                 {/if}
               </button>
               <button
                 type="button"
-                class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-accent text-white text-[11px] font-semibold cursor-pointer hover:opacity-90 transition-all shadow-sm"
+                class="btn btn-primary btn-sm"
                 onclick={() => handleRun(s)}
               >
-                <Play size={13} />
-                <span>Execute in PTY</span>
+                <Play size={12} />
+                <span>Run in Terminal</span>
               </button>
             </div>
           </div>

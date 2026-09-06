@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { FolderTree, Network } from "lucide-svelte";
   import type { DesktopSettings } from "$lib/types";
 
   interface Props {
@@ -9,26 +10,23 @@
   let { settings = $bindable(), onSave }: Props = $props();
 </script>
 
-<div class="flex flex-col gap-6 max-w-2xl">
+<div class="settings-page">
   <div>
-    <h3 class="text-base font-semibold text-primary m-0">Features</h3>
-    <p class="text-xs text-muted mt-1">Enable or disable optional sections of the application. Disabled sections are hidden from the sidebar.</p>
+    <h3 class="settings-heading">Features</h3>
+    <p class="settings-desc">Enable or disable optional sections of the application. Disabled sections are hidden from the sidebar.</p>
   </div>
 
-  <div class="h-px bg-border/50"></div>
+  <div class="settings-divider"></div>
 
   <div class="flex flex-col gap-3">
-    <!-- SFTP Browser toggle -->
-    <div class="flex items-center justify-between gap-4 p-4 rounded-xl border border-border bg-surface-input/40 hover:bg-surface-input/60 transition-colors">
+    <div class="setting-row">
       <div class="flex items-center gap-3">
-        <div class="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center shrink-0">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-accent">
-            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-          </svg>
+        <div class="icon-tile">
+          <FolderTree size={16} />
         </div>
-        <div>
-          <p class="text-sm font-semibold text-primary m-0">SFTP File Browser</p>
-          <p class="text-[11px] text-muted m-0">Browse and manage remote files over SSH using the built-in SFTP browser</p>
+        <div class="setting-row-main">
+          <p class="setting-title m-0">SFTP File Browser</p>
+          <p class="setting-meta m-0">Browse and manage remote files over SSH using the built-in SFTP browser</p>
         </div>
       </div>
       <button
@@ -47,18 +45,14 @@
       </button>
     </div>
 
-    <!-- Tunnel Studio toggle -->
-    <div class="flex items-center justify-between gap-4 p-4 rounded-xl border border-border bg-surface-input/40 hover:bg-surface-input/60 transition-colors">
+    <div class="setting-row">
       <div class="flex items-center gap-3">
-        <div class="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center shrink-0">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-accent">
-            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-            <polyline points="9 22 9 12 15 12 15 22"/>
-          </svg>
+        <div class="icon-tile">
+          <Network size={16} />
         </div>
-        <div>
-          <p class="text-sm font-semibold text-primary m-0">Tunnel Studio</p>
-          <p class="text-[11px] text-muted m-0">Manage SSH local port-forward tunnels and SOCKS5 dynamic proxies</p>
+        <div class="setting-row-main">
+          <p class="setting-title m-0">Tunnel Studio</p>
+          <p class="setting-meta m-0">Manage SSH local port-forward tunnels and SOCKS5 dynamic proxies</p>
         </div>
       </div>
       <button
@@ -78,7 +72,7 @@
     </div>
   </div>
 
-  <p class="text-[11px] text-muted/70 italic">
-    Changes take effect immediately — no restart required.
+  <p class="field-meta">
+    Changes take effect immediately; no restart required.
   </p>
 </div>

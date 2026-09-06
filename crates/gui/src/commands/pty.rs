@@ -216,6 +216,9 @@ pub fn spawn_pty(
             append_to_output_buffer(&output_buffer_clone, &replay_offset_clone, &str_data);
 
             if !detached_clone.load(Ordering::SeqCst) {
+                // Targeted event for zero-overhead routing to specific tab or window
+                let _ = app_handle.emit(&format!("pty-output:{}", session_id_clone), &str_data);
+
                 #[derive(Clone, Serialize)]
                 struct PtyPayload {
                     session_id: String,
@@ -233,6 +236,7 @@ pub fn spawn_pty(
 
         // Only emit pty-exit if this was NOT a manual close (avoids ghost events)
         if !cancelled_clone.load(Ordering::SeqCst) {
+            let _ = app_handle.emit(&format!("pty-exit:{}", session_id_clone), ());
             let _ = app_handle.emit("pty-exit", session_id_clone.clone());
         }
     });

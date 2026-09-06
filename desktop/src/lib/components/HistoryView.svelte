@@ -81,39 +81,36 @@
   }
 </script>
 
-<div class="flex flex-col flex-1 min-h-0 w-full overflow-hidden bg-surface select-none">
-  <!-- Header Bar -->
-  <div class="px-6 py-4 border-b border-border flex items-center justify-between gap-4 shrink-0 bg-surface-input/30 flex-wrap">
-    <div class="flex items-center gap-3">
-      <div class="w-8 h-8 rounded-xl bg-accent/15 border border-accent/30 flex items-center justify-center text-accent shrink-0">
-        <Clock size={18} />
+<div class="flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-surface text-[13px] text-primary select-none">
+  <div class="view-header">
+    <div class="flex min-w-0 items-center gap-3">
+      <div class="icon-tile rounded-md">
+        <Clock size={16} />
       </div>
-      <div>
-        <h2 class="text-sm font-bold text-primary tracking-tight m-0 flex items-center gap-2">
-          Session History &amp; Audit Logs
-          <span class="badge-pill bg-accent/15 text-accent border border-accent/30 text-[10px]">
-            {history.length} records
-          </span>
+      <div class="min-w-0">
+        <h2 class="m-0 flex items-center gap-2 truncate text-sm font-bold tracking-tight text-primary">
+          History
+          <span class="badge badge-subtle">{history.length} records</span>
         </h2>
-        <p class="text-[11px] text-muted m-0">Historical SSH connection logs, exit codes, and timestamps</p>
+        <p class="m-0 truncate text-xs text-muted">SSH sessions, timing, status, and exit codes</p>
       </div>
     </div>
 
-    <div class="flex items-center gap-2">
-      <!-- Filter input -->
-      <div class="relative flex items-center bg-surface-input border border-border rounded-lg px-2.5 py-1 w-48">
-        <Search size={12} class="text-muted mr-1.5 shrink-0" />
+    <div class="flex min-w-[260px] flex-1 items-center justify-end gap-2 sm:flex-none">
+      <div class="search-box w-full sm:w-56">
+        <Search size={13} class="shrink-0 text-muted" />
         <input
           type="text"
           placeholder="Filter logs..."
           bind:value={filterQuery}
-          class="bg-transparent border-none text-xs text-primary outline-none w-full placeholder:text-muted"
+          class="w-full border-none bg-transparent text-xs text-primary outline-none placeholder:text-muted"
         />
         {#if filterQuery}
           <button
             type="button"
             onclick={() => (filterQuery = "")}
-            class="text-muted hover:text-primary p-0.5 border-none bg-transparent cursor-pointer"
+            class="btn-icon p-0.5"
+            title="Clear filter"
           >
             <X size={11} />
           </button>
@@ -123,7 +120,7 @@
       {#if history.length > 0}
         <button
           type="button"
-          class="btn btn-secondary shadow-sm"
+          class="btn btn-secondary"
           onclick={exportHistoryCsv}
           title="Export CSV audit log"
         >
@@ -134,76 +131,63 @@
     </div>
   </div>
 
-  <!-- Table Content Area -->
-  <div class="flex-1 min-h-0 overflow-y-auto px-6 py-4 scrollbar-none">
+  <div class="view-content">
     {#if filteredHistory.length > 0}
-      <div class="border border-border rounded-xl overflow-hidden bg-surface-input/30 shadow-sm">
-        <!-- Table Header -->
-        <div class="flex items-center px-4 py-2.5 bg-surface-input/80 border-b border-border text-[10px] font-bold text-muted uppercase tracking-wider">
-          <div class="flex-[3]">Host Connection</div>
-          <div class="flex-[2.5]">Started At</div>
-          <div class="flex-[2.5] hidden sm:block">Ended At</div>
-          <div class="flex-[1.5]">Duration</div>
-          <div class="flex-[2]">Status</div>
-          <div class="w-16 text-right">Exit Code</div>
-        </div>
-
-        <!-- Table Rows -->
-        <div class="divide-y divide-border/60">
+      <div class="data-table overflow-x-auto">
+        <table class="w-full border-collapse">
+          <thead>
+            <tr class="border-b border-border bg-surface-input/80 text-left table-header">
+              <th class="px-4 py-2.5 font-bold">Connection</th>
+              <th class="hidden sm:table-cell px-4 py-2.5 font-bold">Started</th>
+              <th class="hidden md:table-cell px-4 py-2.5 font-bold">Ended</th>
+              <th class="px-4 py-2.5 font-bold">Duration</th>
+              <th class="px-4 py-2.5 font-bold">Status</th>
+              <th class="px-4 py-2.5 text-right font-bold">Exit</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-border/60">
           {#each filteredHistory as entry}
             {@const success = isSuccessEntry(entry)}
-            <div class="flex items-center px-4 py-2.5 text-xs text-secondary hover:bg-white/[0.04] hover:text-primary transition-colors">
-              <!-- Connection Name -->
-              <div class="flex-[3] flex items-center gap-2 font-semibold text-primary truncate">
-                <Terminal size={13} class="text-accent shrink-0" />
-                <span class="truncate">{entry.connection_name}</span>
-              </div>
-
-              <!-- Started At -->
-              <div class="flex-[2.5] font-mono text-[11px] text-muted truncate">
-                {formatDateTime(entry.started_at, timezone)}
-              </div>
-
-              <!-- Ended At -->
-              <div class="flex-[2.5] hidden sm:block font-mono text-[11px] text-muted truncate">
-                {entry.ended_at ? formatDateTime(entry.ended_at, timezone) : "Active/Stale"}
-              </div>
-
-              <!-- Duration -->
-              <div class="flex-[1.5] font-mono text-[11px] text-muted">
-                {formatDuration(entry.duration)}
-              </div>
-
-              <!-- Status -->
-              <div class="flex-[2] flex items-center gap-1.5 truncate">
+            <tr class="row border-0 text-xs text-secondary">
+              <td class="max-w-[220px] px-4 py-2.5">
+                <div class="flex min-w-0 items-center gap-2 font-semibold text-primary">
+                  <Terminal size={13} class="shrink-0 text-accent" />
+                  <span class="truncate" title={entry.connection_name}>{entry.connection_name}</span>
+                </div>
+              </td>
+              <td class="hidden sm:table-cell px-4 py-2.5 font-mono text-xs text-muted">{formatDateTime(entry.started_at, timezone)}</td>
+              <td class="hidden md:table-cell px-4 py-2.5 font-mono text-xs text-muted">
+                {entry.ended_at ? formatDateTime(entry.ended_at, timezone) : "Active"}
+              </td>
+              <td class="px-4 py-2.5 font-mono text-xs text-muted">{formatDuration(entry.duration)}</td>
+              <td class="px-4 py-2.5">
                 {#if success}
-                  <span class="badge-pill bg-running/15 text-running border border-running/30">
+                  <span class="badge badge-success">
                     <CheckCircle2 size={11} />
                     <span>{statusLabel(entry.status)}</span>
                   </span>
                 {:else}
-                  <span class="badge-pill bg-error/15 text-error border border-error/30">
+                  <span class="badge badge-error">
                     <AlertCircle size={11} />
                     <span>{statusLabel(entry.status)}</span>
                   </span>
                 {/if}
-              </div>
-
-              <!-- Exit Code -->
-              <div class="w-16 text-right font-mono text-[11px] text-muted">
-                {entry.exit_code !== undefined ? entry.exit_code : "—"}
-              </div>
-            </div>
+              </td>
+              <td class="px-4 py-2.5 text-right font-mono text-xs text-muted">
+                {entry.exit_code !== undefined ? entry.exit_code : "-"}
+              </td>
+            </tr>
           {/each}
-        </div>
+          </tbody>
+        </table>
       </div>
     {:else}
-      <div class="py-20 flex flex-col items-center justify-center text-muted border border-dashed border-border rounded-2xl bg-surface-input/10">
-        <div class="w-12 h-12 rounded-2xl bg-accent/10 border border-accent/25 flex items-center justify-center text-accent mb-3">
-          <Clock size={24} />
+      <div class="empty-state empty-state-dashed">
+        <div class="empty-state-icon">
+          <Clock size={22} />
         </div>
-        <h3 class="text-sm font-bold text-primary mb-1">No Historical Session Logs</h3>
-        <p class="text-xs text-muted max-w-sm text-center leading-relaxed">
+        <h3 class="empty-state-title">No session history</h3>
+        <p class="empty-state-desc">
           {filterQuery ? "No logs match your filter." : "Session records will automatically appear here whenever you establish an SSH session."}
         </p>
       </div>

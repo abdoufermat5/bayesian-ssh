@@ -1,6 +1,6 @@
 <script lang="ts">
   import { getCurrentWindow } from "@tauri-apps/api/window";
-  import { Link2, Server } from "lucide-svelte";
+  import { Link2, Minus, Server, Square, X } from "lucide-svelte";
   import { refreshWindowState } from "$lib/stores/window.svelte";
 
   interface Props {
@@ -49,21 +49,22 @@
 </script>
 
 <header
-  class="flex items-center justify-between h-[32px] px-3 bg-surface border-b border-border select-none shrink-0 transition-all duration-150
-    {dockHintActive ? 'bg-accent/8 border-b-accent/35' : ''}"
+  class="terminal-window-bar {dockHintActive ? 'terminal-window-bar-dock' : ''}"
 >
-  <div class="flex items-center gap-2 flex-1 min-w-0 h-full text-accent" data-tauri-drag-region>
-    <Server size={14} />
-    <span class="text-xs font-semibold text-primary overflow-hidden text-ellipsis whitespace-nowrap">{title}</span>
+  <div class="terminal-window-title" data-tauri-drag-region>
+    <span class="terminal-window-mark">
+      <Server size={13} />
+    </span>
+    <span class="terminal-window-name">{title}</span>
     {#if dockHintActive}
-      <span class="ml-2 text-[11px] font-medium text-accent whitespace-nowrap">Drop onto main window to dock</span>
+      <span class="terminal-dock-hint">Drop onto main window to dock</span>
     {/if}
   </div>
 
-  <div class="flex items-center shrink-0 gap-1">
+  <div class="terminal-window-actions">
     {#if onDock}
       <button
-        class="inline-flex items-center gap-1.5 h-6 mr-1 px-2.5 rounded-md border border-accent/25 bg-accent/6 text-accent text-[11px] font-semibold cursor-pointer transition-colors hover:bg-accent/12 disabled:opacity-50 disabled:cursor-not-allowed"
+        class="terminal-window-dock"
         onclick={() => onDock?.()}
         title="Dock back to main window"
       >
@@ -72,25 +73,143 @@
       </button>
     {/if}
     <button
-      class="flex items-center justify-center w-[46px] h-8 bg-transparent border-none text-muted cursor-pointer transition-colors duration-100 hover:bg-surface-hover hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed"
+      class="terminal-window-button"
       onclick={handleWindowMinimize}
       title="Minimize"
     >
-      <svg viewBox="0 0 10 1" class="w-2.5 h-px fill-none stroke-current" style="stroke-width: 1.5;"><line x1="0" y1="0.5" x2="10" y2="0.5" /></svg>
+      <Minus size={13} />
     </button>
     <button
-      class="flex items-center justify-center w-[46px] h-8 bg-transparent border-none text-muted cursor-pointer transition-colors duration-100 hover:bg-surface-hover hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed"
+      class="terminal-window-button"
       onclick={handleWindowMaximize}
       title="Maximize/Restore"
     >
-      <svg viewBox="0 0 10 10" class="w-2.5 h-2.5 fill-none stroke-current" style="stroke-width: 1.2;"><rect x="1" y="1" width="8" height="8" /></svg>
+      <Square size={11} />
     </button>
     <button
-      class="flex items-center justify-center w-[46px] h-8 bg-transparent border-none text-muted cursor-pointer transition-colors duration-100 hover:bg-error hover:text-on-accent disabled:opacity-50 disabled:cursor-not-allowed"
+      class="terminal-window-button terminal-window-button-close"
       onclick={handleWindowClose}
       title="Close"
     >
-      <svg viewBox="0 0 10 10" class="w-2.5 h-2.5 fill-none stroke-current" style="stroke-width: 1.2;"><path d="M1 1 L9 9 M9 1 L1 9" /></svg>
+      <X size={14} />
     </button>
   </div>
 </header>
+
+<style>
+  .terminal-window-bar {
+    display: flex;
+    height: 34px;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    overflow: hidden;
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-secondary);
+    user-select: none;
+    transition: background-color var(--transition-duration-fast), border-color var(--transition-duration-fast);
+  }
+
+  .terminal-window-bar-dock {
+    border-bottom-color: var(--color-border-hover);
+    background: var(--color-surface-hover);
+  }
+
+  .terminal-window-title {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    align-items: center;
+    gap: 8px;
+    height: 100%;
+    padding-left: 10px;
+    color: var(--color-primary);
+  }
+
+  .terminal-window-mark {
+    display: inline-flex;
+    width: 20px;
+    height: 20px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-xs);
+    background: var(--color-surface-input);
+    color: var(--color-muted);
+  }
+
+  .terminal-window-name {
+    overflow: hidden;
+    color: var(--color-primary);
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .terminal-dock-hint {
+    flex: 0 0 auto;
+    color: var(--color-accent);
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .terminal-window-actions {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 2px;
+    height: 100%;
+    padding-right: 4px;
+  }
+
+  .terminal-window-dock,
+  .terminal-window-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+    border-radius: var(--radius-xs);
+    background: transparent;
+    color: var(--color-muted);
+    cursor: pointer;
+    transition: background-color var(--transition-duration-fast), border-color var(--transition-duration-fast),
+      color var(--transition-duration-fast);
+  }
+
+  .terminal-window-dock {
+    gap: 6px;
+    height: 26px;
+    margin-right: 4px;
+    padding: 0 9px;
+    border-color: color-mix(in srgb, var(--color-accent) 38%, var(--color-border));
+    color: var(--color-accent);
+    font-size: 11px;
+    font-weight: 800;
+  }
+
+  .terminal-window-button {
+    width: 38px;
+    height: 28px;
+  }
+
+  .terminal-window-dock:hover,
+  .terminal-window-dock:focus-visible,
+  .terminal-window-button:hover,
+  .terminal-window-button:focus-visible {
+    border-color: var(--color-border-hover);
+    background: var(--color-surface-hover);
+    color: var(--color-primary);
+  }
+
+  .terminal-window-button-close:hover,
+  .terminal-window-button-close:focus-visible {
+    border-color: color-mix(in srgb, var(--color-error) 34%, var(--color-border));
+    background: color-mix(in srgb, var(--color-error) 16%, var(--color-surface));
+    color: var(--color-error);
+  }
+</style>

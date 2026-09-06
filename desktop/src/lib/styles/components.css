@@ -10,10 +10,11 @@
      Hierarchy: primary (one per view) > secondary > ghost > link.
      Destructive is reserved for irreversible actions.              */
   .btn {
-    @apply inline-flex select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors duration-fast cursor-pointer disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors duration-fast cursor-pointer disabled:cursor-not-allowed disabled:opacity-40;
+    min-height: 30px;
   }
   .btn-primary {
-    @apply bg-accent text-on-accent hover:bg-accent-hover;
+    @apply bg-accent text-on-accent font-semibold hover:bg-accent-hover shadow-xs;
   }
   .btn-secondary {
     @apply border border-border bg-surface-input text-secondary hover:border-border-hover hover:bg-surface-hover hover:text-primary;
@@ -22,60 +23,65 @@
     @apply border border-transparent bg-transparent text-secondary hover:bg-surface-hover hover:text-primary;
   }
   .btn-danger {
-    @apply border border-error/35 bg-error/10 text-error hover:border-error/50 hover:bg-error/20;
+    @apply border border-error/30 bg-error/10 text-error hover:border-error/45 hover:bg-error/20;
   }
   .btn-icon {
-    @apply rounded-md p-1.5 text-muted hover:bg-surface-hover hover:text-primary;
+    @apply rounded-md p-1.5 text-muted transition-colors duration-fast hover:bg-surface-hover hover:text-primary;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    min-height: 28px;
+    cursor: pointer;
   }
   .btn-sm {
-    @apply gap-1 px-2 py-1;
+    @apply gap-1 px-2 py-1 text-2xs min-h-[26px];
   }
   .btn-lg {
     @apply rounded-lg px-3.5 py-2 text-sm;
   }
 
-  /* ---- Inputs -----------------------------------------------------
-     One control height (py-2) everywhere; search uses .search-box.  */
+  /* ---- Inputs ----------------------------------------------------- */
   .input {
-    @apply w-full rounded-md border border-border bg-surface-input px-3 py-2 text-sm text-primary outline-none transition-colors duration-fast placeholder:text-muted hover:border-border-hover focus:border-accent focus:ring-2 focus:ring-accent-muted;
+    @apply w-full rounded-md border border-border bg-surface-input px-3 py-1.5 text-xs text-primary outline-none transition-colors duration-fast placeholder:text-muted hover:border-border-hover focus:border-accent focus:ring-1 focus:ring-accent;
   }
   .search-box {
-    @apply flex items-center gap-2 rounded-md border border-border bg-surface-input px-3 py-1.5 transition-colors duration-fast focus-within:border-accent focus-within:shadow-[0_0_0_2px_var(--color-accent-muted)];
+    @apply flex items-center gap-2 rounded-md border border-border bg-surface-input px-2.5 py-1 transition-colors duration-fast focus-within:border-accent focus-within:ring-1 focus-within:ring-accent;
   }
 
-  /* ---- Tags & badges ----------------------------------------------
-     tag  — metadata labels (mono, neutral)
-     badge— counts / states (pill, colored)
-     flag — tiny feature markers (krb5, jump)                        */
+  /* ---- Tags & badges ---------------------------------------------- */
   .tag {
-    @apply inline-flex items-center gap-1 rounded-xs border border-border bg-surface-input px-1.5 py-px font-mono text-2xs text-secondary;
+    @apply inline-flex items-center gap-1 rounded-xs border border-border bg-white/[0.03] px-1.5 py-0.5 font-mono text-2xs text-secondary select-none;
   }
   .badge {
-    @apply inline-flex items-center gap-1 rounded-full border px-2 py-px text-2xs font-bold uppercase tracking-wider;
+    @apply inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-2xs font-medium tracking-normal select-none;
   }
   .badge-neutral {
-    @apply border-border bg-surface-input text-secondary;
+    @apply border-border bg-white/[0.03] text-secondary;
+  }
+  .badge-subtle {
+    @apply border-border bg-white/[0.04] text-secondary;
   }
   .badge-accent {
-    @apply border-accent/25 bg-accent/15 text-accent;
+    @apply border-accent/25 bg-accent/10 text-accent;
   }
   .badge-success {
-    @apply border-success/25 bg-success/15 text-success;
+    @apply border-success/25 bg-success/10 text-success;
   }
   .badge-running {
-    @apply border-running/25 bg-running/15 text-running;
+    @apply border-running/25 bg-running/10 text-running;
   }
   .badge-warning {
-    @apply border-warning/25 bg-warning/15 text-warning;
+    @apply border-warning/25 bg-warning/10 text-warning;
   }
   .badge-error {
-    @apply border-error/25 bg-error/15 text-error;
+    @apply border-error/25 bg-error/10 text-error;
   }
   .flag {
-    @apply inline-flex items-center gap-1 rounded-xs border px-1 py-px text-2xs font-bold uppercase tracking-wider;
+    @apply inline-flex items-center gap-1 rounded-xs border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-2xs font-mono font-medium text-secondary uppercase tracking-wider select-none;
   }
   .flag-accent {
-    @apply border-accent/25 bg-accent/15 text-accent;
+    @apply border-accent/25 bg-accent/10 text-accent;
   }
 
   /* ---- Connection / state indicators ----------------------------- */
@@ -86,7 +92,7 @@
     @apply h-1.5 w-1.5;
   }
   .status-dot-running {
-    @apply bg-running;
+    @apply bg-success;
   }
   .status-dot-success {
     @apply bg-success;
@@ -101,24 +107,13 @@
     @apply bg-muted/40;
   }
   .status-dot-pulse {
-    animation: status-pulse 2s var(--ease-out) infinite;
-  }
-  .status-dot-running.status-dot-pulse {
-    --pulse: var(--color-running);
-  }
-  .status-dot-success.status-dot-pulse {
-    --pulse: var(--color-success);
-  }
-  .status-dot-warning.status-dot-pulse {
-    --pulse: var(--color-warning);
-  }
-  .status-dot-error.status-dot-pulse {
-    --pulse: var(--color-error);
+    /* Calm static glow instead of constant annoying pulse */
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-running) 20%, transparent);
   }
 
   /* ---- Keyboard shortcuts ----------------------------------------- */
   .kbd {
-    @apply inline-flex h-5 min-w-5 items-center justify-center rounded-xs border border-border bg-surface-raised px-1.5 font-mono text-2xs font-semibold text-secondary;
+    @apply inline-flex h-5 min-w-5 items-center justify-center rounded-xs border border-border bg-surface-raised px-1.5 font-mono text-2xs font-medium text-secondary select-none;
   }
   .kbd-accent {
     @apply border-accent/30 bg-accent/10 text-accent;
@@ -126,10 +121,10 @@
 
   /* ---- Text helpers ----------------------------------------------- */
   .eyebrow {
-    @apply text-2xs font-bold uppercase tracking-wider text-muted;
+    @apply text-2xs font-semibold uppercase tracking-wider text-muted select-none;
   }
   .table-header {
-    @apply text-2xs font-bold uppercase tracking-wider text-muted;
+    @apply text-2xs font-semibold uppercase tracking-wider text-muted select-none;
   }
   .link {
     @apply cursor-pointer text-accent transition-colors duration-fast hover:text-accent-hover hover:underline;
@@ -144,10 +139,107 @@
     @apply h-px w-full border-0 bg-border/60;
   }
   .row {
-    @apply cursor-pointer outline-none transition-colors duration-fast hover:bg-surface-hover/40;
+    @apply cursor-pointer outline-none transition-colors duration-fast hover:bg-surface-hover/60;
   }
   .row-active {
-    @apply bg-accent/10;
+    @apply bg-white/[0.04];
+  }
+
+  .app-deck {
+    position: relative;
+    background: var(--color-surface);
+  }
+  .app-layer {
+    @apply relative z-10;
+  }
+  .window-titlebar {
+    @apply flex h-[var(--titlebar-h)] shrink-0 items-center justify-between gap-4 border-b border-border bg-surface px-3 text-xs select-none;
+  }
+  .workspace-topbar {
+    @apply relative z-30 flex h-[var(--topbar-h)] shrink-0 items-center justify-between gap-4 border-b border-border bg-surface px-5 select-none;
+  }
+  .sidebar-shell {
+    @apply relative z-20 flex min-h-0 shrink-0 flex-col overflow-visible border-r border-border bg-surface-input select-none;
+    transition: width 150ms ease;
+  }
+  .toolbar-band {
+    @apply flex shrink-0 flex-wrap items-center justify-between gap-2.5 border-y border-border/80 bg-surface-input/30 px-5 py-2;
+  }
+  .view-header {
+    @apply flex shrink-0 flex-wrap items-center justify-between gap-4 border-b border-border bg-surface px-5 py-3.5;
+  }
+  .view-content {
+    @apply min-h-0 flex-1 overflow-auto px-5 py-4;
+  }
+
+  .brand-mark {
+    @apply flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-border bg-white/[0.04] text-primary;
+  }
+  .icon-tile {
+    @apply flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border bg-surface-input text-secondary;
+  }
+  .command-trigger {
+    @apply flex w-72 max-w-sm cursor-pointer items-center justify-between gap-3 rounded-md border border-border bg-surface-input/70 px-3 py-1.5 text-xs text-muted shadow-xs transition-colors hover:border-border-hover hover:bg-surface-hover hover:text-primary;
+  }
+  .nav-item {
+    @apply relative flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-xs font-medium text-secondary transition-colors duration-fast hover:bg-surface-hover hover:text-primary;
+  }
+  .nav-item-active {
+    @apply bg-white/[0.07] font-semibold text-primary;
+    box-shadow: inset 2px 0 0 var(--color-accent);
+  }
+  .nav-item-collapsed {
+    @apply justify-center px-0;
+  }
+  .status-card {
+    @apply flex cursor-pointer items-center justify-between gap-2 rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-surface-hover;
+  }
+  .filter-chip {
+    @apply cursor-pointer rounded-md border px-2 py-0.5 text-2xs font-medium transition-colors select-none;
+  }
+  .filter-chip-active {
+    @apply border-accent/30 bg-accent/15 text-accent font-semibold;
+  }
+  .filter-chip-idle {
+    @apply border-border bg-surface-input text-muted hover:border-border-hover hover:text-primary;
+  }
+  .toolbar-btn {
+    @apply flex cursor-pointer items-center gap-1.5 rounded-md border border-border bg-surface-input px-2.5 py-1 text-xs font-medium text-secondary transition-colors hover:border-border-hover hover:bg-surface-hover hover:text-primary;
+  }
+  .toolbar-btn-danger {
+    @apply border-error/30 bg-transparent text-error hover:bg-error/15 hover:text-error;
+  }
+  .segmented-control {
+    @apply flex rounded-md border border-border bg-surface-input p-0.5;
+  }
+  .segmented-button {
+    @apply cursor-pointer rounded-xs border-none p-1 text-muted transition-colors hover:text-secondary;
+  }
+  .segmented-button-active {
+    @apply bg-surface-hover text-primary shadow-xs;
+  }
+
+  .data-table {
+    @apply overflow-hidden rounded-lg border border-border bg-surface-input/20;
+  }
+  .data-header {
+    @apply flex items-center border-b border-border bg-surface-input/60 px-4 py-2 text-2xs font-semibold uppercase tracking-wider text-muted select-none;
+  }
+  .data-row {
+    @apply flex cursor-pointer items-center px-4 py-2 text-xs text-secondary transition-colors hover:bg-surface-hover/60 hover:text-primary;
+  }
+  .machine-text {
+    @apply font-mono text-xs text-muted;
+  }
+  .action-pill {
+    @apply flex cursor-pointer items-center gap-1 rounded-md border border-border bg-surface-input px-2.5 py-1 text-xs font-medium text-secondary transition-colors hover:border-border-hover hover:bg-surface-hover hover:text-primary;
+  }
+  .floating-panel {
+    @apply rounded-xl border border-border bg-surface-raised/95 shadow-xl;
+  }
+  .terminal-overlay {
+    @apply absolute right-5 top-3 z-40 flex items-center gap-2 rounded-xl border border-border bg-surface-raised/95 px-3 py-1.5 text-xs shadow-xl backdrop-blur-md;
+    animation: popover-enter 0.15s var(--ease-out) forwards;
   }
 
   /* ---- Alerts / error & warning surfaces -------------------------- */
@@ -228,11 +320,116 @@
 
   /* ---- Modal -------------------------------------------------------- */
   .modal-overlay {
-    @apply fixed inset-0 z-[100] flex items-center justify-center bg-overlay;
+    @apply fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4;
   }
   .modal-panel {
-    @apply relative flex flex-col rounded-xl border border-border bg-surface shadow-xl;
-    animation: modal-enter 0.25s var(--ease-out) forwards;
+    @apply relative flex max-h-[calc(100vh-32px)] flex-col overflow-hidden rounded-xl border border-white/10 bg-surface-raised shadow-2xl;
+    animation: modal-enter 0.16s var(--ease-out) forwards;
+  }
+  .modal-header {
+    @apply flex shrink-0 items-start justify-between gap-4 border-b border-border bg-surface-input/35 px-5 py-3.5;
+  }
+  .modal-title {
+    @apply m-0 text-base font-semibold leading-tight text-primary;
+  }
+  .modal-subtitle {
+    @apply m-0 mt-0.5 text-xs leading-snug text-muted;
+  }
+  .modal-body {
+    @apply min-h-0 flex-1 overflow-y-auto px-5 py-4;
+  }
+  .modal-footer {
+    @apply flex shrink-0 items-center justify-end gap-2 border-t border-border bg-surface-input/25 px-5 py-3;
+  }
+  .modal-close {
+    @apply inline-flex items-center justify-center rounded-md p-1.5 text-muted transition-colors duration-fast hover:bg-surface-hover hover:text-primary shrink-0 cursor-pointer;
+    min-width: 28px;
+    min-height: 28px;
+  }
+
+  .settings-shell {
+    @apply flex min-h-0 w-full flex-1 overflow-hidden bg-surface text-sm text-primary select-none;
+  }
+  .settings-sidebar {
+    @apply flex w-[190px] min-w-[190px] shrink-0 flex-col border-r border-border bg-surface-input/20;
+  }
+  .settings-nav {
+    @apply flex flex-1 flex-col gap-1 overflow-y-auto px-2.5 pb-3 scrollbar-none;
+  }
+  .settings-nav-item {
+    @apply flex w-full cursor-pointer items-center gap-2 rounded-md border border-transparent px-2 py-2 text-left text-xs font-medium text-secondary outline-none transition-colors duration-fast hover:bg-surface-hover hover:text-primary;
+  }
+  .settings-label {
+    @apply min-w-0 truncate;
+  }
+  .settings-nav-item-active {
+    @apply border-accent/35 bg-accent/15 font-semibold text-primary;
+  }
+  .settings-content {
+    @apply min-h-0 flex-1 overflow-y-auto bg-surface px-5 py-5 overscroll-contain scrollbar-none;
+  }
+  .settings-page {
+    @apply flex max-w-2xl flex-col gap-4;
+  }
+  .settings-heading {
+    @apply m-0 text-base font-semibold leading-tight text-primary;
+  }
+  .settings-desc {
+    @apply m-0 mt-1 text-xs leading-snug text-muted;
+  }
+  .settings-divider {
+    @apply h-px w-full bg-border/65;
+  }
+  .settings-section {
+    @apply flex flex-col gap-3 rounded-lg border border-border bg-panel px-4 py-3.5;
+  }
+  .settings-section-title {
+    @apply flex items-center gap-2 text-2xs font-bold uppercase tracking-wider text-muted;
+  }
+  .field {
+    @apply flex flex-col gap-1.5;
+  }
+  .field-label {
+    @apply text-xs font-semibold text-secondary;
+  }
+  .field-meta {
+    @apply text-xs leading-snug text-muted;
+  }
+  .setting-row {
+    @apply flex items-center justify-between gap-4 rounded-lg border border-border bg-panel px-4 py-3;
+  }
+  .setting-row-main {
+    @apply flex min-w-0 flex-col gap-0.5;
+  }
+  .setting-title {
+    @apply text-xs font-semibold text-secondary;
+  }
+  .setting-meta {
+    @apply text-xs leading-snug text-muted;
+  }
+  .system-value {
+    @apply rounded-md border border-border bg-surface-input px-3 py-2 font-mono text-xs leading-normal text-secondary;
+  }
+
+  @media (max-width: 860px) {
+    .settings-sidebar {
+      width: 56px;
+      min-width: 56px;
+    }
+    .settings-sidebar-title {
+      display: none;
+    }
+    .settings-nav-item {
+      justify-content: center;
+      padding-left: 0;
+      padding-right: 0;
+    }
+    .settings-label {
+      display: none;
+    }
+    .settings-content {
+      padding: 16px;
+    }
   }
 
   /* ---- Modern Cards & Panels --------------------------------------- */

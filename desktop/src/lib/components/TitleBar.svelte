@@ -44,83 +44,66 @@
   }
 </script>
 
-<header
-  class="flex shrink-0 items-center justify-between h-[var(--titlebar-h)] bg-surface border-b border-border/80 px-3 select-none z-50 text-xs"
->
+<header class="window-titlebar z-50">
   <!-- Left Brand & App Title -->
   <div
-    class="flex items-center flex-1 h-full cursor-default gap-2.5"
+    class="flex items-center shrink-0 h-full cursor-default gap-2"
     data-tauri-drag-region
   >
-    <div class="flex items-center justify-center w-5 h-5 rounded-md bg-accent/15 border border-accent/30 text-accent shrink-0">
-      <Terminal size={12} />
+    <div class="brand-mark">
+      <Terminal size={11} class="text-secondary" />
     </div>
-    <span class="font-semibold text-primary tracking-tight select-none pointer-events-none">
+    <span class="font-semibold text-xs text-primary tracking-tight select-none pointer-events-none">
       Bayesian SSH
     </span>
-    <span class="text-[10px] text-muted font-mono px-1.5 py-0.2 rounded bg-surface-input border border-border">
-      v2.5.1
+    <span class="font-mono text-[10px] text-muted select-none pointer-events-none">
+      v2.5.2
     </span>
   </div>
 
   <!-- Center Profile Pill -->
   <div
-    class="flex justify-center items-center flex-1 h-full cursor-default"
+    class="hidden md:flex justify-center items-center flex-1 min-w-0 h-full cursor-default"
     data-tauri-drag-region
   >
-    <div
-      class="bg-surface-input/80 border border-border rounded-full px-3 py-0.5 text-[11px] text-secondary flex items-center gap-1.5 shadow-sm"
-    >
-      <span class="w-1.5 h-1.5 rounded-full bg-running shrink-0"></span>
+    <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border border-border bg-surface-input text-2xs text-secondary select-none">
+      <span class="w-1.5 h-1.5 rounded-full bg-success shrink-0"></span>
       <span class="text-muted">Profile:</span>
-      <span class="text-primary font-semibold truncate max-w-[140px]">{activeEnv}</span>
+      <span class="text-primary font-medium truncate max-w-[130px]" title={activeEnv}>{activeEnv}</span>
     </div>
   </div>
 
-  <!-- Right Actions & Native Controls -->
-  <div class="flex items-center justify-end flex-1 h-full gap-1">
-    {#if onOpenCommandPalette}
-      <button
-        type="button"
-        class="flex items-center gap-1 px-2 h-6 bg-surface-input/60 border border-border text-muted hover:text-primary hover:border-border-hover transition-colors rounded-md text-[11px] cursor-pointer"
-        onclick={onOpenCommandPalette}
-        title="Open Command Palette (Ctrl+K)"
-        aria-label="Open Command Palette"
-      >
-        <Command size={11} />
-        <span class="font-mono text-[10px]">⌘K</span>
-      </button>
-    {/if}
-
+  <!-- Right Actions & Native Window Controls -->
+  <div class="flex items-center justify-end shrink-0 h-full gap-0.5 ml-auto">
     {#if onOpenShortcuts}
       <button
         type="button"
-        class="flex items-center justify-center w-7 h-7 bg-transparent border-none text-muted hover:text-primary hover:bg-surface-hover transition-colors rounded-md cursor-pointer"
+        class="btn-icon h-7 w-7 p-0"
         onclick={onOpenShortcuts}
-        title="Keyboard Shortcuts"
+        title="Keyboard Shortcuts (F1 or ?)"
         aria-label="Keyboard Shortcuts"
       >
-        <Command size={13} />
+        <Command size={12} />
       </button>
     {/if}
 
     {#if onOpenAbout}
       <button
         type="button"
-        class="flex items-center justify-center w-7 h-7 bg-transparent border-none text-muted hover:text-primary hover:bg-surface-hover transition-colors rounded-md cursor-pointer"
+        class="btn-icon h-7 w-7 p-0"
         onclick={onOpenAbout}
         title="About Bayesian SSH"
         aria-label="About Bayesian SSH"
       >
-        <HelpCircle size={14} />
+        <HelpCircle size={13} />
       </button>
     {/if}
 
     <!-- Window buttons -->
-    <div class="flex items-center ml-2 border-l border-border/60 pl-1">
+    <div class="flex items-center ml-1.5 border-l border-border/60 pl-1">
       <button
         type="button"
-        class="flex items-center justify-center w-8 h-[var(--titlebar-h)] bg-transparent border-none text-muted hover:bg-surface-hover hover:text-primary transition-colors cursor-pointer"
+        class="btn-icon h-[var(--titlebar-h)] w-8 rounded-none p-0 hover:bg-surface-hover"
         onclick={handleWindowMinimize}
         title="Minimize"
         aria-label="Minimize"
@@ -131,7 +114,7 @@
       </button>
       <button
         type="button"
-        class="flex items-center justify-center w-8 h-[var(--titlebar-h)] bg-transparent border-none text-muted hover:bg-surface-hover hover:text-primary transition-colors cursor-pointer"
+        class="btn-icon h-[var(--titlebar-h)] w-8 rounded-none p-0 hover:bg-surface-hover"
         onclick={handleWindowMaximize}
         title="Maximize/Restore"
         aria-label="Maximize/Restore"
@@ -142,7 +125,7 @@
       </button>
       <button
         type="button"
-        class="flex items-center justify-center w-8 h-[var(--titlebar-h)] bg-transparent border-none text-muted hover:bg-error hover:text-white transition-colors cursor-pointer"
+        class="btn-icon h-[var(--titlebar-h)] w-8 rounded-none p-0 hover:bg-error hover:text-white"
         onclick={handleWindowClose}
         title="Close"
         aria-label="Close"

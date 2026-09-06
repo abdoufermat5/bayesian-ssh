@@ -170,10 +170,51 @@ function findDetachedSession(sessionId: string): DetachedSession | undefined {
 /** Route one PTY output event to its tab, coalesced. */
 const MAX_PENDING_OUTPUT_BYTES = 256 * 1024;
 
+export function flushPendingTabOutput(tab: TerminalTab) {
+  if (tab.term && tab.pendingOutput && tab.pendingOutput.length > 0) {
+    const combined = tab.pendingOutput.join("");
+    tab.pendingOutput = [];
+    if (tab.outputCoalescer) {
+      tab.outputCoalescer.push(combined);
+    } else {
+      safeWrite(tab.term, combined);
+    }
+  }
+}
+
+export function setActiveTab(tabId: string | null) {
+  if (activeTabId === tabId) return;
+  activeTabId = tabId;
+  if (!tabId) return;
+  const tab = findTab(tabId);
+  if (tab) {
+    flushPendingTabOutput(tab);
+    if (tab.term && tab.fitAddon) {
+      requestAnimationFrame(() => {
+        fitTerminal(tab.id, tab.term!, tab.fitAddon!);
+        tab.term!.focus();
+      });
+    }
+  }
+}
+
 function deliverPtyOutput(sessionId: string, data: string) {
   if (!data) return;
   const tab = findTab(sessionId);
   if (!tab) return;
+
+  // Background tab optimization: if the tab is not currently active, buffer in memory
+  // without triggering xterm canvas redraws / layout computations.
+  if (tab.id !== activeTabId) {
+    if (!tab.pendingOutput) tab.pendingOutput = [];
+    if (getPendingOutputBytes(tab.pendingOutput) + data.length > MAX_PENDING_OUTPUT_BYTES) {
+      while (tab.pendingOutput.length > 0 && getPendingOutputBytes(tab.pendingOutput) + data.length > MAX_PENDING_OUTPUT_BYTES) {
+        tab.pendingOutput.shift();
+      }
+    }
+    tab.pendingOutput.push(data);
+    return;
+  }
 
   if (tab.term && tab.outputCoalescer) {
     tab.outputCoalescer.push(data);
@@ -181,7 +222,6 @@ function deliverPtyOutput(sessionId: string, data: string) {
   }
   if (!tab.pendingOutput) tab.pendingOutput = [];
   if (getPendingOutputBytes(tab.pendingOutput) + data.length > MAX_PENDING_OUTPUT_BYTES) {
-    console.warn("pendingOutput queue exceeded limit, dropping oldest chunks");
     while (tab.pendingOutput.length > 0 && getPendingOutputBytes(tab.pendingOutput) + data.length > MAX_PENDING_OUTPUT_BYTES) {
       tab.pendingOutput.shift();
     }
@@ -806,10 +846,7 @@ export function getTerminalState() {
       return activeTabId;
     },
     set activeTabId(value: string | null) {
-      activeTabId = value;
-      if (value) {
-        requestAnimationFrame(() => focusActiveTerminal());
-      }
+      setActiveTab(value);
     },
     get count() {
       return tabs.length;

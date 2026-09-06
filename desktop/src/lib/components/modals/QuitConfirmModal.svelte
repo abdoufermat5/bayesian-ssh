@@ -38,19 +38,19 @@
       <div class="flex gap-2 w-full">
         <button
           type="button"
-          class="flex-1 py-2.5 rounded-lg border border-border bg-surface-input/60 text-secondary text-[13px] font-medium cursor-pointer transition-all duration-100 hover:bg-white/[0.05] hover:text-primary hover:border-border-hover flex items-center justify-center gap-1.5"
+          class="btn btn-secondary flex-1 py-2 text-xs"
           onclick={onMinimize}
         >
-          <Minimize2 size={14} />
-          Minimize to Tray
+          <Minimize2 size={13} />
+          <span>Minimize to Tray</span>
         </button>
         <button
           type="button"
-          class="flex-1 py-2.5 rounded-lg border border-danger/35 bg-danger/10 text-error text-[13px] font-semibold cursor-pointer flex items-center justify-center gap-1.5 transition-all duration-100 hover:bg-danger/[0.18] hover:text-error hover:border-danger/50"
+          class="btn btn-danger flex-1 py-2 text-xs"
           onclick={onQuit}
         >
-          <Power size={14} />
-          Disconnect & Quit
+          <Power size={13} />
+          <span>Disconnect & Quit</span>
         </button>
       </div>
 

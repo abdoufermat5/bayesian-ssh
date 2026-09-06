@@ -36,6 +36,7 @@
     detachTab,
     disconnectTab,
     dockPopoutSession,
+    focusPopoutSession,
     getTerminalState,
     popOutTab,
     reattachSession,
@@ -114,116 +115,151 @@
   }
 </script>
 
-<div class="flex flex-1 min-h-0 w-full overflow-hidden bg-surface relative">
-  <!-- Full-Width Terminal Workspace -->
-  <div class="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden bg-surface relative">
-    <!-- Tab Strip & Action Toolbar -->
+<div class="flex flex-1 min-h-0 w-full overflow-hidden bg-surface-terminal relative">
+  <div class="flex-1 min-w-0 min-h-0 flex flex-col overflow-visible bg-surface-terminal relative">
     <div
-      class="flex items-center justify-between gap-2 px-3 pt-2 border-b border-border/80 bg-surface-input/30 shrink-0 select-none transition-colors duration-100"
+      class="terminal-command-deck shrink-0 select-none"
       use:tabBarReattachDrop={handleDropReattach}
     >
-      <!-- Tabs scroll area -->
-      <div class="flex items-end gap-1 pb-0 flex-1 min-w-0 overflow-x-auto scrollbar-none">
-        {#each terminalState.tabs as tab (tab.id)}
-          <div
-            class="group relative flex items-center gap-2 px-3 py-2 rounded-t-lg cursor-pointer text-xs font-medium border transition-all duration-fast shrink-0
-              {terminalState.activeTabId === tab.id
-                ? 'bg-surface-terminal text-primary border-border border-b-transparent shadow-sm'
-                : 'bg-surface-input/50 text-muted border-transparent hover:bg-surface-input hover:text-secondary'}"
-            use:tabPopOutDrag={tab.id}
-            onclick={() => (terminalState.activeTabId = tab.id)}
-            role="button"
-            tabindex="0"
-            title="Active SSH tab (drag to pop out)"
-            onkeydown={(e) => {
-              if (e.key === "Enter" || e.key === " ") terminalState.activeTabId = tab.id;
-            }}
-          >
-            <span class="w-1.5 h-1.5 rounded-full bg-running shrink-0"></span>
-            <span class="truncate max-w-[140px]">{tab.name}</span>
+      <div class="terminal-tab-row">
+        <div class="terminal-tab-strip">
+          {#each terminalState.tabs as tab (tab.id)}
+            <div
+              class="terminal-tab group {terminalState.activeTabId === tab.id ? 'terminal-tab-active' : 'terminal-tab-idle'}"
+              use:tabPopOutDrag={tab.id}
+              onclick={() => (terminalState.activeTabId = tab.id)}
+              role="button"
+              tabindex="0"
+              title={`${tab.name} (drag to pop out)`}
+              onkeydown={(e) => {
+                if (e.key === "Enter" || e.key === " ") terminalState.activeTabId = tab.id;
+              }}
+            >
+              <span class="terminal-live-rail"></span>
+              <Server size={12} class="shrink-0 opacity-80" />
+              <span class="terminal-tab-label" title={tab.name}>{tab.name}</span>
 
-            <!-- Tab Actions on Hover -->
-            <div class="flex items-center gap-0.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              <!-- Popout -->
+              <div class="terminal-tab-secondary-actions">
+                <button
+                  type="button"
+                  class="terminal-tab-action"
+                  title="Pop out to separate window"
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    void popOutTab(tab.id);
+                  }}
+                >
+                  <AppWindow size={12} />
+                </button>
+
+                <button
+                  type="button"
+                  class="terminal-tab-action"
+                  title="Run in background (detach)"
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    void detachTab(tab.id);
+                  }}
+                >
+                  <Unlink size={12} />
+                </button>
+              </div>
+
               <button
                 type="button"
-                class="p-0.5 rounded text-muted hover:text-primary hover:bg-white/10 transition-colors border-none bg-transparent cursor-pointer"
-                title="Pop out to separate window"
-                onclick={(e) => {
-                  e.stopPropagation();
-                  void popOutTab(tab.id);
-                }}
-              >
-                <AppWindow size={11} />
-              </button>
-
-              <!-- Detach / Run in background -->
-              <button
-                type="button"
-                class="p-0.5 rounded text-muted hover:text-accent hover:bg-white/10 transition-colors border-none bg-transparent cursor-pointer"
-                title="Run in background (detach)"
-                onclick={(e) => {
-                  e.stopPropagation();
-                  void detachTab(tab.id);
-                }}
-              >
-                <Unlink size={11} />
-              </button>
-
-              <!-- Close -->
-              <button
-                type="button"
-                class="p-0.5 rounded text-muted hover:text-error hover:bg-error/15 transition-colors border-none bg-transparent cursor-pointer"
+                class="terminal-tab-close"
                 title="Close session"
                 onclick={(e) => {
                   e.stopPropagation();
                   disconnectTab(tab.id);
                 }}
               >
-                <X size={11} />
+                <X size={12} />
               </button>
             </div>
-          </div>
-        {/each}
+          {/each}
 
-        <!-- "+ New Session" Quick Launcher Button -->
-        <div class="relative">
+          {#each awaySessions as session (session.sessionId)}
+            <div
+              class="away-session-chip terminal-away-chip group"
+              draggable="true"
+              title={session.kind === 'popout' ? 'Click to focus window, or drag to dock' : 'Click or drag to reattach'}
+              ondragstart={(event) => handleAwayDragStart(event, session)}
+              ondragend={handleAwayDragEnd}
+              onclick={() => {
+                if (session.kind === 'popout') {
+                  void focusPopoutSession(session.sessionId);
+                } else {
+                  void handleDropReattach(session);
+                }
+              }}
+              ondblclick={() => void handleDropReattach(session)}
+              role="button"
+              tabindex="0"
+              onkeydown={(e) => {
+                if (e.key === 'Enter') {
+                  if (session.kind === 'popout') void focusPopoutSession(session.sessionId);
+                  else void handleDropReattach(session);
+                }
+              }}
+            >
+              <GripVertical size={12} class="opacity-70 shrink-0" />
+              {#if session.kind === "popout"}
+                <AppWindow size={12} class="shrink-0 text-accent" />
+              {:else}
+                <Link2 size={12} class="shrink-0 text-amber-400" />
+              {/if}
+              <span class="truncate">{session.name}</span>
+              <button
+                type="button"
+                class="ml-1 p-0.5 rounded hover:bg-surface-elevated text-muted hover:text-primary transition-colors opacity-75 group-hover:opacity-100"
+                title={session.kind === 'popout' ? 'Dock to main window' : 'Reattach session'}
+                onclick={(e) => {
+                  e.stopPropagation();
+                  void handleDropReattach(session);
+                }}
+              >
+                <Link2 size={11} />
+              </button>
+            </div>
+          {/each}
+        </div>
+
+        <div class="terminal-new-session">
           <button
             type="button"
-            class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-muted hover:text-primary hover:bg-surface-hover transition-colors cursor-pointer border border-dashed border-border/70 mb-1"
+            class="terminal-control terminal-control-primary"
             onclick={() => (showQuickLauncher = !showQuickLauncher)}
             title="Open new SSH session"
           >
-            <Plus size={13} />
-            <span>New Tab</span>
+            <Plus size={14} />
+            <span>New</span>
           </button>
 
-          <!-- Quick Launcher Dropdown Popover -->
           {#if showQuickLauncher}
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
             <div
               class="fixed inset-0 z-40"
               onclick={() => (showQuickLauncher = false)}
               role="presentation"
             ></div>
             <div
-              class="absolute left-0 top-full mt-1 w-72 rounded-xl border border-white/10 bg-surface-raised shadow-2xl p-2 z-50 flex flex-col gap-1.5 animate-in fade-in duration-100"
+              class="terminal-launcher-popover"
             >
-              <div class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-surface-input border border-border text-xs">
+              <div class="terminal-launcher-search">
                 <Search size={12} class="text-muted" />
                 <input
                   type="text"
                   placeholder="Select host to connect..."
                   bind:value={launcherQuery}
-                  class="bg-transparent border-none text-xs text-primary outline-none w-full placeholder:text-muted"
+                  class="terminal-launcher-input"
                 />
               </div>
 
-              <div class="max-h-48 overflow-y-auto flex flex-col gap-0.5 scrollbar-none">
+              <div class="terminal-launcher-list">
                 {#each filteredConnections as conn}
                   <button
                     type="button"
-                    class="flex items-center justify-between px-2.5 py-2 rounded-lg text-left text-xs hover:bg-surface-hover transition-colors cursor-pointer border-none bg-transparent group"
+                    class="terminal-launcher-option group"
                     onclick={() => handleConnect(conn)}
                   >
                     <div class="flex flex-col min-w-0">
@@ -239,39 +275,15 @@
             </div>
           {/if}
         </div>
-
-        <!-- Away Sessions Chips (Popout / Detached) -->
-        {#each awaySessions as session (session.sessionId)}
-          <div
-            class="away-session-chip inline-flex items-center gap-1.5 py-1.5 px-2.5 rounded-t-md border border-dashed border-accent/35 border-b-0 bg-accent/10 text-accent text-xs cursor-grab select-none max-w-[160px] hover:bg-accent/20"
-            draggable="true"
-            title="Drag to tab bar to dock, or double-click"
-            ondragstart={(event) => handleAwayDragStart(event, session)}
-            ondragend={handleAwayDragEnd}
-            ondblclick={() => void handleDropReattach(session)}
-            role="button"
-            tabindex="0"
-          >
-            <GripVertical size={11} class="opacity-70" />
-            {#if session.kind === "popout"}
-              <AppWindow size={11} />
-            {:else}
-              <Link2 size={11} />
-            {/if}
-            <span class="truncate">{session.name}</span>
-          </div>
-        {/each}
       </div>
 
-      <!-- Right Action Toolbar inside Tab Strip -->
-      <div class="flex items-center gap-1.5 shrink-0 pb-1">
+      <div class="terminal-tool-row">
         {#if terminalState.activeTabId}
           {@const activeTab = terminalState.tabs.find((t) => t.id === terminalState.activeTabId)}
 
-          <!-- Find in terminal -->
           <button
             type="button"
-            class="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-secondary hover:text-primary hover:bg-surface-hover transition-colors border border-border bg-surface-input/40 cursor-pointer"
+            class="terminal-control"
             onclick={() => toggleTerminalSearch(terminalState.activeTabId ?? undefined)}
             title="Search Terminal (Ctrl+F)"
           >
@@ -279,11 +291,10 @@
             <span class="hidden md:inline">Find</span>
           </button>
 
-          <!-- Export Log -->
           {#if activeTab?.term}
             <button
               type="button"
-              class="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-secondary hover:text-primary hover:bg-surface-hover transition-colors border border-border bg-surface-input/40 cursor-pointer"
+              class="terminal-control"
               onclick={() => downloadTerminalScrollback(activeTab.term!, activeTab.name)}
               title="Export session scrollback"
             >
@@ -291,21 +302,19 @@
               <span class="hidden md:inline">Export</span>
             </button>
 
-            <!-- Clear Screen -->
             <button
               type="button"
-              class="p-1 rounded-md text-secondary hover:text-primary hover:bg-surface-hover transition-colors border border-border bg-surface-input/40 cursor-pointer"
+              class="terminal-icon-control"
               onclick={() => activeTab.term?.clear()}
               title="Clear terminal screen"
             >
               <Trash2 size={12} />
             </button>
 
-            <!-- Zoom controls -->
-            <div class="flex items-center border border-border rounded-md bg-surface-input/40 p-0.5">
+            <div class="terminal-stepper" aria-label="Terminal font size">
               <button
                 type="button"
-                class="p-1 text-secondary hover:text-primary hover:bg-surface-hover rounded cursor-pointer border-none bg-transparent"
+                class="terminal-stepper-button"
                 onclick={() => zoomTerminal(1)}
                 title="Increase font size (Ctrl +)"
               >
@@ -313,7 +322,7 @@
               </button>
               <button
                 type="button"
-                class="p-1 text-secondary hover:text-primary hover:bg-surface-hover rounded cursor-pointer border-none bg-transparent"
+                class="terminal-stepper-button"
                 onclick={() => zoomTerminal(-1)}
                 title="Decrease font size (Ctrl -)"
               >
@@ -327,7 +336,7 @@
         {#if terminalState.externalSessionCount > 0}
           <button
             type="button"
-            class="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-accent/40 bg-accent/15 text-accent text-[11px] font-semibold cursor-pointer hover:bg-accent/25 transition-colors"
+            class="terminal-control terminal-control-accent"
             onclick={onManageSessions}
             title="Manage detached and popout sessions"
           >
@@ -340,7 +349,7 @@
         {#if terminalState.totalSessionCount > 0}
           <button
             type="button"
-            class="flex items-center gap-1 px-2.5 py-1 rounded-md border border-error/30 text-error hover:bg-error/15 transition-colors text-[11px] font-semibold cursor-pointer bg-transparent"
+            class="terminal-control terminal-control-danger"
             onclick={onCloseAll}
             title="Terminate all active SSH sessions"
           >
@@ -359,16 +368,15 @@
             class="absolute inset-0 px-2 py-1 box-border overflow-hidden"
             class:hidden={terminalState.activeTabId !== tab.id}
           >
-            <!-- In-Terminal Search Overlay -->
             {#if tab.showSearch}
               <div
-                class="absolute top-3 right-5 z-40 bg-surface-raised/95 backdrop-blur-md border border-white/10 rounded-xl px-3 py-1.5 shadow-2xl flex items-center gap-2 text-xs animate-in fade-in"
+                class="terminal-search-overlay"
               >
                 <Search size={14} class="text-accent shrink-0" />
                 <input
                   type="text"
                   placeholder="Find in scrollback..."
-                  class="bg-transparent border-none text-primary outline-none text-xs w-48 font-mono"
+                  class="terminal-search-input"
                   bind:value={tabSearchQueries[tab.id]}
                   oninput={() => tab.searchAddon?.findNext(tabSearchQueries[tab.id] ?? "")}
                   onkeydown={(e) => {
@@ -383,7 +391,7 @@
                 />
                 <button
                   type="button"
-                  class="p-1 text-muted hover:text-primary rounded cursor-pointer border-none bg-transparent"
+                  class="terminal-overlay-button"
                   title="Previous match (Shift+Enter)"
                   onclick={() => tab.searchAddon?.findPrevious(tabSearchQueries[tab.id] ?? "")}
                 >
@@ -391,7 +399,7 @@
                 </button>
                 <button
                   type="button"
-                  class="p-1 text-muted hover:text-primary rounded cursor-pointer border-none bg-transparent"
+                  class="terminal-overlay-button"
                   title="Next match (Enter)"
                   onclick={() => tab.searchAddon?.findNext(tabSearchQueries[tab.id] ?? "")}
                 >
@@ -399,7 +407,7 @@
                 </button>
                 <button
                   type="button"
-                  class="p-1 text-muted hover:text-primary rounded cursor-pointer border-none bg-transparent"
+                  class="terminal-overlay-button terminal-overlay-button-danger"
                   title="Close search (Esc)"
                   onclick={() => {
                     closeTerminalSearch(tab.id);
@@ -411,7 +419,6 @@
               </div>
             {/if}
 
-            <!-- Xterm container -->
             <div id="terminal-{tab.id}" class="terminal-fit-target w-full h-full"></div>
           </div>
         {/each}
@@ -422,7 +429,7 @@
         class="flex-1 flex flex-col items-center justify-center p-12 text-center min-h-0 reattach-drop-zone"
         use:tabBarReattachDrop={handleDropReattach}
       >
-        <div class="w-14 h-14 rounded-2xl bg-accent/10 border border-accent/25 flex items-center justify-center text-accent mb-4">
+        <div class="terminal-empty-icon">
           <Layers size={28} />
         </div>
         <h3 class="text-base font-bold text-primary mb-1">
@@ -436,7 +443,7 @@
           {#each awaySessions as session (session.sessionId)}
             <button
               type="button"
-              class="away-session-chip inline-flex items-center gap-2 py-2 px-3.5 rounded-xl border border-dashed border-accent/40 bg-accent/10 text-accent text-xs font-semibold cursor-pointer hover:bg-accent/20 transition-all"
+              class="away-session-chip terminal-reattach-chip"
               onclick={() => void handleDropReattach(session)}
               title="Click to reattach session"
             >
@@ -460,7 +467,7 @@
     {:else}
       <!-- Empty State: No Active Sessions -->
       <div class="flex-1 flex flex-col items-center justify-center p-12 text-center min-h-0 bg-surface select-none">
-        <div class="w-16 h-16 rounded-2xl bg-accent/10 border border-accent/20 flex items-center justify-center text-accent mb-4 shadow-sm">
+        <div class="terminal-empty-icon">
           <TerminalSquare size={32} />
         </div>
         <h3 class="text-base font-bold text-primary mb-1.5">No Active Terminal Sessions</h3>
@@ -476,7 +483,7 @@
               {#each connections.slice(0, 4) as conn}
                 <button
                   type="button"
-                  class="flex items-center gap-2 px-3 py-2 rounded-xl border border-border bg-surface-input/60 hover:bg-surface-input hover:border-accent/40 hover:text-primary text-secondary text-xs font-semibold transition-all cursor-pointer group"
+                  class="terminal-quick-chip group"
                   onclick={() => handleConnect(conn)}
                 >
                   <Play size={10} class="text-accent" fill="currentColor" />
@@ -495,8 +502,382 @@
 </div>
 
 <style>
+  .terminal-command-deck {
+    position: relative;
+    z-index: 30;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 4px 8px;
+    overflow: visible;
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-surface);
+  }
+
+  .terminal-tab-row {
+    display: flex;
+    min-width: 0;
+    align-items: stretch;
+    gap: 6px;
+    overflow: visible;
+  }
+
+  .terminal-tab-strip {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    align-items: stretch;
+    gap: 4px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 1px;
+  }
+
+  .terminal-tab {
+    position: relative;
+    display: inline-grid;
+    grid-template-columns: 2px auto minmax(50px, 140px) auto auto;
+    align-items: center;
+    gap: 6px;
+    min-height: 28px;
+    max-width: 240px;
+    flex: 0 0 auto;
+    padding: 0 4px 0 0;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-secondary);
+    background: var(--color-surface-input);
+    cursor: pointer;
+    transition: background-color var(--transition-duration-fast), border-color var(--transition-duration-fast),
+      color var(--transition-duration-fast);
+  }
+
+  .terminal-tab:hover,
+  .terminal-tab:focus-visible,
+  .terminal-tab:focus-within {
+    color: var(--color-primary);
+    border-color: var(--color-border-hover);
+    background: var(--color-surface-hover);
+  }
+
+  .terminal-tab-active {
+    color: var(--color-primary);
+    border-color: var(--color-border-hover);
+    background: var(--color-surface-terminal);
+  }
+
+  .terminal-tab-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  .terminal-live-rail {
+    align-self: stretch;
+    width: 2px;
+    border-radius: var(--radius-xs) 0 0 var(--radius-xs);
+    background: var(--color-success);
+  }
+
+  .terminal-tab-secondary-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    opacity: 0;
+    transition: opacity var(--transition-duration-fast);
+  }
+
+  .terminal-tab:hover .terminal-tab-secondary-actions,
+  .terminal-tab:focus-within .terminal-tab-secondary-actions {
+    opacity: 0.8;
+  }
+
+  .terminal-tab-action,
+  .terminal-tab-close,
+  .terminal-overlay-button,
+  .terminal-stepper-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    background: transparent;
+    color: var(--color-muted);
+    cursor: pointer;
+    transition: background-color var(--transition-duration-fast), color var(--transition-duration-fast);
+  }
+
+  .terminal-tab-action,
+  .terminal-tab-close {
+    width: 20px;
+    height: 20px;
+    border-radius: var(--radius-xs);
+  }
+
+  .terminal-tab-close {
+    opacity: 0;
+    transition: opacity var(--transition-duration-fast);
+  }
+
+  .terminal-tab:hover .terminal-tab-close,
+  .terminal-tab:focus-within .terminal-tab-close {
+    opacity: 0.8;
+  }
+
+  .terminal-tab-action:hover,
+  .terminal-tab-action:focus-visible,
+  .terminal-overlay-button:hover,
+  .terminal-overlay-button:focus-visible,
+  .terminal-stepper-button:hover,
+  .terminal-stepper-button:focus-visible {
+    color: var(--color-primary);
+    background: var(--color-surface-hover);
+  }
+
+  .terminal-tab-close:hover,
+  .terminal-tab-close:focus-visible,
+  .terminal-overlay-button-danger:hover,
+  .terminal-overlay-button-danger:focus-visible {
+    color: var(--color-error);
+    background: color-mix(in srgb, var(--color-error) 16%, transparent);
+  }
+
+  .terminal-away-chip,
+  .terminal-reattach-chip,
+  .terminal-quick-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-input);
+    color: var(--color-secondary);
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color var(--transition-duration-fast), border-color var(--transition-duration-fast),
+      color var(--transition-duration-fast);
+  }
+
+  .terminal-away-chip {
+    max-width: 170px;
+    min-height: 28px;
+    padding: 0 8px;
+    cursor: grab;
+  }
+
+  .terminal-reattach-chip,
+  .terminal-quick-chip {
+    padding: 6px 10px;
+  }
+
+  .terminal-away-chip:hover,
+  .terminal-reattach-chip:hover,
+  .terminal-quick-chip:hover {
+    border-color: var(--color-border-hover);
+    background: var(--color-surface-hover);
+    color: var(--color-primary);
+  }
+
+  .terminal-new-session {
+    position: relative;
+    z-index: 50;
+    flex: 0 0 auto;
+  }
+
+  .terminal-tool-row {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 3px;
+    min-width: max-content;
+  }
+
+  .terminal-control,
+  .terminal-icon-control,
+  .terminal-stepper {
+    min-height: 28px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-input);
+    color: var(--color-secondary);
+  }
+
+  .terminal-control,
+  .terminal-icon-control {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 0 8px;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color var(--transition-duration-fast), border-color var(--transition-duration-fast),
+      color var(--transition-duration-fast);
+  }
+
+  .terminal-icon-control {
+    width: 28px;
+    padding: 0;
+  }
+
+  .terminal-control:hover,
+  .terminal-control:focus-visible,
+  .terminal-icon-control:hover,
+  .terminal-icon-control:focus-visible {
+    border-color: var(--color-border-hover);
+    background: var(--color-surface-hover);
+    color: var(--color-primary);
+  }
+
+  .terminal-control-primary,
+  .terminal-control-accent {
+    border-color: var(--color-border-hover);
+    color: var(--color-primary);
+  }
+
+  .terminal-control-danger {
+    border-color: color-mix(in srgb, var(--color-error) 24%, var(--color-border));
+    color: var(--color-error);
+  }
+
+  .terminal-control-danger:hover,
+  .terminal-control-danger:focus-visible {
+    background: color-mix(in srgb, var(--color-error) 12%, var(--color-surface));
+    color: var(--color-error);
+  }
+
+  .terminal-stepper {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px;
+  }
+
+  .terminal-stepper-button {
+    width: 22px;
+    height: 22px;
+    border-radius: var(--radius-xs);
+  }
+
+  .terminal-launcher-popover {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 4px);
+    z-index: 60;
+    display: flex;
+    width: min(300px, calc(100vw - 24px));
+    max-height: min(340px, calc(100vh - 96px));
+    flex-direction: column;
+    gap: 6px;
+    overflow: hidden;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface-raised);
+    padding: 6px;
+    box-shadow: var(--shadow-lg);
+    animation: popover-enter var(--transition-duration-base) var(--ease-out) forwards;
+  }
+
+  .terminal-launcher-search {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-input);
+    padding: 5px 8px;
+    font-size: 11px;
+  }
+
+  .terminal-launcher-input,
+  .terminal-search-input {
+    width: 100%;
+    min-width: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--color-primary);
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+
+  .terminal-launcher-input::placeholder,
+  .terminal-search-input::placeholder {
+    color: var(--color-muted);
+  }
+
+  .terminal-launcher-list {
+    display: flex;
+    max-height: 240px;
+    flex-direction: column;
+    gap: 1px;
+    overflow-y: auto;
+    padding-right: 2px;
+  }
+
+  .terminal-launcher-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    padding: 6px 8px;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color var(--transition-duration-fast), border-color var(--transition-duration-fast);
+  }
+
+  .terminal-launcher-option:hover,
+  .terminal-launcher-option:focus-visible {
+    background: var(--color-surface-hover);
+  }
+
+  .terminal-search-overlay {
+    position: absolute;
+    top: 10px;
+    right: 16px;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-raised);
+    padding: 4px 6px;
+    box-shadow: var(--shadow-lg);
+    animation: popover-enter var(--transition-duration-base) var(--ease-out) forwards;
+  }
+
+  .terminal-search-input {
+    width: 200px;
+  }
+
+  .terminal-overlay-button {
+    width: 24px;
+    height: 24px;
+    border-radius: var(--radius-xs);
+  }
+
+  .terminal-empty-icon {
+    display: flex;
+    width: 48px;
+    height: 48px;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 14px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface-input);
+    color: var(--color-muted);
+  }
+
   :global(.tab-bar-drop-active) {
-    background: rgba(59, 130, 246, 0.08) !important;
+    background: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface)) !important;
     box-shadow: inset 0 -2px 0 var(--color-accent) !important;
   }
   :global(.away-chip-dragging) {

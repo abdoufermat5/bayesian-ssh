@@ -101,15 +101,15 @@
 
     <div class="px-6 py-5 flex flex-col gap-4 max-h-[60vh] overflow-y-auto">
       {#if !status.tools_available}
-        <div class="p-3.5 rounded-lg border border-danger/35 bg-danger/8 text-red-200 text-xs leading-normal">
+        <div class="alert alert-error text-xs leading-normal">
           Kerberos tools are not installed. Install <code>krb5-user</code> (or your platform's Kerberos client) to use GSSAPI authentication.
         </div>
       {:else}
         {#if status.client_configured}
-          <div class="p-3.5 rounded-lg border border-accent/25 bg-accent/8 text-accent text-xs leading-normal">
+          <div class="panel p-3 text-xs text-secondary leading-normal">
             Kerberos client configured
             {#if status.default_realm}
-              — default realm <code class="font-mono">{status.default_realm}</code>
+              — default realm <code class="font-mono text-accent">{status.default_realm}</code>
             {/if}
           </div>
         {/if}
@@ -166,8 +166,8 @@
 
           {#if status.has_ticket && remainingSeconds !== null}
             <div class="mt-1">
-              <div class="h-1 rounded-full bg-white/5 overflow-hidden" aria-hidden="true">
-                <div class="h-full rounded-full bg-gradient-to-r from-accent to-success transition-all duration-300" style:width="{progressPercent}%"></div>
+              <div class="h-1 rounded-full bg-surface-input overflow-hidden" aria-hidden="true">
+                <div class="h-full rounded-full bg-accent transition-all duration-300" style:width="{progressPercent}%"></div>
               </div>
             </div>
           {/if}
@@ -312,12 +312,12 @@
 
             <button
               type="button"
-              class="inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg border border-accent/35 bg-accent/12 text-accent text-xs font-semibold cursor-pointer transition-colors duration-100 hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed"
+              class="btn btn-primary w-full"
               disabled={loading || (!status.has_ticket && !password.trim()) || (needsPassword && !password.trim())}
               onclick={() => (status.has_ticket ? handleRenew() : handleAcquire())}
             >
               <KeyRound size={14} />
-              {loading ? "Working..." : status.has_ticket ? "Renew ticket" : "Acquire ticket"}
+              <span>{loading ? "Working..." : status.has_ticket ? "Renew ticket" : "Acquire ticket"}</span>
             </button>
           </div>
         </div>
@@ -327,7 +327,7 @@
     <div class="flex justify-end gap-2 px-6 py-4 border-t border-border">
       <button
         type="button"
-        class="py-2 px-4 rounded-lg text-[13px] font-semibold cursor-pointer bg-transparent border border-border text-secondary transition-all duration-100 hover:border-border-hover hover:text-primary hover:bg-white/[0.03]"
+        class="btn btn-secondary"
         onclick={onClose}
       >
         Close

@@ -85,17 +85,17 @@
   }
 </script>
 
-<div class="flex flex-col gap-6 max-w-2xl">
+<div class="settings-page">
   <div>
-    <h3 class="text-base font-semibold text-primary m-0">Profiles & Workspace</h3>
-    <p class="text-xs text-muted mt-1">Configure active environment profiles and file paths</p>
+    <h3 class="settings-heading">Profiles & Workspace</h3>
+    <p class="settings-desc">Configure active environment profiles and file paths</p>
   </div>
 
-  <div class="h-px bg-border/50"></div>
+  <div class="settings-divider"></div>
 
-  <div class="flex flex-col gap-1.5">
-    <label for="settings-profile" class="text-xs font-semibold text-secondary">Active Profile</label>
-    <span class="text-[11px] text-muted">Hosts and credentials are isolated within environment profiles</span>
+  <div class="field">
+    <label for="settings-profile" class="field-label">Active Profile</label>
+    <span class="field-meta">Hosts and credentials are isolated within environment profiles</span>
     <div class="flex gap-2 mt-1">
       <CustomSelect
         id="settings-profile"
@@ -106,7 +106,7 @@
       />
       <button
         type="button"
-        class="bg-white/[0.04] border border-border text-secondary py-2 px-3.5 rounded-lg cursor-pointer font-semibold flex items-center gap-1.5 text-xs whitespace-nowrap transition-all duration-100 hover:border-border-hover hover:text-primary hover:bg-white/[0.06] outline-none"
+        class="btn btn-secondary"
         onclick={onManageProfiles}
       >
         <FolderPlus size={14} />
@@ -115,9 +115,9 @@
     </div>
   </div>
 
-  <div class="flex flex-col gap-1.5">
-    <label for="settings-ssh-config" class="text-xs font-semibold text-secondary">OpenSSH Config Path</label>
-    <span class="text-[11px] text-muted">Path to your OpenSSH configuration file for host importing</span>
+  <div class="field">
+    <label for="settings-ssh-config" class="field-label">OpenSSH Config Path</label>
+    <span class="field-meta">Path to your OpenSSH configuration file for host importing</span>
     <div class="flex gap-2 mt-1">
       <input
         id="settings-ssh-config"
@@ -125,11 +125,11 @@
         placeholder="~/.ssh/config"
         bind:value={sshConfigPath}
         onchange={saveWorkspace}
-        class="flex-1 bg-surface-input border border-border text-primary py-2 px-3 rounded-lg outline-none text-[13px] transition-all duration-100 hover:border-border-hover focus:border-border-focus focus:shadow-[0_0_0_3px_rgba(59,130,246,0.12)]"
+        class="input flex-1"
       />
       <button
         type="button"
-        class="bg-white/[0.04] border border-border text-secondary py-2 px-3.5 rounded-lg cursor-pointer font-semibold flex items-center gap-1.5 text-xs whitespace-nowrap transition-all duration-100 hover:border-border-hover hover:text-primary hover:bg-white/[0.06] outline-none"
+        class="btn btn-secondary"
         onclick={onBrowseSshConfig}
       >
         <FolderOpen size={14} />
@@ -139,7 +139,7 @@
     <div class="flex gap-2 mt-1.5">
       <button
         type="button"
-        class="bg-white/[0.04] border border-border text-secondary py-1.5 px-3 rounded-lg cursor-pointer font-semibold flex items-center gap-1.5 text-xs whitespace-nowrap transition-all duration-100 hover:border-border-hover hover:text-primary hover:bg-white/[0.06] outline-none"
+        class="btn btn-secondary btn-sm"
         onclick={onImportSshConfig}
       >
         <RefreshCw size={12} />
@@ -148,24 +148,23 @@
     </div>
   </div>
 
-  <!-- Encrypted Backup & Backup Export Section -->
-  <div class="h-px bg-border/50 my-1"></div>
-  <div class="flex flex-col gap-2">
-    <h4 class="text-[10px] font-bold tracking-widest text-muted uppercase flex items-center gap-2">
+  <div class="settings-divider my-1"></div>
+  <div class="settings-section">
+    <h4 class="settings-section-title">
       <ShieldCheck size={12} class="text-accent" />
       <span>Encrypted Backup & Restore</span>
     </h4>
-    <p class="text-[11px] text-muted">Export your server database encrypted with AES-256-GCM / PBKDF2 or restore from an encrypted backup.</p>
+    <p class="field-meta">Export your server database encrypted with AES-256-GCM / PBKDF2 or restore from an encrypted backup.</p>
     <div class="flex flex-wrap gap-2 mt-1">
       <input
         type="password"
         placeholder="Passphrase (optional)"
         bind:value={backupPassphrase}
-        class="bg-surface-input border border-border text-primary py-1.5 px-3 rounded-lg outline-none text-xs w-[220px]"
+        class="input w-[220px]"
       />
       <button
         type="button"
-        class="bg-accent/15 border border-accent/30 text-accent py-1.5 px-3 rounded-lg cursor-pointer font-semibold flex items-center gap-1.5 text-xs hover:bg-accent hover:text-white transition-all"
+        class="btn btn-primary"
         onclick={handleExportEncryptedBackup}
       >
         <Download size={13} />
@@ -173,7 +172,7 @@
       </button>
       <button
         type="button"
-        class="bg-white/[0.04] border border-border text-secondary py-1.5 px-3 rounded-lg cursor-pointer font-semibold flex items-center gap-1.5 text-xs hover:text-primary hover:bg-white/[0.06] transition-all"
+        class="btn btn-secondary"
         onclick={handleImportEncryptedBackup}
       >
         <Upload size={13} />
@@ -182,10 +181,10 @@
     </div>
   </div>
 
-  <div class="flex items-center justify-between gap-4 py-2">
-    <div class="flex flex-col gap-0.5">
-      <span class="text-xs font-semibold text-secondary">Host Ranking Mode</span>
-      <span class="text-[11px] text-muted">Bayesian uses frequency + recency; fuzzy uses text matching</span>
+  <div class="setting-row">
+    <div class="setting-row-main">
+      <span class="setting-title">Host Ranking Mode</span>
+      <span class="setting-meta">Bayesian uses frequency + recency; fuzzy uses text matching</span>
     </div>
     <CustomSelect
       options={[
@@ -200,24 +199,24 @@
     />
   </div>
 
-  <div class="h-px bg-border/50 my-1"></div>
+  <div class="settings-divider my-1"></div>
 
-  <div class="flex flex-col gap-3">
-    <h4 class="text-[10px] font-bold tracking-widest text-muted uppercase flex items-center gap-2">
+  <div class="settings-section">
+    <h4 class="settings-section-title">
       <Database size={12} />
       <span>Workspace System Paths</span>
     </h4>
     <div class="grid grid-cols-[140px_1fr] gap-x-4 gap-y-3.5 items-center text-xs text-secondary mt-1">
       <span class="text-muted font-medium">Config root</span>
-      <div class="bg-surface-input border border-border px-3 py-2 rounded-lg break-all">
+      <div class="system-value break-all">
         <code class="font-mono text-[11px] leading-normal">{workspace.config_root}</code>
       </div>
       <span class="text-muted font-medium">Profile directory</span>
-      <div class="bg-surface-input border border-border px-3 py-2 rounded-lg break-all">
+      <div class="system-value break-all">
         <code class="font-mono text-[11px] leading-normal">{workspace.env_dir}</code>
       </div>
       <span class="text-muted font-medium">Database path</span>
-      <div class="bg-surface-input border border-border px-3 py-2 rounded-lg break-all">
+      <div class="system-value break-all">
         <code class="font-mono text-[11px] leading-normal">{workspace.database_path}</code>
       </div>
     </div>

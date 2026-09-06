@@ -10,18 +10,17 @@
   let { settings = $bindable(), onSave }: Props = $props();
 </script>
 
-<div class="flex flex-col gap-6 max-w-2xl">
+<div class="settings-page">
   <div>
-    <h3 class="text-base font-semibold text-primary m-0">Terminal Emulation & Appearance</h3>
-    <p class="text-xs text-muted mt-1">Configure typography, cursor styles, scrollback history, and interactive options</p>
+    <h3 class="settings-heading">Terminal Emulation & Appearance</h3>
+    <p class="settings-desc">Configure typography, cursor styles, scrollback history, and interactive options</p>
   </div>
 
-  <div class="h-px bg-border/50"></div>
+  <div class="settings-divider"></div>
 
-  <!-- Typography & Font Family -->
-  <div class="flex flex-col gap-2">
-    <label for="terminal-font-family" class="text-xs font-semibold text-secondary">Font Family</label>
-    <span class="text-[11px] text-muted">Primary monospace font stack for terminal windows</span>
+  <div class="field">
+    <label for="terminal-font-family" class="field-label">Font Family</label>
+    <span class="field-meta">Primary monospace font stack for terminal windows</span>
     <CustomSelect
       id="terminal-font-family"
       options={[
@@ -42,8 +41,8 @@
 
   <!-- Font Size & Line Height Grid -->
   <div class="grid grid-cols-2 gap-4">
-    <div class="flex flex-col gap-1.5">
-      <label for="terminal-font-size" class="text-xs font-semibold text-secondary">Font Size (px)</label>
+    <div class="field">
+      <label for="terminal-font-size" class="field-label">Font Size (px)</label>
       <input
         id="terminal-font-size"
         type="number"
@@ -51,12 +50,12 @@
         max="28"
         bind:value={settings.terminal_font_size}
         onchange={onSave}
-        class="bg-surface-input border border-border text-primary py-2 px-3 rounded-lg outline-none text-[13px] transition-all duration-100 hover:border-border-hover focus:border-border-focus focus:shadow-[0_0_0_3px_rgba(59,130,246,0.12)]"
+        class="input"
       />
     </div>
 
-    <div class="flex flex-col gap-1.5">
-      <label for="terminal-line-height" class="text-xs font-semibold text-secondary">Line Height</label>
+    <div class="field">
+      <label for="terminal-line-height" class="field-label">Line Height</label>
       <input
         id="terminal-line-height"
         type="number"
@@ -65,30 +64,28 @@
         max="1.5"
         bind:value={settings.terminal_line_height}
         onchange={onSave}
-        class="bg-surface-input border border-border text-primary py-2 px-3 rounded-lg outline-none text-[13px] transition-all duration-100 hover:border-border-hover focus:border-border-focus focus:shadow-[0_0_0_3px_rgba(59,130,246,0.12)]"
+        class="input"
       />
     </div>
   </div>
 
-  <!-- Live Font Preview Box -->
-  <div class="flex flex-col gap-1.5 p-3.5 rounded-xl border border-border/70 bg-[#09090b]">
-    <span class="text-[10px] font-bold text-muted uppercase tracking-wider mb-1">Live Font Preview</span>
+  <div class="settings-section bg-surface-terminal">
+    <span class="settings-section-title">Live Font Preview</span>
     <div
-      class="text-running p-3 rounded-lg bg-black/60 font-mono text-xs overflow-x-auto whitespace-pre select-none border border-white/5"
+      class="overflow-x-auto whitespace-pre rounded-md border border-border bg-surface-terminal p-3 font-mono text-xs leading-relaxed text-secondary select-none"
       style="font-family: {settings.terminal_font_family}; font-size: {settings.terminal_font_size || 13}px; line-height: {settings.terminal_line_height || 1.18};"
     >
-      <span class="text-running">user@bayesian-ssh</span>:<span class="text-blue-400">~</span>$ uname -a &amp;&amp; uptime
+      <span class="text-accent">user@bayesian-ssh</span>:<span class="text-primary">~</span>$ uname -a &amp;&amp; uptime
       <span class="text-muted block mt-0.5">Linux production-srv1 6.8.0-31-generic #31-Ubuntu SMP PREEMPT_DYNAMIC</span>
-      <span class="text-warning block"> 04:10:00 up 42 days, 12:34,  2 users,  load average: 0.12, 0.08, 0.04</span>
+      <span class="text-muted block"> 04:10:00 up 42 days, 12:34,  2 users,  load average: 0.12, 0.08, 0.04</span>
     </div>
   </div>
 
-  <div class="h-px bg-border/50"></div>
+  <div class="settings-divider"></div>
 
-  <!-- Cursor & Interaction Grid -->
   <div class="grid grid-cols-2 gap-4">
-    <div class="flex flex-col gap-1.5">
-      <label for="terminal-cursor-style" class="text-xs font-semibold text-secondary">Cursor Style</label>
+    <div class="field">
+      <label for="terminal-cursor-style" class="field-label">Cursor Style</label>
       <CustomSelect
         id="terminal-cursor-style"
         options={[
@@ -104,8 +101,8 @@
       />
     </div>
 
-    <div class="flex flex-col gap-1.5">
-      <label for="terminal-scrollback" class="text-xs font-semibold text-secondary">Scrollback Buffer (Lines)</label>
+    <div class="field">
+      <label for="terminal-scrollback" class="field-label">Scrollback Buffer (Lines)</label>
       <input
         id="terminal-scrollback"
         type="number"
@@ -114,14 +111,13 @@
         max="50000"
         bind:value={settings.terminal_scrollback}
         onchange={onSave}
-        class="bg-surface-input border border-border text-primary py-2 px-3 rounded-lg outline-none text-[13px] transition-all duration-100 hover:border-border-hover focus:border-border-focus focus:shadow-[0_0_0_3px_rgba(59,130,246,0.12)]"
+        class="input"
       />
     </div>
   </div>
 
-  <!-- Toggles -->
-  <div class="flex flex-col gap-3 pt-1">
-    <label class="flex items-center gap-3 cursor-pointer select-none">
+  <div class="settings-section">
+    <label class="flex cursor-pointer items-center gap-3 select-none">
       <input
         type="checkbox"
         bind:checked={settings.terminal_cursor_blink}
@@ -129,12 +125,12 @@
         class="rounded border-border bg-surface-input text-accent focus:ring-accent/20"
       />
       <div class="flex flex-col">
-        <span class="text-xs font-semibold text-primary">Smooth Cursor Blinking</span>
-        <span class="text-[11px] text-muted">Blink cursor when terminal window is focused</span>
+        <span class="setting-title">Smooth Cursor Blinking</span>
+        <span class="setting-meta">Blink cursor when terminal window is focused</span>
       </div>
     </label>
 
-    <label class="flex items-center gap-3 cursor-pointer select-none">
+    <label class="flex cursor-pointer items-center gap-3 select-none">
       <input
         type="checkbox"
         bind:checked={settings.terminal_copy_on_select}
@@ -142,12 +138,12 @@
         class="rounded border-border bg-surface-input text-accent focus:ring-accent/20"
       />
       <div class="flex flex-col">
-        <span class="text-xs font-semibold text-primary">Copy on Select</span>
-        <span class="text-[11px] text-muted">Automatically copy highlighted text to system clipboard</span>
+        <span class="setting-title">Copy on Select</span>
+        <span class="setting-meta">Automatically copy highlighted text to system clipboard</span>
       </div>
     </label>
 
-    <label class="flex items-center gap-3 cursor-pointer select-none">
+    <label class="flex cursor-pointer items-center gap-3 select-none">
       <input
         type="checkbox"
         bind:checked={settings.sftp_show_hidden_files}
@@ -155,12 +151,12 @@
         class="rounded border-border bg-surface-input text-accent focus:ring-accent/20"
       />
       <div class="flex flex-col">
-        <span class="text-xs font-semibold text-primary">SFTP Show Hidden Files (Dotfiles)</span>
-        <span class="text-[11px] text-muted">Display hidden files (`.bashrc`, `.env`) in the SFTP browser</span>
+        <span class="setting-title">SFTP Show Hidden Files (Dotfiles)</span>
+        <span class="setting-meta">Display hidden files (`.bashrc`, `.env`) in the SFTP browser</span>
       </div>
     </label>
 
-    <label class="flex items-center gap-3 cursor-pointer select-none">
+    <label class="flex cursor-pointer items-center gap-3 select-none">
       <input
         type="checkbox"
         bind:checked={settings.confirm_snippet_execution}
@@ -168,8 +164,8 @@
         class="rounded border-border bg-surface-input text-accent focus:ring-accent/20"
       />
       <div class="flex flex-col">
-        <span class="text-xs font-semibold text-primary">Confirm Snippet Execution</span>
-        <span class="text-[11px] text-muted">Prompt for confirmation before injecting command snippets into terminal PTY</span>
+        <span class="setting-title">Confirm Snippet Execution</span>
+        <span class="setting-meta">Prompt for confirmation before injecting command snippets into terminal PTY</span>
       </div>
     </label>
   </div>
@@ -177,7 +173,7 @@
   <div class="pt-2">
     <button
       type="button"
-      class="px-5 py-2.5 rounded-lg bg-accent text-white text-xs font-semibold cursor-pointer hover:opacity-90 transition-all shadow-sm"
+      class="btn btn-primary"
       onclick={onSave}
     >
       Save Terminal Settings

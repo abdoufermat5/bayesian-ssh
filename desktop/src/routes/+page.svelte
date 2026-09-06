@@ -181,8 +181,19 @@
       unlistenConnect = unsub;
     });
 
+    function handleWindowResize() {
+      if (window.innerWidth < 860 && !appState.sidebarCollapsed) {
+        appState.sidebarCollapsed = true;
+      }
+    }
+    window.addEventListener("resize", handleWindowResize);
+    if (window.innerWidth < 860) {
+      appState.sidebarCollapsed = true;
+    }
+
     return () => {
       window.removeEventListener("keydown", handleKeydownWithHelp);
+      window.removeEventListener("resize", handleWindowResize);
       teardownTerminalListeners();
       stopKerberosMonitoring();
       teardownWindow();
@@ -209,7 +220,7 @@
   />
 {:else}
 <div
-  class="flex flex-col flex-1 w-full h-[100dvh] min-h-0 overflow-hidden bg-surface"
+  class="app-deck flex flex-col flex-1 w-full h-[100dvh] min-h-0 overflow-hidden"
   class:is-fullscreen={windowState.isFullscreen}
 >
   <TitleBar
@@ -219,7 +230,7 @@
     onOpenCommandPalette={() => (showCommandPalette = true)}
   />
 
-  <div class="flex flex-1 min-h-0 w-full bg-surface overflow-hidden">
+  <div class="app-layer flex flex-1 min-h-0 w-full overflow-hidden">
     <Sidebar
       activeTab={appState.activeTab}
       onTabChange={appState.handleTabChange}
@@ -257,16 +268,14 @@
     <main class="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
       <!-- Topbar -->
       <!-- Executive Topbar -->
-      <header
-        class="relative z-30 shrink-0 h-[var(--topbar-h)] border-b border-border flex items-center justify-between gap-4 px-6 bg-surface select-none"
-      >
+      <header class="workspace-topbar">
         <!-- Left: Context / View Title -->
-        <div class="flex items-center gap-2 min-w-0">
-          <span class="text-sm font-bold text-primary tracking-tight capitalize">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <h1 class="text-sm font-semibold text-primary tracking-tight capitalize m-0 truncate">
             {appState.activeTab === "connections" ? "Hosts" : appState.activeTab}
-          </span>
+          </h1>
           {#if appState.activeTab === "terminals" && terminalState.totalSessionCount > 0}
-            <span class="badge-pill bg-accent/15 text-accent border border-accent/30 text-[10px]">
+            <span class="hidden sm:inline px-2 py-0.5 rounded-full text-2xs font-mono bg-white/10 text-secondary whitespace-nowrap">
               {terminalState.count} active · {terminalState.externalSessionCount} away
             </span>
           {/if}
@@ -275,15 +284,15 @@
         <!-- Center: Spotlight Command Palette Trigger -->
         <button
           type="button"
-          class="flex items-center justify-between gap-3 px-3.5 py-1.5 rounded-xl border border-border bg-surface-input/50 hover:bg-surface-input hover:border-accent/40 text-muted hover:text-primary transition-all cursor-pointer w-72 max-w-sm text-xs shadow-sm"
+          class="command-trigger w-36 sm:w-56 md:w-72 max-w-sm"
           onclick={() => (showCommandPalette = true)}
           title="Search hosts or commands (⌘K)"
         >
-          <div class="flex items-center gap-2">
-            <Search size={13} class="text-accent" />
-            <span class="text-xs text-muted">Search hosts, commands...</span>
+          <div class="flex items-center gap-2 min-w-0">
+            <Search size={13} class="text-muted shrink-0" />
+            <span class="text-xs text-muted truncate">Search hosts, commands...</span>
           </div>
-          <span class="kbd text-[10px]">⌘K</span>
+          <span class="kbd text-[10px] shrink-0">⌘K</span>
         </button>
 
         <!-- Right: Actions -->
@@ -291,28 +300,30 @@
           {#if appState.activeTab !== "terminals" && terminalState.totalSessionCount > 0}
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 py-1.5 px-2.5 rounded-lg border border-accent/30 bg-accent/10 text-accent text-xs font-semibold cursor-pointer hover:bg-accent/20 transition-colors"
+              class="toolbar-btn h-8"
               onclick={appState.goToTerminals}
               title="Switch to active terminal sessions"
             >
               <TerminalSquare size={13} />
-              <span>Terminals ({terminalState.totalSessionCount})</span>
+              <span class="hidden sm:inline">Terminals ({terminalState.totalSessionCount})</span>
+              <span class="sm:hidden">({terminalState.totalSessionCount})</span>
             </button>
           {/if}
 
           <button
             type="button"
-            class="btn btn-primary shadow-sm"
+            class="btn btn-primary h-8"
             onclick={appState.openAddModal}
           >
-            <Plus size={14} />
-            <span>New Server</span>
+            <Plus size={13} />
+            <span class="hidden sm:inline">New Server</span>
+            <span class="sm:hidden">New</span>
           </button>
         </div>
       </header>
 
       <!-- Main Body View Panels -->
-      <div class="flex-1 min-h-0 relative overflow-hidden bg-surface">
+      <div class="flex-1 min-h-0 relative overflow-hidden bg-surface/90">
         {#if appState.activeTab === "connections"}
           <div class="absolute inset-0 flex flex-col min-h-0 overflow-hidden transition-all duration-200 {appState.activeTab === 'connections' ? 'opacity-100 visible pointer-events-auto z-10' : 'opacity-0 invisible pointer-events-none z-0'}">
             <ConnectionsView
@@ -322,6 +333,8 @@
               copiedId={appState.copiedId}
               justDuplicatedId={appState.justDuplicatedId}
               timezone={appState.settings.timezone}
+              bind:searchQuery={appState.searchQuery}
+              bind:selectedTag={appState.selectedTag}
               onSelectHost={(i) => (appState.selectedHostIndex = i)}
               onConnect={appState.handleConnect}
               onEdit={appState.openEditModal}
