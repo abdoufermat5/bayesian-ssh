@@ -50,7 +50,7 @@ if [ -d "${ROOT_DIR}/desktop" ] && command -v npm >/dev/null 2>&1; then
     cd "${ROOT_DIR}/desktop"
     if [ ! -d "node_modules" ]; then
         echo "📦 Installing npm dependencies for desktop..."
-        npm ci || npm install
+        npm ci --legacy-peer-deps || npm install --legacy-peer-deps
     fi
     npm run tauri build -- --config ../crates/gui/tauri.conf.json --no-bundle
 else
