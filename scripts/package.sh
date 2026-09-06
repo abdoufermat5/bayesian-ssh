@@ -43,7 +43,7 @@ echo "=========================================="
 # 1. Build release binaries
 echo "🔨 Step 1/4: Building Rust CLI release binaries..."
 cd "${ROOT_DIR}"
-cargo build --release --workspace
+cargo build --release --package bayesian-ssh
 
 echo "🔨 Step 2/4: Building Desktop GUI release binary..."
 if [ -d "${ROOT_DIR}/desktop" ] && command -v npm >/dev/null 2>&1; then

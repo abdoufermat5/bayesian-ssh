@@ -3,6 +3,7 @@ members = [
     "crates/cli",
     "crates/gui",
 ]
+default-members = ["crates/cli"]
 resolver = "2"
 
 [profile.release]

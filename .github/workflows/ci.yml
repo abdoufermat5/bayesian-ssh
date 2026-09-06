@@ -45,10 +45,10 @@ jobs:
           ${{ runner.os }}-cargo-
 
     - name: Build
-      run: cargo build --verbose
+      run: cargo build --package bayesian-ssh --verbose
 
     - name: Run tests
-      run: cargo test --verbose
+      run: cargo test --package bayesian-ssh --verbose
 
     - name: Check formatting
       run: cargo fmt --all -- --check
@@ -81,8 +81,11 @@ jobs:
     - name: Build frontend
       run: cd desktop && npm run build
 
-    - name: Check Tauri Rust backend
-      run: cd desktop/src-tauri && cargo check
+    - name: Check and test Tauri Rust backend
+      run: |
+        cd desktop/src-tauri
+        cargo check
+        cargo test
 
   deploy-docs:
     name: Deploy Docs

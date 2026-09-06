@@ -87,36 +87,38 @@ jobs:
         run: |
           mkdir -p dist
           ASSET="${BIN_NAME}-${{ matrix.os_name }}-${{ matrix.arch }}"
-          cp "target/${{ matrix.target }}/release/${BIN_NAME}" "dist/${ASSET}"
-          chmod +x "dist/${ASSET}"
-          tar -C dist -czf "dist/${ASSET}.tar.gz" "${ASSET}"
 
+          # Stage CLI binary
+          CLI_BIN=$(find target/ -type f -name "${BIN_NAME}" ! -name "*.d" 2>/dev/null | grep -E "/${{ matrix.target }}/release/|/release/" | head -n 1)
+          if [ -n "$CLI_BIN" ] && [ -f "$CLI_BIN" ]; then
+            cp "$CLI_BIN" "dist/${ASSET}"
+            chmod +x "dist/${ASSET}"
+            tar -C dist -czf "dist/${ASSET}.tar.gz" "${ASSET}"
+          fi
+
+          # Stage Desktop GUI binary
           DESKTOP_ASSET="bayesian-ssh-desktop-${{ matrix.os_name }}-${{ matrix.arch }}"
-          DESKTOP_SRC=$(find "target/${{ matrix.target }}/release" "desktop/src-tauri/target/${{ matrix.target }}/release" -maxdepth 1 \( -name "bayesian-ssh-gui" -o -name "bayesian-ssh-desktop" -o -name "desktop" \) 2>/dev/null | head -n 1)
-          if [ -n "$DESKTOP_SRC" ] && [ -f "$DESKTOP_SRC" ]; then
-            cp "$DESKTOP_SRC" "dist/${DESKTOP_ASSET}"
+          DESKTOP_BIN=$(find target/ -type f \( -name "bayesian-ssh-gui" -o -name "bayesian-ssh-desktop" \) ! -name "*.d" 2>/dev/null | grep -E "/${{ matrix.target }}/release/|/release/" | head -n 1)
+          if [ -n "$DESKTOP_BIN" ] && [ -f "$DESKTOP_BIN" ]; then
+            cp "$DESKTOP_BIN" "dist/${DESKTOP_ASSET}"
             chmod +x "dist/${DESKTOP_ASSET}"
             tar -C dist -czf "dist/${DESKTOP_ASSET}.tar.gz" "${DESKTOP_ASSET}"
           fi
 
           # Stage Debian (.deb) package
-          DEB_FILE=$(find "target/${{ matrix.target }}/release/bundle/deb" "desktop/src-tauri/target/${{ matrix.target }}/release/bundle/deb" "target/packages" -name "*.deb" 2>/dev/null | head -n 1)
-          if [ -n "$DEB_FILE" ]; then
+          DEB_FILE=$(find target/ -type f -name "*.deb" 2>/dev/null | head -n 1)
+          if [ -n "$DEB_FILE" ] && [ -f "$DEB_FILE" ]; then
             cp "$DEB_FILE" "dist/${DESKTOP_ASSET}.deb"
           fi
 
           # Stage AppImage package
-          APPIMAGE_FILE=$(find "target/${{ matrix.target }}/release/bundle/appimage" "desktop/src-tauri/target/${{ matrix.target }}/release/bundle/appimage" -name "*.AppImage" 2>/dev/null | head -n 1)
-          if [ -n "$APPIMAGE_FILE" ]; then
+          APPIMAGE_FILE=$(find target/ -type f -name "*.AppImage" 2>/dev/null | head -n 1)
+          if [ -n "$APPIMAGE_FILE" ] && [ -f "$APPIMAGE_FILE" ]; then
             cp "$APPIMAGE_FILE" "dist/${DESKTOP_ASSET}.AppImage"
           fi
 
-          # Per-asset checksum (combined SHA256SUMS is built in the release job)
-          if command -v sha256sum >/dev/null 2>&1; then
-            (cd dist && sha256sum $(ls -1 | grep -v "\.sha256")) > "dist/${ASSET}.sha256"
-          else
-            (cd dist && shasum -a 256 $(ls -1 | grep -v "\.sha256")) > "dist/${ASSET}.sha256"
-          fi
+          # Generate checksums
+          (cd dist && sha256sum * > "${ASSET}.sha256") || true
 
           echo "asset=${ASSET}" >> "$GITHUB_OUTPUT"
 
