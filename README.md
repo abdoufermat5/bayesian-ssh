@@ -44,22 +44,13 @@ Download pre-built packages from [Releases](https://github.com/abdoufermat5/baye
 
 ```bash
 # Debian / Ubuntu / Linux Mint / Pop!_OS (.deb)
-sudo apt install ./bayesian-ssh_2.5.0_amd64.deb
+sudo apt install ./bayesian-ssh_2.5.2_amd64.deb
 
 # Fedora / RHEL / CentOS / openSUSE (.rpm)
-sudo dnf install ./bayesian-ssh-2.5.0-1.x86_64.rpm
+sudo dnf install ./bayesian-ssh-2.5.2-1.x86_64.rpm
 ```
 
-#### Option 3: Flathub & Snap Store
-```bash
-# Flatpak (Flathub)
-flatpak install flathub com.bayesianssh.App
-
-# Snap Store (Ubuntu)
-sudo snap install bayesian-ssh
-```
-
-#### Option 4: Build from Source
+#### Option 3: Build from Source
 ```bash
 git clone https://github.com/abdoufermat5/bayesian-ssh.git
 cd bayesian-ssh
