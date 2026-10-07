@@ -42,6 +42,9 @@ pub enum CheckResult {
         stored_fp: String,
         remote_fp: String,
     },
+    /// The presented key is listed under a `@revoked` marker. Must never be
+    /// accepted, regardless of the host-key-checking policy.
+    Revoked { remote_fp: String },
 }
 
 /// Parsed entry from a known_hosts file.
@@ -62,18 +65,14 @@ enum HostPattern {
 }
 
 impl HostPattern {
+    /// OpenSSH semantics: entries for non-default ports are stored as
+    /// `[host]:port`, and only that canonical form is matched.
     fn matches(&self, hostname: &str, port: u16) -> bool {
         let canonical = canonical_hostport(hostname, port);
         match self {
-            HostPattern::Plain(p) => {
-                p == &canonical
-                    || p == hostname
-                    || glob_match(p, &canonical)
-                    || glob_match(p, hostname)
-            }
+            HostPattern::Plain(p) => glob_match(p, &canonical),
             HostPattern::Hashed { salt, hash } => {
                 hmac_sha1_matches(salt, hash, canonical.as_bytes())
-                    || hmac_sha1_matches(salt, hash, hostname.as_bytes())
             }
         }
     }
@@ -112,7 +111,8 @@ fn parse_entry(line: &str) -> Option<KnownEntry> {
         return None;
     }
 
-    let mut parts = line.splitn(4, ' ');
+    // OpenSSH separates fields with any run of spaces/tabs.
+    let mut parts = line.split_whitespace();
 
     let (marker, host_field) = {
         let first = parts.next()?;
@@ -125,7 +125,7 @@ fn parse_entry(line: &str) -> Option<KnownEntry> {
 
     let key_type = parts.next()?.to_string();
     let key_b64 = parts.next()?;
-    let key_bytes = B64.decode(key_b64.trim()).ok()?;
+    let key_bytes = B64.decode(key_b64).ok()?;
 
     let patterns = host_field
         .split(',')
@@ -175,10 +175,15 @@ pub fn default_path() -> PathBuf {
 
 /// Check whether `(hostname, port, key_type, key_bytes)` matches what is stored.
 ///
+/// `key_type` must be the key *blob* algorithm as written in known_hosts
+/// (e.g. `ssh-rsa`), not a signature algorithm such as `rsa-sha2-512`; use
+/// [`blob_key_type`] to derive it from the wire-format key.
+///
 /// Returns:
-/// - `CheckResult::KnownGood`   — entry found and key matches
-/// - `CheckResult::Unknown`     — no matching hostname entry at all
-/// - `CheckResult::Mismatch`    — entry found, but key differs (TOFU violation)
+/// - `CheckResult::Revoked`     — the key is listed under `@revoked`
+/// - `CheckResult::KnownGood`   — an entry for this host/type has this key
+/// - `CheckResult::Mismatch`    — entries for this host/type exist, none match (TOFU violation)
+/// - `CheckResult::Unknown`     — no matching host/type entry at all
 pub fn check(
     path: &Path,
     hostname: &str,
@@ -194,36 +199,57 @@ pub fn check(
         Err(e) => return Err(KnownHostsError::Io(e)),
     };
 
+    // Scan the whole file: a host may legitimately have several entries for
+    // the same key type (rotation, hashed + plain), and a `@revoked` line
+    // later in the file must still win over an earlier match.
+    let mut known_good = false;
+    let mut stored_fp: Option<String> = None;
     for line in BufReader::new(file).lines() {
         let line = line?;
         let Some(entry) = parse_entry(&line) else {
             continue;
         };
-
-        if entry.marker == "@revoked" {
-            continue;
-        }
-        if entry.key_type != key_type {
-            continue;
-        }
-        let matches_host = entry.patterns.iter().any(|p| p.matches(hostname, port));
-        if !matches_host {
+        if !entry.patterns.iter().any(|p| p.matches(hostname, port)) {
             continue;
         }
 
-        // Host + key_type matched — check the key bytes
-        if entry.key_bytes == key_bytes {
-            return Ok(CheckResult::KnownGood);
-        } else {
-            let stored_fp = fingerprint_sha256(&entry.key_bytes);
-            return Ok(CheckResult::Mismatch {
-                stored_fp,
-                remote_fp,
-            });
+        match entry.marker.as_str() {
+            "@revoked" => {
+                if entry.key_bytes == key_bytes {
+                    return Ok(CheckResult::Revoked { remote_fp });
+                }
+            }
+            // `@cert-authority` lines hold CA keys, not host keys; host
+            // certificates are not supported, so they neither vouch for nor
+            // contradict a plain host key.
+            "" if entry.key_type == key_type => {
+                if entry.key_bytes == key_bytes {
+                    known_good = true;
+                } else if stored_fp.is_none() {
+                    stored_fp = Some(fingerprint_sha256(&entry.key_bytes));
+                }
+            }
+            _ => {}
         }
     }
 
-    Ok(CheckResult::Unknown)
+    Ok(match (known_good, stored_fp) {
+        (true, _) => CheckResult::KnownGood,
+        (false, Some(stored_fp)) => CheckResult::Mismatch {
+            stored_fp,
+            remote_fp,
+        },
+        (false, None) => CheckResult::Unknown,
+    })
+}
+
+/// Extract the key algorithm name (first SSH `string`) from a wire-format
+/// public key blob, e.g. `ssh-rsa` / `ssh-ed25519` / `ecdsa-sha2-nistp256`.
+pub fn blob_key_type(key_bytes: &[u8]) -> Option<&str> {
+    let len_bytes: [u8; 4] = key_bytes.get(..4)?.try_into().ok()?;
+    let len = u32::from_be_bytes(len_bytes) as usize;
+    let name = key_bytes.get(4..4usize.checked_add(len)?)?;
+    std::str::from_utf8(name).ok()
 }
 
 /// Append a new plain-text entry to `path` (TOFU accept-new).
@@ -234,9 +260,13 @@ pub fn append(
     key_type: &str,
     key_bytes: &[u8],
 ) -> Result<(), KnownHostsError> {
-    // Ensure parent directory exists
+    // Ensure parent directory exists (0700, as OpenSSH expects for ~/.ssh)
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
+        use std::os::unix::fs::DirBuilderExt;
+        fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(parent)?;
     }
 
     let mut file = fs::OpenOptions::new()
@@ -322,5 +352,66 @@ mod tests {
         let fp = fingerprint_sha256(&key);
         assert!(fp.starts_with("SHA256:"));
         assert!(!fp.ends_with('='));
+    }
+
+    #[test]
+    fn revoked_key_is_reported_even_after_good_entry() {
+        let f = NamedTempFile::new().unwrap();
+        let key = dummy_key(0x07);
+        append(f.path(), "rev.example", 22, "ssh-ed25519", &key).unwrap();
+        let mut file = fs::OpenOptions::new().append(true).open(f.path()).unwrap();
+        writeln!(file, "@revoked * ssh-ed25519 {}", B64.encode(&key)).unwrap();
+        let r = check(f.path(), "rev.example", 22, "ssh-ed25519", &key).unwrap();
+        assert!(matches!(r, CheckResult::Revoked { .. }));
+    }
+
+    #[test]
+    fn any_matching_entry_wins_over_stale_one() {
+        let f = NamedTempFile::new().unwrap();
+        append(f.path(), "rot.example", 22, "ssh-ed25519", &dummy_key(0x01)).unwrap();
+        append(f.path(), "rot.example", 22, "ssh-ed25519", &dummy_key(0x02)).unwrap();
+        let r = check(f.path(), "rot.example", 22, "ssh-ed25519", &dummy_key(0x02)).unwrap();
+        assert_eq!(r, CheckResult::KnownGood);
+    }
+
+    #[test]
+    fn cert_authority_line_is_not_a_host_key() {
+        let f = NamedTempFile::new().unwrap();
+        let mut file = fs::OpenOptions::new().append(true).open(f.path()).unwrap();
+        writeln!(
+            file,
+            "@cert-authority ca.example ssh-ed25519 {}",
+            B64.encode(dummy_key(9))
+        )
+        .unwrap();
+        let r = check(f.path(), "ca.example", 22, "ssh-ed25519", &dummy_key(1)).unwrap();
+        assert_eq!(r, CheckResult::Unknown);
+    }
+
+    #[test]
+    fn default_port_entry_does_not_match_other_port() {
+        let f = NamedTempFile::new().unwrap();
+        append(f.path(), "multi.example", 22, "ssh-ed25519", &dummy_key(1)).unwrap();
+        let r = check(
+            f.path(),
+            "multi.example",
+            2222,
+            "ssh-ed25519",
+            &dummy_key(2),
+        )
+        .unwrap();
+        assert_eq!(r, CheckResult::Unknown);
+    }
+
+    #[test]
+    fn blob_key_type_reads_wire_name() {
+        let mut blob = Vec::new();
+        blob.extend_from_slice(&7u32.to_be_bytes());
+        blob.extend_from_slice(b"ssh-rsa");
+        blob.extend_from_slice(&[0, 0, 0, 1, 0x23]);
+        assert_eq!(blob_key_type(&blob), Some("ssh-rsa"));
+        assert_eq!(blob_key_type(&[0, 0, 0, 9, b'x']), None);
+        assert_eq!(blob_key_type(&[0xff, 0xff, 0xff, 0xff]), None);
+        assert_eq!(blob_key_type(&[]), None);
     }
 }

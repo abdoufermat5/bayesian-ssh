@@ -55,10 +55,21 @@ impl client::Handler for ClientHandler {
         server_public_key: &PublicKey,
     ) -> Result<bool, Self::Error> {
         let khf = known_hosts::default_path();
-        let key_type = server_public_key.name();
         let key_bytes = server_public_key.public_key_bytes();
+        // known_hosts stores the key *blob* type (`ssh-rsa`), whereas
+        // `PublicKey::name()` reports the negotiated signature algorithm
+        // (`rsa-sha2-512`). Using the latter made every stored RSA entry
+        // miss, so a changed RSA host key was silently TOFU-accepted.
+        let key_type = known_hosts::blob_key_type(&key_bytes)
+            .ok_or_else(|| anyhow!("malformed host key blob from {}", self.hostname))?;
 
         match known_hosts::check(&khf, &self.hostname, self.port, key_type, &key_bytes)? {
+            known_hosts::CheckResult::Revoked { remote_fp } => Err(anyhow!(
+                "REVOKED host key presented by {}:{} (fingerprint: {remote_fp})\n\
+                 The key is marked @revoked in known_hosts; refusing to connect.",
+                self.hostname,
+                self.port
+            )),
             known_hosts::CheckResult::KnownGood => {
                 debug!("Host key verified for {}:{}", self.hostname, self.port);
                 self.host_key_accepted = true;
@@ -103,7 +114,7 @@ impl client::Handler for ClientHandler {
                     // accept-new — print fingerprint and persist
                     eprintln!(
                         "The authenticity of host '{}:{}' can't be established.\n\
-                         ED25519 key fingerprint is {}.\n\
+                         {key_type} key fingerprint is {}.\n\
                          Host key added to known_hosts.",
                         self.hostname, self.port, remote_fp
                     );
