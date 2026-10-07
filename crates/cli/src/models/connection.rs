@@ -90,15 +90,38 @@ impl Connection {
         }
 
         if let Some(key) = &self.key_path {
-            cmd.push_str(&format!("-i {} ", key));
+            // Validation rejects `'` in key paths, so single quotes are safe.
+            if key
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "/._~-".contains(c))
+            {
+                cmd.push_str(&format!("-i {} ", key));
+            } else {
+                cmd.push_str(&format!("-i '{}' ", key));
+            }
         }
 
-        if let Some(bastion) = &self.bastion {
-            let bastion_user = self.bastion_user.as_deref().unwrap_or(&self.user);
-            cmd.push_str(&format!("-p 22 {}@{}", bastion_user, bastion));
-            cmd.push_str(&format!(" {}@{}", self.user, self.host));
-        } else {
-            cmd.push_str(&format!("-p {} {}@{}", self.port, self.user, self.host));
+        match &self.bastion {
+            // Kerberos + bastion is an interactive bastion: log into the
+            // bastion and hand it the target (see `build_shell_argv`).
+            Some(bastion) if self.use_kerberos => {
+                let bastion_user = self.bastion_user.as_deref().unwrap_or(&self.user);
+                cmd.push_str(&format!("-p 22 {}@{}", bastion_user, bastion));
+                cmd.push_str(&format!(" {}@{}", self.user, self.host));
+            }
+            // Otherwise the bastion is a plain jump host. The previous
+            // `ssh bastion user@host` form would run `user@host` as a
+            // remote command on the bastion and ignored the target port.
+            Some(bastion) => {
+                let bastion_user = self.bastion_user.as_deref().unwrap_or(&self.user);
+                cmd.push_str(&format!(
+                    "-J {}@{} -p {} {}@{}",
+                    bastion_user, bastion, self.port, self.user, self.host
+                ));
+            }
+            None => {
+                cmd.push_str(&format!("-p {} {}@{}", self.port, self.user, self.host));
+            }
         }
 
         cmd
@@ -111,4 +134,46 @@ pub struct ConnectionStats {
     pub most_used: Option<Connection>,
     pub recently_used: Vec<Connection>,
     pub by_tag: std::collections::HashMap<String, usize>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Connection;
+
+    fn conn(bastion: Option<&str>, kerberos: bool) -> Connection {
+        Connection::new(
+            "web".into(),
+            "web.internal".into(),
+            "alice".into(),
+            2222,
+            bastion.map(Into::into),
+            Some("jump".into()),
+            kerberos,
+            None,
+        )
+    }
+
+    #[test]
+    fn ssh_command_uses_jump_host_for_plain_bastion() {
+        assert_eq!(
+            conn(Some("bastion.example"), false).to_ssh_command(),
+            "ssh -J jump@bastion.example -p 2222 alice@web.internal"
+        );
+    }
+
+    #[test]
+    fn ssh_command_keeps_interactive_kerberos_bastion() {
+        assert_eq!(
+            conn(Some("bastion.example"), true).to_ssh_command(),
+            "ssh -t -A -K -p 22 jump@bastion.example alice@web.internal"
+        );
+    }
+
+    #[test]
+    fn remove_tag_matches_normalized_form() {
+        let mut c = conn(None, false);
+        c.add_tag("prod".into());
+        c.remove_tag(" prod ");
+        assert!(c.tags.is_empty());
+    }
 }
