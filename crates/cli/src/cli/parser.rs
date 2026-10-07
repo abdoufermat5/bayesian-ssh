@@ -84,8 +84,8 @@ pub enum Commands {
         /// Override the SSH username for this session
         #[arg(short = 'u', long, value_name = "USER")]
         user: Option<String>,
-        /// Override the SSH port (default: 22)
-        #[arg(short = 'p', long, default_value = "22", value_name = "PORT")]
+        /// Override the stored SSH port for this session
+        #[arg(short = 'p', long, value_name = "PORT", value_parser = clap::value_parser!(u16).range(1..))]
         port: Option<u16>,
         /// Force Kerberos auth on or off for this session
         #[arg(short = 'k', long, value_name = "BOOL")]
@@ -120,8 +120,8 @@ pub enum Commands {
         /// SSH username (falls back to config default or $USER)
         #[arg(short = 'u', long, value_name = "USER")]
         user: Option<String>,
-        /// SSH port (default: 22)
-        #[arg(short = 'p', long, default_value = "22", value_name = "PORT")]
+        /// SSH port (default: the configured default port, usually 22)
+        #[arg(short = 'p', long, value_name = "PORT", value_parser = clap::value_parser!(u16).range(1..))]
         port: Option<u16>,
         /// Enable Kerberos (GSSAPI) authentication
         #[arg(short = 'k', long, value_name = "BOOL")]
@@ -203,7 +203,7 @@ pub enum Commands {
         #[arg(long, value_name = "USER")]
         user: Option<String>,
         /// Change the SSH port
-        #[arg(long, value_name = "PORT")]
+        #[arg(long, value_name = "PORT", value_parser = clap::value_parser!(u16).range(1..))]
         port: Option<u16>,
         /// Enable or disable Kerberos authentication
         #[arg(long, value_name = "BOOL")]
@@ -248,7 +248,7 @@ pub enum Commands {
         #[arg(long, value_name = "USER")]
         default_bastion_user: Option<String>,
         /// Default SSH port for new connections
-        #[arg(long, value_name = "PORT")]
+        #[arg(long, value_name = "PORT", value_parser = clap::value_parser!(u16).range(1..))]
         default_port: Option<u16>,
         /// Enable Kerberos authentication by default for new connections
         #[arg(long, value_name = "BOOL")]
@@ -555,7 +555,7 @@ pub enum Commands {
         /// Connection name, alias, or hostname to proxy through
         target: String,
         /// Local port for the SOCKS5 listener
-        #[arg(short = 'D', value_name = "PORT")]
+        #[arg(short = 'D', value_name = "PORT", value_parser = clap::value_parser!(u16).range(1..))]
         dynamic: u16,
         /// Bind address for the SOCKS5 listener
         #[arg(long, default_value = "127.0.0.1", value_name = "ADDR")]
@@ -622,6 +622,43 @@ pub enum AliasSubcommand {
 }
 
 fn parse_octal(s: &str) -> Result<u32, String> {
-    let s = s.trim_start_matches("0o").trim_start_matches("0O");
-    u32::from_str_radix(s, 8).map_err(|e| format!("invalid octal mode '{s}': {e}"))
+    let digits = s.trim_start_matches("0o").trim_start_matches("0O");
+    let mode =
+        u32::from_str_radix(digits, 8).map_err(|e| format!("invalid octal mode '{s}': {e}"))?;
+    if mode > 0o7777 {
+        return Err(format!("mode '{s}' exceeds 0o7777"));
+    }
+    Ok(mode)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn parse_octal_bounds() {
+        assert_eq!(parse_octal("0o644"), Ok(0o644));
+        assert_eq!(parse_octal("755"), Ok(0o755));
+        assert_eq!(parse_octal("0o7777"), Ok(0o7777));
+        assert!(parse_octal("0o10000").is_err());
+        assert!(parse_octal("0o").is_err());
+        assert!(parse_octal("9").is_err());
+    }
+
+    #[test]
+    fn connect_without_port_keeps_stored_port() {
+        // A clap default here would silently override the saved port.
+        let cli = Cli::try_parse_from(["bssh", "connect", "db01"]).unwrap();
+        match cli.command {
+            Commands::Connect { port, .. } => assert_eq!(port, None),
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn port_zero_rejected() {
+        assert!(Cli::try_parse_from(["bssh", "connect", "db01", "-p", "0"]).is_err());
+        assert!(Cli::try_parse_from(["bssh", "add", "n", "h", "-p", "0"]).is_err());
+    }
 }
