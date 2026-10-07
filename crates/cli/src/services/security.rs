@@ -10,7 +10,7 @@ use crate::services::known_hosts::fingerprint_sha256;
 use serde::Serialize;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// A single SSH keypair discovered under `~/.ssh/`, serialized for the GUI.
 #[derive(Serialize, Clone, Debug)]
@@ -69,17 +69,19 @@ pub fn scan_ssh_keys() -> Result<Vec<SshKeyInfo>, String> {
                     };
 
                     let (priv_key_str, priv_perm, is_secure) = if priv_path.exists() {
-                        let perm_str = if let Ok(meta) = fs::metadata(&priv_path) {
-                            let mode = meta.permissions().mode() & 0o777;
-                            if mode == 0o600 {
-                                "0600 (SECURE)".to_string()
-                            } else {
-                                format!("{:04o} (INSECURE)", mode)
+                        // Like OpenSSH, any mode without group/other access
+                        // is acceptable (0600, 0400).
+                        let (perm_str, secure) = match fs::metadata(&priv_path) {
+                            Ok(meta) => {
+                                let mode = meta.permissions().mode() & 0o777;
+                                if mode & 0o077 == 0 {
+                                    (format!("{mode:04o} (SECURE)"), true)
+                                } else {
+                                    (format!("{mode:04o} (INSECURE)"), false)
+                                }
                             }
-                        } else {
-                            "UNKNOWN".to_string()
+                            Err(_) => ("UNKNOWN".to_string(), false),
                         };
-                        let secure = perm_str.contains("SECURE");
                         (Some(priv_path.display().to_string()), perm_str, secure)
                     } else {
                         (None, "PUBLIC_ONLY".to_string(), true)
@@ -169,14 +171,12 @@ pub fn build_audit_report(config: &AppConfig, connections: &[Connection]) -> Aud
             if let Ok(entries) = fs::read_dir(&ssh_dir) {
                 for entry in entries.flatten() {
                     let path = entry.path();
-                    if path.is_file()
-                        && path.extension().is_none_or(|ext| {
-                            ext != "pub" && ext != "known_hosts" && ext != "config"
-                        })
-                    {
+                    // Only actual private keys: `known_hosts`, `config`,
+                    // `authorized_keys` etc. are legitimately world-readable.
+                    if path.is_file() && looks_like_private_key(&path) {
                         if let Ok(meta) = fs::metadata(&path) {
                             let mode = meta.permissions().mode() & 0o777;
-                            if mode != 0o600 {
+                            if mode & 0o077 != 0 {
                                 findings.push(AuditFindingDto {
                                     severity: "warning".into(),
                                     title: format!(
@@ -272,4 +272,21 @@ pub fn build_audit_report(config: &AppConfig, connections: &[Connection]) -> Aud
         total_warning,
         total_info,
     }
+}
+
+/// True when the file starts with a PEM / OpenSSH private-key armor line.
+fn looks_like_private_key(path: &Path) -> bool {
+    use std::io::{BufRead, BufReader, Read};
+    let Ok(file) = fs::File::open(path) else {
+        return false;
+    };
+    let mut first = String::new();
+    // Only the armor line matters; bound the read.
+    if BufReader::new(file.take(128))
+        .read_line(&mut first)
+        .is_err()
+    {
+        return false;
+    }
+    first.starts_with("-----BEGIN") && first.contains("PRIVATE KEY")
 }

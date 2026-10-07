@@ -6,7 +6,7 @@ use anyhow::Result;
 use chrono::Utc;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum AuditSeverity {
@@ -57,7 +57,7 @@ pub async fn execute(fix: bool, config: AppConfig) -> Result<()> {
         .join("bayesian-ssh");
     if let Ok(meta) = fs::metadata(&config_dir) {
         let mode = meta.permissions().mode() & 0o777;
-        if mode != 0o700 {
+        if mode & 0o077 != 0 {
             findings.push(AuditFinding {
                 severity: AuditSeverity::Warning,
                 title: "Config Directory Permissions Overly Permissive".into(),
@@ -69,7 +69,7 @@ pub async fn execute(fix: bool, config: AppConfig) -> Result<()> {
 
     if let Ok(meta) = fs::metadata(&config.database_path) {
         let mode = meta.permissions().mode() & 0o777;
-        if mode != 0o600 {
+        if mode & 0o077 != 0 {
             findings.push(AuditFinding {
                 severity: AuditSeverity::Warning,
                 title: "Database File Permissions Overly Permissive".into(),
@@ -96,12 +96,10 @@ pub async fn execute(fix: bool, config: AppConfig) -> Result<()> {
                             });
                         }
 
-                        if path.extension().is_none_or(|ext| {
-                            ext != "pub" && ext != "known_hosts" && ext != "config"
-                        }) {
+                        if is_private_key_candidate(&path) {
                             if let Ok(meta) = fs::metadata(&path) {
                                 let mode = meta.permissions().mode() & 0o777;
-                                if mode != 0o600 {
+                                if mode & 0o077 != 0 {
                                     findings.push(AuditFinding {
                                         severity: AuditSeverity::Warning,
                                         title: format!(
@@ -210,41 +208,86 @@ pub async fn execute(fix: bool, config: AppConfig) -> Result<()> {
     Ok(())
 }
 
+/// Files in `~/.ssh` that are not private keys and are conventionally
+/// world-readable (0644), so they must not be reported or chmod-ed as keys.
+fn is_private_key_candidate(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
+    !(name.ends_with(".pub")
+        || matches!(
+            name,
+            "known_hosts" | "known_hosts.old" | "config" | "authorized_keys" | "authorized_keys2"
+        ))
+}
+
+/// True when group/other have any access bits set on `path`.
+fn is_too_open(path: &Path) -> bool {
+    fs::metadata(path)
+        .map(|m| m.permissions().mode() & 0o077 != 0)
+        .unwrap_or(false)
+}
+
 /// Automatically repair overly permissive permissions for bssh config dirs, database files, and SSH keys.
+///
+/// Only items that are actually group/other-accessible are changed (so a
+/// stricter 0400 key is never loosened) and the returned count reflects real
+/// repairs. Symlinks in `~/.ssh` are skipped so the fix can never chmod a
+/// file outside that directory.
 pub fn fix_permissions(config: &AppConfig) -> Result<usize> {
     let mut count = 0;
 
     let config_dir = dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("~/.config"))
         .join("bayesian-ssh");
-    if config_dir.exists() {
+    if is_too_open(&config_dir) {
         crate::config::enforce_secure_dir(&config_dir);
         count += 1;
     }
 
-    if config.database_path.exists() {
+    if is_too_open(&config.database_path) {
         crate::config::enforce_secure_file(&config.database_path);
         count += 1;
     }
 
     if let Some(ssh_dir) = dirs::home_dir().map(|h| h.join(".ssh")) {
-        if ssh_dir.exists() {
+        if is_too_open(&ssh_dir) {
             crate::config::enforce_secure_dir(&ssh_dir);
-            if let Ok(entries) = fs::read_dir(&ssh_dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.is_file()
-                        && path.extension().is_none_or(|ext| {
-                            ext != "pub" && ext != "known_hosts" && ext != "config"
-                        })
-                    {
-                        crate::config::enforce_secure_file(&path);
-                        count += 1;
-                    }
+            count += 1;
+        }
+        if let Ok(entries) = fs::read_dir(&ssh_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let is_regular_file = entry.file_type().is_ok_and(|t| t.is_file());
+                if is_regular_file && is_private_key_candidate(&path) && is_too_open(&path) {
+                    crate::config::enforce_secure_file(&path);
+                    count += 1;
                 }
             }
         }
     }
 
     Ok(count)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_private_key_candidate;
+    use std::path::Path;
+
+    #[test]
+    fn public_ssh_files_are_not_key_candidates() {
+        for name in [
+            "id_ed25519.pub",
+            "known_hosts",
+            "known_hosts.old",
+            "config",
+            "authorized_keys",
+        ] {
+            assert!(!is_private_key_candidate(Path::new(name)), "{name}");
+        }
+        for name in ["id_ed25519", "id_rsa", "work_key", "deploy.pem"] {
+            assert!(is_private_key_candidate(Path::new(name)), "{name}");
+        }
+    }
 }
