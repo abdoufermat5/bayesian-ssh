@@ -51,10 +51,20 @@ export function tabPopOutDrag(node: HTMLElement, tabId: string) {
     }
   }
 
+  // A cancelled gesture (e.g. the webview took over the pointer) must abort
+  // the drag, never pop the tab out.
+  function onPointerCancel(event: PointerEvent) {
+    armed = false;
+    node.classList.remove("tab-dragging-out");
+    if (node.hasPointerCapture(event.pointerId)) {
+      node.releasePointerCapture(event.pointerId);
+    }
+  }
+
   node.addEventListener("pointerdown", onPointerDown);
   node.addEventListener("pointermove", onPointerMove);
   node.addEventListener("pointerup", onPointerUp);
-  node.addEventListener("pointercancel", onPointerUp);
+  node.addEventListener("pointercancel", onPointerCancel);
 
   return {
     update(nextTabId: string) {
@@ -67,7 +77,7 @@ export function tabPopOutDrag(node: HTMLElement, tabId: string) {
       node.removeEventListener("pointerdown", onPointerDown);
       node.removeEventListener("pointermove", onPointerMove);
       node.removeEventListener("pointerup", onPointerUp);
-      node.removeEventListener("pointercancel", onPointerUp);
+      node.removeEventListener("pointercancel", onPointerCancel);
       node.classList.remove("tab-dragging-out");
     },
   };
