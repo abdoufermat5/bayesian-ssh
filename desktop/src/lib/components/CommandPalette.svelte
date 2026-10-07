@@ -76,8 +76,12 @@
     const nav: Array<{ tab: AppTab; label: string; icon: typeof Server }> = [
       { tab: "connections", label: "Go to Hosts", icon: Server },
       { tab: "terminals", label: "Go to Terminals", icon: TerminalSquare },
-      { tab: "sftp", label: "Go to SFTP File Browser", icon: HardDrive },
-      { tab: "tunnels", label: "Go to Tunnel Studio", icon: Network },
+      ...(settings.enable_sftp !== false
+        ? [{ tab: "sftp" as AppTab, label: "Go to SFTP File Browser", icon: HardDrive }]
+        : []),
+      ...(settings.enable_tunneling !== false
+        ? [{ tab: "tunnels" as AppTab, label: "Go to Tunnel Studio", icon: Network }]
+        : []),
       { tab: "keys", label: "Go to SSH Keys Manager", icon: KeyRound },
       { tab: "audit", label: "Go to Security Auditor", icon: ShieldCheck },
       { tab: "history", label: "Go to Session Logs", icon: Clock },
