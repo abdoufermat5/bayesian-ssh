@@ -9,6 +9,7 @@ pub fn get_active_env() -> Result<String, String> {
 
 #[tauri::command]
 pub fn set_active_env(name: String) -> Result<(), String> {
+    AppConfig::validate_env_name(&name).map_err(|e| e.to_string())?;
     let envs_dir = dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("~/.config"))
         .join("bayesian-ssh")
@@ -60,6 +61,7 @@ pub fn list_environments() -> Result<Vec<EnvInfo>, String> {
 
 #[tauri::command]
 pub fn create_environment(name: String) -> Result<(), String> {
+    AppConfig::validate_env_name(&name).map_err(|e| e.to_string())?;
     let envs_dir = dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("~/.config"))
         .join("bayesian-ssh")
@@ -80,6 +82,9 @@ pub fn create_environment(name: String) -> Result<(), String> {
 
 #[tauri::command]
 pub fn remove_environment(name: String) -> Result<(), String> {
+    // Must run before `name` is joined onto the environments dir: a name like
+    // "../.." would otherwise make remove_dir_all delete outside of it.
+    AppConfig::validate_env_name(&name).map_err(|e| e.to_string())?;
     let active_env = AppConfig::get_active_env();
     if name == active_env {
         return Err("Cannot remove the currently active environment.".to_string());

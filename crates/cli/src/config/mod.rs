@@ -1,6 +1,9 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Component, PathBuf};
+
+/// Maximum length of an environment name (it becomes a directory name).
+const MAX_ENV_NAME_LEN: usize = 64;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -76,28 +79,56 @@ impl Default for AppConfig {
 }
 
 impl AppConfig {
+    /// Validate an environment name before it is joined onto the
+    /// `environments/` directory. Names come from `--env`, the
+    /// `active_env` file, the desktop UI and imported backups, so anything
+    /// that could escape the directory (`..`, separators, absolute paths)
+    /// must be rejected.
+    pub fn validate_env_name(name: &str) -> Result<()> {
+        let valid = !name.is_empty()
+            && name.len() <= MAX_ENV_NAME_LEN
+            && !name.starts_with('.')
+            && name.trim() == name
+            && !name
+                .chars()
+                .any(|c| matches!(c, '/' | '\\' | ':') || c.is_control());
+        if !valid {
+            anyhow::bail!(
+                "invalid environment name '{}': use up to {MAX_ENV_NAME_LEN} characters, \
+                 no path separators, ':' or leading '.'",
+                name.escape_debug()
+            );
+        }
+        Ok(())
+    }
+
     pub fn get_active_env() -> String {
         let config_dir = dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("~/.config"))
             .join("bayesian-ssh");
         let env_file = config_dir.join("active_env");
-        if env_file.exists() {
-            std::fs::read_to_string(&env_file)
-                .map(|s| s.trim().to_string())
-                .unwrap_or_else(|_| "default".to_string())
-        } else {
-            "default".to_string()
+        let env = std::fs::read_to_string(&env_file)
+            .map(|s| s.trim().to_string())
+            .unwrap_or_default();
+        if env.is_empty() {
+            return "default".to_string();
         }
+        if let Err(e) = Self::validate_env_name(&env) {
+            eprintln!("[warn] ignoring '{}': {e}", env_file.display());
+            return "default".to_string();
+        }
+        env
     }
 
     pub fn set_active_env(env: &str) -> Result<()> {
+        Self::validate_env_name(env)?;
         let config_dir = dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("~/.config"))
             .join("bayesian-ssh");
         std::fs::create_dir_all(&config_dir)?;
         enforce_secure_dir(&config_dir);
         let env_file = config_dir.join("active_env");
-        std::fs::write(&env_file, env)?;
+        atomic_write(&env_file, env)?;
         enforce_secure_file(&env_file);
         Ok(())
     }
@@ -131,6 +162,7 @@ impl AppConfig {
         Self::migrate_legacy_config(&config_dir)?;
 
         let environment = env_override.unwrap_or_else(Self::get_active_env);
+        Self::validate_env_name(&environment)?;
         let env_dir = config_dir.join("environments").join(&environment);
         std::fs::create_dir_all(&env_dir)?;
         enforce_secure_dir(&env_dir);
@@ -139,7 +171,8 @@ impl AppConfig {
 
         let mut config = if config_file.exists() {
             let content = std::fs::read_to_string(&config_file)?;
-            let mut cfg: AppConfig = serde_json::from_str(&content)?;
+            let mut cfg: AppConfig = serde_json::from_str(&content)
+                .with_context(|| format!("parse config file '{}'", config_file.display()))?;
             cfg.environment = environment.clone();
             cfg
         } else {
@@ -148,8 +181,16 @@ impl AppConfig {
             cfg
         };
 
-        // Ensure database path is absolute and uses the environment dir
-        if config.database_path.is_relative() || !config.database_path.starts_with(&env_dir) {
+        // Ensure database path is absolute and uses the environment dir.
+        // `starts_with` is purely lexical, so also reject `..` components
+        // (`<env_dir>/../../elsewhere.db` would otherwise pass).
+        if config.database_path.is_relative()
+            || !config.database_path.starts_with(&env_dir)
+            || config
+                .database_path
+                .components()
+                .any(|c| c == Component::ParentDir)
+        {
             config.database_path = env_dir.join("history.db");
             config.save()?;
         }
@@ -182,6 +223,7 @@ impl AppConfig {
     }
 
     pub fn save(&self) -> Result<()> {
+        Self::validate_env_name(&self.environment)?;
         let config_dir = dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("~/.config"))
             .join("bayesian-ssh");
@@ -197,7 +239,7 @@ impl AppConfig {
         // Atomic write: write to a temp file in the same directory, then
         // rename into place. A crash mid-write can no longer corrupt the
         // config (previously `fs::write` truncated in place).
-        atomic_write_json(&config_file, &content)?;
+        atomic_write(&config_file, &content)?;
         enforce_secure_file(&config_file);
 
         Ok(())
@@ -278,8 +320,8 @@ pub fn enforce_secure_file(path: &std::path::Path) {
 /// Unlike `fs::write` (which truncates the destination in place), this
 /// guarantees the destination is either fully replaced or untouched, even
 /// if the process is killed mid-write. Uses `tempfile::NamedTempFile` so
-/// the temp file is world-unique and cleaned up automatically.
-fn atomic_write_json(path: &std::path::Path, content: &str) -> Result<()> {
+/// the temp file is world-unique, created 0600 and cleaned up automatically.
+fn atomic_write(path: &std::path::Path, content: &str) -> Result<()> {
     use std::io::Write;
     let parent = path
         .parent()
@@ -297,4 +339,26 @@ fn atomic_write_json(path: &std::path::Path, content: &str) -> Result<()> {
     tmp.persist(path)
         .map_err(|e| anyhow::anyhow!("rename temp config into place: {}", e.error))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AppConfig;
+
+    #[test]
+    fn env_names_accept_ordinary_names() {
+        for name in ["default", "prod", "staging-eu_1", "client.acme", "my env"] {
+            assert!(AppConfig::validate_env_name(name).is_ok(), "{name}");
+        }
+    }
+
+    #[test]
+    fn env_names_reject_path_traversal() {
+        for name in [
+            "", ".", "..", "../x", "a/b", "a\\b", "/etc", "C:", ".hidden", " x", "a\0b", "a\nb",
+        ] {
+            assert!(AppConfig::validate_env_name(name).is_err(), "{name:?}");
+        }
+        assert!(AppConfig::validate_env_name(&"a".repeat(65)).is_err());
+    }
 }

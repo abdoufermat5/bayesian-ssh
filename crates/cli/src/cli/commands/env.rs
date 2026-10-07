@@ -7,9 +7,20 @@ use tracing::info;
 pub async fn execute(command: EnvCommands) -> Result<()> {
     match command {
         EnvCommands::List => list_environments()?,
-        EnvCommands::Use { name } => use_environment(&name)?,
-        EnvCommands::Create { name } => create_environment(&name)?,
-        EnvCommands::Remove { name } => remove_environment(&name)?,
+        // Names are joined onto the environments dir (and `remove` runs
+        // remove_dir_all on the result), so reject traversal/absolute paths.
+        EnvCommands::Use { name } => {
+            AppConfig::validate_env_name(&name)?;
+            use_environment(&name)?
+        }
+        EnvCommands::Create { name } => {
+            AppConfig::validate_env_name(&name)?;
+            create_environment(&name)?
+        }
+        EnvCommands::Remove { name } => {
+            AppConfig::validate_env_name(&name)?;
+            remove_environment(&name)?
+        }
     }
     Ok(())
 }
