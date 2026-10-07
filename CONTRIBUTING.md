@@ -16,19 +16,22 @@ Thank you for your interest in contributing to **Bayesian SSH**!
 git clone https://github.com/abdoufermat5/bayesian-ssh.git
 cd bayesian-ssh
 
-# Check & build debug version
+# Build the frontend, then debug CLI & desktop GUI binaries
 make build
 
-# Run unit and integration tests
+# Run unit and integration tests for the whole workspace
 make test
 
-# Format code and run linter
+# Format code and run linter (clippy, whole workspace, warnings are errors)
 make format
 make lint
 
-# Run pre-commit checks
-make pre-commit
+# Same formatting check CI runs
+cargo fmt --all -- --check
 ```
+
+The GUI crate embeds `desktop/build` at compile time, so `make build`, `make test`,
+`make check` and `make lint` build the frontend first (requires `npm`).
 
 ## 📦 Packaging & Builds
 
@@ -36,8 +39,8 @@ make pre-commit
 # Build unified .deb and .rpm packages
 make package
 
-# Build Desktop GUI
-make build-desktop
+# Build only the desktop frontend
+make frontend
 ```
 
 ## 📜 Pull Request Guidelines
