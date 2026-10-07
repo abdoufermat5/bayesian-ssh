@@ -59,7 +59,9 @@ pub fn build_tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
 pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     let menu = build_tray_menu(app)?;
 
-    let _tray = TrayIconBuilder::new()
+    // Fixed id so `refresh_tray_menu` can find it via `tray_by_id("default")`;
+    // `TrayIconBuilder::new()` would assign a random "<pid>-<n>" id instead.
+    let _tray = TrayIconBuilder::with_id("default")
         .tooltip("Bayesian SSH")
         .icon(TRAY_ICON.clone())
         .menu(&menu)
