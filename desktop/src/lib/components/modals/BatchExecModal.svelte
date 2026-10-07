@@ -203,7 +203,7 @@
   function loadHistory() {
     try {
       const raw = localStorage.getItem("bayesian-ssh-batch-history");
-      if (raw) history = JSON.parse(raw).slice(-100);
+      if (raw) history = JSON.parse(raw).slice(0, 100);
     } catch {
       history = [];
     }
@@ -211,7 +211,7 @@
 
   function saveHistory() {
     try {
-      localStorage.setItem("bayesian-ssh-batch-history", JSON.stringify(history.slice(-100)));
+      localStorage.setItem("bayesian-ssh-batch-history", JSON.stringify(history.slice(0, 100)));
     } catch {
       // ignore storage quota
     }
