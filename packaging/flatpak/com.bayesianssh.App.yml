@@ -26,7 +26,7 @@ modules:
     buildsystem: simple
     build-commands:
       - cargo build --release --package bayesian-ssh
-      - cd desktop && npm install && npm run tauri build -- --config ../crates/gui/tauri.conf.json --no-bundle
+      - cd desktop && npm ci && npm run tauri build -- --config ../crates/gui/tauri.conf.json --no-bundle
       - install -Dm755 target/release/bayesian-ssh /app/bin/bayesian-ssh
       - install -Dm755 target/release/bayesian-ssh-gui /app/bin/bayesian-ssh-gui
       - ln -sf bayesian-ssh /app/bin/bssh

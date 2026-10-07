@@ -1,11 +1,11 @@
 name: bayesian-ssh
 base: core22
-version: '2.4.0'
+version: '2.5.2'
 summary: Fast and lightweight SSH session manager with Kerberos support
 description: |
   Bayesian SSH (bssh) is a smart, high-performance SSH session manager featuring
   Bayesian-ranked search, bastion jump-host chaining, Kerberos integration,
-  interactive TUI, and a desktop graphical user interface.
+  CLI, and a desktop graphical user interface.
 
 grade: stable
 confinement: strict
@@ -48,13 +48,13 @@ parts:
   bayesian-ssh:
     plugin: nil
     override-build: |
-      cargo build --release --workspace
+      cargo build --release --package bayesian-ssh
       install -Dm755 target/release/bayesian-ssh $CRAFT_PART_INSTALL/bin/bayesian-ssh
       
       cd desktop
-      npm install
+      npm ci
       npm run tauri build -- --config ../crates/gui/tauri.conf.json --no-bundle
-      install -Dm755 ../target/release/bayesian-ssh-desktop $CRAFT_PART_INSTALL/bin/bayesian-ssh-desktop
+      install -Dm755 ../target/release/bayesian-ssh-gui $CRAFT_PART_INSTALL/bin/bayesian-ssh-desktop
       install -Dm644 ../crates/gui/icons/128x128.png $CRAFT_PART_INSTALL/usr/share/icons/hicolor/128x128/apps/bayesian-ssh-desktop.png
       
       mkdir -p $CRAFT_PART_INSTALL/usr/share/applications

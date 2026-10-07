@@ -9,7 +9,7 @@
     <p>
       Bayesian SSH (bssh) is a high-performance SSH session manager featuring
       Bayesian-ranked search, bastion jump-host chaining, Kerberos integration,
-      interactive TUI, and a desktop graphical user interface.
+      CLI, and a desktop graphical user interface.
     </p>
   </description>
   <launchable type="desktop-id">com.bayesianssh.App.desktop</launchable>
