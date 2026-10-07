@@ -53,13 +53,3 @@ pub async fn execute(target: String, port: u16, bind: String, config: AppConfig)
     eprintln!("Done.");
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn port_range_valid() {
-        // Ports 1024-65535 are valid for unprivileged use.
-        let port: u16 = 1080;
-        assert!(port >= 1024);
-    }
-}
