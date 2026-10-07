@@ -169,6 +169,8 @@ fn build_scp_argv(
         argv.push("-S".into());
         argv.push(wrapper.to_string_lossy().into_owned());
 
+        // `--`: a local path or user beginning with `-` must not become an option.
+        argv.push("--".into());
         match direction {
             Direction::Upload => {
                 argv.push(local.to_string_lossy().into_owned());
@@ -193,6 +195,7 @@ fn build_scp_argv(
         argv.push("-P".into());
         argv.push(conn.port.to_string());
 
+        argv.push("--".into());
         match direction {
             Direction::Upload => {
                 argv.push(local.to_string_lossy().into_owned());
@@ -216,6 +219,7 @@ fn build_scp_argv(
         argv.push("-P".into());
         argv.push(conn.port.to_string());
 
+        argv.push("--".into());
         match direction {
             Direction::Upload => {
                 argv.push(local.to_string_lossy().into_owned());

@@ -35,6 +35,54 @@ pub(crate) fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
 
+/// Quote a value for a `ProxyCommand`: ssh first performs `%` token
+/// expansion, then hands the string to `sh -c`, so literal `%` must be
+/// doubled on top of the shell quoting.
+fn proxy_quote(value: &str) -> String {
+    shell_quote(value).replace('%', "%%")
+}
+
+/// Map the config policy (`strict` | `accept-new` | `off`) onto a value the
+/// OpenSSH client accepts. `strict` is not an OpenSSH keyword — passing it
+/// verbatim makes `ssh` abort with "unsupported option".
+pub(crate) fn ssh_strict_host_key_value(policy: &str) -> &'static str {
+    match policy {
+        "strict" | "yes" => "yes",
+        "off" | "no" => "no",
+        _ => "accept-new",
+    }
+}
+
+/// Build the `ProxyCommand=` value for a classic jump host.
+///
+/// `leading_opts` are inserted right after `ssh` (e.g. TTY flags). Every
+/// connection field is quoted, the bastion destination follows `--` so a
+/// value starting with `-` cannot become an option, and the target is only
+/// passed as `%h` when it is shell-inert: OpenSSH < 9.6 substitutes `%h`
+/// into the shell command unquoted.
+pub(crate) fn jump_proxy_command(conn: &Connection, leading_opts: &str, shkc: &str) -> String {
+    let bu = conn.bastion_user.as_deref().unwrap_or(&conn.user);
+    let bastion = conn.bastion.as_deref().unwrap_or_default();
+    let key_flag = conn
+        .key_path
+        .as_deref()
+        .map(|k| format!(" -i {}", proxy_quote(k)))
+        .unwrap_or_default();
+    let target = if shell_quote(&conn.host) == conn.host {
+        "%h:%p".to_string()
+    } else if conn.host.contains(':') {
+        proxy_quote(&format!("[{}]:{}", conn.host, conn.port))
+    } else {
+        proxy_quote(&format!("{}:{}", conn.host, conn.port))
+    };
+    format!(
+        "ssh{leading_opts}{key_flag} -o StrictHostKeyChecking={} -W {target} -- {}@{}",
+        ssh_strict_host_key_value(shkc),
+        proxy_quote(bu),
+        proxy_quote(bastion)
+    )
+}
+
 impl SubprocessTransport {
     pub fn new(config: AppConfig) -> Self {
         Self { config }
@@ -59,25 +107,22 @@ impl SubprocessTransport {
             argv.push(key.clone());
         }
         argv.push("-o".into());
-        argv.push(format!("StrictHostKeyChecking={shkc}"));
+        argv.push(format!(
+            "StrictHostKeyChecking={}",
+            ssh_strict_host_key_value(shkc)
+        ));
 
-        if let Some(bastion) = &conn.bastion {
-            let bu = conn.bastion_user.as_deref().unwrap_or(&conn.user);
-            let key_flag = if let Some(k) = &conn.key_path {
-                format!(" -i {}", shell_quote(k))
-            } else {
-                String::new()
-            };
-            let proxy_cmd = format!(
-                "ssh -tt -o RequestTTY=force{key_flag} -o StrictHostKeyChecking={shkc} -W %h:%p {}@{}",
-                shell_quote(bu),
-                shell_quote(bastion)
-            );
+        if conn.bastion.is_some() {
             argv.push("-o".into());
-            argv.push(format!("ProxyCommand={proxy_cmd}"));
+            argv.push(format!(
+                "ProxyCommand={}",
+                jump_proxy_command(conn, " -tt -o RequestTTY=force", shkc)
+            ));
         }
         argv.push("-p".into());
         argv.push(conn.port.to_string());
+        // `--` so a user/host beginning with `-` cannot be parsed as an option.
+        argv.push("--".into());
         argv.push(format!("{}@{}", conn.user, conn.host));
         argv.push(command.to_string());
         argv
@@ -88,11 +133,20 @@ impl SubprocessTransport {
     /// When Kerberos + bastion are both active the bastion is an *interactive*
     /// bastion: we SSH into it and pass `target_user@target` as argument.
     /// Without Kerberos the bastion is a classic jump host using ProxyCommand with forced TTY.
+    ///
+    /// The target's host-key policy is left to the user's ssh configuration
+    /// (OpenSSH default: interactive `ask` prompt in the terminal).
     pub fn build_shell_argv(conn: &Connection) -> Vec<String> {
-        Self::build_shell_argv_with_shkc(conn, "accept-new")
+        Self::build_shell_argv_with_shkc(conn, "accept-new", false)
     }
 
-    fn build_shell_argv_with_shkc(conn: &Connection, shkc: &str) -> Vec<String> {
+    /// `enforce_target_shkc`: also pass the policy for the target connection
+    /// (CLI paths honour `transport.strict_host_key_checking`).
+    fn build_shell_argv_with_shkc(
+        conn: &Connection,
+        shkc: &str,
+        enforce_target_shkc: bool,
+    ) -> Vec<String> {
         let mut argv: Vec<String> = vec!["ssh".into()];
         // Force remote TTY allocation even when stdin is not a terminal (e.g. GUI background process)
         argv.push("-tt".into());
@@ -106,6 +160,13 @@ impl SubprocessTransport {
             argv.push("-i".into());
             argv.push(key.clone());
         }
+        if enforce_target_shkc {
+            argv.push("-o".into());
+            argv.push(format!(
+                "StrictHostKeyChecking={}",
+                ssh_strict_host_key_value(shkc)
+            ));
+        }
 
         if let Some(bastion) = &conn.bastion {
             let bu = conn.bastion_user.as_deref().unwrap_or(&conn.user);
@@ -113,29 +174,25 @@ impl SubprocessTransport {
                 // Interactive bastion: connect to bastion, pass target as argument.
                 argv.push("-p".into());
                 argv.push("22".into());
+                argv.push("--".into());
                 argv.push(format!("{bu}@{bastion}"));
                 argv.push(format!("{}@{}", conn.user, conn.host));
             } else {
                 // ProxyCommand with forced TTY allocation on the bastion connection
-                let key_flag = if let Some(k) = &conn.key_path {
-                    format!(" -i {}", shell_quote(k))
-                } else {
-                    String::new()
-                };
-                let proxy_cmd = format!(
-                    "ssh -tt -o RequestTTY=force{key_flag} -o StrictHostKeyChecking={shkc} -W %h:%p {}@{}",
-                    shell_quote(bu),
-                    shell_quote(bastion)
-                );
                 argv.push("-o".into());
-                argv.push(format!("ProxyCommand={proxy_cmd}"));
+                argv.push(format!(
+                    "ProxyCommand={}",
+                    jump_proxy_command(conn, " -tt -o RequestTTY=force", shkc)
+                ));
                 argv.push("-p".into());
                 argv.push(conn.port.to_string());
+                argv.push("--".into());
                 argv.push(format!("{}@{}", conn.user, conn.host));
             }
         } else {
             argv.push("-p".into());
             argv.push(conn.port.to_string());
+            argv.push("--".into());
             argv.push(format!("{}@{}", conn.user, conn.host));
         }
         argv
@@ -148,6 +205,7 @@ impl SubprocessTransport {
         bind_port: u16,
         remote_host: &str,
         remote_port: u16,
+        shkc: &str,
     ) -> Vec<String> {
         let mut argv: Vec<String> = vec!["ssh".into()];
         if conn.use_kerberos {
@@ -157,6 +215,11 @@ impl SubprocessTransport {
             argv.push("-i".into());
             argv.push(key.clone());
         }
+        argv.push("-o".into());
+        argv.push(format!(
+            "StrictHostKeyChecking={}",
+            ssh_strict_host_key_value(shkc)
+        ));
         if let Some(bastion) = &conn.bastion {
             let bu = conn.bastion_user.as_deref().unwrap_or(&conn.user);
             argv.push("-J".into());
@@ -169,6 +232,7 @@ impl SubprocessTransport {
             "{bind_host}:{bind_port}:{remote_host}:{remote_port}"
         ));
         argv.push("-N".into());
+        argv.push("--".into());
         argv.push(format!("{}@{}", conn.user, conn.host));
         argv
     }
@@ -196,8 +260,11 @@ impl SubprocessTransport {
         let marker_start = format!("{marker}_START");
         let marker_end = format!("{marker}_END");
 
-        let mut argv =
-            Self::build_shell_argv_with_shkc(conn, &self.config.transport.strict_host_key_checking);
+        let mut argv = Self::build_shell_argv_with_shkc(
+            conn,
+            &self.config.transport.strict_host_key_checking,
+            true,
+        );
         if let Some(pos) = argv.iter().position(|a| a == "-t" || a == "-tt") {
             argv[pos] = "-tt".into();
         }
@@ -395,7 +462,14 @@ impl SshTransport for SubprocessTransport {
         remote_host: &str,
         remote_port: u16,
     ) -> Result<crate::services::transport::types::ForwardHandle, TransportError> {
-        let argv = Self::build_forward_argv(conn, bind_host, bind_port, remote_host, remote_port);
+        let argv = Self::build_forward_argv(
+            conn,
+            bind_host,
+            bind_port,
+            remote_host,
+            remote_port,
+            &self.config.transport.strict_host_key_checking,
+        );
         let (cmd_name, args) = argv
             .split_first()
             .ok_or_else(|| TransportError::Permanent(anyhow::anyhow!("empty argv")))?;
@@ -427,7 +501,12 @@ impl SshTransport for SubprocessTransport {
         bind_host: &str,
         bind_port: u16,
     ) -> Result<crate::services::transport::types::ForwardHandle, TransportError> {
-        let argv = Self::build_dynamic_argv(conn, bind_host, bind_port);
+        let argv = Self::build_dynamic_argv(
+            conn,
+            bind_host,
+            bind_port,
+            &self.config.transport.strict_host_key_checking,
+        );
         let (cmd_name, args) = argv
             .split_first()
             .ok_or_else(|| TransportError::Permanent(anyhow::anyhow!("empty argv")))?;
@@ -454,8 +533,11 @@ impl SshTransport for SubprocessTransport {
     }
 
     async fn run_interactive(&self, conn: &Connection) -> Result<i32, TransportError> {
-        let argv =
-            Self::build_shell_argv_with_shkc(conn, &self.config.transport.strict_host_key_checking);
+        let argv = Self::build_shell_argv_with_shkc(
+            conn,
+            &self.config.transport.strict_host_key_checking,
+            true,
+        );
         let (cmd_name, args) = argv
             .split_first()
             .ok_or_else(|| TransportError::permanent(anyhow::anyhow!("empty argv")))?;
@@ -487,6 +569,7 @@ impl SubprocessTransport {
         conn: &Connection,
         bind_host: &str,
         bind_port: u16,
+        shkc: &str,
     ) -> Vec<String> {
         let mut argv: Vec<String> = vec!["ssh".into()];
         if conn.use_kerberos {
@@ -496,6 +579,11 @@ impl SubprocessTransport {
             argv.push("-i".into());
             argv.push(key.clone());
         }
+        argv.push("-o".into());
+        argv.push(format!(
+            "StrictHostKeyChecking={}",
+            ssh_strict_host_key_value(shkc)
+        ));
         if let Some(bastion) = &conn.bastion {
             let bu = conn.bastion_user.as_deref().unwrap_or(&conn.user);
             argv.push("-J".into());
@@ -511,14 +599,10 @@ impl SubprocessTransport {
             argv.push(format!("{bind_host}:{bind_port}"));
         }
         argv.push("-N".into());
+        argv.push("--".into());
         argv.push(format!("{}@{}", conn.user, conn.host));
         argv
     }
-}
-
-/// Safely quote a string for POSIX shell execution within single quotes.
-pub fn shell_quote_single(input: &str) -> String {
-    format!("'{}'", input.replace('\'', r"'\''"))
 }
 
 #[cfg(test)]
@@ -598,9 +682,9 @@ mod tests {
     #[test]
     fn argv_shkc_threads_config_value() {
         let argv = SubprocessTransport::build_exec_argv(&c(false, None, None), "uptime", "strict");
-        assert!(argv.iter().any(|a| a == "StrictHostKeyChecking=strict"));
+        assert!(argv.iter().any(|a| a == "StrictHostKeyChecking=yes"));
         let argv_off = SubprocessTransport::build_exec_argv(&c(false, None, None), "uptime", "off");
-        assert!(argv_off.iter().any(|a| a == "StrictHostKeyChecking=off"));
+        assert!(argv_off.iter().any(|a| a == "StrictHostKeyChecking=no"));
     }
 
     #[test]
@@ -620,12 +704,48 @@ mod tests {
     }
 
     #[test]
-    fn test_shell_quote_single() {
-        assert_eq!(shell_quote_single("hello"), "'hello'");
-        assert_eq!(
-            shell_quote_single("hello 'world'"),
-            r"'hello '\''world'\'''"
+    fn destination_follows_double_dash() {
+        let mut conn = c(false, None, None);
+        conn.user = "-oProxyCommand=touch /tmp/pwned".into();
+        let argv = SubprocessTransport::build_exec_argv(&conn, "uptime", "accept-new");
+        let dd = argv.iter().position(|a| a == "--").expect("-- present");
+        assert!(argv[dd + 1].starts_with("-oProxyCommand"));
+        let shell = SubprocessTransport::build_shell_argv(&conn);
+        let dd = shell.iter().position(|a| a == "--").expect("-- present");
+        assert_eq!(dd, shell.len() - 2);
+    }
+
+    #[test]
+    fn proxy_command_never_expands_unsafe_host() {
+        let mut conn = c(false, Some("b.example"), None);
+        conn.host = "x$(touch /tmp/pwned)".into();
+        let argv = SubprocessTransport::build_exec_argv(&conn, "uptime", "accept-new");
+        let proxy = argv
+            .iter()
+            .find(|a| a.starts_with("ProxyCommand="))
+            .unwrap();
+        assert!(!proxy.contains("%h"));
+        assert!(proxy.contains("'x$(touch /tmp/pwned):2222'"));
+        assert!(proxy.ends_with("-- alice@b.example"));
+
+        // Shell-inert hosts keep `%h` so ~/.ssh/config HostName aliases work.
+        let argv = SubprocessTransport::build_exec_argv(
+            &c(false, Some("b.example"), None),
+            "uptime",
+            "accept-new",
         );
-        assert_eq!(shell_quote_single("foo; rm -rf /"), "'foo; rm -rf /'");
+        let proxy = argv
+            .iter()
+            .find(|a| a.starts_with("ProxyCommand="))
+            .unwrap();
+        assert!(proxy.contains("-W %h:%p"));
+    }
+
+    #[test]
+    fn proxy_command_escapes_percent() {
+        let mut conn = c(false, Some("b.example"), Some("/keys/100%key"));
+        conn.bastion_user = Some("ops".into());
+        let proxy = jump_proxy_command(&conn, "", "accept-new");
+        assert!(proxy.contains("-i /keys/100%%key"));
     }
 }

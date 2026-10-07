@@ -12,7 +12,7 @@
 use crate::config::AppConfig;
 use crate::database::Database;
 use crate::models::Connection;
-use crate::services::transport::subprocess_impl::shell_quote;
+use crate::services::transport::subprocess_impl::{jump_proxy_command, ssh_strict_host_key_value};
 use serde::{Deserialize, Serialize};
 use std::process::{Command, Output};
 
@@ -45,11 +45,14 @@ fn build_ls_argv(conn: &Connection, path: &str, shkc: &str) -> (Vec<String>, boo
         argv.push(key_path.clone());
     }
     argv.push("-o".into());
-    argv.push(format!("StrictHostKeyChecking={shkc}"));
+    argv.push(format!(
+        "StrictHostKeyChecking={}",
+        ssh_strict_host_key_value(shkc)
+    ));
     argv.push("-o".into());
     argv.push("ConnectTimeout=15".into());
 
-    if let Some(ref bastion) = conn.bastion {
+    if let Some(bastion) = &conn.bastion {
         let bu = conn.bastion_user.as_deref().unwrap_or(&conn.user);
         if conn.use_kerberos {
             // Interactive bastion: SSH into the bastion and pass target as argument.
@@ -57,26 +60,21 @@ fn build_ls_argv(conn: &Connection, path: &str, shkc: &str) -> (Vec<String>, boo
             argv.push("-tt".into());
             argv.push("-p".into());
             argv.push("22".into());
+            argv.push("--".into());
             argv.push(format!("{bu}@{bastion}"));
             argv.push(format!("{}@{}", conn.user, conn.host));
         } else {
             // Classic jump host via ProxyCommand (shell-quoted: the value is
             // executed through `sh -c`, so unquoted connection fields would
             // be a command-injection vector).
-            let key_flag = if let Some(k) = &conn.key_path {
-                format!(" -i {}", shell_quote(k))
-            } else {
-                String::new()
-            };
-            let proxy_cmd = format!(
-                "ssh -o StrictHostKeyChecking={shkc}{key_flag} -W %h:%p {}@{}",
-                shell_quote(bu),
-                shell_quote(bastion)
-            );
             argv.push("-o".into());
-            argv.push(format!("ProxyCommand={proxy_cmd}"));
+            argv.push(format!(
+                "ProxyCommand={}",
+                jump_proxy_command(conn, "", shkc)
+            ));
             argv.push("-p".into());
             argv.push(conn.port.to_string());
+            argv.push("--".into());
             argv.push(format!("{}@{}", conn.user, conn.host));
             // Remote command appended directly for non-interactive bastions and direct connections.
             let ls_cmd = build_ls_command(path);
@@ -86,6 +84,7 @@ fn build_ls_argv(conn: &Connection, path: &str, shkc: &str) -> (Vec<String>, boo
         // Direct SSH connection.
         argv.push("-p".into());
         argv.push(conn.port.to_string());
+        argv.push("--".into());
         argv.push(format!("{}@{}", conn.user, conn.host));
         let ls_cmd = build_ls_command(path);
         argv.push(ls_cmd);
@@ -349,8 +348,8 @@ pub fn list_remote_directory(
         remote_path.trim().to_string()
     };
 
-    let shkc = "accept-new";
-    let (argv, is_interactive) = build_ls_argv(&conn, &path, shkc);
+    let (argv, is_interactive) =
+        build_ls_argv(&conn, &path, &config.transport.strict_host_key_checking);
 
     let output = if is_interactive {
         run_interactive_ls(&argv, &path)?
