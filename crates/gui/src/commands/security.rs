@@ -281,7 +281,9 @@ pub fn import_connections_payload(
 
     let raw_bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
 
-    let content_bytes = if raw_bytes.starts_with(b"BSSH") || passphrase.is_some() {
+    // Only payloads carrying the encryption header are decrypted; a passphrase
+    // typed for a plain JSON backup must not turn a valid import into an error.
+    let content_bytes = if raw_bytes.starts_with(b"BSSH") {
         let pass = passphrase.ok_or_else(|| "Encrypted file requires passphrase".to_string())?;
         bayesian_ssh::services::crypto::decrypt_data(&raw_bytes, &pass)
             .map_err(|e| e.to_string())?
@@ -296,7 +298,17 @@ pub fn import_connections_payload(
         let mut total_imported = 0;
 
         for env_data in payload.environments {
-            let env_cfg = env_data.config;
+            // `AppConfig::environment` is serde-skipped (so it deserializes as
+            // "default") and `database_path` is an absolute path from the
+            // exporting machine. Rebind both to the named environment so each
+            // one lands in its own directory and a crafted backup cannot point
+            // the database (or the config write) outside the config tree.
+            if AppConfig::validate_env_name(&env_data.name).is_err() {
+                continue;
+            }
+            let mut env_cfg = env_data.config;
+            env_cfg.database_path = AppConfig::default_for_env(&env_data.name).database_path;
+            env_cfg.environment = env_data.name;
             let _ = env_cfg.save();
 
             if let Ok(db) = Database::new(&env_cfg) {
@@ -350,6 +362,13 @@ pub fn import_connections_payload(
     Err("Import file is not a valid Bayesian SSH backup payload".to_string())
 }
 
+/// Apply the same field validation as the add/edit dialogs to connections
+/// coming from a backup file, which would otherwise reach the ssh argv
+/// unchecked (e.g. a user of "-oProxyCommand=…").
+fn is_importable(conn: &Connection) -> bool {
+    conn.validate().is_ok()
+}
+
 #[tauri::command]
 pub fn fix_security_permissions() -> Result<usize, String> {
     let config = AppConfig::load(None).map_err(|e| e.to_string())?;
@@ -364,13 +383,6 @@ pub struct PingResultDto {
     pub success: bool,
     pub latency_ms: u64,
     pub error: Option<String>,
-}
-
-/// Apply the same field validation as the add/edit dialogs to connections
-/// coming from a backup file, which would otherwise reach the ssh argv
-/// unchecked (e.g. a user of "-oProxyCommand=…").
-fn is_importable(conn: &Connection) -> bool {
-    conn.validate().is_ok()
 }
 
 #[tauri::command]
