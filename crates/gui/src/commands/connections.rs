@@ -207,13 +207,20 @@ pub async fn run_batch_command(
         .map(|c| (c.id.to_string(), c.clone()))
         .collect();
 
+    // Bound concurrency (same limit as ping_all_connections) so a large
+    // selection does not fork one ssh process per host all at once.
+    const MAX_CONCURRENCY: usize = 16;
+    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENCY));
+
     let mut tasks = Vec::new();
     for conn in targets {
         let cfg_clone = config.clone();
         let cmd_clone = command.clone();
         let timeout_dur = timeout_duration;
+        let semaphore = std::sync::Arc::clone(&semaphore);
 
         tasks.push(tokio::spawn(async move {
+            let _permit = semaphore.acquire_owned().await;
             let is_prod = conn.name.to_lowercase().contains("prod")
                 || conn.tags.iter().any(|t| t.to_lowercase().contains("prod"));
 
