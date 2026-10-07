@@ -29,13 +29,38 @@ pub async fn execute(output: Option<String>, config: AppConfig) -> Result<()> {
         db_path, backup_path
     );
 
+    // Pre-create the destination as an empty 0600 file (VACUUM INTO accepts
+    // an empty target). This keeps the snapshot private from the first byte
+    // instead of chmod-ing after the fact, and `create_new` refuses to
+    // clobber an existing file.
+    let mut opts = fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    opts.open(&backup_path).with_context(|| {
+        format!(
+            "cannot create backup file {} (it must not already exist)",
+            backup_path.display()
+        )
+    })?;
+
     // Use SQLite's online backup API (VACUUM INTO) instead of a raw
     // `fs::copy`. A running WAL-mode database can otherwise be copied
     // mid-checkpoint, producing an inconsistent snapshot. VACUUM INTO
     // produces a consistent, standalone copy.
-    let db = Database::new(&config).context("open database for backup")?;
-    db.vacuum_into(&backup_path)
-        .context("backup database via VACUUM INTO")?;
+    let result = Database::new(&config)
+        .context("open database for backup")
+        .and_then(|db| {
+            db.vacuum_into(&backup_path)
+                .context("backup database via VACUUM INTO")
+        });
+    if let Err(e) = result {
+        let _ = fs::remove_file(&backup_path);
+        return Err(e);
+    }
 
     crate::config::enforce_secure_file(&backup_path);
 
