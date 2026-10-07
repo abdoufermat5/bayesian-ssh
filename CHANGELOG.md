@@ -8,7 +8,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Removed
-- **Terminal UI (`bssh tui` / `bssh ui`)**: The ratatui dashboard has been removed. Use the CLI commands or the desktop GUI (`bssh desktop`) instead. `tui.log` is no longer written.
+- **Terminal UI (`bssh tui` / `bssh ui`)**: The ratatui dashboard has been removed. Use the CLI commands or the desktop GUI (`bssh desktop`) instead. The `ratatui` dependency is dropped and `tui.log` is no longer written.
+
+### Security
+- **Option injection blocked everywhere**: Host/user/bastion values starting with `-` (e.g. `-oProxyCommand=…`) or containing shell metacharacters are rejected at the database write boundary for CLI, GUI and imports; every ssh/sftp/scp argv now puts `--` before the destination, and ProxyCommand fields are shell-quoted and `%`-escaped.
+- **Host-key verification**: RSA known_hosts entries never matched (signature algorithm name was compared instead of key type), so changed RSA keys were silently accepted under `accept-new`. `@revoked` keys are now refused, `@cert-authority` lines no longer cause false mismatches, and non-22 ports only match `[host]:port` entries.
+- **Path traversal**: Environment names are validated (`bssh env`, `--env`, GUI, backup import) so `../..` can no longer escape the config directory or `remove_dir_all` outside it; SFTP directory downloads skip remote names that are not a single plain component.
+- **Restore/backup/export**: `restore` validates the file (`PRAGMA quick_check`) and takes a VACUUM INTO safety backup before an atomic 0600 swap; backups and exports are created 0600 from the start and never clobber existing files.
+- **Desktop**: OSC 52 clipboard *reads* from remote hosts are refused; renderer-supplied env names, imported backups and Kerberos principals are validated; slow ssh/sftp/kinit commands no longer block the UI thread.
+- **Installer**: `install.sh` verifies release SHA256SUMS, uses a private `mktemp` directory and reads prompts from `/dev/tty`.
+
+### Fixed
+- Removed tags reappearing after `edit --remove-tags`, and tags dropped when editing a connection found via fuzzy search or alias.
+- `connect`/`add` no longer force port 22 over the stored or configured port; port 0 is rejected.
+- `exec` and `ping` exit non-zero when any host fails and cap parallelism at 16 hosts; `close` refuses PIDs ≤ 1 or outside `i32`.
+- Logs go to stderr, so `bssh export > file.json` produces valid JSON.
+- `import` parses `~/.ssh/config` like OpenSSH (case-insensitive keywords, `=`, quotes, `Match` blocks, multi-pattern `Host`).
+- Truncated SFTP reads/uploads are reported as errors instead of replacing files; `history --days` with huge values no longer panics.
+- Copied SSH commands use `-J` for plain jump hosts and quote key paths.
+- `--tags`, `--add-tags` and `--remove-tags` accept comma-separated lists, as the docs show.
+- Desktop: out-of-order terminal output on tab switches, saved terminal font settings ignored, zoom crash, stale search/SFTP results overwriting newer ones, leaked PTY sessions after remote exit, tray menu refresh, and double-moving arrow-key selection.
+
+### Changed
+- Database opens with a 5 s busy timeout and refuses databases written by a newer schema; migration v4 purges orphan tags/aliases.
+- CI runs `cargo fmt --check`, workspace-wide clippy `-D warnings`, all workspace tests, and `svelte-check`; third-party actions are SHA-pinned with least-privilege tokens.
+- Integration tests moved to `crates/cli/tests/` (they were never compiled from the virtual-workspace root).
 
 ## [2.5.2] - 2026-09-06
 
