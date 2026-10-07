@@ -299,6 +299,9 @@ pub fn import_connections_payload(
                         conn.bastion = None;
                         conn.bastion_user = None;
                     }
+                    if !is_importable(&conn) {
+                        continue;
+                    }
                     if db.add_connection(&conn).is_ok() {
                         total_imported += 1;
                         for alias in &conn.aliases {
@@ -324,6 +327,9 @@ pub fn import_connections_payload(
             if no_bastion {
                 conn.bastion = None;
                 conn.bastion_user = None;
+            }
+            if !is_importable(&conn) {
+                continue;
             }
             if db.add_connection(&conn).is_ok() {
                 count += 1;
@@ -352,6 +358,13 @@ pub struct PingResultDto {
     pub success: bool,
     pub latency_ms: u64,
     pub error: Option<String>,
+}
+
+/// Apply the same field validation as the add/edit dialogs to connections
+/// coming from a backup file, which would otherwise reach the ssh argv
+/// unchecked (e.g. a user of "-oProxyCommand=…").
+fn is_importable(conn: &Connection) -> bool {
+    conn.validate().is_ok()
 }
 
 #[tauri::command]

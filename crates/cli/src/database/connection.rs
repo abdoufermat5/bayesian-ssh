@@ -14,6 +14,7 @@ impl Database {
     /// that has a different `id` but the same `name`. The tag set is
     /// written transactionally with the connection row.
     pub fn add_connection(&self, connection: &Connection) -> Result<()> {
+        connection.validate().map_err(|e| anyhow!(e))?;
         let tx = self.conn.unchecked_transaction()?;
 
         // Detect name conflicts: if a *different* row already owns the
@@ -168,6 +169,7 @@ impl Database {
     }
 
     pub fn update_connection(&self, connection: &Connection) -> Result<()> {
+        connection.validate().map_err(|e| anyhow!(e))?;
         let tx = self.conn.unchecked_transaction()?;
 
         // Don't allow renaming onto an existing name.

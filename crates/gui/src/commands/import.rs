@@ -64,6 +64,11 @@ pub fn import_ssh_config(file: Option<String>) -> Result<usize, String> {
             false,
             identity,
         );
+        // Skip entries the add/edit dialogs would reject (e.g. multi-pattern
+        // "Host a b" lines, or values that ssh would parse as options).
+        if connection.validate().is_err() {
+            return Ok(false);
+        }
         connection.add_tag("imported".to_string());
         db.add_connection(&connection).map_err(|e| e.to_string())?;
         Ok(true)
