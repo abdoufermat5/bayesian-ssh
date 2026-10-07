@@ -64,8 +64,8 @@ pub async fn execute_list() -> Result<()> {
                     let priv_perm = if priv_path.exists() {
                         if let Ok(meta) = fs::metadata(&priv_path) {
                             let mode = meta.permissions().mode() & 0o777;
-                            if mode == 0o600 {
-                                "0600 (SECURE)".to_string()
+                            if mode & 0o077 == 0 {
+                                format!("{:04o} (SECURE)", mode)
                             } else {
                                 format!("{:04o} (WARNING: insecure perms)", mode)
                             }
@@ -103,6 +103,19 @@ pub async fn execute_generate(name: String, key_type: Option<String>) -> Result<
     fs::create_dir_all(&ssh_dir)?;
     crate::config::enforce_secure_dir(&ssh_dir);
 
+    // The key must land in ~/.ssh: reject separators/`..`/absolute paths
+    // that would let `join` escape the directory.
+    if name.is_empty()
+        || name == "."
+        || name == ".."
+        || name.contains('/')
+        || name.contains(std::path::MAIN_SEPARATOR)
+    {
+        return Err(anyhow!(
+            "Invalid key name '{}': use a plain file name such as id_ed25519",
+            name
+        ));
+    }
     let key_path = ssh_dir.join(&name);
     if key_path.exists() {
         return Err(anyhow!("Key file already exists at {}", key_path.display()));
@@ -187,20 +200,21 @@ pub async fn execute_copy(config: AppConfig, target: String, key: Option<String>
     //   '  →  '\''  (close quote, escaped quote, reopen quote)
     let quoted_key = format!("'{}'", pub_key_content.replace('\'', "'\"'\"'"));
     let remote_cmd = format!(
-        "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo {quoted_key} >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
+        "mkdir -p ~/.ssh && chmod 700 ~/.ssh && printf '%s\\n' {quoted_key} >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
     );
 
-    let mut ssh_argv = vec!["ssh".to_string(), "-p".to_string(), conn.port.to_string()];
+    let mut cmd = Command::new("ssh");
+    cmd.arg("-p").arg(conn.port.to_string());
     if let Some(bastion) = &conn.bastion {
         let bu = conn.bastion_user.as_deref().unwrap_or(&conn.user);
-        ssh_argv.push("-J".to_string());
-        ssh_argv.push(format!("{}@{}", bu, bastion));
+        cmd.arg("-J").arg(format!("{}@{}", bu, bastion));
     }
-    ssh_argv.push(format!("{}@{}", conn.user, conn.host));
-    ssh_argv.push(remote_cmd);
-
-    let (bin, args) = ssh_argv.split_first().unwrap();
-    let status = Command::new(bin).args(args).status()?;
+    // `--` ends option parsing so a stored user/host beginning with `-`
+    // cannot be interpreted as an ssh option (e.g. `-oProxyCommand=...`).
+    cmd.arg("--")
+        .arg(format!("{}@{}", conn.user, conn.host))
+        .arg(remote_cmd);
+    let status = cmd.status()?;
 
     if status.success() {
         println!("Public key successfully copied to remote authorized_keys!");
