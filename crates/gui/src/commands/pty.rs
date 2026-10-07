@@ -118,6 +118,27 @@ fn finalize_db_session(db_session_id: Option<Uuid>, exit_code: i32) {
     }
 }
 
+/// Wait for a removed session's child (so it is not left as a zombie) and
+/// record its exit in the history database. Blocks until the child exits, so
+/// callers run it off the main thread.
+fn reap_session(session: PtySession) {
+    let PtySession {
+        mut child,
+        db_session_id,
+        writer,
+        _master,
+        ..
+    } = session;
+    // Release our PTY ends first so the child sees the hangup before we block.
+    drop(writer);
+    drop(_master);
+    let exit_code = child
+        .wait()
+        .map(|status| status.exit_code() as i32)
+        .unwrap_or(-1);
+    finalize_db_session(db_session_id, exit_code);
+}
+
 #[tauri::command]
 pub fn spawn_pty(
     app: AppHandle,
@@ -125,6 +146,12 @@ pub fn spawn_pty(
     session_id: String,
     connection_name: String,
 ) -> Result<(), String> {
+    if state.lock_sessions().contains_key(&session_id) {
+        // Overwriting the entry would drop the old PtySession without killing
+        // its child, leaking a live ssh process and its reader thread.
+        return Err(format!("PTY session '{session_id}' already exists"));
+    }
+
     let (db, config) = get_db_and_config()?;
 
     let connection = db
@@ -135,7 +162,7 @@ pub fn spawn_pty(
     // Record last used
     let mut updated_conn = connection.clone();
     updated_conn.update_last_used();
-    let _ = db.update_connection(&updated_conn);
+    let _ = db.touch_connection(&updated_conn);
 
     // Build the SSH command arguments
     let argv =
@@ -208,6 +235,7 @@ pub fn spawn_pty(
     // Start background thread to read from PTY master and emit to frontend
     let session_id_clone = session_id.clone();
     let app_handle = app.clone();
+    let sessions_map = Arc::clone(&state.sessions);
 
     std::thread::spawn(move || {
         let mut reader = reader;
@@ -236,8 +264,31 @@ pub fn spawn_pty(
 
         // Only emit pty-exit if this was NOT a manual close (avoids ghost events)
         if !cancelled_clone.load(Ordering::SeqCst) {
+            // The remote side ended the session. The frontend only tears down
+            // its UI on pty-exit and never calls close_pty, so release the
+            // PTY, the replay buffer and the child process here. The pointer
+            // check guards against removing a newer session reusing the id.
+            let finished = {
+                let mut sessions = sessions_map
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                let owned = sessions
+                    .get(&session_id_clone)
+                    .is_some_and(|session| Arc::ptr_eq(&session.cancelled, &cancelled_clone));
+                if owned {
+                    sessions.remove(&session_id_clone)
+                } else {
+                    None
+                }
+            };
+
             let _ = app_handle.emit(&format!("pty-exit:{}", session_id_clone), ());
             let _ = app_handle.emit("pty-exit", session_id_clone.clone());
+
+            if let Some(session) = finished {
+                reap_session(session);
+                let _ = app_handle.emit("session-closed", session_id_clone);
+            }
         }
     });
 
@@ -324,9 +375,9 @@ pub fn open_terminal_window(
     }
 
     let window_title = format!("{title} — Bayesian SSH");
-    WebviewWindowBuilder::new(
+    let built = WebviewWindowBuilder::new(
         &app,
-        label,
+        label.clone(),
         WebviewUrl::App(format!("/terminal/{session_id}").into()),
     )
     .title(window_title)
@@ -334,8 +385,18 @@ pub fn open_terminal_window(
     .min_inner_size(480.0, 320.0)
     .decorations(false)
     .background_color(tauri::window::Color::from((12, 13, 18, 255)))
-    .build()
-    .map_err(|e| e.to_string())?;
+    .build();
+
+    if let Err(e) = built {
+        // No window will ever claim or dock this session: release the popout
+        // binding so the main window can keep using it.
+        if let Some(session) = state.lock_sessions().get_mut(&session_id) {
+            if session.popout_window.as_deref() == Some(label.as_str()) {
+                session.popout_window = None;
+            }
+        }
+        return Err(e.to_string());
+    }
 
     Ok(())
 }
@@ -552,16 +613,7 @@ pub fn close_pty(
         }
 
         let _ = session.child.kill();
-
-        let db_session_id = session.db_session_id;
-        let mut child = session.child;
-        std::thread::spawn(move || {
-            let exit_code = child
-                .wait()
-                .map(|status| status.exit_code() as i32)
-                .unwrap_or(-1);
-            finalize_db_session(db_session_id, exit_code);
-        });
+        std::thread::spawn(move || reap_session(session));
 
         let _ = app.emit("session-closed", session_id);
     }
