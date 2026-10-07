@@ -18,7 +18,10 @@ NC='\033[0m' # No Color
 REPO="abdoufermat5/bayesian-ssh"
 BINARY_NAME="bayesian-ssh"
 INSTALL_DIR="/usr/local/bin"
-TEMP_DIR="/tmp/bayesian-ssh-install"
+# Private, unpredictable work dir: a fixed /tmp path lets other local users
+# pre-create it and swap the binary before it is installed with sudo.
+TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/bayesian-ssh-install.XXXXXX")"
+trap 'rm -rf "$TEMP_DIR"' EXIT
 INTERACTIVE=false
 INSTALL_DESKTOP=false
 NO_GUI=false
@@ -47,6 +50,14 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Read a single-key answer from the terminal. When piped from curl, stdin is
+# the script itself, so prompts must read from /dev/tty.
+prompt() {
+    REPLY=""
+    read -p "$1" -n 1 -r < /dev/tty || true
+    echo
+}
 
 # Check if script is being piped (non-interactive)
 check_interactive() {
@@ -102,8 +113,7 @@ check_permissions() {
     if [ "$EUID" -eq 0 ]; then
         echo -e "${YELLOW}⚠️  Running as root - this is not recommended${NC}"
         if [ "$INTERACTIVE" = true ]; then
-            read -p "Continue anyway? (y/N): " -n 1 -r
-            echo
+            prompt "Continue anyway? (y/N): "
             if [[ ! $REPLY =~ ^[Yy]$ ]]; then
                 echo -e "${RED}❌ Installation cancelled${NC}"
                 exit 1
@@ -124,10 +134,11 @@ check_dependencies() {
         echo -e "${YELLOW}Please install curl and try again${NC}"
         exit 1
     fi
-    
-    # Check for wget (alternative to curl)
-    if ! command -v wget &> /dev/null; then
-        echo -e "${YELLOW}⚠️  wget not found (will use curl)${NC}"
+
+    # Check for a SHA-256 tool (downloads are verified against SHA256SUMS)
+    if ! command -v sha256sum &> /dev/null && ! command -v shasum &> /dev/null; then
+        echo -e "${RED}❌ sha256sum (or shasum) is required but not installed${NC}"
+        exit 1
     fi
     
     echo -e "${GREEN}✅ Dependencies satisfied${NC}"
@@ -141,71 +152,69 @@ get_latest_release() {
     if command -v jq &> /dev/null; then
         # Use jq if available for better parsing
         LATEST_TAG=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | jq -r '.tag_name')
-        if [ "$LATEST_TAG" = "null" ] || [ -z "$LATEST_TAG" ]; then
-            echo -e "${RED}❌ Failed to get latest release${NC}"
-            exit 1
-        fi
     else
-        # Fallback: scrape the releases page
-        LATEST_TAG=$(curl -fsSL "https://github.com/${REPO}/releases" | grep -o 'tag/[^"]*' | head -1 | sed 's|tag/||')
-        if [ -z "$LATEST_TAG" ]; then
-            echo -e "${RED}❌ Failed to get latest release${NC}"
-            exit 1
-        fi
+        # Fallback: /releases/latest redirects to /releases/tag/<latest tag>
+        LATEST_TAG=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/${REPO}/releases/latest")
+        LATEST_TAG="${LATEST_TAG##*/tag/}"
+    fi
+
+    # The tag is interpolated into download URLs; accept only plain version tags.
+    if [[ ! "$LATEST_TAG" =~ ^v[0-9][0-9A-Za-z.+-]*$ ]]; then
+        echo -e "${RED}❌ Failed to get latest release${NC}"
+        exit 1
     fi
     
     echo -e "${GREEN}✅ Latest release: ${LATEST_TAG}${NC}"
+}
+
+# Print the SHA-256 digest of a file
+sha256_of() {
+    if command -v sha256sum &> /dev/null; then
+        sha256sum "$1" | awk '{print $1}'
+    else
+        shasum -a 256 "$1" | awk '{print $1}'
+    fi
 }
 
 # Download binary
 download_binary() {
     echo -e "${BLUE}📥 Downloading binary...${NC}"
     
-    # Create temp directory
-    mkdir -p "$TEMP_DIR"
     cd "$TEMP_DIR"
     
     # Construct download URL
     if [ "$INSTALL_DESKTOP" = true ]; then
-        DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${LATEST_TAG}/bayesian-ssh-desktop-${OS}-${ARCH}"
+        ASSET_NAME="bayesian-ssh-desktop-${OS}-${ARCH}"
     else
-        DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${LATEST_TAG}/bayesian-ssh-${OS}-${ARCH}"
+        ASSET_NAME="bayesian-ssh-${OS}-${ARCH}"
     fi
+    RELEASE_URL="https://github.com/${REPO}/releases/download/${LATEST_TAG}"
+    DOWNLOAD_URL="${RELEASE_URL}/${ASSET_NAME}"
     
     echo -e "${BLUE}📡 Downloading from: ${DOWNLOAD_URL}${NC}"
     
-    # Download binary
-    if command -v curl &> /dev/null; then
-        curl -fsSL -o "$BINARY_NAME" "$DOWNLOAD_URL"
-    else
-        wget -q -O "$BINARY_NAME" "$DOWNLOAD_URL"
+    if ! curl -fsSL -o "$BINARY_NAME" "$DOWNLOAD_URL"; then
+        echo -e "${RED}❌ Download failed: no ${ASSET_NAME} asset in release ${LATEST_TAG}${NC}"
+        echo -e "${YELLOW}Please check the release page manually: https://github.com/${REPO}/releases${NC}"
+        exit 1
+    fi
+
+    echo -e "${BLUE}🔒 Verifying checksum...${NC}"
+    if ! curl -fsSL -o SHA256SUMS "${RELEASE_URL}/SHA256SUMS"; then
+        echo -e "${RED}❌ Could not download SHA256SUMS for ${LATEST_TAG}${NC}"
+        exit 1
+    fi
+    EXPECTED_SHA=$(awk -v f="$ASSET_NAME" '$2 == f || $2 == "*" f {print $1; exit}' SHA256SUMS)
+    if [ -z "$EXPECTED_SHA" ]; then
+        echo -e "${RED}❌ No checksum for ${ASSET_NAME} in SHA256SUMS${NC}"
+        exit 1
+    fi
+    if [ "$(sha256_of "$BINARY_NAME")" != "$EXPECTED_SHA" ]; then
+        echo -e "${RED}❌ Checksum mismatch for ${ASSET_NAME}; refusing to install${NC}"
+        exit 1
     fi
     
-    if [ ! -f "$BINARY_NAME" ]; then
-        echo -e "${RED}❌ Download failed${NC}"
-        echo -e "${YELLOW}Trying alternative download method...${NC}"
-        
-        # Try alternative URL format
-        if [ "$INSTALL_DESKTOP" = true ]; then
-            ALT_URL="https://github.com/${REPO}/releases/download/${LATEST_TAG}/bayesian-ssh-desktop"
-        else
-            ALT_URL="https://github.com/${REPO}/releases/download/${LATEST_TAG}/bayesian-ssh"
-        fi
-        
-        if command -v curl &> /dev/null; then
-            curl -fsSL -o "$BINARY_NAME" "$ALT_URL"
-        else
-            wget -q -O "$BINARY_NAME" "$ALT_URL"
-        fi
-        
-        if [ ! -f "$BINARY_NAME" ]; then
-            echo -e "${RED}❌ All download methods failed${NC}"
-            echo -e "${YELLOW}Please check the release page manually: https://github.com/${REPO}/releases${NC}"
-            exit 1
-        fi
-    fi
-    
-    echo -e "${GREEN}✅ Download completed${NC}"
+    echo -e "${GREEN}✅ Download completed and checksum verified${NC}"
 }
 
 # Verify binary
@@ -239,8 +248,7 @@ install_binary() {
     if [ -f "${INSTALL_DIR}/${BINARY_NAME}" ]; then
         echo -e "${YELLOW}⚠️  Binary already exists at ${INSTALL_DIR}/${BINARY_NAME}${NC}"
         if [ "$INTERACTIVE" = true ]; then
-            read -p "Overwrite? (y/N): " -n 1 -r
-            echo
+            prompt "Overwrite? (y/N): "
             if [[ ! $REPLY =~ ^[Yy]$ ]]; then
                 echo -e "${YELLOW}Installation cancelled${NC}"
                 exit 1
@@ -250,20 +258,20 @@ install_binary() {
         fi
     fi
     
-    # Copy binary to install directory
-    if [ "$EUID" -eq 0 ]; then
-        # Running as root
-        cp "$BINARY_NAME" "${INSTALL_DIR}/${BINARY_NAME}"
-    else
-        # Not running as root, use sudo
+    # Determine sudo prefix
+    SUDO_CMD=""
+    if [ "$EUID" -ne 0 ]; then
         if command -v sudo &> /dev/null; then
-            sudo cp "$BINARY_NAME" "${INSTALL_DIR}/${BINARY_NAME}"
+            SUDO_CMD="sudo"
         else
             echo -e "${RED}❌ sudo not available and not running as root${NC}"
             echo -e "${YELLOW}Please run this script as root or install sudo${NC}"
             exit 1
         fi
     fi
+
+    # Copy binary to install directory
+    $SUDO_CMD install -m 755 "$BINARY_NAME" "${INSTALL_DIR}/${BINARY_NAME}"
     
     # Verify installation
     if [ -f "${INSTALL_DIR}/${BINARY_NAME}" ]; then
@@ -271,35 +279,22 @@ install_binary() {
         
         # Create bssh alias for CLI
         if [ "$INSTALL_DESKTOP" = false ]; then
-            if [ "$EUID" -eq 0 ]; then
-                ln -sf "${INSTALL_DIR}/${BINARY_NAME}" "${INSTALL_DIR}/bssh"
-            elif command -v sudo &> /dev/null; then
-                sudo ln -sf "${INSTALL_DIR}/${BINARY_NAME}" "${INSTALL_DIR}/bssh"
-            fi
+            $SUDO_CMD ln -sf "${INSTALL_DIR}/${BINARY_NAME}" "${INSTALL_DIR}/bssh"
             echo -e "${GREEN}✅ Created 'bssh' command alias in ${INSTALL_DIR}${NC}"
         fi
         
         # Install desktop menu shortcut and icon if installing desktop version
         if [ "$INSTALL_DESKTOP" = true ]; then
             echo -e "${BLUE}🎨 Installing desktop menu shortcut and icon...${NC}"
-            
-            # Determine sudo prefix
-            SUDO_CMD=""
-            if [ "$EUID" -ne 0 ]; then
-                if command -v sudo &> /dev/null; then
-                    SUDO_CMD="sudo"
-                fi
-            fi
 
-            # Download icon from raw GitHub
-            ICON_URL="https://raw.githubusercontent.com/${REPO}/main/desktop/src-tauri/icons/128x128.png"
+            # Download icon as the invoking user, then install it with sudo.
+            # (desktop/src-tauri is a symlink, which raw.githubusercontent.com does not follow.)
+            ICON_URL="https://raw.githubusercontent.com/${REPO}/${LATEST_TAG}/crates/gui/icons/128x128.png"
             ICON_DIR="/usr/share/icons/hicolor/128x128/apps"
-            
-            $SUDO_CMD mkdir -p "$ICON_DIR"
-            if command -v curl &> /dev/null; then
-                $SUDO_CMD curl -fsSL -o "${ICON_DIR}/bayesian-ssh-desktop.png" "$ICON_URL"
+            if curl -fsSL -o "${TEMP_DIR}/bayesian-ssh-desktop.png" "$ICON_URL"; then
+                $SUDO_CMD install -Dm644 "${TEMP_DIR}/bayesian-ssh-desktop.png" "${ICON_DIR}/bayesian-ssh-desktop.png"
             else
-                $SUDO_CMD wget -q -O "${ICON_DIR}/bayesian-ssh-desktop.png" "$ICON_URL"
+                echo -e "${YELLOW}⚠️  Could not download the application icon${NC}"
             fi
 
             # Create desktop shortcut
@@ -320,13 +315,12 @@ install_binary() {
 build_from_source() {
     echo -e "${BLUE}🔨 Building from source...${NC}"
     
-    # Check if make is available
-    if ! command -v make &> /dev/null; then
-        echo -e "${RED}❌ make is required for building from source${NC}"
-        echo -e "${YELLOW}Please install make and try again${NC}"
+    # Check if git is available
+    if ! command -v git &> /dev/null; then
+        echo -e "${RED}❌ git is required for building from source${NC}"
         exit 1
     fi
-    
+
     # Check if cargo is available
     if ! command -v cargo &> /dev/null; then
         echo -e "${RED}❌ Rust and Cargo are required for building from source${NC}"
@@ -339,17 +333,21 @@ build_from_source() {
     git clone "https://github.com/${REPO}.git" "$TEMP_DIR"
     cd "$TEMP_DIR"
     
-    # Build using Makefile
     if [ "$INSTALL_DESKTOP" = true ]; then
-        echo -e "${BLUE}🔨 Building desktop version with Makefile...${NC}"
-        make release-desktop
-        echo -e "${BLUE}📦 Installing desktop version with Makefile...${NC}"
-        make install-desktop
-    else
-        echo -e "${BLUE}🔨 Building CLI version with Makefile...${NC}"
-        make release
-        echo -e "${BLUE}📦 Installing CLI version with Makefile...${NC}"
+        # The desktop build needs the frontend toolchain; the Makefile drives it
+        # and installs the CLI, the bssh alias and the GUI (as bayesian-ssh-gui).
+        if ! command -v make &> /dev/null || ! command -v npm &> /dev/null; then
+            echo -e "${RED}❌ make and npm are required for building the desktop app from source${NC}"
+            exit 1
+        fi
+        echo -e "${BLUE}🔨 Building and installing desktop version with Makefile...${NC}"
         make install
+        BINARY_NAME="bayesian-ssh-gui"
+    else
+        echo -e "${BLUE}🔨 Building CLI version...${NC}"
+        cargo build --release --locked --package bayesian-ssh
+        cp target/release/bayesian-ssh "$BINARY_NAME"
+        install_binary
     fi
     
     echo -e "${GREEN}✅ Build from source completed successfully!${NC}"
@@ -428,8 +426,7 @@ main() {
         echo -e "  3. Build CLI binary from source"
         echo -e "  4. Build Desktop app from source"
         echo ""
-        read -p "Choose option (1-4): " -n 1 -r
-        echo
+        prompt "Choose option (1-4): "
         
         if [[ $REPLY =~ ^[2]$ ]]; then
             # Download pre-built Desktop binary
