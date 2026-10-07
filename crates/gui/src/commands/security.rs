@@ -151,6 +151,8 @@ pub fn copy_ssh_key_to_target(target: String, key_path: Option<String>) -> Resul
         ssh_argv.push("-J".to_string());
         ssh_argv.push(format!("{}@{}", bu, bastion));
     }
+    // `--` keeps a stored user/host starting with '-' from being parsed as an ssh option.
+    ssh_argv.push("--".to_string());
     ssh_argv.push(format!("{}@{}", conn.user, conn.host));
     ssh_argv.push(remote_cmd);
 
@@ -399,6 +401,7 @@ pub async fn ping_all_connections() -> Result<Vec<PingResultDto>, String> {
                         "ConnectTimeout=3",
                         "-p",
                         &conn.port.to_string(),
+                        "--",
                         &format!("{}@{}", conn.user, conn.host),
                         "exit 0",
                     ])
