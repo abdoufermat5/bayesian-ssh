@@ -59,39 +59,63 @@ pub async fn execute(target: String, local: String, config: AppConfig) -> Result
 }
 
 /// Parse `[bind_addr:]bind_port:remote_host:remote_port` into its four parts.
-/// Defaults the bind address to `127.0.0.1` when omitted.
+/// Defaults the bind address to `127.0.0.1` when omitted. Like OpenSSH,
+/// IPv6 addresses may be wrapped in brackets (`[::1]:8080:[fe80::1]:80`).
 fn parse_local_spec(spec: &str) -> Result<(String, u16, String, u16)> {
-    let parts: Vec<&str> = spec.splitn(4, ':').collect();
-    match parts.as_slice() {
-        [bind_port_s, remote_host, remote_port_s] => {
-            let bind_port: u16 = bind_port_s
-                .parse()
-                .with_context(|| format!("invalid bind port '{bind_port_s}'"))?;
-            let remote_port: u16 = remote_port_s
-                .parse()
-                .with_context(|| format!("invalid remote port '{remote_port_s}'"))?;
-            Ok((
-                "127.0.0.1".to_string(),
-                bind_port,
-                remote_host.to_string(),
-                remote_port,
-            ))
-        }
-        [bind_addr, bind_port_s, remote_host, remote_port_s] => {
-            let bind_port: u16 = bind_port_s
-                .parse()
-                .with_context(|| format!("invalid bind port '{bind_port_s}'"))?;
-            let remote_port: u16 = remote_port_s
-                .parse()
-                .with_context(|| format!("invalid remote port '{remote_port_s}'"))?;
-            Ok((
-                bind_addr.to_string(),
-                bind_port,
-                remote_host.to_string(),
-                remote_port,
-            ))
-        }
+    let parts = split_spec(spec);
+    let (bind_addr, bind_port_s, remote_host, remote_port_s) = match parts.as_slice() {
+        [bp, rh, rp] => ("127.0.0.1", *bp, *rh, *rp),
+        [ba, bp, rh, rp] => (*ba, *bp, *rh, *rp),
         _ => bail!("expected [bind_addr:]bind_port:remote_host:remote_port, got '{spec}'"),
+    };
+    let bind_addr = unbracket(bind_addr);
+    let remote_host = unbracket(remote_host);
+    if bind_addr.is_empty() {
+        bail!("empty bind address in '{spec}'");
+    }
+    if remote_host.is_empty() {
+        bail!("empty remote host in '{spec}'");
+    }
+    let bind_port = parse_port(bind_port_s).context("invalid bind port")?;
+    let remote_port = parse_port(remote_port_s).context("invalid remote port")?;
+    Ok((
+        bind_addr.to_string(),
+        bind_port,
+        remote_host.to_string(),
+        remote_port,
+    ))
+}
+
+/// Split on `:` except inside `[...]` (bracketed IPv6 literals).
+fn split_spec(spec: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut depth = 0u32;
+    let mut start = 0;
+    for (i, c) in spec.char_indices() {
+        match c {
+            '[' => depth += 1,
+            ']' => depth = depth.saturating_sub(1),
+            ':' if depth == 0 => {
+                parts.push(&spec[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    parts.push(&spec[start..]);
+    parts
+}
+
+fn unbracket(s: &str) -> &str {
+    s.strip_prefix('[')
+        .and_then(|s| s.strip_suffix(']'))
+        .unwrap_or(s)
+}
+
+fn parse_port(s: &str) -> Result<u16> {
+    match s.parse::<u16>() {
+        Ok(0) | Err(_) => bail!("'{s}' is not a port in 1-65535"),
+        Ok(p) => Ok(p),
     }
 }
 
@@ -121,5 +145,18 @@ mod tests {
     fn invalid_spec_errors() {
         assert!(parse_local_spec("8080").is_err());
         assert!(parse_local_spec("bad:port:host:80").is_err());
+        assert!(parse_local_spec("8080::80").is_err());
+        assert!(parse_local_spec("0:host:80").is_err());
+        assert!(parse_local_spec("8080:host:0").is_err());
+        assert!(parse_local_spec("a:1:host:2:3").is_err());
+    }
+
+    #[test]
+    fn bracketed_ipv6() {
+        let (bh, bp, rh, rp) = parse_local_spec("[::1]:8080:[fe80::1]:80").unwrap();
+        assert_eq!(bh, "::1");
+        assert_eq!(bp, 8080);
+        assert_eq!(rh, "fe80::1");
+        assert_eq!(rp, 80);
     }
 }
