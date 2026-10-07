@@ -527,7 +527,17 @@
       return;
     }
     const send = () => {
-      tab.term?.paste(`${cmd}\r`);
+      // Resolve at send time: the tab may have closed while the confirm
+      // dialog was open, leaving a disposed xterm behind.
+      const term = terminalState.tabs.find((t) => t.id === tab.id)?.term;
+      if (!term) {
+        notify("Terminal closed — snippet not sent", "error");
+        return;
+      }
+      // Bracketed paste would swallow a trailing "\r" inside the paste
+      // markers, so Enter must be sent as a separate keystroke to execute.
+      term.paste(cmd);
+      term.input("\r");
     };
     if (appState.settings.confirm_snippet_execution !== false) {
       appState.promptDelete(
