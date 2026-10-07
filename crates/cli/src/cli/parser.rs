@@ -253,8 +253,8 @@ pub enum Commands {
         /// Enable Kerberos authentication by default for new connections
         #[arg(long, value_name = "BOOL")]
         use_kerberos: Option<bool>,
-        /// Application log level (trace, debug, info, warn, error)
-        #[arg(long, value_name = "LEVEL")]
+        /// Application log level (trace, debug, info, warn, error, off)
+        #[arg(long, value_parser = ["trace", "debug", "info", "warn", "error", "off"], value_name = "LEVEL")]
         log_level: Option<String>,
         /// Remove the default bastion so new connections are direct
         #[arg(long)]
@@ -306,7 +306,7 @@ pub enum Commands {
 
     /// Backup the connection database to a file
     Backup {
-        /// Destination path (defaults to ~/.local/share/bayesian-ssh/backups/<timestamp>.db)
+        /// Destination path (default: ENV_DIR/backups/backup-TIMESTAMP.db); must not already exist
         #[arg(short = 'o', long, value_name = "FILE")]
         output: Option<String>,
     },
@@ -362,7 +362,7 @@ pub enum Commands {
         #[arg(short = 'g', long, value_name = "TAG")]
         tag: Option<String>,
         /// Connection timeout in seconds (default: 5)
-        #[arg(short = 't', long, value_name = "SECS")]
+        #[arg(short = 't', long, value_name = "SECS", value_parser = clap::value_parser!(u64).range(1..=600))]
         timeout: Option<u64>,
     },
 
