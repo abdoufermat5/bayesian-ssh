@@ -1,6 +1,6 @@
 //! Close command implementation - manage active sessions
 
-use crate::cli::utils::confirm;
+use crate::cli::utils::{confirm, format_elapsed, truncate_display};
 use crate::config::AppConfig;
 use crate::database::Database;
 use anyhow::Result;
@@ -51,14 +51,14 @@ fn list_active_sessions(db: &Database) -> Result<()> {
 
     for (conn_name, pid, started_at) in &sessions {
         let duration = chrono::Utc::now().signed_duration_since(*started_at);
-        let duration_str = format_duration(duration);
+        let duration_str = format_elapsed(duration);
         let pid_str = pid
             .map(|p| p.to_string())
             .unwrap_or_else(|| "-".to_string());
 
         // Check if process is actually running
         let status = if let Some(p) = pid {
-            if is_process_running(*p) {
+            if live_pid(*p).is_some() {
                 "🟢"
             } else {
                 "⚠️ stale"
@@ -69,7 +69,7 @@ fn list_active_sessions(db: &Database) -> Result<()> {
 
         println!(
             "{:<20} {:<10} {:<25} {} {}",
-            truncate(conn_name, 19),
+            truncate_display(conn_name, 19),
             pid_str,
             started_at.format("%Y-%m-%d %H:%M:%S"),
             duration_str,
@@ -94,7 +94,7 @@ fn close_session(db: &Database, target: &str, force: bool) -> Result<()> {
 
     for (session_id, conn_name, pid, _) in sessions {
         if let Some(p) = pid {
-            if is_process_running(p) {
+            if let Some(target) = live_pid(p) {
                 if !force
                     && !confirm(
                         &format!("Close session for '{}' (PID {})?", conn_name, p),
@@ -105,7 +105,7 @@ fn close_session(db: &Database, target: &str, force: bool) -> Result<()> {
                     continue;
                 }
 
-                match kill(Pid::from_raw(p as i32), Signal::SIGTERM) {
+                match kill(target, Signal::SIGTERM) {
                     Ok(_) => {
                         println!("✅ Sent SIGTERM to session '{}' (PID {})", conn_name, p);
                         db.mark_session_terminated(&session_id, -15)?; // SIGTERM = 15
@@ -155,8 +155,8 @@ fn close_all_sessions(db: &Database, force: bool) -> Result<()> {
 
     for (_conn_name, pid, _) in &sessions {
         if let Some(p) = pid {
-            if is_process_running(*p) {
-                if kill(Pid::from_raw(*p as i32), Signal::SIGTERM).is_ok() {
+            if let Some(target) = live_pid(*p) {
+                if kill(target, Signal::SIGTERM).is_ok() {
                     closed += 1;
                 }
             } else {
@@ -183,7 +183,7 @@ fn cleanup_stale_sessions(db: &Database) -> Result<()> {
 
     for (conn_name, pid, _) in &sessions {
         if let Some(p) = pid {
-            if !is_process_running(*p) {
+            if live_pid(*p).is_none() {
                 if let Some(session_id) = db.get_session_id_by_pid(*p)? {
                     db.mark_session_terminated(&session_id, -1)?;
                     cleaned += 1;
@@ -202,27 +202,28 @@ fn cleanup_stale_sessions(db: &Database) -> Result<()> {
     Ok(())
 }
 
-/// Check if a process is running
-fn is_process_running(pid: u32) -> bool {
-    // Try to send signal 0 (doesn't actually send a signal, just checks if process exists)
-    kill(Pid::from_raw(pid as i32), None).is_ok()
+/// Return the PID if it is a plausible session process that is still alive.
+///
+/// PIDs come from the database, so guard the `u32 → i32` conversion:
+/// 0 would signal our own process group, values above `i32::MAX` wrap to
+/// negative (signalling a whole process group), and 1 is init.
+fn live_pid(pid: u32) -> Option<Pid> {
+    let raw = i32::try_from(pid).ok().filter(|&p| p > 1)?;
+    let target = Pid::from_raw(raw);
+    // Signal 0 performs only the existence/permission check.
+    kill(target, None).ok().map(|_| target)
 }
 
-fn format_duration(duration: chrono::Duration) -> String {
-    let secs = duration.num_seconds();
-    if secs < 60 {
-        format!("{}s", secs)
-    } else if secs < 3600 {
-        format!("{}m {}s", secs / 60, secs % 60)
-    } else {
-        format!("{}h {}m", secs / 3600, (secs % 3600) / 60)
-    }
-}
+#[cfg(test)]
+mod tests {
+    use super::live_pid;
 
-fn truncate(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
-        s.to_string()
-    } else {
-        format!("{}…", &s[..max_len - 1])
+    #[test]
+    fn live_pid_rejects_dangerous_values() {
+        assert!(live_pid(0).is_none());
+        assert!(live_pid(1).is_none());
+        assert!(live_pid(u32::MAX).is_none());
+        assert!(live_pid(i32::MAX as u32 + 1).is_none());
+        assert!(live_pid(std::process::id()).is_some());
     }
 }
