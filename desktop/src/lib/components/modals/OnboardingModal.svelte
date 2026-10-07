@@ -78,6 +78,7 @@
         noBastion: false,
       });
       showPassphraseInput = false;
+      restorePassphrase = "";
       await onComplete({
         profile_name: "default",
         create_profile: false,
@@ -93,6 +94,7 @@
     } catch (err: unknown) {
       const errStr = String(err);
       if (errStr.includes("requires passphrase") || errStr.includes("decrypt") || errStr.includes("Passphrase")) {
+        if (pass !== null) notify(`Restore failed: ${err}`, "error");
         showPassphraseInput = true;
       } else {
         notify(`Restore failed: ${err}`, "error");
@@ -103,8 +105,10 @@
   }
 
   async function submitPassphrase() {
-    if (!restorePassphrase.trim() || !selectedBackupPath) return;
-    await executeRestore(selectedBackupPath, restorePassphrase.trim());
+    // Send the passphrase verbatim: export (Settings → Profiles) does not
+    // trim, so trimming here would make backups with edge whitespace unrestorable.
+    if (!restorePassphrase || !selectedBackupPath) return;
+    await executeRestore(selectedBackupPath, restorePassphrase);
   }
 
   // Skip setup entirely: complete onboarding with minimal defaults.
@@ -295,7 +299,7 @@
         type="button"
         class="py-1.5 px-3.5 rounded-lg text-xs font-semibold bg-accent text-white hover:bg-accent-hover flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
         onclick={submitPassphrase}
-        disabled={busy || !restorePassphrase.trim()}
+        disabled={busy || !restorePassphrase}
       >
         <KeyRound size={13} />
         Decrypt
