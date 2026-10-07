@@ -319,7 +319,7 @@ mod tests {
         while stream.len() < plaintext.len() {
             let mut h = Sha256::new();
             h.update(&enc_key);
-            h.update(&iv);
+            h.update(iv);
             h.update(counter.to_be_bytes());
             stream.extend_from_slice(&h.finalize());
             counter += 1;
