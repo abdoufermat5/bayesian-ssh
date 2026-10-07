@@ -567,7 +567,12 @@
   onOpenAddModal={appState.openAddModal}
   onOpenBatchExec={() => (showBatchExecModal = true)}
   onPingAll={() => {
-    invoke("ping_all_connections").catch(() => {});
+    invoke<Array<{ success: boolean }>>("ping_all_connections")
+      .then((results) => {
+        const reachable = results.filter((r) => r.success).length;
+        notify(`Ping completed: ${reachable}/${results.length} reachable hosts`, "success");
+      })
+      .catch((e) => notify(`Ping failed: ${e}`, "error"));
   }}
   onFixPermissions={async () => {
     try {
