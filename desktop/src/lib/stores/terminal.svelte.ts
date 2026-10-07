@@ -98,6 +98,10 @@ export function initThemeSyncForTerminals() {
 }
 export function applyThemeToAllTerminals(settings?: DesktopSettings) {
   const currentTheme = getCurrentXtermTheme();
+  if (settings?.terminal_font_size) {
+    // Keep keyboard/wheel zoom relative to the saved size, not the default.
+    terminalFontSize = settings.terminal_font_size;
+  }
   tabs.forEach((tab) => {
     if (tab.term) {
       tab.term.options.theme = currentTheme;
@@ -131,8 +135,8 @@ export function getTerminalFontSize(): number {
 export function updateTerminalFontSize(newSize: number) {
   terminalFontSize = Math.max(8, Math.min(32, newSize));
   const settings = getTerminalSettings();
-  if (settings?.terminal_font_size !== terminalFontSize) {
-    settings!.terminal_font_size = terminalFontSize;
+  if (settings && settings.terminal_font_size !== terminalFontSize) {
+    settings.terminal_font_size = terminalFontSize;
   }
   tabs.forEach((tab) => {
     if (tab.term && tab.fitAddon) {

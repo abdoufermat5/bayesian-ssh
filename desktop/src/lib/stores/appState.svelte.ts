@@ -31,6 +31,7 @@ import {
   terminatePopoutSession,
   updateTerminalFontSize,
   getTerminalFontSize,
+  registerSettingsGetter,
 } from "$lib/stores/terminal.svelte";
 import { getWindowState } from "$lib/stores/window.svelte";
 import {
@@ -952,3 +953,4 @@ export class AppStateStore {
 }
 
 export const appState = new AppStateStore();
+registerSettingsGetter(() => appState.settings);
