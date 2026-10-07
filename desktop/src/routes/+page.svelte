@@ -46,7 +46,6 @@
     getKerberosState,
     openKerberosModal,
     closeKerberosModal,
-    startKerberosMonitoring,
     stopKerberosMonitoring,
   } from "$lib/stores/kerberos.svelte";
   import { appState } from "$lib/stores/appState.svelte";
@@ -125,23 +124,6 @@
       await appState.loadHistory();
       await appState.loadStats();
     });
-
-    if (appState.settings.monitor_kerberos && !appState.showOnboarding) {
-      startKerberosMonitoring({
-        warnMinutes: appState.settings.kerberos_warn_minutes,
-        onWarning: (message) => {
-          if (appState.showOnboarding) return;
-          notify(message, "info");
-          // Also send system notification
-          import("@tauri-apps/api/core").then(({ invoke }) => {
-            void invoke("send_desktop_notification", {
-              title: "Kerberos Ticket Warning",
-              body: message
-            });
-          });
-        },
-      });
-    }
 
     let teardownWindow = () => {};
     initWindowState().then((teardown) => {

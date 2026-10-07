@@ -196,9 +196,9 @@ export function startKerberosMonitoring(options?: {
   if (options?.warnMinutes !== undefined) {
     warnMinutes = options.warnMinutes;
   }
-  // Preserve an existing warning handler when none is provided, so a later
-  // settings reload (which only passes warnMinutes) does not silently drop
-  // the system-notification handler installed by the main page.
+  // Preserve an existing warning handler when none is provided, so a caller
+  // that only passes warnMinutes does not silently drop the notification
+  // handler (appState.handleKerberosWarning).
   if (options?.onWarning !== undefined) {
     onExpiryWarning = options.onWarning;
   }

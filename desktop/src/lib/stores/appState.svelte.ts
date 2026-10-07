@@ -331,7 +331,7 @@ export class AppStateStore {
       if (this.settings.monitor_kerberos) {
         startKerberosMonitoring({
           warnMinutes: this.settings.kerberos_warn_minutes,
-          onWarning: (message) => notify(message, "info"),
+          onWarning: this.handleKerberosWarning,
         });
       } else {
         stopKerberosMonitoring();
@@ -351,7 +351,7 @@ export class AppStateStore {
       if (this.settings.monitor_kerberos) {
         startKerberosMonitoring({
           warnMinutes: this.settings.kerberos_warn_minutes,
-          onWarning: (message) => notify(message, "info"),
+          onWarning: this.handleKerberosWarning,
         });
       } else {
         stopKerberosMonitoring();
@@ -360,6 +360,15 @@ export class AppStateStore {
     } catch (e: unknown) {
       notify(`Failed to save settings: ${e}`, "error");
     }
+  }
+
+  handleKerberosWarning = (message: string) => {
+    if (this.showOnboarding) return;
+    notify(message, "info");
+    invoke("send_desktop_notification", {
+      title: "Kerberos Ticket Warning",
+      body: message,
+    }).catch((e) => console.error("Failed to send desktop notification", e));
   }
 
   handleThemeChange = (theme: string) => {
