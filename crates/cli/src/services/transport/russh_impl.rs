@@ -176,11 +176,16 @@ impl RusshTransport {
                 Err(e) => debug!("Could not load key {path:?}: {e}"),
             }
         }
-        // Password fallback
-        let pw = rpassword::prompt_password(format!("{}@{}'s password: ", user, conn.host))
+        // Password fallback. The prompt blocks on the TTY, so keep it off the
+        // async worker threads; wipe our copy of the password once sent.
+        let prompt = format!("{}@{}'s password: ", user, conn.host);
+        let pw = tokio::task::spawn_blocking(move || rpassword::prompt_password(prompt))
+            .await
+            .map_err(|e| TransportError::Permanent(anyhow!("password prompt: {e}")))?
             .map_err(|e| TransportError::Permanent(anyhow!("password prompt: {e}")))?;
+        let pw = zeroize::Zeroizing::new(pw);
         handle
-            .authenticate_password(user, &pw)
+            .authenticate_password(user, pw.as_str())
             .await
             .map_err(|e| TransportError::Permanent(anyhow!("{e}")))
     }
@@ -221,7 +226,9 @@ impl RusshTransport {
                 ChannelMsg::Data { data } => stdout.extend_from_slice(&data),
                 ChannelMsg::ExtendedData { data, ext: 1 } => stderr.extend_from_slice(&data),
                 ChannelMsg::ExitStatus { exit_status } => exit_code = exit_status as i32,
-                ChannelMsg::Eof | ChannelMsg::Close => break,
+                // Servers commonly send EOF *before* exit-status; keep reading
+                // until the channel closes so the exit code isn't lost.
+                ChannelMsg::Close => break,
                 _ => {}
             }
         }
@@ -288,6 +295,7 @@ impl SshTransport for RusshTransport {
         tokio::spawn(async move {
             let mut exit_code = 0i32;
             let mut stdin_closed = false;
+            let mut resize_closed = false;
 
             loop {
                 tokio::select! {
@@ -301,10 +309,15 @@ impl SshTransport for RusshTransport {
                             Some(d) => { let _ = channel.data(d.as_slice()).await; }
                         }
                     }
-                    // Terminal resize
-                    dims = resize_rx.recv() => {
-                        if let Some((cols, rows)) = dims {
-                            let _ = channel.window_change(cols as u32, rows as u32, 0, 0).await;
+                    // Terminal resize. Once the sender is gone `recv()` resolves
+                    // immediately forever — disable the branch or the select
+                    // loop spins at 100% CPU.
+                    dims = resize_rx.recv(), if !resize_closed => {
+                        match dims {
+                            Some((cols, rows)) => {
+                                let _ = channel.window_change(cols as u32, rows as u32, 0, 0).await;
+                            }
+                            None => resize_closed = true,
                         }
                     }
                     // Data from remote and control messages
@@ -321,7 +334,8 @@ impl SshTransport for RusshTransport {
                                 }
                                 break;
                             }
-                            Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) => break,
+                            // EOF may precede exit-status; wait for it or Close.
+                            Some(ChannelMsg::Close) => break,
                             _ => {}
                         }
                     }
@@ -583,7 +597,7 @@ impl SshTransport for RusshTransport {
                             if !stdin_closed { let _ = channel.eof().await; }
                             break;
                         }
-                        Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) => break,
+                        Some(ChannelMsg::Close) => break,
                         _ => {}
                     }
                 }
