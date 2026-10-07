@@ -1,5 +1,6 @@
 //! History command implementation - display session history with stats
 
+use crate::cli::utils::{format_elapsed, truncate_display};
 use crate::config::AppConfig;
 use crate::database::Database;
 use crate::models::{SessionHistoryEntry, SessionStatus};
@@ -41,7 +42,7 @@ pub async fn execute(
         stats.successful,
         stats.success_rate * 100.0,
         stats.failed,
-        format_duration_short(stats.avg_duration)
+        format_elapsed(stats.avg_duration)
     );
     println!("{}", "─".repeat(80));
     println!();
@@ -57,7 +58,7 @@ pub async fn execute(
         let status_str = format_status(&session.status);
         let duration_str = session
             .duration
-            .map(format_duration_short)
+            .map(format_elapsed)
             .unwrap_or_else(|| "ongoing".to_string());
         let exit_str = session
             .exit_code
@@ -66,7 +67,7 @@ pub async fn execute(
 
         println!(
             "{:<20} {:<25} {:<12} {:<15} {}",
-            truncate(&session.connection_name, 19),
+            truncate_display(&session.connection_name, 19),
             session.started_at.format("%Y-%m-%d %H:%M:%S"),
             duration_str,
             status_str,
@@ -135,25 +136,6 @@ fn format_status(status: &SessionStatus) -> String {
         SessionStatus::Active => "🟢 active".to_string(),
         SessionStatus::Disconnected => "🔌 disconnected".to_string(),
         SessionStatus::Terminated => "✅ terminated".to_string(),
-        SessionStatus::Error(e) => format!("❌ error: {}", truncate(e, 20)),
-    }
-}
-
-fn format_duration_short(duration: Duration) -> String {
-    let secs = duration.num_seconds();
-    if secs < 60 {
-        format!("{}s", secs)
-    } else if secs < 3600 {
-        format!("{}m {}s", secs / 60, secs % 60)
-    } else {
-        format!("{}h {}m", secs / 3600, (secs % 3600) / 60)
-    }
-}
-
-fn truncate(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
-        s.to_string()
-    } else {
-        format!("{}…", &s[..max_len - 1])
+        SessionStatus::Error(e) => format!("❌ error: {}", truncate_display(e, 20)),
     }
 }

@@ -1,4 +1,4 @@
-use crate::cli::utils::format_duration;
+use crate::cli::utils::{format_duration, truncate_display};
 use crate::config::AppConfig;
 use crate::services::SshService;
 use anyhow::Result;
@@ -101,8 +101,12 @@ pub async fn execute(
             println!(
                 "{:<3} {:<20} {:<25} {:<8} {}",
                 i + 1,
-                truncate(&conn.name, 19),
-                format!("{}@{}", truncate(&conn.user, 8), truncate(&conn.host, 15)),
+                truncate_display(&conn.name, 19),
+                format!(
+                    "{}@{}",
+                    truncate_display(&conn.user, 8),
+                    truncate_display(&conn.host, 15)
+                ),
                 conn.port,
                 info
             );
@@ -114,12 +118,4 @@ pub async fn execute(
     println!();
 
     Ok(())
-}
-
-fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max {
-        s.to_string()
-    } else {
-        format!("{}…", &s[..max - 1])
-    }
 }
