@@ -148,6 +148,9 @@ if command -v rpmbuild >/dev/null 2>&1; then
     rm -rf "${RPM_TOPDIR}"
     mkdir -p "${RPM_TOPDIR}/"{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 
+    # List exactly what was staged (the GUI binary and icon are optional).
+    RPM_FILES="$(cd "${BUILD_DIR}" && find . \( -type f -o -type l \) | sed 's|^\.||' | sort)"
+
     # Generate RPM spec file
     SPEC_FILE="${RPM_TOPDIR}/SPECS/${PKG_NAME}.spec"
     cat <<EOF > "${SPEC_FILE}"
@@ -167,7 +170,7 @@ CLI, and a desktop graphical user interface.
 %install
 rm -rf %{buildroot}
 mkdir -p %{buildroot}
-cp -a ${BUILD_DIR}/* %{buildroot}/
+cp -a "${BUILD_DIR}"/. %{buildroot}/
 
 %post
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then
@@ -175,12 +178,7 @@ if command -v gtk-update-icon-cache >/dev/null 2>&1; then
 fi
 
 %files
-/usr/bin/bayesian-ssh
-/usr/bin/bssh
-/usr/bin/bayesian-ssh-gui
-/usr/share/applications/bayesian-ssh-gui.desktop
-/usr/share/icons/hicolor/128x128/apps/bayesian-ssh-gui.png
-/usr/share/doc/${PKG_NAME}/*
+${RPM_FILES}
 
 %changelog
 * Sun Jul 26 2026 Abdoufermat5 <abdoufermat5@users.noreply.github.com> - ${VERSION}-1
