@@ -936,27 +936,6 @@ export class AppStateStore {
       if (key === "5") { e.preventDefault(); this.activeTab = "history"; return; }
       if (key === "6") { e.preventDefault(); this.activeTab = "settings"; return; }
     }
-
-    // Connections List navigation (ArrowUp, ArrowDown, Enter, Ctrl+E)
-    if (this.activeTab === "connections" && this.connections.length > 0 && !isEditing && !isTerminalFocused()) {
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        this.selectedHostIndex = (this.selectedHostIndex + 1) % this.connections.length;
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        this.selectedHostIndex = (this.selectedHostIndex - 1 + this.connections.length) % this.connections.length;
-      } else if (e.key === "Enter") {
-        e.preventDefault();
-        if (this.connections[this.selectedHostIndex]) {
-          this.handleConnect(this.connections[this.selectedHostIndex]);
-        }
-      } else if (e.key.toLowerCase() === "e" && (e.ctrlKey || e.metaKey)) {
-        e.preventDefault();
-        if (this.connections[this.selectedHostIndex]) {
-          this.openEditModal(this.connections[this.selectedHostIndex]);
-        }
-      }
-    }
   };
 }
 
