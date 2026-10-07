@@ -64,11 +64,10 @@ async fn add_alias(db: &Database, alias: &str, target: &str, config: &AppConfig)
 }
 
 fn remove_alias(db: &Database, alias: &str) -> Result<()> {
-    if db.remove_alias(alias)? {
-        println!("✅ Removed alias '{}'", alias);
-    } else {
-        println!("❌ Alias '{}' not found", alias);
+    if !db.remove_alias(alias)? {
+        bail!("Alias '{}' not found", alias);
     }
+    println!("✅ Removed alias '{}'", alias);
     Ok(())
 }
 
@@ -94,18 +93,17 @@ async fn list_aliases(db: &Database, target: Option<&str>, config: &AppConfig) -
             }
         }
     } else {
-        // List all aliases
+        // List all aliases (list_connections already batch-loads aliases)
         let connections = db.list_connections(None, false)?;
         let mut found_any = false;
 
         println!("📝 All Connection Aliases\n");
 
         for conn in connections {
-            let aliases = db.get_aliases_for_connection(&conn.id.to_string())?;
-            if !aliases.is_empty() {
+            if !conn.aliases.is_empty() {
                 found_any = true;
                 println!("  {} ({})", conn.name, conn.host);
-                for alias in &aliases {
+                for alias in &conn.aliases {
                     println!("    └─ {}", alias);
                 }
                 println!();
