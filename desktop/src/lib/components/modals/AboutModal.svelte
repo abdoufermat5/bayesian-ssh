@@ -22,7 +22,7 @@
         const ver = await invoke<string>("get_app_version");
         appVersion = `v${ver}`;
       } catch {
-        appVersion = "v2.2.0";
+        appVersion = "unknown";
       }
     })();
   });
