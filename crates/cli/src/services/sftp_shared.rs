@@ -140,6 +140,8 @@ fn run_interactive_ls(argv: &[String], path: &str) -> Result<Output, String> {
     // Read in a background thread and relay chunks over a channel.
     // We stop draining after 1.5 s of silence (connection is ready).
     let (tx, rx) = mpsc::channel::<Vec<u8>>();
+    // The thread reads until EOF, so every byte (drain phase and command
+    // output alike) arrives through the channel.
     let drain_handle = std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
         loop {
@@ -151,7 +153,6 @@ fn run_interactive_ls(argv: &[String], path: &str) -> Result<Output, String> {
                 Err(_) => break,
             }
         }
-        stdout_pipe
     });
 
     // Drain for up to 8 s total but stop after 1.5 s of silence.
@@ -167,21 +168,19 @@ fn run_interactive_ls(argv: &[String], path: &str) -> Result<Output, String> {
     }
 
     // ── Phase 2: send markers + command ───────────────────────────────────────
-    stdin
-        .write_all(payload.as_bytes())
-        .map_err(|e| format!("Failed to write to SSH stdin: {e}"))?;
+    if let Err(e) = stdin.write_all(payload.as_bytes()) {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(format!("Failed to write to SSH stdin: {e}"));
+    }
     drop(stdin);
 
-    // Reclaim the stdout handle from the drain thread.
-    let mut stdout_pipe = drain_handle.join().map_err(|_| "drain thread panicked")?;
-
-    // ── Phase 3: read remaining output and extract between markers ─────────────
-    // Start by prepending anything that was captured during the drain phase
-    // (markers might have appeared there on very fast connections).
+    // ── Phase 3: collect remaining output and extract between markers ─────────
+    // Joining waits for EOF; afterwards the sender is dropped, so draining the
+    // channel yields exactly the output produced after the drain window.
+    drain_handle.join().map_err(|_| "drain thread panicked")?;
     let mut raw_stdout = drained;
-    stdout_pipe
-        .read_to_end(&mut raw_stdout)
-        .map_err(|e| format!("Failed to read SSH stdout: {e}"))?;
+    raw_stdout.extend(rx.into_iter().flatten());
 
     let mut raw_stderr = Vec::new();
     if let Some(mut stderr) = child.stderr.take() {
@@ -294,7 +293,14 @@ fn parse_sftp_output(output: &Output, path: &str) -> Result<Vec<RemoteFileEntry>
             continue;
         }
 
-        let name = parts[name_parts_start..].join(" ");
+        let mut name = parts[name_parts_start..].join(" ");
+        // `ls -l` renders symlinks as `name -> target`; keep only the name so
+        // the derived path points at the link itself.
+        if permissions.starts_with('l') {
+            if let Some((link, _target)) = name.split_once(" -> ") {
+                name = link.to_string();
+            }
+        }
         if name == "." || name == ".." {
             continue;
         }
