@@ -5,14 +5,10 @@ use std::collections::HashMap;
 
 pub async fn execute(group_name: Option<String>, config: AppConfig) -> Result<()> {
     let ssh_service = SshService::new(config)?;
-    let connections = ssh_service.list_connections(None, false).await?;
 
     if let Some(tag) = group_name {
-        // List connections in the specific group
-        let filtered: Vec<_> = connections
-            .into_iter()
-            .filter(|c| c.tags.contains(&tag))
-            .collect();
+        // Exact, normalized tag match in SQL (same semantics as `list -t`).
+        let filtered = ssh_service.list_connections(Some(&tag), false).await?;
 
         if filtered.is_empty() {
             println!("No connections found in group '{}'", tag);
@@ -24,6 +20,7 @@ pub async fn execute(group_name: Option<String>, config: AppConfig) -> Result<()
         }
     } else {
         // List all groups and their connection counts
+        let connections = ssh_service.list_connections(None, false).await?;
         let mut group_counts: HashMap<String, usize> = HashMap::new();
 
         for conn in connections {
