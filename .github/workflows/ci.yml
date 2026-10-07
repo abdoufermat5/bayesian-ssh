@@ -10,10 +10,13 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
 
-# Allow only one concurrent deployment to Pages
+permissions:
+  contents: read
+
+# One run per ref; superseded PR runs are cancelled, pushes to main are not.
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
@@ -24,14 +27,22 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Install Rust
-      uses: dtolnay/rust-toolchain@v1
+      uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
       with:
         toolchain: stable
+        components: rustfmt, clippy
 
     - name: Install system dependencies (Linux)
       run: |
         sudo apt-get update
         sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev build-essential curl wget file libssl-dev libayatana-appindicator3-dev librsvg2-dev xdg-utils
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        cache: npm
+        cache-dependency-path: desktop/package-lock.json
 
     - name: Cache dependencies
       uses: actions/cache@v4
@@ -44,14 +55,22 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-cargo-
 
-    - name: Build
-      run: cargo build --package bayesian-ssh --verbose
-
-    - name: Run tests
-      run: cargo test --package bayesian-ssh --verbose
-
     - name: Check formatting
       run: cargo fmt --all -- --check
+
+    # The GUI crate embeds desktop/build at compile time, so the frontend must
+    # be built before any workspace-wide cargo command.
+    - name: Build frontend
+      run: |
+        cd desktop
+        npm ci --legacy-peer-deps
+        npm run build
+
+    - name: Clippy
+      run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+    - name: Run tests
+      run: cargo test --workspace --locked
 
   test-desktop:
     name: Test Desktop
@@ -60,39 +79,33 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Install system dependencies (Linux)
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev build-essential curl wget file libssl-dev libayatana-appindicator3-dev librsvg2-dev xdg-utils
-
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: 20
-
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@v1
-      with:
-        toolchain: stable
+        cache: npm
+        cache-dependency-path: desktop/package-lock.json
 
     - name: Install frontend dependencies
       run: cd desktop && npm ci --legacy-peer-deps
 
+    - name: Type-check frontend
+      run: cd desktop && npm run check
+
     - name: Build frontend
       run: cd desktop && npm run build
-
-    - name: Check and test Tauri Rust backend
-      run: |
-        cd desktop/src-tauri
-        cargo check
-        cargo test
 
   deploy-docs:
     name: Deploy Docs
     runs-on: ubuntu-latest
     needs: [test, test-desktop]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Allow only one concurrent deployment to Pages
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     permissions:
+      contents: read
       pages: write
       id-token: write
     environment:
@@ -103,7 +116,7 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Install mdBook
-      uses: peaceiris/actions-mdbook@v2
+      uses: peaceiris/actions-mdbook@ee69d230fe19748b7abf22df32acaa93833fad08 # v2.0.0
       with:
         mdbook-version: 'latest'
 
@@ -118,5 +131,3 @@ jobs:
     - name: Deploy to GitHub Pages
       id: deployment
       uses: actions/deploy-pages@v4
-
-
