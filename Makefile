@@ -1,45 +1,43 @@
-.PHONY: help build release test check format lint install uninstall package flatpak-build snap-build docs clean
+.PHONY: help frontend build release test check format lint install uninstall package flatpak-build snap-build docs clean
 
 INSTALL_DIR ?= /usr/local/bin
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
-build: ## Build debug CLI & GUI binaries
+# The GUI crate embeds desktop/build at compile time, so every workspace-wide
+# cargo command needs the frontend built first.
+frontend: ## Build the desktop frontend (desktop/build)
 	@if [ -d "desktop" ]; then \
-		export PATH=$$PATH:$$HOME/.nvm/versions/node/$$(ls $$HOME/.nvm/versions/node 2>/dev/null | tail -n 1)/bin:$$HOME/.cargo/bin; \
-		if command -v npm >/dev/null 2>&1; then cd desktop && ( [ -d "node_modules" ] || npm install ) && npm run build; fi; \
+		export PATH=$$PATH:$$HOME/.nvm/versions/node/$$(ls $$HOME/.nvm/versions/node 2>/dev/null | sort -V | tail -n 1)/bin:$$HOME/.cargo/bin; \
+		if command -v npm >/dev/null 2>&1; then cd desktop && ( [ -d "node_modules" ] || npm ci ) && npm run build; fi; \
 	fi
+
+build: frontend ## Build debug CLI & GUI binaries
 	cargo build --workspace
 
-release: ## Build release binaries (CLI + Desktop GUI)
-	@if [ -d "desktop" ]; then \
-		export PATH=$$PATH:$$HOME/.nvm/versions/node/$$(ls $$HOME/.nvm/versions/node 2>/dev/null | tail -n 1)/bin:$$HOME/.cargo/bin; \
-		if command -v npm >/dev/null 2>&1; then \
-			cd desktop && ( [ -d "node_modules" ] || npm install ) && npm run build; \
-		fi; \
-	fi
+release: frontend ## Build release binaries (CLI + Desktop GUI)
 	cargo build --release --workspace
 
-test: ## Run tests
-	cargo test
+test: frontend ## Run tests for the whole workspace
+	cargo test --workspace
 
-check: ## Check code compilation
-	cargo check
+check: frontend ## Check code compilation
+	cargo check --workspace --all-targets
 
 format: ## Format Rust code
 	cargo fmt --all
 
-lint: ## Run Clippy linter
-	cargo clippy -- -D warnings
+lint: frontend ## Run Clippy linter on the whole workspace
+	cargo clippy --workspace --all-targets -- -D warnings
 
 install: release ## Install bayesian-ssh, bssh alias, and desktop GUI binary to system
-	sudo install -m 755 target/release/bayesian-ssh $(INSTALL_DIR)/bayesian-ssh
-	sudo ln -sf $(INSTALL_DIR)/bayesian-ssh $(INSTALL_DIR)/bssh
+	sudo install -m 755 target/release/bayesian-ssh "$(INSTALL_DIR)/bayesian-ssh"
+	sudo ln -sf "$(INSTALL_DIR)/bayesian-ssh" "$(INSTALL_DIR)/bssh"
 	@if [ -f "target/release/bayesian-ssh-gui" ]; then \
-		sudo install -m 755 target/release/bayesian-ssh-gui $(INSTALL_DIR)/bayesian-ssh-gui; \
+		sudo install -m 755 target/release/bayesian-ssh-gui "$(INSTALL_DIR)/bayesian-ssh-gui"; \
 	elif [ -f "target/release/bayesian-ssh-desktop" ]; then \
-		sudo install -m 755 target/release/bayesian-ssh-desktop $(INSTALL_DIR)/bayesian-ssh-gui; \
+		sudo install -m 755 target/release/bayesian-ssh-desktop "$(INSTALL_DIR)/bayesian-ssh-gui"; \
 	fi
 
 uninstall: ## Remove bayesian-ssh, bssh, and desktop GUI binary from system
