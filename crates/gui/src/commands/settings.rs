@@ -148,9 +148,13 @@ pub fn load_desktop_settings() -> Result<DesktopSettings, String> {
         let mut settings: DesktopSettings =
             serde_json::from_str(&content).map_err(|e| e.to_string())?;
 
-        // Apply custom agent socket if specified on load
-        if let Some(ref sock) = settings.custom_agent_socket {
-            if !sock.trim().is_empty() {
+        // Apply custom agent socket if specified on load. The stored value is
+        // often just the live socket of a previous login (it is pre-filled
+        // below and saved back), so only apply it while it still accepts
+        // connections — otherwise it would clobber the working socket
+        // discovered at startup.
+        if let Some(sock) = &settings.custom_agent_socket {
+            if !sock.trim().is_empty() && bayesian_ssh::services::agent::is_valid_socket(sock) {
                 std::env::set_var("SSH_AUTH_SOCK", sock);
             }
         } else {
@@ -188,15 +192,20 @@ pub fn save_desktop_settings(settings: DesktopSettings) -> Result<(), String> {
     }
 
     // Apply custom agent socket environment variable immediately
-    if let Some(ref sock) = settings.custom_agent_socket {
-        if !sock.trim().is_empty() {
-            std::env::set_var("SSH_AUTH_SOCK", sock);
-        } else {
-            // Restore original parent agent if any, or remove
+    match settings
+        .custom_agent_socket
+        .as_deref()
+        .filter(|sock| !sock.trim().is_empty())
+    {
+        Some(sock) => std::env::set_var("SSH_AUTH_SOCK", sock),
+        None => {
+            // Custom socket cleared: fall back to auto-discovery instead of
+            // leaving new sessions without any agent.
             std::env::remove_var("SSH_AUTH_SOCK");
+            if let Some(sock) = bayesian_ssh::services::agent::find_ssh_agent_socket() {
+                std::env::set_var("SSH_AUTH_SOCK", sock);
+            }
         }
-    } else {
-        std::env::remove_var("SSH_AUTH_SOCK");
     }
 
     Ok(())
