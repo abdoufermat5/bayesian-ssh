@@ -34,8 +34,7 @@ thiserror = "1.0"
 
 # Terminal and process management
 nix = { version = "0.27", features = ["process", "signal"] }
-pty = "0.2"
-# Shared PTY primitives for GUI/TUI; already in the workspace lockfile via the GUI crate.
+# Shared PTY primitives for the CLI and GUI.
 portable-pty = "0.8"
 
 # Logging
@@ -43,7 +42,6 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 
 # Configuration
-config = "0.13"
 dirs = "5.0"
 whoami = "1.5"
 
@@ -68,11 +66,6 @@ aes-gcm = "0.10"
 argon2 = "0.5"
 zeroize = { version = "1.7", features = ["zeroize_derive"] }
 
-# TUI
-ratatui = "0.29"
 crossterm = "0.28"
 toml = "1.0.3"
-tempfile = "3"
-
-[dev-dependencies]
 tempfile = "3"
