@@ -15,6 +15,13 @@ path = "src/lib.rs"
 name = "bayesian-ssh-gui"
 path = "src/main.rs"
 
+[features]
+# Releases embed the frontend built into desktop/build. `make gui-dev` runs
+# with --no-default-features, which turns this off and switches the crate to
+# dev mode: the window then loads `build.devUrl` (the Vite server) instead.
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

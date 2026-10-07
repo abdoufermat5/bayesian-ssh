@@ -19,6 +19,10 @@ cd bayesian-ssh
 # Build the frontend, then debug CLI & desktop GUI binaries
 make build
 
+# Run the desktop GUI with hot reload (Vite HMR on port 1420; Rust changes
+# rebuild and restart the app automatically)
+make gui-dev
+
 # Run unit and integration tests for the whole workspace
 make test
 
@@ -32,6 +36,16 @@ cargo fmt --all -- --check
 
 The GUI crate embeds `desktop/build` at compile time, so `make build`, `make test`,
 `make check` and `make lint` build the frontend first (requires `npm`).
+
+`make gui-dev` runs the Vite dev server on port 1420 and starts the app with
+`--no-default-features`, which drops the `custom-protocol` feature so the
+window loads `build.devUrl` instead of the prebuilt assets. Frontend edits
+hot-reload; Rust edits need a restart. Close the installed app first — the
+single-instance plugin makes a second instance exit.
+
+The Tauri CLI is not used for development: it resolves the app's Cargo package
+by comparing the literal `src-tauri/Cargo.toml` path against cargo's canonical
+manifest path, which never matches the `desktop/src-tauri` symlink.
 
 ## 📦 Packaging & Builds
 

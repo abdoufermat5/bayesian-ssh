@@ -1,4 +1,4 @@
-.PHONY: help frontend build release test check format lint install uninstall package flatpak-build snap-build docs clean
+.PHONY: help frontend gui-dev build release test check format lint install uninstall package flatpak-build snap-build docs clean
 
 INSTALL_DIR ?= /usr/local/bin
 
@@ -15,6 +15,12 @@ frontend: ## Build the desktop frontend (desktop/build)
 
 build: frontend ## Build debug CLI & GUI binaries
 	cargo build --workspace
+
+# Hot-reload development run. The Vite dev server serves the frontend on port
+# 1420 and the app is built by scripts/gui-dev.sh; see that script for why the
+# Tauri CLI is not used here.
+gui-dev: ## Run the desktop GUI with hot reload (Vite HMR; restart for Rust changes)
+	@./scripts/gui-dev.sh
 
 release: frontend ## Build release binaries (CLI + Desktop GUI)
 	cargo build --release --workspace
