@@ -233,8 +233,8 @@ export function attachXtermKeyHandler(
       return false;
     }
 
-    // Ctrl+Shift+A / Cmd+A -> Select All
-    if (isCmdOrCtrl && key === "a" && (event.shiftKey || !isCmdOrCtrl)) {
+    // Ctrl+Shift+A / Cmd+A -> Select All (plain Ctrl+A stays with the shell)
+    if (isCmdOrCtrl && key === "a" && (event.shiftKey || event.metaKey)) {
       if (event.type === "keydown") {
         term.selectAll();
       }
