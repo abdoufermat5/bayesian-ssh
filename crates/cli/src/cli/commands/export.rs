@@ -2,7 +2,6 @@ use crate::config::AppConfig;
 use crate::models::Connection;
 use crate::services::SshService;
 use anyhow::{Context, Result};
-use std::fs::File;
 use std::io::Write;
 use tracing::info;
 
@@ -36,6 +35,10 @@ pub async fn execute(
         .unwrap_or_else(|| "json".to_string())
         .parse::<ExportFormat>()?;
 
+    if passphrase.is_some() && output.is_none() {
+        anyhow::bail!("--passphrase requires --output file path");
+    }
+
     let ssh_service = SshService::new(config)?;
     let connections = ssh_service.list_connections(tag.as_deref(), false).await?;
 
@@ -47,53 +50,59 @@ pub async fn execute(
     let exported_content = match format {
         ExportFormat::Json => serde_json::to_string_pretty(&connections)?,
         ExportFormat::Toml => toml::to_string_pretty(&ConnectionsWrapper {
-            connections: connections.clone(),
+            connections: &connections,
         })?,
         ExportFormat::SshConfig => generate_ssh_config(&connections),
     };
 
-    let final_bytes = if let Some(ref pass) = passphrase {
+    let final_bytes = if let Some(pass) = &passphrase {
         println!("🔒 Encrypting export with passphrase...");
         crate::services::crypto::encrypt_data(exported_content.as_bytes(), pass)?
     } else {
         exported_content.into_bytes()
     };
 
-    if let Some(output_path) = output {
-        let expanded_path = expand_tilde(&output_path);
-        let path = std::path::Path::new(&expanded_path);
-
-        if let Some(parent) = path.parent() {
-            if !parent.exists() {
-                std::fs::create_dir_all(parent).context("Failed to create parent directories")?;
-            }
-        }
-
-        let mut file = File::create(&expanded_path).context("Failed to create output file")?;
-        file.write_all(&final_bytes)?;
-        crate::config::enforce_secure_file(path);
-        info!(
-            "Exported {} connections to {}",
-            connections.len(),
-            expanded_path
-        );
-        println!(
-            "✅ Exported {} connections to {}",
-            connections.len(),
-            expanded_path
-        );
-    } else if passphrase.is_some() {
-        return Err(anyhow::anyhow!("--passphrase requires --output file path"));
-    } else {
+    let Some(output_path) = output else {
         println!("{}", String::from_utf8_lossy(&final_bytes));
-    }
+        return Ok(());
+    };
+
+    let expanded_path = expand_tilde(&output_path);
+    let path = std::path::Path::new(&expanded_path);
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| std::path::Path::new("."));
+    std::fs::create_dir_all(parent).context("Failed to create parent directories")?;
+
+    // Write via a temp file in the destination directory, then rename over
+    // the target. The temp file is created 0600, so the (possibly
+    // unencrypted) export is never world-readable, not even briefly, and an
+    // interrupted export cannot leave a truncated file behind.
+    let mut tmp =
+        tempfile::NamedTempFile::new_in(parent).context("Failed to create output file")?;
+    tmp.write_all(&final_bytes)
+        .context("Failed to write output file")?;
+    tmp.persist(path)
+        .with_context(|| format!("Failed to write {}", expanded_path))?;
+
+    info!(
+        "Exported {} connections to {}",
+        connections.len(),
+        expanded_path
+    );
+    println!(
+        "✅ Exported {} connections to {}",
+        connections.len(),
+        expanded_path
+    );
 
     Ok(())
 }
 
 #[derive(serde::Serialize)]
-struct ConnectionsWrapper {
-    connections: Vec<Connection>,
+struct ConnectionsWrapper<'a> {
+    connections: &'a [Connection],
 }
 
 fn generate_ssh_config(connections: &[Connection]) -> String {
