@@ -73,11 +73,15 @@
     let cancelled = false;
 
     // Load and apply the theme for the popout window
-    invoke("load_desktop_settings").then((settings: any) => {
-      if (settings && settings.theme) {
-        applyTheme(settings.theme);
-      }
-    });
+    invoke<{ theme?: string } | null>("load_desktop_settings")
+      .then((settings) => {
+        if (settings?.theme) {
+          applyTheme(settings.theme);
+        }
+      })
+      .catch(() => {
+        // Keep the default theme if settings are unavailable.
+      });
 
     void win
       .onCloseRequested((event) => {
@@ -125,6 +129,8 @@
 
     return () => {
       cancelled = true;
+      unlistenDocked?.();
+      unlistenDocked = undefined;
       if (!closing) {
         unlistenClose?.();
         void handle?.shutdown({ closeWindow: false });

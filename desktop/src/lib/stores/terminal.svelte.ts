@@ -591,8 +591,12 @@ export async function initTerminalListeners(onExit?: ExitCallback) {
     unlistenSessionDocked = await listen("session-docked", async (event) => {
       const info = event.payload as ReattachSessionPayload;
       removePopoutSession(info.session_id);
-      await mountReattachedSession(info);
-      notify(`"${info.connection_name}" docked — output restored`, "success");
+      try {
+        await mountReattachedSession(info);
+        notify(`"${info.connection_name}" docked — output restored`, "success");
+      } catch (e: unknown) {
+        notify(`Failed to dock "${info.connection_name}": ${String(e)}`, "error");
+      }
       await syncActiveSessionCount();
     });
 
@@ -775,7 +779,11 @@ export async function dockPopoutSession(sessionId: string): Promise<void> {
 }
 
 export async function focusPopoutSession(sessionId: string): Promise<void> {
-  await invoke("focus_terminal_window", { sessionId });
+  try {
+    await invoke("focus_terminal_window", { sessionId });
+  } catch (e: unknown) {
+    notify(`Failed to focus terminal window: ${String(e)}`, "error");
+  }
 }
 
 export async function terminatePopoutSession(sessionId: string): Promise<void> {

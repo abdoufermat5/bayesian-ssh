@@ -22,6 +22,7 @@
     ZoomOut,
   } from "lucide-svelte";
   import type { Connection } from "$lib/types";
+  import { notify } from "$lib/stores/notifications.svelte";
   import { downloadTerminalScrollback } from "$lib/utils/terminal-xterm";
   import { tabPopOutDrag } from "$lib/actions/tabPopOutDrag";
   import {
@@ -86,14 +87,22 @@
   async function handleConnect(conn: Connection) {
     showQuickLauncher = false;
     launcherQuery = "";
-    await connectSSH(conn);
+    try {
+      await connectSSH(conn);
+    } catch (e: unknown) {
+      notify(String(e), "error");
+    }
   }
 
   async function handleDropReattach(payload: SessionDragPayload) {
-    if (payload.kind === "popout") {
-      await dockPopoutSession(payload.sessionId);
-    } else {
-      await reattachSession(payload.sessionId);
+    try {
+      if (payload.kind === "popout") {
+        await dockPopoutSession(payload.sessionId);
+      } else {
+        await reattachSession(payload.sessionId);
+      }
+    } catch (e: unknown) {
+      notify(String(e), "error");
     }
   }
 

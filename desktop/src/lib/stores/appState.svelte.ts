@@ -177,6 +177,8 @@ export class AppStateStore {
     this.showDeleteConfirm = false;
     try {
       await this.deleteTarget.onConfirm();
+    } catch (e: unknown) {
+      notify(String(e), "error");
     } finally {
       this.deleteTarget = null;
     }
@@ -800,7 +802,13 @@ export class AppStateStore {
   }
 
   terminateAllSessions = async () => {
-    const count = await closeAllTabs();
+    let count: number;
+    try {
+      count = await closeAllTabs();
+    } catch (e: unknown) {
+      notify(`Failed to close sessions: ${e}`, "error");
+      return;
+    }
     if (count === 0) return;
 
     await this.loadHistory();
@@ -832,7 +840,11 @@ export class AppStateStore {
   requestQuitApp = () => {
     const count = terminalState.totalSessionCount;
     const quit = async () => {
-      await invoke("quit_app");
+      try {
+        await invoke("quit_app");
+      } catch (e: unknown) {
+        notify(`Failed to quit: ${e}`, "error");
+      }
     };
 
     if (count === 0) {

@@ -77,6 +77,7 @@
 
   let unlistenConnect: (() => void) | undefined;
   let unlistenQuitConfirm: (() => void) | undefined;
+  let unlistenCloseRequested: (() => void) | undefined;
 
   let showShortcutsModal = $state(false);
   let showAboutModal = $state(false);
@@ -131,18 +132,22 @@
     });
 
     const appWindow = getCurrentWindow();
-    void appWindow.onCloseRequested((event) => {
-      event.preventDefault();
-      const activeCount = terminalState.count + terminalState.externalSessionCount;
-      if (activeCount > 0) {
-        showQuitConfirmModal = true;
-        void appWindow.unminimize();
-        void appWindow.show();
-        void appWindow.setFocus();
-      } else {
-        void appWindow.hide();
-      }
-    });
+    void appWindow
+      .onCloseRequested((event) => {
+        event.preventDefault();
+        const activeCount = terminalState.count + terminalState.externalSessionCount;
+        if (activeCount > 0) {
+          showQuitConfirmModal = true;
+          void appWindow.unminimize();
+          void appWindow.show();
+          void appWindow.setFocus();
+        } else {
+          void appWindow.hide();
+        }
+      })
+      .then((unsub) => {
+        unlistenCloseRequested = unsub;
+      });
 
     listen("prompt-quit-confirm", () => {
       showQuitConfirmModal = true;
@@ -181,6 +186,7 @@
       teardownWindow();
       unlistenConnect?.();
       unlistenQuitConfirm?.();
+      unlistenCloseRequested?.();
     };
   });
 </script>
