@@ -41,9 +41,12 @@ async fn main() -> anyhow::Result<()> {
             .with_target(false)
             .compact();
 
+        // Logs go to stderr so stdout stays clean for data output
+        // (`export` to stdout, `exec`, `completions`, piping in scripts).
         tracing_subscriber::fmt()
             .event_format(format)
             .with_max_level(log_level)
+            .with_writer(std::io::stderr)
             .init();
 
         if log_level >= LevelFilter::INFO {
