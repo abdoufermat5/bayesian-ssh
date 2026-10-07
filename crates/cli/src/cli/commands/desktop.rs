@@ -1,103 +1,69 @@
 use crate::config::AppConfig;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
+use std::path::{Path, PathBuf};
 use std::process::Command;
+
+const GUI_BINARIES: [&str; 3] = ["bayesian-ssh-gui", "bssh-gui", "bayesian-ssh-desktop"];
 
 /// Launch the desktop app detached in the background
 pub async fn execute(_config: AppConfig) -> Result<()> {
-    let possible_binaries = ["bayesian-ssh-gui", "bssh-gui", "bayesian-ssh-desktop"];
-    let mut command_to_run = None;
+    // Prefer the GUI installed/built next to this executable (same install or
+    // cargo target dir, so versions match), then fall back to PATH. The
+    // current working directory is deliberately never searched: running
+    // `bssh desktop` inside an untrusted checkout must not execute a
+    // `target/*/bayesian-ssh-gui` planted there.
+    let bin_path = find_next_to_current_exe()
+        .or_else(|| GUI_BINARIES.iter().find_map(|bin| find_in_path(bin)))
+        .ok_or_else(|| {
+            anyhow!(
+                "Could not find 'bayesian-ssh-gui' next to this executable or in PATH.\n\
+                 Please build the desktop application using 'make release' or 'make build' first."
+            )
+        })?;
 
-    // Search in PATH
-    for bin in &possible_binaries {
-        if let Some(path) = find_in_path(bin) {
-            command_to_run = Some(path.to_string_lossy().into_owned());
-            break;
-        }
-    }
+    println!("Launching {} in the background...", bin_path.display());
 
-    // Search relative to the current executable directory
-    if command_to_run.is_none() {
-        if let Ok(mut exe_path) = std::env::current_exe() {
-            exe_path.pop(); // Directory containing current binary
+    let mut cmd = Command::new(&bin_path);
+    cmd.stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .stdin(std::process::Stdio::null());
 
-            let same_dir_gui = exe_path.join("bayesian-ssh-gui");
-            let release_dir_gui = exe_path
-                .parent()
-                .map(|p| p.join("release").join("bayesian-ssh-gui"));
-
-            if let Some(rel_gui) = release_dir_gui {
-                if rel_gui.exists() {
-                    command_to_run = Some(rel_gui.to_string_lossy().into_owned());
-                }
-            }
-            if command_to_run.is_none() && same_dir_gui.exists() {
-                command_to_run = Some(same_dir_gui.to_string_lossy().into_owned());
-            }
-        }
-    }
-
-    // Development project fallback: check standard cargo workspace output paths (RELEASE FIRST)
-    if command_to_run.is_none() {
-        let dev_paths = [
-            "target/release/bayesian-ssh-gui",
-            "target/release/bayesian-ssh-desktop",
-            "target/debug/bayesian-ssh-gui",
-            "target/debug/bayesian-ssh-desktop",
-        ];
-        for path_str in &dev_paths {
-            let path = std::path::Path::new(path_str);
-            if path.exists() {
-                command_to_run = Some(path.to_string_lossy().into_owned());
-                break;
-            }
-        }
-    }
-
-    let bin_path = command_to_run.ok_or_else(|| {
-        anyhow!(
-            "Could not find 'bayesian-ssh-gui' executable in PATH or target directories.\n\
-             Please build the desktop application using 'make release' or 'make build' first."
-        )
-    })?;
-
-    println!("Launching bayesian-ssh-gui in the background...");
-
-    // Spawn detached process
+    // Detach the child process group so closing terminal does not kill the child
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
-
-        let mut cmd = Command::new(&bin_path);
-        cmd.stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .stdin(std::process::Stdio::null());
-
-        // Detach the child process group so closing terminal does not kill the child
         cmd.process_group(0);
-
-        cmd.spawn()?;
     }
 
-    #[cfg(not(unix))]
-    {
-        Command::new(&bin_path)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .stdin(std::process::Stdio::null())
-            .spawn()?;
-    }
+    cmd.spawn()
+        .with_context(|| format!("failed to launch {}", bin_path.display()))?;
 
     Ok(())
 }
 
-fn find_in_path(bin_name: &str) -> Option<std::path::PathBuf> {
-    if let Some(paths) = std::env::var_os("PATH") {
-        for path in std::env::split_paths(&paths) {
-            let bin_path = path.join(bin_name);
-            if bin_path.is_file() {
-                return Some(bin_path);
-            }
-        }
-    }
-    None
+/// Look for the GUI in the directory of the running executable, then in a
+/// sibling `release` directory (cargo `target/debug` → `target/release`).
+fn find_next_to_current_exe() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let exe_dir = exe.parent()?;
+    let release_dir = exe_dir.parent().map(|p| p.join("release"));
+    std::iter::once(exe_dir.to_path_buf())
+        .chain(release_dir)
+        .find_map(|dir| find_in_dir(&dir))
+}
+
+fn find_in_dir(dir: &Path) -> Option<PathBuf> {
+    GUI_BINARIES
+        .iter()
+        .map(|bin| dir.join(bin))
+        .find(|candidate| candidate.is_file())
+}
+
+fn find_in_path(bin_name: &str) -> Option<PathBuf> {
+    let paths = std::env::var_os("PATH")?;
+    std::env::split_paths(&paths)
+        // Empty/relative PATH entries resolve against the CWD; skip them.
+        .filter(|dir| dir.is_absolute())
+        .map(|dir| dir.join(bin_name))
+        .find(|candidate| candidate.is_file())
 }
