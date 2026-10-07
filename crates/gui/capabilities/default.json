@@ -5,7 +5,8 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "opener:default",
+    "opener:allow-open-url",
+    "opener:allow-default-urls",
     "core:window:allow-minimize",
     "core:window:allow-maximize",
     "core:window:allow-unmaximize",
