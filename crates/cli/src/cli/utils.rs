@@ -9,6 +9,45 @@ use crate::services::SshService;
 use anyhow::Result;
 use std::io::{self, Write};
 
+/// Upper bound on concurrent per-host tasks for multi-host commands
+/// (`exec`, `ping`) so `--all` over a large inventory cannot exhaust
+/// file descriptors or spawn hundreds of `ssh` processes at once.
+pub const MAX_PARALLEL_HOSTS: usize = 16;
+
+/// Read one trimmed, lowercased line from stdin. Returns `None` on EOF so
+/// prompts never loop forever (or silently accept a default) when stdin is
+/// closed or not a terminal.
+fn read_answer() -> Result<Option<String>> {
+    let mut input = String::new();
+    if io::stdin().read_line(&mut input)? == 0 {
+        return Ok(None);
+    }
+    Ok(Some(input.trim().to_lowercase()))
+}
+
+/// Truncate `s` to at most `max_chars` characters (appending `…` when cut).
+/// Char-based so multi-byte names never panic on a non-boundary slice.
+pub fn truncate_display(s: &str, max_chars: usize) -> String {
+    if s.chars().count() <= max_chars {
+        return s.to_string();
+    }
+    let mut out: String = s.chars().take(max_chars.saturating_sub(1)).collect();
+    out.push('…');
+    out
+}
+
+/// Format an elapsed duration compactly (e.g. "42s", "3m 5s", "2h 10m").
+pub fn format_elapsed(duration: chrono::Duration) -> String {
+    let secs = duration.num_seconds();
+    if secs < 60 {
+        format!("{}s", secs)
+    } else if secs < 3600 {
+        format!("{}m {}s", secs / 60, secs % 60)
+    } else {
+        format!("{}h {}m", secs / 3600, (secs % 3600) / 60)
+    }
+}
+
 /// Format a datetime as a human-readable duration string (e.g., "2 hours ago")
 pub fn format_duration(dt: chrono::DateTime<chrono::Utc>) -> String {
     let now = chrono::Utc::now();
@@ -39,12 +78,6 @@ pub fn format_duration(dt: chrono::DateTime<chrono::Utc>) -> String {
 
 /// Display connection info in a consistent format for selection lists
 pub fn print_connection_info(connection: &Connection, index: usize) {
-    let tags_str = if connection.tags.is_empty() {
-        "".to_string()
-    } else {
-        format!(" [{}]", connection.tags.join(", "))
-    };
-
     let last_used = connection
         .last_used
         .map(|dt| format!(" (last used: {})", format_duration(dt)))
@@ -53,10 +86,10 @@ pub fn print_connection_info(connection: &Connection, index: usize) {
     println!("  {}. {} ({})", index, connection.name, connection.host);
     println!(
         "     Tags: {}{}",
-        if tags_str.is_empty() {
-            "none"
+        if connection.tags.is_empty() {
+            "none".to_string()
         } else {
-            &tags_str[1..tags_str.len() - 1]
+            connection.tags.join(", ")
         },
         last_used
     );
@@ -92,9 +125,9 @@ pub fn interactive_selection_with_search(
         );
         io::stdout().flush()?;
 
-        let mut input = String::new();
-        io::stdin().read_line(&mut input)?;
-        let input = input.trim().to_lowercase();
+        let Some(input) = read_answer()? else {
+            return Ok(SelectionResult::Cancelled);
+        };
 
         match input.as_str() {
             "q" | "quit" => {
@@ -105,7 +138,9 @@ pub fn interactive_selection_with_search(
                 io::stdout().flush()?;
 
                 let mut new_search = String::new();
-                io::stdin().read_line(&mut new_search)?;
+                if io::stdin().read_line(&mut new_search)? == 0 {
+                    return Ok(SelectionResult::Cancelled);
+                }
                 let new_search = new_search.trim().to_string();
 
                 if new_search.is_empty() {
@@ -141,25 +176,11 @@ pub fn interactive_selection_with_search(
 /// - "Search again" functionality with recursive search
 /// - Auto-connect for single matches (improved UX)
 ///
+/// Uses `config.search_mode`, so callers must pass the config of the active
+/// (possibly `--env`-overridden) environment.
+///
 /// Returns the selected connection, or None if cancelled.
 pub async fn fuzzy_select_connection(
-    ssh_service: &SshService,
-    initial_query: &str,
-    action_name: &str,
-    auto_select_single: bool,
-) -> Result<Option<Connection>> {
-    fuzzy_select_connection_with_config(
-        ssh_service,
-        initial_query,
-        action_name,
-        auto_select_single,
-        &AppConfig::load(None)?,
-    )
-    .await
-}
-
-/// Same as fuzzy_select_connection but accepts a config parameter
-pub async fn fuzzy_select_connection_with_config(
     ssh_service: &SshService,
     initial_query: &str,
     action_name: &str,
@@ -223,9 +244,7 @@ pub async fn fuzzy_select_connection_with_config(
                 print!("{} this connection? [Y/n]: ", capitalize_first(action_name));
                 io::stdout().flush()?;
 
-                let mut input = String::new();
-                io::stdin().read_line(&mut input)?;
-                let input = input.trim().to_lowercase();
+                let input = read_answer()?.unwrap_or_else(|| "n".to_string());
 
                 // Default to yes (Y is uppercase in prompt)
                 if input.is_empty() || matches!(input.as_str(), "y" | "yes") {
@@ -268,15 +287,6 @@ pub async fn fuzzy_select_connection_with_config(
     }
 }
 
-#[allow(dead_code)]
-pub fn show_no_matches_message(query: &str) {
-    println!("❌ No connections found matching '{}'", query);
-    println!("\n💡 Suggestions:");
-    println!("   • Use 'bssh list' to see all saved connections");
-    println!("   • Use 'bssh add <name> <host>' to create a new connection");
-    println!("   • Use 'bssh import' to import from ~/.ssh/config");
-}
-
 /// Capitalize the first letter of a string
 fn capitalize_first(s: &str) -> String {
     let mut chars = s.chars();
@@ -292,9 +302,10 @@ pub fn confirm(prompt: &str, default_yes: bool) -> Result<bool> {
     print!("{} {}: ", prompt, hint);
     io::stdout().flush()?;
 
-    let mut input = String::new();
-    io::stdin().read_line(&mut input)?;
-    let input = input.trim().to_lowercase();
+    let Some(input) = read_answer()? else {
+        // EOF: never treat a closed stdin as consent.
+        return Ok(false);
+    };
 
     if input.is_empty() {
         return Ok(default_yes);
@@ -364,16 +375,38 @@ pub async fn resolve_connection(
     target: &str,
     action: &str,
     auto_select_single: bool,
+    config: &AppConfig,
 ) -> Result<Connection> {
-    if let Some(conn) = ssh_service.get_connection(target).await.unwrap_or_default() {
+    if let Some(conn) = ssh_service.get_connection(target).await? {
         return Ok(conn);
     }
 
     if let Some(conn) =
-        fuzzy_select_connection(ssh_service, target, action, auto_select_single).await?
+        fuzzy_select_connection(ssh_service, target, action, auto_select_single, config).await?
     {
         Ok(conn)
     } else {
         anyhow::bail!("No connection selected")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn truncate_display_is_char_safe() {
+        assert_eq!(truncate_display("short", 10), "short");
+        assert_eq!(truncate_display("abcdef", 4), "abc…");
+        // Multi-byte chars must not panic on a non-boundary byte index.
+        assert_eq!(truncate_display("éééééé", 4), "ééé…");
+        assert_eq!(truncate_display("服务器生产环境", 3), "服务…");
+    }
+
+    #[test]
+    fn format_elapsed_buckets() {
+        assert_eq!(format_elapsed(chrono::Duration::seconds(42)), "42s");
+        assert_eq!(format_elapsed(chrono::Duration::seconds(185)), "3m 5s");
+        assert_eq!(format_elapsed(chrono::Duration::seconds(7800)), "2h 10m");
     }
 }

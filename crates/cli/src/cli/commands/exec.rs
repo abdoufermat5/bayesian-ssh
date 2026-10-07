@@ -28,7 +28,7 @@ pub async fn execute(
     } else if let Some(ref tag_name) = tag {
         ssh_service.list_connections(Some(tag_name), false).await?
     } else if let Some(ref target_str) = target {
-        vec![resolve_connection(&ssh_service, target_str, "exec", true).await?]
+        vec![resolve_connection(&ssh_service, target_str, "exec", true, &config).await?]
     } else {
         bail!("Specify a connection target, --all, or -g/--tag");
     };

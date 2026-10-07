@@ -7,7 +7,7 @@ use tracing::info;
 pub async fn execute(target: String, config: AppConfig) -> Result<()> {
     info!("Showing details for connection: {}", target);
 
-    let ssh_service = SshService::new(config)?;
-    let connection = resolve_connection(&ssh_service, &target, "show", true).await?;
+    let ssh_service = SshService::new(config.clone())?;
+    let connection = resolve_connection(&ssh_service, &target, "show", true, &config).await?;
     show_connection_details(&connection)
 }

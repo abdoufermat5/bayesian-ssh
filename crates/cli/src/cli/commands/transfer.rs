@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use anyhow::{bail, Result};
 use tracing::info;
 
+use crate::cli::utils::resolve_connection;
 use crate::config::AppConfig;
 use crate::services::{SshService, TransferService};
 
@@ -16,7 +17,7 @@ pub async fn execute_upload(
     config: AppConfig,
 ) -> Result<()> {
     let ssh_service = SshService::new(config.clone())?;
-    let connection = resolve_connection(&ssh_service, &target, "upload").await?;
+    let connection = resolve_connection(&ssh_service, &target, "upload", true, &config).await?;
 
     let transfer = TransferService::new(config)?;
 
@@ -90,7 +91,7 @@ pub async fn execute_download(
     config: AppConfig,
 ) -> Result<()> {
     let ssh_service = SshService::new(config.clone())?;
-    let connection = resolve_connection(&ssh_service, &target, "download").await?;
+    let connection = resolve_connection(&ssh_service, &target, "download", true, &config).await?;
 
     let transfer = TransferService::new(config)?;
 
@@ -142,12 +143,4 @@ pub async fn execute_download(
         );
     }
     Ok(())
-}
-
-async fn resolve_connection(
-    ssh_service: &SshService,
-    target: &str,
-    action: &str,
-) -> Result<crate::models::Connection> {
-    crate::cli::utils::resolve_connection(ssh_service, target, action, true).await
 }

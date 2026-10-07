@@ -1,6 +1,6 @@
 //! Alias command implementation - manage connection aliases
 
-use crate::cli::utils::fuzzy_select_connection;
+use crate::cli::utils::resolve_connection;
 use crate::config::AppConfig;
 use crate::database::Database;
 use crate::services::SshService;
@@ -52,17 +52,7 @@ async fn add_alias(db: &Database, alias: &str, target: &str, config: &AppConfig)
 
     // Find the target connection
     let ssh_service = SshService::new(config.clone())?;
-    let connection = if let Some(conn) = db.get_connection(target)? {
-        conn
-    } else {
-        // Try fuzzy search
-        match fuzzy_select_connection(&ssh_service, target, "alias", true).await? {
-            Some(conn) => conn,
-            None => {
-                bail!("No connection found matching '{}'", target);
-            }
-        }
-    };
+    let connection = resolve_connection(&ssh_service, target, "alias", true, config).await?;
 
     // Add the alias
     db.add_alias(alias, &connection.id.to_string())?;
@@ -86,18 +76,8 @@ async fn list_aliases(db: &Database, target: Option<&str>, config: &AppConfig) -
     if let Some(target_name) = target {
         // List aliases for a specific connection
         let ssh_service = SshService::new(config.clone())?;
-        let connection = if let Some(conn) = db.get_connection(target_name)? {
-            conn
-        } else {
-            match fuzzy_select_connection(&ssh_service, target_name, "show aliases for", true)
-                .await?
-            {
-                Some(conn) => conn,
-                None => {
-                    bail!("No connection found matching '{}'", target_name);
-                }
-            }
-        };
+        let connection =
+            resolve_connection(&ssh_service, target_name, "show aliases for", true, config).await?;
 
         let aliases = db.get_aliases_for_connection(&connection.id.to_string())?;
 

@@ -22,8 +22,8 @@ pub async fn execute(
 ) -> Result<()> {
     info!("Editing connection: {}", target);
 
-    let ssh_service = SshService::new(config)?;
-    let connection = resolve_connection(&ssh_service, &target, "edit", false).await?;
+    let ssh_service = SshService::new(config.clone())?;
+    let connection = resolve_connection(&ssh_service, &target, "edit", false, &config).await?;
     update_connection(
         ssh_service,
         connection,

@@ -18,7 +18,8 @@ pub async fn execute(target: String, local: String, config: AppConfig) -> Result
 
     let ssh_service = SshService::new(config.clone())?;
     let connection =
-        crate::cli::utils::resolve_connection(&ssh_service, &target, "forward", true).await?;
+        crate::cli::utils::resolve_connection(&ssh_service, &target, "forward", true, &config)
+            .await?;
 
     let kind = pick_kind(&connection, &config);
 

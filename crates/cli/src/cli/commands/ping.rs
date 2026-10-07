@@ -14,7 +14,7 @@ pub async fn execute(
     timeout: Option<u64>,
     config: AppConfig,
 ) -> Result<()> {
-    let ssh_service = SshService::new(config)?;
+    let ssh_service = SshService::new(config.clone())?;
     let timeout_secs = timeout.unwrap_or(5);
 
     let targets: Vec<Connection> = if all {
@@ -22,7 +22,7 @@ pub async fn execute(
     } else if let Some(ref tag_name) = tag {
         ssh_service.list_connections(Some(tag_name), false).await?
     } else if let Some(ref target_str) = target {
-        match resolve_connection(&ssh_service, target_str, "ping", true).await {
+        match resolve_connection(&ssh_service, target_str, "ping", true, &config).await {
             Ok(c) => vec![c],
             Err(_) => {
                 println!("❌ No connection selected.");

@@ -10,7 +10,7 @@ pub async fn execute(
     force: bool,
     config: AppConfig,
 ) -> Result<()> {
-    let ssh_service = SshService::new(config)?;
+    let ssh_service = SshService::new(config.clone())?;
 
     if let Some(tag_name) = tag {
         let connections = ssh_service.list_connections(Some(&tag_name), false).await?;
@@ -81,7 +81,8 @@ pub async fn execute(
     };
 
     info!("Removing connection: {}", target_str);
-    let connection = resolve_connection(&ssh_service, &target_str, "remove", false).await?;
+    let connection =
+        resolve_connection(&ssh_service, &target_str, "remove", false, &config).await?;
     remove_connection_with_confirmation(&ssh_service, &connection, force).await
 }
 
@@ -99,30 +100,16 @@ async fn remove_connection_with_confirmation(
         println!("   Tags: {}", connection.tags.join(", "));
     }
 
-    // If force flag is set, skip confirmation
-    if force {
-        if ssh_service.remove_connection(&connection.name).await? {
-            println!(
-                "\n✅ Connection '{}' removed successfully!",
-                connection.name
-            );
-        } else {
-            println!("\n❌ Failed to remove connection '{}'", connection.name);
-        }
+    println!();
+    if !force && !confirm(&format!("Remove connection '{}'?", connection.name), false)? {
+        println!("❌ Removal cancelled.");
         return Ok(());
     }
 
-    // Ask for confirmation
-    println!();
-    if confirm(&format!("Remove connection '{}'?", connection.name), false)? {
-        if ssh_service.remove_connection(&connection.name).await? {
-            println!("✅ Connection '{}' removed successfully!", connection.name);
-        } else {
-            println!("❌ Failed to remove connection '{}'", connection.name);
-        }
-    } else {
-        println!("❌ Removal cancelled.");
+    if !ssh_service.remove_connection(&connection.name).await? {
+        anyhow::bail!("Failed to remove connection '{}'", connection.name);
     }
+    println!("✅ Connection '{}' removed successfully!", connection.name);
 
     Ok(())
 }

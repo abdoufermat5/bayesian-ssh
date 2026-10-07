@@ -19,7 +19,8 @@ use crate::services::SshService;
 pub async fn execute(target: String, port: u16, bind: String, config: AppConfig) -> Result<()> {
     let ssh_service = SshService::new(config.clone())?;
     let connection =
-        crate::cli::utils::resolve_connection(&ssh_service, &target, "proxy", true).await?;
+        crate::cli::utils::resolve_connection(&ssh_service, &target, "proxy", true, &config)
+            .await?;
 
     let kind = pick_kind(&connection, &config);
 

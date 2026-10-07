@@ -20,25 +20,26 @@ pub async fn execute(
 
     let ssh_service = SshService::new(config.clone())?;
 
-    let connection = match resolve_connection(&ssh_service, &target, "connect to", true).await {
-        Ok(c) => c,
-        Err(_) => {
-            info!(
-                "Connection not resolved, attempting direct connection to {}",
-                target
-            );
-            crate::models::Connection::new(
-                target.clone(),
-                target.clone(),
-                user.clone().unwrap_or_else(|| config.default_user.clone()),
-                port.unwrap_or(config.default_port),
-                bastion.clone(),
-                bastion_user.clone(),
-                kerberos.unwrap_or(config.use_kerberos_by_default),
-                key.clone(),
-            )
-        }
-    };
+    let connection =
+        match resolve_connection(&ssh_service, &target, "connect to", true, &config).await {
+            Ok(c) => c,
+            Err(_) => {
+                info!(
+                    "Connection not resolved, attempting direct connection to {}",
+                    target
+                );
+                crate::models::Connection::new(
+                    target.clone(),
+                    target.clone(),
+                    user.clone().unwrap_or_else(|| config.default_user.clone()),
+                    port.unwrap_or(config.default_port),
+                    bastion.clone(),
+                    bastion_user.clone(),
+                    kerberos.unwrap_or(config.use_kerberos_by_default),
+                    key.clone(),
+                )
+            }
+        };
 
     ssh_service
         .connect_to_connection(
