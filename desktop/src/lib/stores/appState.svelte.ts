@@ -479,12 +479,18 @@ export class AppStateStore {
     }
   }
 
+  // Bumped on every connections fetch so a slow, older response (e.g. for a
+  // previous search query) can never overwrite a newer one.
+  private connectionsRequestSeq = 0;
+
   loadConnections = async () => {
+    const seq = ++this.connectionsRequestSeq;
     try {
-      this.connections = await invoke("get_connections", {
+      const result = await invoke<Connection[]>("get_connections", {
         query: this.searchQuery,
         tagFilter: this.selectedTag,
       });
+      if (seq === this.connectionsRequestSeq) this.connections = result;
     } catch (e: unknown) {
       notify(String(e), "error");
     }
@@ -503,6 +509,7 @@ export class AppStateStore {
   }
 
   reloadConnectionsAfterMutation = async () => {
+    const seq = ++this.connectionsRequestSeq;
     try {
       const allConnections = await invoke<Connection[]>("get_connections", {
         query: "",
@@ -515,6 +522,7 @@ export class AppStateStore {
           tagFilter: this.selectedTag,
         });
 
+        if (seq !== this.connectionsRequestSeq) return;
         if (filtered.length === 0 && allConnections.length > 0) {
           this.searchQuery = "";
           this.selectedTag = null;
@@ -527,7 +535,7 @@ export class AppStateStore {
         return;
       }
 
-      this.connections = allConnections;
+      if (seq === this.connectionsRequestSeq) this.connections = allConnections;
     } catch (e: unknown) {
       notify(String(e), "error");
     }

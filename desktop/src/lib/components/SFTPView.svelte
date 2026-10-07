@@ -26,6 +26,7 @@
   import type { Connection } from "$lib/types";
   import CustomSelect from "$lib/components/ui/CustomSelect.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
+  import { copyTextWithFallback } from "$lib/utils/terminal-xterm";
 
   export interface RemoteFileEntry {
     name: string;
@@ -52,6 +53,9 @@
   let loading = $state<boolean>(false);
   let errorMsg = $state<string | null>(null);
   let copiedPath = $state<string | null>(null);
+  // Bumped per listing request (and on host switch / disconnect) so a slow
+  // response for an older path or another host never overwrites newer state.
+  let loadSeq = 0;
 
   const selectedConnection = $derived.by(() => {
     if (selectedConnectionId) {
@@ -102,6 +106,7 @@
 
   async function loadDirectory(path: string) {
     if (!selectedConnection) return;
+    const seq = ++loadSeq;
     loading = true;
     errorMsg = null;
     try {
@@ -109,22 +114,30 @@
         connectionName: selectedConnection.name,
         remotePath: path,
       });
+      if (seq !== loadSeq) return;
       entries = res;
       currentPath = path;
       pathInput = path;
       isConnected = true;
     } catch (err: unknown) {
+      if (seq !== loadSeq) return;
       errorMsg = String(err);
       notify(`SFTP error: ${err}`, "error");
     } finally {
-      loading = false;
+      if (seq === loadSeq) loading = false;
     }
+  }
+
+  function resetSession() {
+    loadSeq += 1;
+    loading = false;
+    isConnected = false;
+    entries = [];
   }
 
   function handleConnectClick() {
     if (isConnected) {
-      isConnected = false;
-      entries = [];
+      resetSession();
       errorMsg = null;
       notify("Disconnected from SFTP session", "info");
     } else {
@@ -154,7 +167,7 @@
   }
 
   function copyPath(p: string) {
-    navigator.clipboard.writeText(p);
+    copyTextWithFallback(p);
     copiedPath = p;
     notify(`Copied remote path: ${p}`, "success");
     setTimeout(() => {
@@ -212,8 +225,7 @@
           value={selectedConnection?.id ?? ""}
           onChange={(val) => {
             selectedConnectionId = val;
-            isConnected = false;
-            entries = [];
+            resetSession();
           }}
         />
       </div>
