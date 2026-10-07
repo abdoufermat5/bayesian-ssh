@@ -19,7 +19,9 @@ pub fn list_ssh_keys() -> Result<Vec<security::SshKeyInfo>, String> {
     security::scan_ssh_keys()
 }
 
-#[tauri::command]
+// ssh-keygen can block (RSA generation, touch prompts for *-sk keys): keep it
+// off the main/UI thread.
+#[tauri::command(async)]
 pub fn generate_ssh_key(
     name: String,
     key_type: Option<String>,
@@ -88,7 +90,9 @@ pub fn generate_ssh_key(
         .ok_or_else(|| "Key generated but details could not be loaded".to_string())
 }
 
-#[tauri::command]
+// Runs ssh against a remote host (can block for the whole connect timeout),
+// so keep it off the main/UI thread.
+#[tauri::command(async)]
 pub fn copy_ssh_key_to_target(target: String, key_path: Option<String>) -> Result<String, String> {
     let config = AppConfig::load(None).map_err(|e| e.to_string())?;
     let database = Database::new(&config).map_err(|e| e.to_string())?;
