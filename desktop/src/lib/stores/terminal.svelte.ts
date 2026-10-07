@@ -171,7 +171,7 @@ function findDetachedSession(sessionId: string): DetachedSession | undefined {
   return detachedSessions.find((s) => s.id === sessionId);
 }
 
-/** Route one PTY output event to its tab, coalesced. */
+/** Cap on output buffered for a hidden tab before it is handed to xterm. */
 const MAX_PENDING_OUTPUT_BYTES = 256 * 1024;
 
 export function flushPendingTabOutput(tab: TerminalTab) {
@@ -207,34 +207,29 @@ function deliverPtyOutput(sessionId: string, data: string) {
   const tab = findTab(sessionId);
   if (!tab) return;
 
-  // Background tab optimization: if the tab is not currently active, buffer in memory
-  // without triggering xterm canvas redraws / layout computations.
-  if (tab.id !== activeTabId) {
-    if (!tab.pendingOutput) tab.pendingOutput = [];
-    if (getPendingOutputBytes(tab.pendingOutput) + data.length > MAX_PENDING_OUTPUT_BYTES) {
-      while (tab.pendingOutput.length > 0 && getPendingOutputBytes(tab.pendingOutput) + data.length > MAX_PENDING_OUTPUT_BYTES) {
-        tab.pendingOutput.shift();
-      }
-    }
-    tab.pendingOutput.push(data);
-    return;
-  }
-
-  if (tab.term && tab.outputCoalescer) {
+  if (tab.id === activeTabId && tab.term && tab.outputCoalescer) {
+    // Anything buffered while the tab was hidden must land before new output.
+    flushPendingTabOutput(tab);
     tab.outputCoalescer.push(data);
     return;
   }
-  if (!tab.pendingOutput) tab.pendingOutput = [];
-  if (getPendingOutputBytes(tab.pendingOutput) + data.length > MAX_PENDING_OUTPUT_BYTES) {
-    while (tab.pendingOutput.length > 0 && getPendingOutputBytes(tab.pendingOutput) + data.length > MAX_PENDING_OUTPUT_BYTES) {
-      tab.pendingOutput.shift();
-    }
-  }
-  tab.pendingOutput.push(data);
-}
 
-function getPendingOutputBytes(chunks: string[]): number {
-  return chunks.reduce((sum, c) => sum + c.length, 0);
+  // Background tab (or terminal still being created): buffer in memory
+  // without triggering xterm canvas redraws / layout computations.
+  if (!tab.pendingOutput) tab.pendingOutput = [];
+  const pending = tab.pendingOutput;
+  let pendingBytes = pending.reduce((sum, chunk) => sum + chunk.length, 0) + data.length;
+  if (pendingBytes > MAX_PENDING_OUTPUT_BYTES && tab.term && tab.outputCoalescer) {
+    // Hand a busy hidden tab's output to xterm instead of silently dropping
+    // scrollback (and splitting escape sequences) once the buffer is full.
+    pending.push(data);
+    flushPendingTabOutput(tab);
+    return;
+  }
+  while (pending.length > 0 && pendingBytes > MAX_PENDING_OUTPUT_BYTES) {
+    pendingBytes -= pending.shift()!.length;
+  }
+  pending.push(data);
 }
 
 function linkTerminal(
@@ -434,7 +429,7 @@ async function syncPopoutSessions() {
 
 async function mountReattachedSession(info: ReattachSessionPayload): Promise<void> {
   if (findTab(info.session_id)) {
-    activeTabId = info.session_id;
+    setActiveTab(info.session_id);
     return;
   }
 
@@ -488,7 +483,7 @@ function cleanupTabUi(tabId: string) {
   tabs = tabs.filter((t) => t.id !== tabId);
 
   if (activeTabId === tabId) {
-    activeTabId = tabs.length > 0 ? tabs[0].id : null;
+    setActiveTab(tabs.length > 0 ? tabs[0].id : null);
   }
 }
 
@@ -576,6 +571,7 @@ export async function initTerminalListeners(onExit?: ExitCallback) {
 
       const tab = findTab(sessionId);
       // Flush pending output first so the disconnect notice lands after it.
+      if (tab) flushPendingTabOutput(tab);
       tab?.outputCoalescer?.flush();
       safeWrite(tab?.term, "\n\x1b[1;33mSession disconnected.\x1b[0m\r\n");
 
@@ -748,7 +744,7 @@ export async function terminateAllDetachedSessions(): Promise<void> {
 
 export async function reattachSession(sessionId: string): Promise<void> {
   if (findTab(sessionId)) {
-    activeTabId = sessionId;
+    setActiveTab(sessionId);
     return;
   }
 
