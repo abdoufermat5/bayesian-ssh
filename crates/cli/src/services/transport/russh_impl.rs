@@ -483,8 +483,9 @@ impl SshTransport for RusshTransport {
                         let Ok((stream, peer_addr)) = result else { break };
                         let ssh2 = Arc::clone(&ssh);
                         tokio::spawn(async move {
+                            use crate::services::transport::socks5;
                             let mut stream = stream;
-                            match crate::services::transport::socks5::handshake(&mut stream).await {
+                            match socks5::handshake(&mut stream).await {
                                 Ok((target_host, target_port)) => {
                                     let channel = {
                                         let guard = ssh2.lock().await;
@@ -496,8 +497,15 @@ impl SshTransport for RusshTransport {
                                         ).await
                                     };
                                     match channel {
-                                        Ok(chan) => proxy_tcp_channel(stream, chan).await,
-                                        Err(e) => warn!("dynamic proxy: direct-tcpip failed: {e}"),
+                                        Ok(chan) => {
+                                            if socks5::send_reply(&mut stream, socks5::REP_SUCCEEDED).await.is_ok() {
+                                                proxy_tcp_channel(stream, chan).await;
+                                            }
+                                        }
+                                        Err(e) => {
+                                            let _ = socks5::send_reply(&mut stream, socks5::REP_HOST_UNREACHABLE).await;
+                                            warn!("dynamic proxy: direct-tcpip failed: {e}");
+                                        }
                                     }
                                 }
                                 Err(e) => warn!("dynamic proxy: SOCKS5 handshake failed: {e}"),

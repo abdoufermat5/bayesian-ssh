@@ -14,8 +14,10 @@ use tokio::net::TcpStream;
 
 /// Perform a SOCKS5 handshake on `stream`.
 ///
-/// After returning `Ok((host, port))` the stream is positioned at the start of
-/// the application data — the caller should proxy it directly to `host:port`.
+/// On `Ok((host, port))` the CONNECT request has been parsed but NOT yet
+/// answered: the caller must open the upstream channel first and then call
+/// [`send_reply`] with [`REP_SUCCEEDED`] or a failure code, so the client
+/// never sees "success" for a connection that could not be established.
 pub async fn handshake(stream: &mut TcpStream) -> Result<(String, u16)> {
     // ── Method negotiation ────────────────────────────────────────────────────
     let ver = stream.read_u8().await?;
@@ -82,15 +84,16 @@ pub async fn handshake(stream: &mut TcpStream) -> Result<(String, u16)> {
         }
     };
 
-    // ── Success reply ─────────────────────────────────────────────────────────
-    // VER=5 REP=0(success) RSV=0 ATYP=1(IPv4) BND.ADDR=0.0.0.0 BND.PORT=0
-    send_reply(stream, 0x00).await?;
-
     Ok((host, port))
 }
 
+/// REP: succeeded.
+pub const REP_SUCCEEDED: u8 = 0x00;
+/// REP: host unreachable.
+pub const REP_HOST_UNREACHABLE: u8 = 0x04;
+
 /// Send a SOCKS5 reply with the given REP byte. Uses an all-zeros IPv4 BND address.
-async fn send_reply(stream: &mut TcpStream, rep: u8) -> std::io::Result<()> {
+pub async fn send_reply(stream: &mut TcpStream, rep: u8) -> std::io::Result<()> {
     stream
         .write_all(&[0x05, rep, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
         .await
@@ -118,6 +121,7 @@ mod tests {
             let result = handshake(&mut server).await.unwrap();
             assert_eq!(result.0, "93.184.216.34");
             assert_eq!(result.1, 80);
+            send_reply(&mut server, REP_SUCCEEDED).await.unwrap();
         });
 
         // Method negotiation: SOCKS5, 1 method, NO_AUTH
@@ -146,6 +150,7 @@ mod tests {
             let result = handshake(&mut server).await.unwrap();
             assert_eq!(result.0, "example.com");
             assert_eq!(result.1, 443);
+            send_reply(&mut server, REP_SUCCEEDED).await.unwrap();
         });
 
         client.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
