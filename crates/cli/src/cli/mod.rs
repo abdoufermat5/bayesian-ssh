@@ -5,8 +5,6 @@ pub mod commands;
 pub mod parser;
 pub mod utils;
 
-#[allow(unused_imports)]
-use commands::*;
 pub use parser::{AliasSubcommand, Cli, Commands, EnvCommands};
 
 impl Cli {
