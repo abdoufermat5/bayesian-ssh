@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- **Terminal UI (`bssh tui` / `bssh ui`)**: The ratatui dashboard has been removed. Use the CLI commands or the desktop GUI (`bssh desktop`) instead. `tui.log` is no longer written.
+
 ## [2.5.2] - 2026-09-06
 
 ### Fixed

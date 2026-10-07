@@ -1,6 +1,6 @@
 //! Kerberos ticket management (klist / kinit wrappers and krb5.conf parsing).
 //!
-//! Shared service used by both the TUI/CLI and the desktop GUI. The GUI exposes
+//! Shared service used by both the CLI and the desktop GUI. The GUI exposes
 //! thin Tauri command wrappers around [`get_status`], [`renew_ticket`] and
 //! [`acquire_ticket`].
 

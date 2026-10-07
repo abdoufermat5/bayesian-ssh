@@ -1,6 +1,6 @@
 //! Shared PTY primitives built on top of `portable-pty`.
 //!
-//! Both the desktop GUI (`crates/gui`) and the TUI/CLI can spawn, read,
+//! Both the desktop GUI (`crates/gui`) and the CLI can spawn, read,
 //! write and resize a local PTY from a single definition. GUI-specific
 //! concerns (Tauri event emission, detached-session buffering) live in the
 //! GUI crate and pass callbacks into [`read_loop`].

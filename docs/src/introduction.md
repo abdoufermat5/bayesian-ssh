@@ -21,7 +21,7 @@
 - **Tag-based organization** with grouping and multi-select
 - **Complete connection history** with statistics
 - **SQLite database** for persistence
-- **Full-screen TUI** with tabs for Connections, History, Config, Files (SFTP browser), and Tunnels
+- **Desktop GUI** with connections, history, SFTP browser, and tunnels
 
 ## Documentation Overview
 

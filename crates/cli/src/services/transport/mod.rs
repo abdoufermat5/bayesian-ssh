@@ -1,6 +1,6 @@
 //! SSH transport abstraction.
 //!
-//! The `SshTransport` trait lets callers (CLI, TUI, transfer service) stay
+//! The `SshTransport` trait lets callers (CLI, GUI, transfer service) stay
 //! transport-agnostic. Concrete impls live in sibling modules.
 
 #![allow(dead_code, unused_imports)]

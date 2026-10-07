@@ -18,8 +18,8 @@ bayesian-ssh connect "My Server"
 # List view
 bayesian-ssh list
 
-# Interactive TUI
-bayesian-ssh tui
+# Desktop GUI
+bayesian-ssh desktop
 ```
 
 ## Core Commands at a Glance
@@ -33,7 +33,7 @@ bayesian-ssh tui
 | `bayesian-ssh edit` | Edit a connection |
 | `bayesian-ssh remove` | Remove a connection |
 | `bayesian-ssh import` | Import from SSH config |
-| `bayesian-ssh tui` | Launch interactive TUI |
+| `bayesian-ssh desktop` | Launch the desktop GUI |
 | `bayesian-ssh history` | View session history |
 | `bayesian-ssh alias` | Manage connection aliases |
 | `bayesian-ssh config` | View/update configuration |

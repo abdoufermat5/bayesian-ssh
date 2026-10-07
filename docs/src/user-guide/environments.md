@@ -34,7 +34,7 @@ bayesian-ssh --env client-acme list
 bayesian-ssh --env client-acme connect web-prod
 ```
 
-The active environment name is shown in the TUI header and in the tracing logs.
+The active environment name is shown in the tracing logs.
 
 ## Removing an Environment
 
@@ -43,18 +43,6 @@ bayesian-ssh env remove client-acme
 ```
 
 > ⚠️ This deletes the environment’s database and all connections it contains.
-
-## TUI Integration
-
-You can manage environments without leaving the TUI from the **Config** tab (`3`):
-
-| Key | Action |
-|-----|--------|
-| `Enter` | Switch to the highlighted environment |
-| `a` | Create a new environment |
-| `d` | Delete the highlighted environment |
-
-See [TUI Mode](./tui.md#config-tab) for the full keybinding list.
 
 ## Typical Workflows
 

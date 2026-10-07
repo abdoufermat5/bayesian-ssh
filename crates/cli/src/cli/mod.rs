@@ -170,7 +170,6 @@ impl Cli {
                 days,
                 failed,
             } => commands::history::execute(connection, limit, days, failed, config).await,
-            Commands::Tui => commands::tui::execute(config).await,
             Commands::Desktop => commands::desktop::execute(config).await,
             Commands::Exec {
                 target,

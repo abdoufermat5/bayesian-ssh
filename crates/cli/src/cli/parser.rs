@@ -6,11 +6,11 @@ use clap::{Parser, Subcommand};
     about = "A fast and lightweight SSH session manager with Kerberos support",
     long_about = "bayesian-ssh (bssh) is a smart SSH session manager that learns from your usage patterns.\n\n\
         It ranks connections using Bayesian scoring, supports Kerberos authentication,\n\
-        interactive bastion hosts, multi-environment profiles, and provides both a CLI and TUI.\n\n\
+        interactive bastion hosts, multi-environment profiles, and provides both a CLI and desktop GUI.\n\n\
         Common workflows:\n\
           bssh connect <name>     Connect to a saved server\n\
           bssh add <name> <host>  Save a new connection\n\
-          bssh tui                Launch interactive dashboard\n\
+          bssh desktop            Launch the desktop GUI\n\
           bssh list               Show all saved connections"
 )]
 #[command(version)]
@@ -433,14 +433,6 @@ pub enum Commands {
         #[arg(short = 'f', long)]
         failed: bool,
     },
-
-    /// Launch the interactive terminal dashboard
-    #[command(
-        alias = "ui",
-        long_about = "Open the full-screen TUI with connection list, session history,\n\
-        file browser, and port-forwarding panels. Use arrow keys or vim bindings to navigate."
-    )]
-    Tui,
 
     /// Launch the Tauri desktop GUI (runs detached in the background)
     #[command(

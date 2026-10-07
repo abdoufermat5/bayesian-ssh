@@ -37,12 +37,6 @@ Bayesian SSH is built with a modular architecture that separates concerns and pr
 - **Kerberos integration**: Automatic ticket management
 - **Process management**: Safe process spawning and monitoring
 
-### 6. TUI (`src/tui/`)
-
-- **ratatui-based**: Full-screen terminal interface
-- **Application state**: Managed in `app.rs`
-- **Rendering**: UI layout and drawing in `ui.rs`
-
 ## Database Schema
 
 ### Connections Table

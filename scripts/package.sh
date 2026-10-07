@@ -124,7 +124,7 @@ Homepage: https://github.com/abdoufermat5/bayesian-ssh
 Description: Fast and lightweight SSH session manager with Kerberos support
  Bayesian SSH (bssh) is a smart, high-performance SSH session manager featuring
  Bayesian-ranked search, bastion jump-host chaining, Kerberos integration,
- TUI, and a desktop graphical user interface.
+ CLI, and a desktop graphical user interface.
 EOF
 
 # postinst script for icon cache
@@ -162,7 +162,7 @@ BuildArch:      ${RPM_ARCH}
 %description
 Bayesian SSH (bssh) is a smart, high-performance SSH session manager featuring
 Bayesian-ranked search, bastion jump-host chaining, Kerberos integration,
-TUI, and a desktop graphical user interface.
+CLI, and a desktop graphical user interface.
 
 %install
 rm -rf %{buildroot}

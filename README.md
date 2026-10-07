@@ -94,9 +94,6 @@ bayesian-ssh list
 # Import from SSH config
 bayesian-ssh import
 
-# Interactive TUI mode
-bayesian-ssh tui                          # Full-screen connection browser
-
 # Interactive Desktop GUI mode
 bayesian-ssh-desktop                      # Launches the desktop GUI client
 ```
@@ -163,7 +160,7 @@ make docs-serve    # Serve locally with live reload
 Documentation covers:
 
 - **[Getting Started](docs/src/getting-started/installation.md)** - Installation, quick start, configuration
-- **[User Guide](docs/src/user-guide/connection-management.md)** - Connections, sessions, aliases, TUI, bastion hosts
+- **[User Guide](docs/src/user-guide/connection-management.md)** - Connections, sessions, aliases, desktop GUI, bastion hosts
 - **[Advanced Usage](docs/src/advanced-usage/enterprise.md)** - Enterprise, cloud, CI/CD, security & compliance
 - **[Reference](docs/src/reference/architecture.md)** - Architecture, troubleshooting, changelog
 

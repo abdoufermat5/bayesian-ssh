@@ -280,7 +280,7 @@ impl SshTransport for RusshTransport {
 
             loop {
                 tokio::select! {
-                    // Keystrokes from TUI → remote
+                    // Local keystrokes → remote
                     data = stdin_rx.recv(), if !stdin_closed => {
                         match data {
                             None => {

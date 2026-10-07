@@ -26,4 +26,3 @@ pub mod restore;
 pub mod show;
 pub mod stats;
 pub mod transfer;
-pub mod tui;
