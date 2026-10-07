@@ -138,8 +138,8 @@ pub enum Commands {
         /// Path to an SSH private key
         #[arg(short = 'i', long, value_name = "FILE")]
         key: Option<String>,
-        /// Tags for grouping and filtering (repeatable)
-        #[arg(short = 't', long, value_name = "TAG")]
+        /// Tags for grouping and filtering (repeatable or comma-separated)
+        #[arg(short = 't', long, value_name = "TAG", value_delimiter = ',')]
         tags: Vec<String>,
     },
 
@@ -220,11 +220,11 @@ pub enum Commands {
         /// Set or change the SSH private key path
         #[arg(long, value_name = "FILE")]
         key: Option<String>,
-        /// Add tags (repeatable)
-        #[arg(long, value_name = "TAG")]
+        /// Add tags (repeatable or comma-separated)
+        #[arg(long, value_name = "TAG", value_delimiter = ',')]
         add_tags: Vec<String>,
-        /// Remove tags (repeatable)
-        #[arg(long, value_name = "TAG")]
+        /// Remove tags (repeatable or comma-separated)
+        #[arg(long, value_name = "TAG", value_delimiter = ',')]
         remove_tags: Vec<String>,
     },
 
