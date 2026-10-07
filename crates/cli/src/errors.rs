@@ -1,32 +1,6 @@
-use thiserror::Error;
-
-#[derive(Error, Debug)]
-pub enum AppError {
-    #[error("Connection not found: {0}")]
-    ConnectionNotFound(String),
-
-    #[error("Duplicate connection: {0}")]
-    DuplicateConnection(String),
-
-    #[error("Database error: {0}")]
-    DatabaseError(#[from] rusqlite::Error),
-
-    #[error("SSH error: {0}")]
-    SshError(String),
-
-    #[error("Configuration error: {0}")]
-    ConfigError(String),
-
-    #[error("IO error: {0}")]
-    IoError(#[from] std::io::Error),
-
-    #[error("Serialization error: {0}")]
-    SerializationError(#[from] serde_json::Error),
-}
-
 /// Emit a human-friendly error plus (when possible) a remediation hint to
-/// stderr. Hints are derived from typed `AppError` variants first, then a
-/// couple of well-known wrapped messages as a fallback.
+/// stderr. Hints are derived from well-known messages anywhere in the
+/// error chain.
 pub fn report_cli_error(error: &anyhow::Error) {
     eprintln!("Error: {error}");
 
@@ -44,8 +18,8 @@ fn suggestion_for(error: &anyhow::Error) -> Option<&'static str> {
         return Some("check the backup path or run `bssh backup` to create a new backup first");
     }
 
-    if error_contains(error, "Duplicate connection") || error_contains(error, "DuplicateConnection")
-    {
+    // Needles must be lower-case: `error_contains` lower-cases the haystack.
+    if error_contains(error, "duplicate connection") {
         return Some(
             "run `bssh list` to see existing names or `bssh edit <name> --name <new>` to rename",
         );
@@ -79,4 +53,15 @@ fn error_contains(error: &anyhow::Error, needle: &str) -> bool {
     error
         .chain()
         .any(|cause| cause.to_string().to_lowercase().contains(needle))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::suggestion_for;
+
+    #[test]
+    fn duplicate_name_error_gets_hint() {
+        let err = anyhow::anyhow!("Duplicate connection name 'web' (existing id: 1)");
+        assert!(suggestion_for(&err).unwrap().contains("bssh list"));
+    }
 }

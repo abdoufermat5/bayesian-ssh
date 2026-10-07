@@ -125,15 +125,6 @@ impl Session {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(dead_code)]
-pub struct SessionStats {
-    pub total_sessions: usize,
-    pub active_sessions: usize,
-    pub average_duration: Option<chrono::Duration>,
-    pub success_rate: f64,
-}
-
 /// Session history entry for display purposes
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionHistoryEntry {
