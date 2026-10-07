@@ -3,7 +3,12 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import type { Terminal } from "@xterm/xterm";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { SearchAddon } from "@xterm/addon-search";
-import { ClipboardAddon } from "@xterm/addon-clipboard";
+import {
+  BrowserClipboardProvider,
+  ClipboardAddon,
+  type ClipboardSelectionType,
+  type IClipboardProvider,
+} from "@xterm/addon-clipboard";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { CanvasAddon } from "@xterm/addon-canvas";
 import { ImageAddon } from "@xterm/addon-image";
@@ -21,6 +26,24 @@ function writePty(sessionId: string, data: string): void {
 export function attachXtermIo(sessionId: string, term: Terminal): void {
   term.onData((data) => writePty(sessionId, data));
   term.onBinary((data) => writePty(sessionId, data));
+}
+
+/**
+ * OSC 52 clipboard provider that lets the remote side set the clipboard but
+ * never read it. The default provider answers `OSC 52 ; c ; ?` with the local
+ * clipboard contents, so any remote host (or a file being `cat`ed) could
+ * exfiltrate whatever the user last copied, e.g. a password.
+ */
+class WriteOnlyClipboardProvider implements IClipboardProvider {
+  private readonly inner = new BrowserClipboardProvider();
+
+  readText(): string {
+    return "";
+  }
+
+  writeText(selection: ClipboardSelectionType, text: string): Promise<void> {
+    return this.inner.writeText(selection, text).catch(() => {});
+  }
 }
 
 export interface LoadedAddons {
@@ -69,7 +92,7 @@ export function attachXtermAddons(term: Terminal): LoadedAddons {
   });
 
   const searchAddon = new SearchAddon();
-  const clipboardAddon = new ClipboardAddon();
+  const clipboardAddon = new ClipboardAddon(undefined, new WriteOnlyClipboardProvider());
   const unicode11Addon = new Unicode11Addon();
   const imageAddon = new ImageAddon();
 
