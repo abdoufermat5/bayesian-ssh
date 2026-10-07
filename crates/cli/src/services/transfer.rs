@@ -118,10 +118,14 @@ impl TransferService {
             .await
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-        let reader_result = reader_handle.await.context("upload reader task")?;
-        // The reader may exit early if the writer closes the channel;
-        // treat that as success (everything written was delivered).
-        let _ = reader_result;
+        // A local read error drops the sender, which the writer cannot tell
+        // apart from EOF — so a failed reader means the remote file is
+        // truncated and must be reported. (Early exit because the writer hung
+        // up returns `Ok`.)
+        reader_handle
+            .await
+            .context("upload reader task")?
+            .with_context(|| format!("read {}", local_path.display()))?;
 
         info!("upload complete: {written} bytes written to {remote_path}");
         Ok(written)
@@ -135,8 +139,8 @@ impl TransferService {
     ///
     /// Writes to a sibling temp file and atomically renames into place on
     /// success, so a partial download never clobbers the destination. The
-    /// destination is created with `O_NOFOLLOW` so a pre-existing
-    /// symlink at `local_path` cannot be followed for redirection.
+    /// temp file is created exclusively (`O_EXCL`) so a pre-existing
+    /// symlink cannot redirect the write.
     pub async fn download(
         &self,
         connection: &Connection,
@@ -170,22 +174,8 @@ impl TransferService {
         let sftp_handle = tokio::spawn(async move { sftp.read_all(&remote_path_owned, tx).await });
 
         // Atomic write: create a temp file alongside the destination,
-        // rename on success. We use a counter to disambiguate concurrent
-        // downloads to the same target.
-        let parent = local_path
-            .parent()
-            .filter(|p| !p.as_os_str().is_empty())
-            .map(std::path::Path::to_path_buf)
-            .unwrap_or_else(|| std::path::PathBuf::from("."));
-        let file_name = local_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("bssh-download");
-        let temp_path = std::path::PathBuf::from(format!(
-            "{}.{}.bssh-partial",
-            local_path.display(),
-            std::process::id()
-        ));
+        // rename on success.
+        let temp_path = partial_path(local_path);
 
         let mut file = open_no_follow_create(&temp_path).await?;
         let mut bytes_received: u64 = 0;
@@ -226,11 +216,6 @@ impl TransferService {
             let _ = tokio::fs::remove_file(&temp_path).await;
             return Err(anyhow::Error::from(e).context("rename temp file into place"));
         }
-
-        // Touch the parent so the dir is recent (best-effort).
-        let _ = tokio::fs::File::open(&parent).await;
-        let _ = file_name; // suppress unused warning
-        let _ = parent; // suppress unused warning
 
         info!(
             "download complete: {read} bytes saved to {}",
@@ -407,6 +392,13 @@ impl TransferService {
                 if entry.name == "." || entry.name == ".." {
                     continue;
                 }
+                // Names come from the (untrusted) server. A name containing a
+                // separator, or an absolute one (`Path::join` replaces the
+                // base), would let a malicious server write anywhere locally.
+                if !is_plain_file_name(&entry.name) {
+                    warn!("skipping remote entry with unsafe name: {:?}", entry.name);
+                    continue;
+                }
                 let remote_child = format!("{}/{}", remote_dir.trim_end_matches('/'), entry.name);
                 let local_child = local_dir.join(&entry.name);
 
@@ -430,13 +422,9 @@ impl TransferService {
                     let sftp_read = sftp.read_all(&remote_owned, tx);
 
                     // Atomic write to a sibling temp file, then rename
-                    // on success. O_NOFOLLOW so a pre-existing symlink
-                    // at `local_child` can't be followed.
-                    let temp_path = std::path::PathBuf::from(format!(
-                        "{}.{}.bssh-partial",
-                        local_child.display(),
-                        std::process::id()
-                    ));
+                    // on success. Exclusive create so a pre-existing
+                    // symlink can't be followed.
+                    let temp_path = partial_path(&local_child);
                     let mut file = match open_no_follow_create(&temp_path).await {
                         Ok(f) => f,
                         Err(e) => {
@@ -454,13 +442,22 @@ impl TransferService {
                         }
                         file.flush().await?;
                         drop(file);
-                        tokio::fs::rename(&temp_path, &local_child).await?;
                         Ok::<u64, anyhow::Error>(received)
                     };
 
+                    // Only move the file into place once BOTH sides succeeded:
+                    // a failed SFTP read just closes the channel, which the
+                    // writer sees as a normal EOF.
                     let (read_result, write_result) = tokio::join!(sftp_read, write_task);
-                    read_result.map_err(|e| anyhow::anyhow!("{e}"))?;
-                    let received = match write_result {
+                    let outcome = match (read_result, write_result) {
+                        (Err(e), _) => Err(anyhow::anyhow!("{e}")),
+                        (Ok(_), Err(e)) => Err(e),
+                        (Ok(_), Ok(n)) => tokio::fs::rename(&temp_path, &local_child)
+                            .await
+                            .map(|()| n)
+                            .context("rename temp file into place"),
+                    };
+                    let received = match outcome {
                         Ok(n) => n,
                         Err(e) => {
                             let _ = tokio::fs::remove_file(&temp_path).await;
@@ -560,45 +557,70 @@ fn reject_traversal(p: &str) -> std::result::Result<(), &'static str> {
     Ok(())
 }
 
-/// Open a local file for writing, refusing to follow a pre-existing
-/// symlink. On Unix, `O_NOFOLLOW` is set on the open(2) call so an
-/// attacker who has placed a symlink at the destination cannot redirect
-/// the write.
-async fn open_no_follow_create(path: &std::path::Path) -> Result<tokio::fs::File> {
-    use std::os::unix::fs::OpenOptionsExt;
-    let file = std::fs::OpenOptions::new()
+/// True when `name` is a single, plain path component (no separators, not
+/// absolute, not `.`/`..`, no NUL) and is therefore safe to `join` onto a
+/// local directory.
+fn is_plain_file_name(name: &str) -> bool {
+    !name.is_empty() && name != "." && name != ".." && !name.contains(['/', '\\', '\0'])
+}
+
+/// Sibling temp path for an in-progress download: `<dest>.<pid>.<n>.bssh-partial`.
+/// The per-process counter keeps concurrent downloads to the same target
+/// from sharing (and corrupting) one temp file.
+fn partial_path(dest: &Path) -> std::path::PathBuf {
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let mut s = dest.as_os_str().to_owned();
+    s.push(format!(".{}.{n}.bssh-partial", std::process::id()));
+    s.into()
+}
+
+/// Create a fresh local file for writing without ever following a
+/// symlink. A stale entry left by a crashed run is unlinked first (unlink
+/// removes a symlink itself, not its target), then the file is created with
+/// `O_CREAT|O_EXCL`, which fails rather than follow anything planted in
+/// between. This avoids hard-coding the per-architecture `O_NOFOLLOW` value.
+async fn open_no_follow_create(path: &Path) -> Result<tokio::fs::File> {
+    match tokio::fs::remove_file(path).await {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => {
+            return Err(anyhow::Error::from(e).context(format!("remove stale {}", path.display())))
+        }
+    }
+    tokio::fs::OpenOptions::new()
         .write(true)
-        .create(true)
-        .truncate(true)
-        .custom_flags(libc_o_nofollow())
+        .create_new(true)
         .open(path)
-        .with_context(|| format!("open {} for writing (O_NOFOLLOW)", path.display()))?;
-    Ok(tokio::fs::File::from_std(file))
-}
-
-/// Wrapper around the `O_NOFOLLOW` constant. Using a function lets us
-/// keep the `unsafe` boundary in one place and keep the rest of the code
-/// platform-agnostic.
-#[cfg(unix)]
-fn libc_o_nofollow() -> i32 {
-    // Defined in <fcntl.h>; value is platform-stable on Linux/macOS.
-    #[cfg(target_os = "linux")]
-    const O_NOFOLLOW: i32 = 0o400000;
-    #[cfg(target_os = "macos")]
-    const O_NOFOLLOW: i32 = 0x0100;
-    #[cfg(target_os = "freebsd")]
-    const O_NOFOLLOW: i32 = 0x0100;
-    O_NOFOLLOW
-}
-
-#[cfg(not(unix))]
-fn libc_o_nofollow() -> i32 {
-    0
+        .await
+        .with_context(|| format!("create {} for writing", path.display()))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::reject_traversal;
+    use super::{is_plain_file_name, partial_path, reject_traversal};
+    use std::path::Path;
+
+    #[test]
+    fn remote_names_must_be_single_components() {
+        assert!(is_plain_file_name("report.txt"));
+        assert!(is_plain_file_name("..hidden"));
+        assert!(!is_plain_file_name(""));
+        assert!(!is_plain_file_name("."));
+        assert!(!is_plain_file_name(".."));
+        assert!(!is_plain_file_name("../../.bashrc"));
+        assert!(!is_plain_file_name("/etc/cron.d/x"));
+        assert!(!is_plain_file_name("a\\b"));
+    }
+
+    #[test]
+    fn partial_paths_are_unique_siblings() {
+        let a = partial_path(Path::new("/dl/file.bin"));
+        let b = partial_path(Path::new("/dl/file.bin"));
+        assert_ne!(a, b);
+        assert_eq!(a.parent(), Some(Path::new("/dl")));
+        assert!(a.to_string_lossy().ends_with(".bssh-partial"));
+    }
 
     #[test]
     fn rejects_traversal_segments() {
