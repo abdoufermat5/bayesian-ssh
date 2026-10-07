@@ -40,9 +40,14 @@ impl Database {
     }
 
     pub fn remove_tag(&self, connection_id: &str, tag: &str) -> Result<bool> {
+        // Tags are stored normalized; normalize the argument the same way
+        // `add_tag` does or e.g. `" prod "` could be added but never removed.
+        let Some(normalized) = Connection::normalize_tag(tag) else {
+            return Ok(false);
+        };
         let rows = self.conn.execute(
             "DELETE FROM connection_tags WHERE connection_id = ? AND tag = ?",
-            params![connection_id, tag],
+            params![connection_id, normalized],
         )?;
         Ok(rows > 0)
     }

@@ -78,7 +78,11 @@ impl Database {
         let mut rows = stmt.query(params![alias])?;
 
         if let Some(row) = rows.next()? {
-            Ok(Some(self.row_to_connection(row)?))
+            let mut connection = self.row_to_connection(row)?;
+            // Callers may write this connection back (`update_connection`
+            // re-syncs tags from it), so it must carry its real tag set.
+            connection.tags = self.get_tags_for_connection(&connection.id.to_string())?;
+            Ok(Some(connection))
         } else {
             Ok(None)
         }

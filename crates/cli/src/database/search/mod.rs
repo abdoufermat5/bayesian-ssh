@@ -77,7 +77,6 @@ mod tests {
         // These all type-check and never reach the DB as raw text.
         let _ = db.search_by_field("query", SearchField::Name, 10);
         let _ = db.search_by_field("query", SearchField::Host, 10);
-        let _ = db.search_by_field("query", SearchField::Tags, 10);
     }
 
     #[test]

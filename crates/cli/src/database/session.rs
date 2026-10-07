@@ -1,4 +1,4 @@
-use crate::database::Database;
+use crate::database::{escape_like, Database};
 use crate::models::{Session, SessionStatusKind};
 use anyhow::Result;
 use rusqlite::params;
@@ -76,8 +76,12 @@ impl Database {
             sql_params.push(Box::new(conn_name.to_string()));
         }
 
-        if let Some(d) = days {
-            let cutoff = Utc::now() - Duration::days(d as i64);
+        // `checked_sub_signed` instead of `-`: a huge `--days` would push the
+        // cutoff out of chrono's range and panic. Such a window covers all
+        // history anyway, so it simply means "no cutoff".
+        if let Some(cutoff) =
+            days.and_then(|d| Utc::now().checked_sub_signed(Duration::days(d.into())))
+        {
             query.push_str(" AND s.started_at >= ?");
             sql_params.push(Box::new(cutoff.to_rfc3339()));
         }
@@ -221,18 +225,4 @@ impl Database {
         )?;
         Ok(())
     }
-}
-
-fn escape_like(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '\\' | '%' | '_' => {
-                out.push('\\');
-                out.push(c);
-            }
-            other => out.push(other),
-        }
-    }
-    out
 }

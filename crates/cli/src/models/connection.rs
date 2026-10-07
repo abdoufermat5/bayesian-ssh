@@ -60,8 +60,12 @@ impl Connection {
         }
     }
 
+    /// Remove a tag, matching on the normalized form so the stored
+    /// (normalized) tag is found even if the argument has stray whitespace
+    /// or quotes.
     pub fn remove_tag(&mut self, tag: &str) {
-        self.tags.retain(|t| t != tag);
+        let target = Self::normalize_tag(tag);
+        self.tags.retain(|t| Self::normalize_tag(t) != target);
     }
 
     /// Normalize a tag: trim whitespace, reject empty values, escape

@@ -1,4 +1,4 @@
-use crate::database::Database;
+use crate::database::{escape_like, Database};
 use crate::models::Connection;
 use anyhow::Result;
 use rusqlite::params;
@@ -10,7 +10,6 @@ use rusqlite::params;
 pub enum SearchField {
     Name,
     Host,
-    Tags,
 }
 
 impl SearchField {
@@ -18,7 +17,6 @@ impl SearchField {
         match self {
             SearchField::Name => "name",
             SearchField::Host => "host",
-            SearchField::Tags => "tags", // legacy JSON column, only used for fallback
         }
     }
 }
@@ -81,10 +79,23 @@ impl Database {
             {
                 all_matches.append(&mut host_matches);
             }
-            // Tag search uses the normalized table; fall back to JSON LIKE
-            // for legacy compatibility only when no normalised hits.
+            // Exact match against the normalized `connection_tags` table.
             if let Ok(mut tag_matches) = self.search_in_tags(&normalized_query, limit) {
                 all_matches.append(&mut tag_matches);
+            }
+        }
+
+        // The per-source queries return rows without tags. Load them once
+        // for every hit so ranking can match on tags and callers (e.g.
+        // `edit`, which writes the connection back) never see an empty tag
+        // set that would wipe the stored tags.
+        let mut ids: Vec<String> = all_matches.iter().map(|c| c.id.to_string()).collect();
+        ids.sort_unstable();
+        ids.dedup();
+        let tag_map = self.get_tags_for_connections(&ids)?;
+        for conn in &mut all_matches {
+            if let Some(tags) = tag_map.get(&conn.id.to_string()) {
+                conn.tags = tags.clone();
             }
         }
 
@@ -123,19 +134,8 @@ impl Database {
         let mut rows = stmt.query(params![like_pattern, limit])?;
 
         let mut connections = Vec::new();
-        let mut ids = Vec::new();
         while let Some(row) = rows.next()? {
-            let conn = self.row_to_connection(row)?;
-            ids.push(conn.id.to_string());
-            connections.push(conn);
-        }
-
-        // Batch-fetch tags in a single query (avoids N+1).
-        let tag_map = self.get_tags_for_connections(&ids)?;
-        for conn in &mut connections {
-            if let Some(tags) = tag_map.get(&conn.id.to_string()) {
-                conn.tags = tags.clone();
-            }
+            connections.push(self.row_to_connection(row)?);
         }
         Ok(connections)
     }
@@ -218,34 +218,5 @@ impl Database {
         }
 
         false
-    }
-}
-
-/// Escape SQL LIKE wildcards (`%`, `_`, `\`) in a user-supplied string.
-/// Pair with `ESCAPE '\'` in the SQL query.
-fn escape_like(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '\\' | '%' | '_' => {
-                out.push('\\');
-                out.push(c);
-            }
-            other => out.push(other),
-        }
-    }
-    out
-}
-
-#[cfg(test)]
-mod tests {
-    use super::escape_like;
-
-    #[test]
-    fn escape_like_doubles_wildcards() {
-        assert_eq!(escape_like("foo%bar"), "foo\\%bar");
-        assert_eq!(escape_like("a_b"), "a\\_b");
-        assert_eq!(escape_like("a\\b"), "a\\\\b");
-        assert_eq!(escape_like("plain"), "plain");
     }
 }

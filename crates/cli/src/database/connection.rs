@@ -1,7 +1,7 @@
 use crate::database::Database;
 use crate::models::Connection;
 use anyhow::{anyhow, Result};
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use tracing::info;
 
 impl Database {
@@ -24,7 +24,7 @@ impl Database {
                 params![connection.name, connection.id.to_string()],
                 |row| row.get::<_, String>(0),
             )
-            .ok();
+            .optional()?;
         if let Some(other_id) = name_clash {
             return Err(anyhow!(
                 "Duplicate connection name '{}' (existing id: {})",
@@ -46,7 +46,8 @@ impl Database {
                 bastion_user = excluded.bastion_user,
                 use_kerberos = excluded.use_kerberos,
                 key_path = excluded.key_path,
-                last_used = excluded.last_used",
+                last_used = excluded.last_used,
+                tags = excluded.tags",
             params![
                 connection.id.to_string(),
                 connection.name,
@@ -83,11 +84,8 @@ impl Database {
     }
 
     pub fn get_connection(&self, name_or_id: &str) -> Result<Option<Connection>> {
-        // Single-row path: project all 12 columns (incl. the legacy
-        // JSON `tags` column) so `row_to_connection` can populate the
-        // in-memory tags directly.
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used, tags
+            "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used
              FROM connections
              WHERE id = ? OR name = ?",
         )?;
@@ -96,13 +94,9 @@ impl Database {
 
         if let Some(row) = rows.next()? {
             let mut connection = self.row_to_connection(row)?;
-            // Prefer the normalized `connection_tags` table; the JSON
-            // column may be stale.
-            if let Ok(tags) = self.get_tags_for_connection(&connection.id.to_string()) {
-                if !tags.is_empty() {
-                    connection.tags = tags;
-                }
-            }
+            // `connection_tags` is authoritative. Never fall back to the
+            // legacy JSON column: it is stale once tags have been removed.
+            connection.tags = self.get_tags_for_connection(&connection.id.to_string())?;
             Ok(Some(connection))
         } else {
             Ok(None)
@@ -174,15 +168,16 @@ impl Database {
     }
 
     pub fn update_connection(&self, connection: &Connection) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+
         // Don't allow renaming onto an existing name.
-        let clash: Option<String> = self
-            .conn
+        let clash: Option<String> = tx
             .query_row(
                 "SELECT id FROM connections WHERE name = ? AND id != ?",
                 params![connection.name, connection.id.to_string()],
                 |row| row.get::<_, String>(0),
             )
-            .ok();
+            .optional()?;
         if let Some(other_id) = clash {
             return Err(anyhow!(
                 "Cannot rename: name '{}' is already used by connection {}",
@@ -191,11 +186,10 @@ impl Database {
             ));
         }
 
-        let tx = self.conn.unchecked_transaction()?;
         let rows = tx.execute(
             "UPDATE connections SET
              name = ?, host = ?, user = ?, port = ?, bastion = ?, bastion_user = ?,
-             use_kerberos = ?, key_path = ?, last_used = ?
+             use_kerberos = ?, key_path = ?, last_used = ?, tags = ?
              WHERE id = ?",
             params![
                 connection.name,
@@ -207,6 +201,7 @@ impl Database {
                 connection.use_kerberos,
                 connection.key_path,
                 connection.last_used.map(|d| d.to_rfc3339()),
+                serde_json::to_string(&connection.tags)?,
                 connection.id.to_string(),
             ],
         )?;
@@ -261,11 +256,21 @@ impl Database {
             return Ok(false);
         };
 
-        // Wrap both deletes in a single transaction so a crash mid-way
-        // can't leave orphan sessions.
+        // Wrap all deletes in a single transaction so a crash mid-way
+        // can't leave orphan rows. Foreign keys are not enforced, so the
+        // schema's `ON DELETE CASCADE` never fires: delete dependents
+        // explicitly.
         let tx = self.conn.unchecked_transaction()?;
         let sessions_deleted = tx.execute(
             "DELETE FROM sessions WHERE connection_id = ?",
+            params![connection_id],
+        )?;
+        tx.execute(
+            "DELETE FROM aliases WHERE connection_id = ?",
+            params![connection_id],
+        )?;
+        tx.execute(
+            "DELETE FROM connection_tags WHERE connection_id = ?",
             params![connection_id],
         )?;
         let rows_affected = tx.execute(
@@ -286,23 +291,11 @@ impl Database {
     // ──────────────────────────────────────────────────────────────────────────
 
     /// Convert a single row into a `Connection`. Tags are NOT read here;
-    /// callers should fetch them in a single batch query and assign them
-    /// to the returned `Connection.tags` (see `get_tags_for_connections`).
+    /// callers should fetch them from `connection_tags` (in a single batch
+    /// query where possible, see `get_tags_for_connections`).
     pub(crate) fn row_to_connection(&self, row: &rusqlite::Row) -> Result<Connection> {
         let id_str: String = row.get(0)?;
         let id = uuid::Uuid::parse_str(&id_str)?;
-
-        // Read tags from the legacy JSON column if the SELECT projects
-        // it (column index 11). New query paths omit it and use the
-        // normalized `connection_tags` table instead.
-        let tags: Vec<String> = if row.as_ref().column_count() > 11 {
-            let tags_json: Option<String> = row.get(11)?;
-            tags_json
-                .and_then(|s| serde_json::from_str(&s).ok())
-                .unwrap_or_default()
-        } else {
-            Vec::new()
-        };
 
         Ok(Connection {
             id,
@@ -322,7 +315,7 @@ impl Database {
                     .ok()
                     .map(|dt| dt.with_timezone(&chrono::Utc))
             }),
-            tags,
+            tags: Vec::new(),
         })
     }
 
