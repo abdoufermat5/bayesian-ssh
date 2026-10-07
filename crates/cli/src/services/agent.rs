@@ -49,9 +49,24 @@ fn current_uid_string() -> Option<String> {
 }
 
 /// Walk the well-known places where SSH agent sockets are created and return
-/// the first active, connectable SSH agent socket.
+/// the first active, connectable SSH agent socket owned by the current user.
+///
+/// Ownership matters: `/tmp/ssh-*/agent.*` (and environ-advertised paths)
+/// can be created by any local user. Adopting a foreign socket would route
+/// signing requests — and any `ssh-add`ed private keys — to that user's
+/// fake agent.
 #[cfg(unix)]
 pub fn find_ssh_agent_socket() -> Option<String> {
+    use std::os::unix::fs::MetadataExt;
+
+    let uid = current_uid_string()?;
+    let uid_num: u32 = uid.parse().ok()?;
+    // `metadata` follows symlinks, so the socket actually connected to is
+    // the one whose owner is checked.
+    let is_own_socket = |path: &str| {
+        std::fs::metadata(path).is_ok_and(|m| m.uid() == uid_num) && is_valid_socket(path)
+    };
+
     // 1. Glob /tmp/ssh-*/agent.* (the classic openssh-agent pattern - highest priority)
     if let Ok(entries) = std::fs::read_dir("/tmp") {
         for entry in entries.flatten() {
@@ -77,7 +92,7 @@ pub fn find_ssh_agent_socket() -> Option<String> {
                         .to_string();
                     if fname.starts_with("agent.") {
                         let path_str = fp.to_string_lossy().to_string();
-                        if is_valid_socket(&path_str) {
+                        if is_own_socket(&path_str) {
                             return Some(path_str);
                         }
                     }
@@ -87,7 +102,6 @@ pub fn find_ssh_agent_socket() -> Option<String> {
     }
 
     // 2. Try common XDG_RUNTIME_DIR & desktop agent socket patterns
-    let uid = current_uid_string().unwrap_or_else(|| "0".to_string());
     let runtime_dir = format!("/run/user/{uid}");
     let mut candidates = vec![
         format!("{runtime_dir}/ssh-agent.socket"),
@@ -102,7 +116,7 @@ pub fn find_ssh_agent_socket() -> Option<String> {
     }
 
     for c in &candidates {
-        if is_valid_socket(c) {
+        if is_own_socket(c) {
             return Some(c.clone());
         }
     }
@@ -120,7 +134,7 @@ pub fn find_ssh_agent_socket() -> Option<String> {
                     let s = String::from_utf8_lossy(kv);
                     if let Some(val) = s.strip_prefix("SSH_AUTH_SOCK=") {
                         let sock = val.trim();
-                        if !sock.is_empty() && !sock.contains("gnupg") && is_valid_socket(sock) {
+                        if !sock.is_empty() && !sock.contains("gnupg") && is_own_socket(sock) {
                             return Some(sock.to_string());
                         }
                     }
@@ -135,7 +149,7 @@ pub fn find_ssh_agent_socket() -> Option<String> {
         gpg_candidates.push(format!("{}/.gnupg/S.gpg-agent.ssh", home.to_string_lossy()));
     }
     for c in &gpg_candidates {
-        if is_valid_socket(c) {
+        if is_own_socket(c) {
             return Some(c.clone());
         }
     }
