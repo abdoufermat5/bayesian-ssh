@@ -14,6 +14,7 @@
   import CustomSelect from "$lib/components/ui/CustomSelect.svelte";
   import ModalShell from "$lib/components/ui/ModalShell.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
+  import { copyTextWithFallback } from "$lib/utils/terminal-xterm";
 
   export interface TunnelRule {
     id: string;
@@ -119,7 +120,7 @@
 
   function copyConnectionString(t: TunnelRule) {
     const str = t.type === "socks5" ? `socks5://127.0.0.1:${t.localPort}` : `http://localhost:${t.localPort}`;
-    navigator.clipboard.writeText(str);
+    copyTextWithFallback(str);
     copiedId = t.id;
     notify(`Copied connection address: ${str}`, "success");
     setTimeout(() => {

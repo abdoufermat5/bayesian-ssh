@@ -13,6 +13,7 @@
     X,
   } from "lucide-svelte";
   import { notify } from "$lib/stores/notifications.svelte";
+  import { copyTextWithFallback } from "$lib/utils/terminal-xterm";
   import ModalShell from "$lib/components/ui/ModalShell.svelte";
 
   export interface SnippetItem {
@@ -99,11 +100,10 @@
   });
 
   function copySnippet(s: SnippetItem) {
-    navigator.clipboard.writeText(s.command).then(() => {
-      copiedId = s.id;
-      setTimeout(() => (copiedId = null), 2000);
-      notify("Command snippet copied to clipboard", "info");
-    });
+    copyTextWithFallback(s.command);
+    copiedId = s.id;
+    setTimeout(() => (copiedId = null), 2000);
+    notify("Command snippet copied to clipboard", "info");
   }
 
   function handleRun(s: SnippetItem) {

@@ -13,6 +13,7 @@ import type {
 import { notify } from "$lib/stores/notifications.svelte";
 import { applyTheme } from "$lib/utils/theme";
 import { isTerminalFocused } from "$lib/utils/terminal-focus";
+import { copyTextWithFallback } from "$lib/utils/terminal-xterm";
 import {
   applyThemeToAllTerminals,
   closeAllTabs,
@@ -577,17 +578,13 @@ export class AppStateStore {
     }
   }
 
-  copyToClipboard = async (text: string, id: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      this.copiedId = id;
-      setTimeout(() => {
-        if (this.copiedId === id) this.copiedId = null;
-      }, 1500);
-      notify("SSH command copied to clipboard", "success");
-    } catch {
-      notify("Failed to copy", "error");
-    }
+  copyToClipboard = (text: string, id: string) => {
+    copyTextWithFallback(text);
+    this.copiedId = id;
+    setTimeout(() => {
+      if (this.copiedId === id) this.copiedId = null;
+    }, 1500);
+    notify("SSH command copied to clipboard", "success");
   }
 
   switchEnv = async (envName: string) => {

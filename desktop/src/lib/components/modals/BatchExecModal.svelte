@@ -24,6 +24,7 @@
   } from "lucide-svelte";
   import type { Connection } from "$lib/types";
   import { notify } from "$lib/stores/notifications.svelte";
+  import { copyTextWithFallback } from "$lib/utils/terminal-xterm";
   import ModalShell from "$lib/components/ui/ModalShell.svelte";
 
   interface BatchExecHostResult {
@@ -376,7 +377,7 @@
     if (!results || !results[activeResultIndex]) return;
     const active = results[activeResultIndex];
     const text = `Host: ${active.name} (${active.user}@${active.host})\nExit Code: ${active.exit_code}\n\nSTDOUT:\n${active.stdout}\n\nSTDERR:\n${active.stderr}`;
-    navigator.clipboard.writeText(text);
+    copyTextWithFallback(text);
     copied = true;
     setTimeout(() => (copied = false), 2000);
   }

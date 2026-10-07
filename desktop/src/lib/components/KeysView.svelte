@@ -16,6 +16,7 @@
   import CustomSelect from "$lib/components/ui/CustomSelect.svelte";
   import ModalShell from "$lib/components/ui/ModalShell.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
+  import { copyTextWithFallback } from "$lib/utils/terminal-xterm";
 
   interface Props {
     connections: Connection[];
@@ -97,7 +98,7 @@
   }
 
   function copyToClipboard(text: string) {
-    navigator.clipboard.writeText(text);
+    copyTextWithFallback(text);
     copiedFingerprint = text;
     notify("Copied fingerprint to clipboard", "success");
     setTimeout(() => {

@@ -15,6 +15,7 @@
   } from "lucide-svelte";
   import type { AuditFinding, AuditReport } from "$lib/types";
   import { notify } from "$lib/stores/notifications.svelte";
+  import { copyTextWithFallback } from "$lib/utils/terminal-xterm";
 
   let report = $state<AuditReport | null>(null);
   let loading = $state(true);
@@ -47,7 +48,7 @@
   }
 
   function copyCode(code: string) {
-    navigator.clipboard.writeText(code);
+    copyTextWithFallback(code);
     copiedRemediation = code;
     notify("Copied remediation command", "success");
     setTimeout(() => {
