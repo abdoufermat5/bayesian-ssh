@@ -599,6 +599,11 @@ pub fn acquire_ticket(
         args.push(rt);
     }
     if let Some(principal) = principal_value {
+        // Positional argument: a leading `-` would be parsed by kinit as an
+        // option (e.g. `-c <cache>` / `-t <keytab>`).
+        if principal.starts_with('-') {
+            return Err("Invalid principal: must not start with '-'".to_string());
+        }
         args.push(principal);
     }
 
