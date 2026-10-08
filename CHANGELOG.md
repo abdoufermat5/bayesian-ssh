@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`install.sh` installs the desktop app by default**: the one-liner now installs the CLI (`bayesian-ssh` + `bssh`) and the desktop app (`bayesian-ssh-desktop`, menu entry and icon), as the README describes; `--no-gui` installs the CLI only. The old `--desktop` flag (desktop app without the CLI) is removed, the interactive menu offers CLI + desktop or CLI only, every download is verified before anything is installed, the menu entry no longer fails on systems without `/usr/share/applications`, and a missing WebKitGTK 4.1 runtime is reported.
+
 ## [2.6.0] - 2026-10-08
 
 ### Added

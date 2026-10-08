@@ -1,9 +1,11 @@
 #!/bin/bash
 
 # Bayesian SSH Installer
-# Automatically downloads and installs the latest release
+# Downloads the latest release and installs the CLI (bayesian-ssh + bssh) and
+# the desktop app (bayesian-ssh-desktop, with menu entry and icon).
 # Usage: curl -fsSL https://raw.githubusercontent.com/abdoufermat5/bayesian-ssh/main/install.sh | bash
-# Usage: curl -fsSL https://raw.githubusercontent.com/abdoufermat5/bayesian-ssh/main/install.sh | bash -s -- --interactive
+# CLI only (servers): ... | bash -s -- --no-gui
+# Choose interactively: ... | bash -s -- --interactive
 
 set -e
 
@@ -16,15 +18,24 @@ NC='\033[0m' # No Color
 
 # Configuration
 REPO="abdoufermat5/bayesian-ssh"
-BINARY_NAME="bayesian-ssh"
+CLI_NAME="bayesian-ssh"
+GUI_NAME="bayesian-ssh-desktop"
 INSTALL_DIR="/usr/local/bin"
 # Private, unpredictable work dir: a fixed /tmp path lets other local users
 # pre-create it and swap the binary before it is installed with sudo.
 TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/bayesian-ssh-install.XXXXXX")"
 trap 'rm -rf "$TEMP_DIR"' EXIT
 INTERACTIVE=false
-INSTALL_DESKTOP=false
-NO_GUI=false
+# The desktop app is installed alongside the CLI unless --no-gui is given.
+INSTALL_GUI=true
+SUDO_CMD=""
+
+usage() {
+    echo "Usage: $0 [--interactive] [--no-gui]"
+    echo "  (default)      install the CLI and the desktop app"
+    echo "  --no-gui       install the CLI only (servers, headless machines)"
+    echo "  --interactive  choose between pre-built and source installs"
+}
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -33,19 +44,17 @@ while [[ $# -gt 0 ]]; do
             INTERACTIVE=true
             shift
             ;;
-        --desktop)
-            INSTALL_DESKTOP=true
-            BINARY_NAME="bayesian-ssh-desktop"
+        --no-gui)
+            INSTALL_GUI=false
             shift
             ;;
-        --no-gui)
-            NO_GUI=true
-            INSTALL_DESKTOP=false
-            shift
+        -h|--help)
+            usage
+            exit 0
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--interactive] [--desktop] [--no-gui]"
+            usage
             exit 1
             ;;
     esac
@@ -176,37 +185,33 @@ sha256_of() {
     fi
 }
 
-# Download binary
-download_binary() {
-    echo -e "${BLUE}📥 Downloading binary...${NC}"
-    
-    cd "$TEMP_DIR"
-    
-    # Construct download URL
-    if [ "$INSTALL_DESKTOP" = true ]; then
-        ASSET_NAME="bayesian-ssh-desktop-${OS}-${ARCH}"
-    else
-        ASSET_NAME="bayesian-ssh-${OS}-${ARCH}"
+# Use sudo for writes under /usr unless already root.
+resolve_sudo() {
+    if [ "$EUID" -ne 0 ]; then
+        if command -v sudo &> /dev/null; then
+            SUDO_CMD="sudo"
+        else
+            echo -e "${RED}❌ sudo not available and not running as root${NC}"
+            echo -e "${YELLOW}Please run this script as root or install sudo${NC}"
+            exit 1
+        fi
     fi
-    RELEASE_URL="https://github.com/${REPO}/releases/download/${LATEST_TAG}"
-    DOWNLOAD_URL="${RELEASE_URL}/${ASSET_NAME}"
-    
-    echo -e "${BLUE}📡 Downloading from: ${DOWNLOAD_URL}${NC}"
-    
-    if ! curl -fsSL -o "$BINARY_NAME" "$DOWNLOAD_URL"; then
-        echo -e "${RED}❌ Download failed: no ${ASSET_NAME} asset in release ${LATEST_TAG}${NC}"
-        echo -e "${YELLOW}Please check the release page manually: https://github.com/${REPO}/releases${NC}"
-        exit 1
-    fi
+}
 
-    echo -e "${BLUE}🔒 Verifying checksum...${NC}"
+# Download SHA256SUMS once and, when cosign is available, verify it is signed
+# by the release workflow. Every asset is then checked against it.
+fetch_checksums() {
+    cd "$TEMP_DIR"
+    RELEASE_URL="https://github.com/${REPO}/releases/download/${LATEST_TAG}"
+
+    echo -e "${BLUE}🔒 Fetching release checksums...${NC}"
     if ! curl -fsSL -o SHA256SUMS "${RELEASE_URL}/SHA256SUMS"; then
         echo -e "${RED}❌ Could not download SHA256SUMS for ${LATEST_TAG}${NC}"
         exit 1
     fi
 
-    # Verify SHA256SUMS is signed by the release workflow. Without cosign the
-    # checksum is still enforced, but its provenance cannot be verified.
+    # Without cosign the checksums are still enforced, but their provenance
+    # cannot be verified.
     if command -v cosign &> /dev/null; then
         echo -e "${BLUE}🔏 Verifying SHA256SUMS signature with cosign...${NC}"
         if ! curl -fsSL -o SHA256SUMS.sigstore.json "${RELEASE_URL}/SHA256SUMS.sigstore.json"; then
@@ -225,204 +230,177 @@ download_binary() {
     else
         echo -e "${YELLOW}⚠️  cosign not found; SHA256SUMS signature not verified (install cosign to verify)${NC}"
     fi
-
-    EXPECTED_SHA=$(awk -v f="$ASSET_NAME" '$2 == f || $2 == "*" f {print $1; exit}' SHA256SUMS)
-    if [ -z "$EXPECTED_SHA" ]; then
-        echo -e "${RED}❌ No checksum for ${ASSET_NAME} in SHA256SUMS${NC}"
-        exit 1
-    fi
-    if [ "$(sha256_of "$BINARY_NAME")" != "$EXPECTED_SHA" ]; then
-        echo -e "${RED}❌ Checksum mismatch for ${ASSET_NAME}; refusing to install${NC}"
-        exit 1
-    fi
-    
-    echo -e "${GREEN}✅ Download completed and checksum verified${NC}"
 }
 
-# Verify binary
-verify_binary() {
-    echo -e "${BLUE}🔒 Verifying binary...${NC}"
-    
-    # Make executable
-    chmod +x "$BINARY_NAME"
-    
-    # Skip execution test for desktop binary in headless environment
-    if [ "$INSTALL_DESKTOP" = true ]; then
-        echo -e "${YELLOW}⚠️  Skipping execution test for desktop binary (requires graphical session)${NC}"
-        return 0
-    fi
-
-    # Test if binary works
-    if ! ./"$BINARY_NAME" --help &> /dev/null; then
-        echo -e "${RED}❌ Binary verification failed${NC}"
-        echo -e "${YELLOW}The downloaded binary may be corrupted or incompatible${NC}"
+# download_asset <release asset> <local file>: download and check its SHA-256.
+download_asset() {
+    local asset="$1" dest="$2" expected
+    cd "$TEMP_DIR"
+    echo -e "${BLUE}📥 Downloading ${asset}...${NC}"
+    if ! curl -fsSL -o "$dest" "${RELEASE_URL}/${asset}"; then
+        echo -e "${RED}❌ Download failed: no ${asset} asset in release ${LATEST_TAG}${NC}"
+        echo -e "${YELLOW}Please check the release page manually: https://github.com/${REPO}/releases${NC}"
         exit 1
     fi
-    
-    echo -e "${GREEN}✅ Binary verified successfully${NC}"
+    expected=$(awk -v f="$asset" '$2 == f || $2 == "*" f {print $1; exit}' SHA256SUMS)
+    if [ -z "$expected" ]; then
+        echo -e "${RED}❌ No checksum for ${asset} in SHA256SUMS${NC}"
+        exit 1
+    fi
+    if [ "$(sha256_of "$dest")" != "$expected" ]; then
+        echo -e "${RED}❌ Checksum mismatch for ${asset}; refusing to install${NC}"
+        exit 1
+    fi
+    chmod +x "$dest"
+    echo -e "${GREEN}✅ ${asset} downloaded and checksum verified${NC}"
 }
 
-# Install binary
-install_binary() {
-    echo -e "${BLUE}📦 Installing binary...${NC}"
-    
-    # Check if binary already exists
-    if [ -f "${INSTALL_DIR}/${BINARY_NAME}" ]; then
-        echo -e "${YELLOW}⚠️  Binary already exists at ${INSTALL_DIR}/${BINARY_NAME}${NC}"
-        if [ "$INTERACTIVE" = true ]; then
-            prompt "Overwrite? (y/N): "
-            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-                echo -e "${YELLOW}Installation cancelled${NC}"
-                exit 1
-            fi
-        else
-            echo -e "${YELLOW}⚠️  Overwriting existing binary in non-interactive mode${NC}"
-        fi
-    fi
-    
-    # Determine sudo prefix
-    SUDO_CMD=""
-    if [ "$EUID" -ne 0 ]; then
-        if command -v sudo &> /dev/null; then
-            SUDO_CMD="sudo"
-        else
-            echo -e "${RED}❌ sudo not available and not running as root${NC}"
-            echo -e "${YELLOW}Please run this script as root or install sudo${NC}"
+# confirm_overwrite <path>: in interactive mode, ask before replacing a file.
+confirm_overwrite() {
+    [ -e "$1" ] || return 0
+    if [ "$INTERACTIVE" = true ]; then
+        prompt "$1 already exists. Overwrite? (y/N): "
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo -e "${YELLOW}Installation cancelled${NC}"
             exit 1
         fi
-    fi
-
-    # Copy binary to install directory
-    $SUDO_CMD install -m 755 "$BINARY_NAME" "${INSTALL_DIR}/${BINARY_NAME}"
-    
-    # Verify installation
-    if [ -f "${INSTALL_DIR}/${BINARY_NAME}" ]; then
-        echo -e "${GREEN}✅ Binary installed successfully${NC}"
-        
-        # Create bssh alias for CLI
-        if [ "$INSTALL_DESKTOP" = false ]; then
-            $SUDO_CMD ln -sf "${INSTALL_DIR}/${BINARY_NAME}" "${INSTALL_DIR}/bssh"
-            echo -e "${GREEN}✅ Created 'bssh' command alias in ${INSTALL_DIR}${NC}"
-        fi
-        
-        # Install desktop menu shortcut and icon if installing desktop version
-        if [ "$INSTALL_DESKTOP" = true ]; then
-            echo -e "${BLUE}🎨 Installing desktop menu shortcut and icon...${NC}"
-
-            # Download icon as the invoking user, then install it with sudo.
-            # (desktop/src-tauri is a symlink, which raw.githubusercontent.com does not follow.)
-            ICON_URL="https://raw.githubusercontent.com/${REPO}/${LATEST_TAG}/crates/gui/icons/128x128.png"
-            ICON_DIR="/usr/share/icons/hicolor/128x128/apps"
-            if curl -fsSL -o "${TEMP_DIR}/bayesian-ssh-desktop.png" "$ICON_URL"; then
-                $SUDO_CMD install -Dm644 "${TEMP_DIR}/bayesian-ssh-desktop.png" "${ICON_DIR}/bayesian-ssh-desktop.png"
-            else
-                echo -e "${YELLOW}⚠️  Could not download the application icon${NC}"
-            fi
-
-            # Create desktop shortcut
-            DESKTOP_FILE="/usr/share/applications/bayesian-ssh-desktop.desktop"
-            echo -e "[Desktop Entry]\nName=Bayesian SSH\nComment=A fast and lightweight SSH session manager with Kerberos support\nExec=${INSTALL_DIR}/bayesian-ssh-desktop\nIcon=bayesian-ssh-desktop\nTerminal=false\nType=Application\nCategories=Development;Network;\nStartupNotify=true" | $SUDO_CMD tee "$DESKTOP_FILE" >/dev/null
-
-            # Update icon cache
-            $SUDO_CMD gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
-            echo -e "${GREEN}✅ Desktop menu shortcut and icon installed successfully!${NC}"
-        fi
     else
-        echo -e "${RED}❌ Installation failed${NC}"
-        exit 1
+        echo -e "${YELLOW}⚠️  Replacing existing ${1}${NC}"
     fi
 }
 
-# Build from source option
+# Install the CLI binary from $TEMP_DIR/$CLI_NAME, plus the bssh alias.
+install_cli() {
+    cd "$TEMP_DIR"
+    if ! ./"$CLI_NAME" --help &> /dev/null; then
+        echo -e "${RED}❌ The downloaded CLI does not run on this system${NC}"
+        exit 1
+    fi
+    confirm_overwrite "${INSTALL_DIR}/${CLI_NAME}"
+    $SUDO_CMD install -m 755 "$CLI_NAME" "${INSTALL_DIR}/${CLI_NAME}"
+    $SUDO_CMD ln -sf "${INSTALL_DIR}/${CLI_NAME}" "${INSTALL_DIR}/bssh"
+    echo -e "${GREEN}✅ Installed ${INSTALL_DIR}/${CLI_NAME} and the 'bssh' alias${NC}"
+}
+
+# Warn when the desktop app's runtime libraries are missing; the binary is
+# still installed so it works once they are added.
+check_gui_runtime() {
+    command -v ldconfig &> /dev/null || return 0
+    if ! ldconfig -p 2>/dev/null | grep -q 'libwebkit2gtk-4.1\.so\.0'; then
+        echo -e "${YELLOW}⚠️  WebKitGTK 4.1 was not found; the desktop app needs it to start:${NC}"
+        echo -e "${YELLOW}     Debian/Ubuntu: sudo apt install libwebkit2gtk-4.1-0 libayatana-appindicator3-1${NC}"
+        echo -e "${YELLOW}     Fedora:        sudo dnf install webkit2gtk4.1 libappindicator-gtk3${NC}"
+        echo -e "${YELLOW}     Headless machine? Re-run with --no-gui to install only the CLI.${NC}"
+    fi
+}
+
+# Install the desktop binary from $TEMP_DIR/$GUI_NAME with a menu entry and icon.
+install_gui() {
+    cd "$TEMP_DIR"
+    confirm_overwrite "${INSTALL_DIR}/${GUI_NAME}"
+    $SUDO_CMD install -m 755 "$GUI_NAME" "${INSTALL_DIR}/${GUI_NAME}"
+
+    # Download the icon as the invoking user, then install it with sudo.
+    # (desktop/src-tauri is a symlink, which raw.githubusercontent.com does not follow.)
+    local icon_url="https://raw.githubusercontent.com/${REPO}/${LATEST_TAG}/crates/gui/icons/128x128.png"
+    if curl -fsSL -o "${TEMP_DIR}/${GUI_NAME}.png" "$icon_url"; then
+        $SUDO_CMD install -Dm644 "${TEMP_DIR}/${GUI_NAME}.png" "/usr/share/icons/hicolor/128x128/apps/${GUI_NAME}.png"
+    else
+        echo -e "${YELLOW}⚠️  Could not download the application icon${NC}"
+    fi
+
+    $SUDO_CMD install -d /usr/share/applications
+    printf '%s\n' \
+        "[Desktop Entry]" \
+        "Name=Bayesian SSH" \
+        "Comment=Fast and lightweight SSH session manager" \
+        "Exec=${INSTALL_DIR}/${GUI_NAME}" \
+        "Icon=${GUI_NAME}" \
+        "Terminal=false" \
+        "Type=Application" \
+        "Categories=Development;Network;" \
+        "StartupWMClass=bayesian-ssh-gui" \
+        "StartupNotify=true" \
+        | $SUDO_CMD tee "/usr/share/applications/${GUI_NAME}.desktop" >/dev/null
+    $SUDO_CMD gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
+
+    echo -e "${GREEN}✅ Installed ${INSTALL_DIR}/${GUI_NAME} with its menu entry and icon${NC}"
+    check_gui_runtime
+}
+
+# Pre-built install of the CLI and, unless --no-gui, the desktop app.
+install_prebuilt() {
+    if [ "$OS" != "linux" ]; then
+        echo -e "${RED}❌ Pre-built releases are only published for Linux; use a source build${NC}"
+        exit 1
+    fi
+    get_latest_release
+    resolve_sudo
+    fetch_checksums
+    download_asset "${CLI_NAME}-${OS}-${ARCH}" "$CLI_NAME"
+    if [ "$INSTALL_GUI" = true ]; then
+        download_asset "${GUI_NAME}-${OS}-${ARCH}" "$GUI_NAME"
+    fi
+    # Install only after every download verified, so a failure leaves nothing half-installed.
+    install_cli
+    if [ "$INSTALL_GUI" = true ]; then
+        install_gui
+    fi
+}
+
+# Build from source: the CLI, plus the desktop app unless --no-gui.
 build_from_source() {
     echo -e "${BLUE}🔨 Building from source...${NC}"
-    
-    # Check if git is available
-    if ! command -v git &> /dev/null; then
-        echo -e "${RED}❌ git is required for building from source${NC}"
-        exit 1
-    fi
 
-    # Check if cargo is available
-    if ! command -v cargo &> /dev/null; then
-        echo -e "${RED}❌ Rust and Cargo are required for building from source${NC}"
-        echo -e "${YELLOW}Please install Rust from https://rustup.rs/ and try again${NC}"
-        exit 1
-    fi
-    
-    # Clone repository
-    echo -e "${BLUE}📥 Cloning repository...${NC}"
-    git clone "https://github.com/${REPO}.git" "$TEMP_DIR"
-    cd "$TEMP_DIR"
-    
-    if [ "$INSTALL_DESKTOP" = true ]; then
-        # The desktop build needs the frontend toolchain; the Makefile drives it
-        # and installs the CLI, the bssh alias and the GUI (as bayesian-ssh-gui).
-        if ! command -v make &> /dev/null || ! command -v npm &> /dev/null; then
-            echo -e "${RED}❌ make and npm are required for building the desktop app from source${NC}"
+    for tool in git cargo; do
+        if ! command -v "$tool" &> /dev/null; then
+            echo -e "${RED}❌ ${tool} is required for building from source${NC}"
+            [ "$tool" = cargo ] && echo -e "${YELLOW}Please install Rust from https://rustup.rs/ and try again${NC}"
             exit 1
         fi
-        echo -e "${BLUE}🔨 Building and installing desktop version with Makefile...${NC}"
-        make install
-        BINARY_NAME="bayesian-ssh-gui"
+    done
+    if [ "$INSTALL_GUI" = true ] && { ! command -v make &> /dev/null || ! command -v npm &> /dev/null; }; then
+        echo -e "${RED}❌ make and npm are required to build the desktop app (or re-run with --no-gui)${NC}"
+        exit 1
+    fi
+
+    resolve_sudo
+    echo -e "${BLUE}📥 Cloning repository...${NC}"
+    git clone "https://github.com/${REPO}.git" "$TEMP_DIR/src"
+    cd "$TEMP_DIR/src"
+
+    if [ "$INSTALL_GUI" = true ]; then
+        # The Makefile builds the frontend and installs the CLI, the bssh alias
+        # and the desktop app (as bayesian-ssh-gui).
+        make install INSTALL_DIR="$INSTALL_DIR"
     else
-        echo -e "${BLUE}🔨 Building CLI version...${NC}"
         cargo build --release --locked --package bayesian-ssh
-        cp target/release/bayesian-ssh "$BINARY_NAME"
-        install_binary
+        cp target/release/bayesian-ssh "$TEMP_DIR/$CLI_NAME"
+        install_cli
     fi
-    
-    echo -e "${GREEN}✅ Build from source completed successfully!${NC}"
+    LATEST_TAG="built from source"
+    DESKTOP_HINT="run 'bssh desktop' (installed as ${INSTALL_DIR}/bayesian-ssh-gui)"
 }
 
-# Cleanup
-cleanup() {
-    echo -e "${BLUE}🧹 Cleaning up...${NC}"
-    
-    if [ -d "$TEMP_DIR" ]; then
-        rm -rf "$TEMP_DIR"
-    fi
-    
-    echo -e "${GREEN}✅ Cleanup completed${NC}"
-}
-
-# Show success message
 show_success() {
     echo ""
     echo -e "${GREEN}🎉 Bayesian SSH installed successfully!${NC}"
     echo ""
     echo -e "${BLUE}📋 Installation Details:${NC}"
-    echo -e "  Binary: ${INSTALL_DIR}/${BINARY_NAME}"
+    echo -e "  CLI:     ${INSTALL_DIR}/${CLI_NAME} (alias: bssh)"
+    if [ "$INSTALL_GUI" = true ]; then
+        echo -e "  Desktop: ${DESKTOP_HINT:-in your application menu, or run 'bssh desktop'}"
+    fi
     echo -e "  Version: ${LATEST_TAG}"
     echo -e "  Architecture: ${OS}-${ARCH}"
     echo ""
     echo -e "${BLUE}🚀 Quick Start:${NC}"
-    echo -e "  ${BINARY_NAME} --help"
-    echo -e "  ${BINARY_NAME} add \"My Server\" server.company.com"
-    echo -e "  ${BINARY_NAME} connect \"My Server\""
+    echo -e "  bssh --help"
+    echo -e "  bssh add \"My Server\" server.company.com"
+    echo -e "  bssh connect \"My Server\""
     echo ""
     echo -e "${BLUE}📚 Documentation:${NC}"
-    echo -e "  https://github.com/${REPO}#readme"
-    echo ""
-}
-
-# Show build from source success message
-show_build_success() {
-    echo ""
-    echo -e "${GREEN}🎉 Bayesian SSH built and installed successfully!${NC}"
-    echo ""
-    echo -e "${BLUE}📋 Installation Details:${NC}"
-    echo -e "  Binary: ${INSTALL_DIR}/${BINARY_NAME}"
-    echo -e "  Built from source"
-    echo -e "  Architecture: ${OS}-${ARCH}"
-    echo ""
-    echo -e "${BLUE}🚀 Quick Start:${NC}"
-    echo -e "  ${BINARY_NAME} --help"
-    echo -e "  ${BINARY_NAME} add \"My Server\" server.company.com"
-    echo -e "  ${BINARY_NAME} connect \"My Server\""
-    echo ""
-    echo -e "${BLUE}📚 Documentation:${NC}"
-    echo -e "  https://github.com/${REPO}#readme"
+    echo -e "  https://abdoufermat5.github.io/bayesian-ssh/"
     echo ""
 }
 
@@ -431,70 +409,36 @@ main() {
     echo -e "${BLUE}🚀 Bayesian SSH Installer${NC}"
     echo -e "${BLUE}========================${NC}"
     echo ""
-    
-    # Check if interactive first
+
     check_interactive
-    
     detect_system
     check_permissions
     check_dependencies
-    
-    # Choose installation method
+
     if [ "$INTERACTIVE" = true ]; then
-        # Ask user preference
         echo -e "${BLUE}📋 Installation Options:${NC}"
-        echo -e "  1. Download pre-built CLI binary (recommended)"
-        echo -e "  2. Download pre-built Desktop app (GUI)"
-        echo -e "  3. Build CLI binary from source"
-        echo -e "  4. Build Desktop app from source"
+        echo -e "  1. Download CLI + desktop app (recommended)"
+        echo -e "  2. Download CLI only"
+        echo -e "  3. Build CLI + desktop app from source"
+        echo -e "  4. Build CLI only from source"
         echo ""
         prompt "Choose option (1-4): "
-        
-        if [[ $REPLY =~ ^[2]$ ]]; then
-            # Download pre-built Desktop binary
-            INSTALL_DESKTOP=true
-            BINARY_NAME="bayesian-ssh-desktop"
-            get_latest_release
-            download_binary
-            verify_binary
-            install_binary
-            cleanup
-            show_success
-        elif [[ $REPLY =~ ^[3]$ ]]; then
-            # Build CLI from source
-            build_from_source
-            cleanup
-            show_build_success
-        elif [[ $REPLY =~ ^[4]$ ]]; then
-            # Build Desktop from source
-            INSTALL_DESKTOP=true
-            BINARY_NAME="bayesian-ssh-desktop"
-            build_from_source
-            cleanup
-            show_build_success
-        else
-            # Default/Option 1: Download pre-built CLI binary
-            get_latest_release
-            download_binary
-            verify_binary
-            install_binary
-            cleanup
-            show_success
-        fi
+        case "$REPLY" in
+            2) INSTALL_GUI=false; install_prebuilt ;;
+            3) INSTALL_GUI=true; build_from_source ;;
+            4) INSTALL_GUI=false; build_from_source ;;
+            *) INSTALL_GUI=true; install_prebuilt ;;
+        esac
     else
-        # Non-interactive mode - use default option
-        if [ "$INSTALL_DESKTOP" = true ]; then
-            echo -e "${BLUE}📋 Installing pre-built desktop application...${NC}"
+        if [ "$INSTALL_GUI" = true ]; then
+            echo -e "${BLUE}📋 Installing the CLI and the desktop app...${NC}"
         else
-            echo -e "${BLUE}📋 Installing pre-built CLI binary...${NC}"
+            echo -e "${BLUE}📋 Installing the CLI only...${NC}"
         fi
-        get_latest_release
-        download_binary
-        verify_binary
-        install_binary
-        cleanup
-        show_success
+        install_prebuilt
     fi
+
+    show_success
 }
 
 # Run main function

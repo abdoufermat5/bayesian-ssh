@@ -3,14 +3,20 @@
 ## Option 1: One-liner Install (Recommended)
 
 ```bash
-# Install latest release automatically (non-interactive)
+# CLI (bayesian-ssh + bssh) and the desktop app, with its menu entry
 curl -fsSL https://raw.githubusercontent.com/abdoufermat5/bayesian-ssh/main/install.sh | bash
-```
 
-```bash
-# Interactive installation (choose options)
+# CLI only (servers, headless machines)
+curl -fsSL https://raw.githubusercontent.com/abdoufermat5/bayesian-ssh/main/install.sh | bash -s -- --no-gui
+
+# Choose interactively (pre-built or source build, with or without the desktop app)
 curl -fsSL https://raw.githubusercontent.com/abdoufermat5/bayesian-ssh/main/install.sh | bash -s -- --interactive
 ```
+
+Binaries go to `/usr/local/bin` and every download is checked against the
+release's `SHA256SUMS`. The desktop app needs WebKitGTK 4.1
+(`libwebkit2gtk-4.1-0` on Debian/Ubuntu, `webkit2gtk4.1` on Fedora); the
+installer warns when it is missing.
 
 ## Option 2: Manual Build
 
