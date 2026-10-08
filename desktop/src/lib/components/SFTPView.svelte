@@ -1,30 +1,30 @@
 <script lang="ts">
   import {
-    ArrowLeft,
+    ArrowUp,
     Check,
     ChevronRight,
     Copy,
+    Eye,
+    EyeOff,
     File,
     FileArchive,
     FileCode,
+    FileSymlink,
     FileText,
     Folder,
-    FolderGit2,
     HardDrive,
-    Home,
     Image,
     LayoutGrid,
     List,
-    Power,
+    Pencil,
     RefreshCw,
     Search,
-    Shield,
-    Terminal,
     X,
   } from "lucide-svelte";
   import { invoke } from "@tauri-apps/api/core";
   import type { Connection } from "$lib/types";
   import CustomSelect from "$lib/components/ui/CustomSelect.svelte";
+  import { appState } from "$lib/stores/appState.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
   import { copyTextWithFallback } from "$lib/utils/terminal-xterm";
 
@@ -44,11 +44,13 @@
   let { connections }: Props = $props();
 
   let selectedConnectionId = $state<string | null>(null);
-  let currentPath = $state<string>("/");
-  let pathInput = $state<string>("/");
+  let currentPath = $state<string>(appState.settings.sftp_default_remote_path || "/");
+  let pathInput = $state<string>("");
+  let editingPath = $state(false);
   let filterQuery = $state<string>("");
   let viewMode = $state<"list" | "grid">("list");
-  let entries = $state<RemoteFileEntry[]>([]);
+  let showHidden = $state<boolean>(appState.settings.sftp_show_hidden_files !== false);
+  let entries = $state.raw<RemoteFileEntry[]>([]);
   let isConnected = $state<boolean>(false);
   let loading = $state<boolean>(false);
   let errorMsg = $state<string | null>(null);
@@ -64,33 +66,58 @@
     return connections.length > 0 ? connections[0] : null;
   });
 
+  const hostOptions = $derived(
+    connections.map((c) => ({ value: c.id, label: `${c.name} (${c.user}@${c.host})` })),
+  );
+
   const quickBookmarks = [
-    { label: "Root", path: "/", icon: HardDrive },
-    { label: "Home", path: "~", icon: Home },
-    { label: "Web", path: "/var/www", icon: FolderGit2 },
-    { label: "Config", path: "/etc", icon: Shield },
-    { label: "Logs", path: "/var/log", icon: FileText },
-    { label: "Temp", path: "/tmp", icon: Terminal },
+    { label: "Root", path: "/" },
+    { label: "Home", path: "~" },
+    { label: "Web", path: "/var/www" },
+    { label: "Config", path: "/etc" },
+    { label: "Logs", path: "/var/log" },
+    { label: "Temp", path: "/tmp" },
   ];
 
+  /** Leading segment that cannot be navigated above ("/", "~" or "."). */
+  function pathRoot(path: string): string {
+    if (path === "~" || path.startsWith("~/")) return "~";
+    if (path.startsWith("/")) return "/";
+    return ".";
+  }
+
+  function parentOf(path: string): string | null {
+    const root = pathRoot(path);
+    const rest = (root === "/" ? path : path.slice(root.length)).split("/").filter(Boolean);
+    if (rest.length === 0) return null;
+    rest.pop();
+    if (rest.length === 0) return root;
+    return root === "/" ? "/" + rest.join("/") : `${root}/${rest.join("/")}`;
+  }
+
   const pathBreadcrumbs = $derived.by(() => {
-    if (currentPath === "/" || currentPath === ".") {
-      return [{ label: "root", path: "/" }];
-    }
-    const parts = currentPath.split("/").filter(Boolean);
-    const crumbs = [{ label: "root", path: "/" }];
-    let acc = "";
-    for (const part of parts) {
+    const root = pathRoot(currentPath);
+    const crumbs = [{ label: root === "/" ? "/" : root, path: root }];
+    const rest = (root === "/" ? currentPath : currentPath.slice(root.length)).split("/").filter(Boolean);
+    let acc = root === "/" ? "" : root;
+    for (const part of rest) {
       acc += "/" + part;
       crumbs.push({ label: part, path: acc });
     }
     return crumbs;
   });
 
+  const canGoUp = $derived(parentOf(currentPath) !== null);
+
+  const hiddenCount = $derived(entries.reduce((n, e) => n + (e.name.startsWith(".") ? 1 : 0), 0));
+  const visibleEntries = $derived(
+    showHidden || hiddenCount === 0 ? entries : entries.filter((e) => !e.name.startsWith(".")),
+  );
+
   const filteredEntries = $derived.by(() => {
-    if (!filterQuery.trim()) return entries;
-    const query = filterQuery.toLowerCase();
-    return entries.filter(
+    const query = filterQuery.trim().toLowerCase();
+    if (!query) return visibleEntries;
+    return visibleEntries.filter(
       (entry) =>
         entry.name.toLowerCase().includes(query) ||
         entry.permissions.toLowerCase().includes(query),
@@ -98,9 +125,16 @@
   });
 
   const summary = $derived.by(() => {
-    const dirs = entries.filter((e) => e.is_dir).length;
-    const files = entries.filter((e) => !e.is_dir).length;
-    const totalSize = entries.reduce((acc, e) => acc + (e.is_dir ? 0 : e.size), 0);
+    let dirs = 0;
+    let files = 0;
+    let totalSize = 0;
+    for (const e of visibleEntries) {
+      if (e.is_dir) dirs += 1;
+      else {
+        files += 1;
+        totalSize += e.size;
+      }
+    }
     return { dirs, files, totalSize };
   });
 
@@ -109,6 +143,7 @@
     const seq = ++loadSeq;
     loading = true;
     errorMsg = null;
+    editingPath = false;
     try {
       const res = await invoke<RemoteFileEntry[]>("list_remote_directory", {
         connectionName: selectedConnection.name,
@@ -117,7 +152,6 @@
       if (seq !== loadSeq) return;
       entries = res;
       currentPath = path;
-      pathInput = path;
       isConnected = true;
     } catch (err: unknown) {
       if (seq !== loadSeq) return;
@@ -132,6 +166,7 @@
     loadSeq += 1;
     loading = false;
     isConnected = false;
+    editingPath = false;
     entries = [];
   }
 
@@ -145,17 +180,19 @@
     }
   }
 
+  function startEditingPath() {
+    pathInput = currentPath;
+    editingPath = true;
+  }
+
   function goToPath() {
     const nextPath = pathInput.trim() || "/";
     loadDirectory(nextPath);
   }
 
   function navigateUp() {
-    if (currentPath === "/" || currentPath === ".") return;
-    const parts = currentPath.split("/").filter(Boolean);
-    parts.pop();
-    const parent = parts.length === 0 ? "/" : "/" + parts.join("/");
-    loadDirectory(parent);
+    const parent = parentOf(currentPath);
+    if (parent !== null) loadDirectory(parent);
   }
 
   function handleEntryClick(entry: RemoteFileEntry) {
@@ -179,304 +216,437 @@
     if (bytes === 0) return "0 B";
     const k = 1024;
     const sizes = ["B", "KB", "MB", "GB", "TB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    const i = Math.min(sizes.length - 1, Math.floor(Math.log(bytes) / Math.log(k)));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
   }
 
+  const CODE_EXT = new Set(["js", "ts", "py", "rs", "go", "json", "yaml", "yml", "toml", "html", "css", "sh", "conf", "ini"]);
+  const ARCHIVE_EXT = new Set(["zip", "tar", "gz", "tgz", "bz2", "xz", "7z", "zst"]);
+  const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "svg", "webp", "gif"]);
+  const TEXT_EXT = new Set(["txt", "md", "log", "csv"]);
+
   function getFileIcon(entry: RemoteFileEntry) {
     if (entry.is_dir) return Folder;
-    const ext = entry.name.split(".").pop()?.toLowerCase();
-    if (["js", "ts", "py", "rs", "go", "json", "yaml", "yml", "toml", "html", "css"].includes(ext ?? "")) {
-      return FileCode;
-    }
-    if (["zip", "tar", "gz", "bz2", "xz", "7z"].includes(ext ?? "")) {
-      return FileArchive;
-    }
-    if (["png", "jpg", "jpeg", "svg", "webp", "gif"].includes(ext ?? "")) {
-      return Image;
-    }
+    if (entry.permissions.startsWith("l")) return FileSymlink;
+    const ext = entry.name.includes(".") ? entry.name.split(".").pop()!.toLowerCase() : "";
+    if (CODE_EXT.has(ext)) return FileCode;
+    if (ARCHIVE_EXT.has(ext)) return FileArchive;
+    if (IMAGE_EXT.has(ext)) return Image;
+    if (TEXT_EXT.has(ext)) return FileText;
     return File;
+  }
+
+  function focusOnMount(node: HTMLInputElement) {
+    node.focus();
+    node.select();
   }
 </script>
 
-<div class="flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-surface text-[13px] text-primary select-none">
-  <div class="view-header">
-    <div class="flex min-w-0 items-center gap-3">
-      <div class="icon-tile rounded-md">
-        <HardDrive size={16} />
-      </div>
-      <div class="min-w-0">
-        <h2 class="m-0 flex items-center gap-2 truncate text-sm font-bold tracking-tight text-primary">
-          SFTP
-          {#if isConnected}
-            <span class="badge badge-running">Connected</span>
-          {:else}
-            <span class="badge badge-subtle">Offline</span>
-          {/if}
-        </h2>
-        <p class="m-0 truncate text-xs text-muted">Remote file browser and path operations</p>
-      </div>
-    </div>
+{#snippet copyButton(entry: RemoteFileEntry)}
+  <button
+    type="button"
+    class="btn-icon btn-icon-sm"
+    onclick={(e) => {
+      e.stopPropagation();
+      copyPath(entry.path);
+    }}
+    aria-label="Copy remote path"
+    title="Copy remote path"
+  >
+    {#if copiedPath === entry.path}
+      <Check size={14} class="text-success" />
+    {:else}
+      <Copy size={14} />
+    {/if}
+  </button>
+{/snippet}
 
-    <div class="flex min-w-0 flex-1 items-center justify-end gap-2 sm:flex-none">
-      <div class="w-full sm:w-64">
+<div class="view select-none">
+  <header class="view-header">
+    <div class="flex min-w-0 items-baseline gap-2.5">
+      <h1 class="view-title">Files</h1>
+      {#if isConnected && selectedConnection}
+        <span class="flex min-w-0 items-center gap-1.5 text-sm text-muted">
+          <span class="status-dot status-dot-sm status-dot-success self-center" aria-hidden="true"></span>
+          <span class="truncate font-mono text-xs">{selectedConnection.user}@{selectedConnection.host}</span>
+        </span>
+      {:else}
+        <span class="text-sm text-muted">Not connected</span>
+      {/if}
+    </div>
+    <div class="view-actions">
+      <div class="w-72">
         <CustomSelect
-          options={connections.map((c) => ({ value: c.id, label: `${c.name} (${c.user}@${c.host})` }))}
+          label="Host"
+          options={hostOptions}
           value={selectedConnection?.id ?? ""}
+          placeholder="No hosts"
+          disabled={connections.length === 0}
           onChange={(val) => {
             selectedConnectionId = val;
             resetSession();
+            errorMsg = null;
           }}
         />
       </div>
-
-      <button
-        type="button"
-        class="btn {isConnected ? 'btn-danger' : 'btn-primary'}"
-        onclick={handleConnectClick}
-        disabled={!selectedConnection || loading}
-      >
-        {#if loading}
-          <RefreshCw size={13} class="animate-spin" />
-          <span>Connecting</span>
-        {:else}
-          <Power size={13} />
-          <span>{isConnected ? "Disconnect" : "Connect"}</span>
-        {/if}
-      </button>
-    </div>
-  </div>
-
-  {#if isConnected}
-    <div class="toolbar-band">
-      <div class="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+      {#if isConnected}
+        <button type="button" class="btn btn-secondary" onclick={handleConnectClick}>
+          Disconnect
+        </button>
+      {:else}
         <button
           type="button"
-          class="btn btn-secondary btn-sm"
-          onclick={navigateUp}
-          disabled={currentPath === "/" || currentPath === "." || loading}
-          title="Go to parent directory"
+          class="btn btn-primary"
+          onclick={handleConnectClick}
+          disabled={!selectedConnection || loading}
         >
-          <ArrowLeft size={13} />
-          <span>Up</span>
+          {#if loading}
+            <span class="spinner size-3"></span>
+            Connecting
+          {:else}
+            Connect
+          {/if}
         </button>
+      {/if}
+    </div>
+  </header>
 
+  {#if isConnected}
+    <div class="view-toolbar flex-nowrap">
+      <button
+        type="button"
+        class="btn-icon"
+        onclick={navigateUp}
+        disabled={!canGoUp || loading}
+        aria-label="Parent directory"
+        title="Parent directory"
+      >
+        <ArrowUp size={14} />
+      </button>
+      <button
+        type="button"
+        class="btn-icon"
+        onclick={() => loadDirectory(currentPath)}
+        disabled={loading}
+        aria-label="Refresh"
+        title="Refresh"
+      >
+        <RefreshCw size={14} class={loading ? "animate-spin" : ""} />
+      </button>
+
+      {#if editingPath}
         <form
-          class="flex min-w-0 flex-1 items-center gap-1 rounded-md border border-border bg-surface-input px-2 py-1.5"
+          class="flex min-w-0 flex-1"
           onsubmit={(event) => {
             event.preventDefault();
             goToPath();
           }}
         >
-          <div class="flex min-w-0 items-center gap-1 overflow-x-auto">
-            {#each pathBreadcrumbs as crumb, i}
+          <input
+            type="text"
+            class="input input-mono"
+            bind:value={pathInput}
+            aria-label="Remote path"
+            spellcheck="false"
+            autocomplete="off"
+            use:focusOnMount
+            onkeydown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                editingPath = false;
+              }
+            }}
+            onblur={() => (editingPath = false)}
+          />
+        </form>
+      {:else}
+        <div
+          class="flex h-8 min-w-0 flex-1 items-center gap-0.5 rounded-md border border-border bg-surface-input pl-1 pr-0.5"
+        >
+          <nav class="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto scrollbar-none" aria-label="Path">
+            {#each pathBreadcrumbs as crumb, i (crumb.path)}
               {#if i > 0}
-                <ChevronRight size={11} class="shrink-0 text-muted" />
+                <ChevronRight size={14} class="shrink-0 text-faint" />
               {/if}
               <button
                 type="button"
-                class="border-none bg-transparent font-mono text-xs text-secondary transition-colors hover:text-primary whitespace-nowrap"
+                class="h-6 shrink-0 cursor-pointer whitespace-nowrap rounded-sm px-1.5 font-mono text-xs transition-colors hover:bg-surface-hover hover:text-primary {i === pathBreadcrumbs.length - 1 ? 'text-primary' : 'text-muted'}"
                 onclick={() => loadDirectory(crumb.path)}
               >
                 {crumb.label}
               </button>
             {/each}
-          </div>
-          <input
-            type="text"
-            bind:value={pathInput}
-            class="ml-auto min-w-[80px] flex-1 border-none bg-transparent text-right font-mono text-xs text-primary outline-none"
-            aria-label="Remote path"
-          />
-        </form>
-      </div>
+          </nav>
+          <button
+            type="button"
+            class="btn-icon btn-icon-sm"
+            onclick={startEditingPath}
+            aria-label="Edit path"
+            title="Type a path"
+          >
+            <Pencil size={14} />
+          </button>
+        </div>
+      {/if}
 
-      <div class="flex items-center gap-1.5">
+      <div class="segmented" role="group" aria-label="Layout">
         <button
           type="button"
-          class="btn-icon {viewMode === 'list' ? 'bg-surface-hover text-primary' : ''}"
+          class="segmented-item {viewMode === 'list' ? 'segmented-item-active' : ''}"
           onclick={() => (viewMode = "list")}
-          title="List view"
+          aria-pressed={viewMode === "list"}
+          aria-label="List layout"
+          title="List"
         >
           <List size={14} />
         </button>
         <button
           type="button"
-          class="btn-icon {viewMode === 'grid' ? 'bg-surface-hover text-primary' : ''}"
+          class="segmented-item {viewMode === 'grid' ? 'segmented-item-active' : ''}"
           onclick={() => (viewMode = "grid")}
-          title="Grid view"
+          aria-pressed={viewMode === "grid"}
+          aria-label="Grid layout"
+          title="Grid"
         >
           <LayoutGrid size={14} />
-        </button>
-        <button
-          type="button"
-          class="btn-icon"
-          onclick={() => loadDirectory(currentPath)}
-          disabled={loading}
-          title="Refresh current folder"
-        >
-          <RefreshCw size={14} class={loading ? "animate-spin" : ""} />
         </button>
       </div>
     </div>
 
-    <div class="toolbar-band border-t-0">
-      <div class="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
-        {#each quickBookmarks as bm}
+    <div class="view-toolbar">
+      <label class="search-box w-56">
+        <Search size={14} class="shrink-0" />
+        <input
+          type="text"
+          placeholder="Filter files"
+          bind:value={filterQuery}
+          spellcheck="false"
+          autocomplete="off"
+        />
+        {#if filterQuery}
           <button
             type="button"
-            class="btn btn-secondary btn-sm"
-            onclick={() => loadDirectory(bm.path)}
+            class="btn-icon btn-icon-sm -mr-1"
+            onclick={() => (filterQuery = "")}
+            aria-label="Clear filter"
           >
-            <bm.icon size={12} />
-            <span>{bm.label}</span>
+            <X size={14} />
+          </button>
+        {/if}
+      </label>
+
+      <div class="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto scrollbar-none" role="group" aria-label="Go to">
+        {#each quickBookmarks as bm (bm.path)}
+          <button
+            type="button"
+            class="chip {currentPath === bm.path ? 'chip-active' : ''}"
+            onclick={() => loadDirectory(bm.path)}
+            title={bm.path}
+          >
+            {bm.label}
           </button>
         {/each}
       </div>
 
-      <div class="search-box w-full sm:w-56">
-        <Search size={13} class="shrink-0 text-muted" />
-        <input
-          type="text"
-          placeholder="Filter files..."
-          bind:value={filterQuery}
-          class="w-full border-none bg-transparent text-xs text-primary outline-none placeholder:text-muted"
-        />
-        {#if filterQuery}
-          <button type="button" class="btn-icon p-0.5" onclick={() => (filterQuery = "")} title="Clear filter">
-            <X size={11} />
-          </button>
-        {/if}
-      </div>
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm"
+        onclick={() => (showHidden = !showHidden)}
+        aria-pressed={showHidden}
+        title={showHidden ? "Hide dotfiles" : "Show dotfiles"}
+      >
+        {#if showHidden}<Eye size={14} />{:else}<EyeOff size={14} />{/if}
+        Hidden files
+        {#if !showHidden && hiddenCount > 0}<span class="count">{hiddenCount}</span>{/if}
+      </button>
     </div>
+  {/if}
 
-    <div class="view-content">
-      {#if loading}
-        <div class="empty-state">
-          <RefreshCw size={24} class="animate-spin text-accent" />
-          <span class="text-xs text-muted">Reading remote directory...</span>
+  <div class="view-body">
+    {#if errorMsg}
+      <div class="alert alert-error mb-3" role="alert">
+        <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span class="alert-title">
+            {isConnected ? "Couldn't read this directory" : `Couldn't connect to ${selectedConnection?.name ?? "host"}`}
+          </span>
+          <span class="break-all font-mono">{errorMsg}</span>
         </div>
-      {:else if errorMsg}
-        <div class="alert alert-error">
-          <div>
-            <p class="alert-title m-0">Failed to read directory</p>
-            <p class="m-0 font-mono text-xs">{errorMsg}</p>
+        <button
+          type="button"
+          class="btn btn-secondary btn-sm shrink-0"
+          onclick={() => loadDirectory(currentPath)}
+          disabled={loading}
+        >
+          Retry
+        </button>
+      </div>
+    {/if}
+
+    {#if loading && (viewMode === "list" || !isConnected)}
+      <div class="table-wrap" aria-busy="true" aria-label="Loading directory">
+        <table class="data-table table-fixed">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th class="w-[96px] text-right">Size</th>
+              <th class="hidden w-[148px] md:table-cell">Modified</th>
+              <th class="hidden w-[120px] sm:table-cell">Permissions</th>
+              <th class="w-[56px]"><span class="sr-only">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each [62, 48, 70, 40, 55, 66, 44, 58] as w, i (i)}
+              <tr>
+                <td>
+                  <div class="flex items-center gap-2.5">
+                    <div class="skeleton size-3.5 shrink-0"></div>
+                    <div class="skeleton h-3" style="width: {w}%"></div>
+                  </div>
+                </td>
+                <td><div class="skeleton ml-auto h-3 w-10"></div></td>
+                <td class="hidden md:table-cell"><div class="skeleton h-3 w-24"></div></td>
+                <td class="hidden sm:table-cell"><div class="skeleton h-3 w-20"></div></td>
+                <td></td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    {:else if loading}
+      <div class="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2" aria-busy="true">
+        {#each Array(9) as _, i (i)}
+          <div class="card flex items-center gap-3 px-3 py-2.5">
+            <div class="skeleton size-4 shrink-0"></div>
+            <div class="flex flex-1 flex-col gap-1.5">
+              <div class="skeleton h-3 w-3/4"></div>
+              <div class="skeleton h-2.5 w-1/2"></div>
+            </div>
           </div>
-        </div>
-      {:else if filteredEntries.length > 0}
-        {#if viewMode === "list"}
-          <div class="data-table overflow-x-auto">
-            <table class="w-full border-collapse">
-              <thead>
-                <tr class="border-b border-border bg-surface-input/80 text-left table-header">
-                  <th class="px-4 py-2.5 font-bold">Name</th>
-                  <th class="px-4 py-2.5 font-bold">Size</th>
-                  <th class="hidden sm:table-cell px-4 py-2.5 font-bold">Permissions</th>
-                  <th class="hidden md:table-cell px-4 py-2.5 font-bold">Modified</th>
-                  <th class="px-4 py-2.5 text-right font-bold">Actions</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-border/60">
-                {#each filteredEntries as entry}
-                  {@const Icon = getFileIcon(entry)}
-                  <tr class="row border-0 text-xs text-secondary">
-                    <td class="max-w-[240px] sm:max-w-[320px] px-4 py-2.5">
-                      <button
-                        type="button"
-                        class="flex min-w-0 items-center gap-2.5 border-none bg-transparent text-left text-xs text-secondary"
-                        onclick={() => handleEntryClick(entry)}
-                        title={entry.is_dir ? "Open directory" : "Copy full remote path"}
-                      >
-                        <Icon size={15} class={entry.is_dir ? "shrink-0 text-accent" : "shrink-0 text-muted"} />
-                        <span class="truncate {entry.is_dir ? 'font-semibold text-primary' : ''}">{entry.name}</span>
-                      </button>
-                    </td>
-                    <td class="px-4 py-2.5 font-mono text-xs text-muted">{entry.is_dir ? "-" : formatBytes(entry.size)}</td>
-                    <td class="hidden sm:table-cell px-4 py-2.5">
-                      <span class="tag">{entry.permissions || "rw-r--r--"}</span>
-                    </td>
-                    <td class="hidden md:table-cell px-4 py-2.5 font-mono text-xs text-muted">{entry.modified || "-"}</td>
-                    <td class="px-4 py-2.5 text-right">
-                      <button
-                        type="button"
-                        class="btn-icon"
-                        onclick={() => copyPath(entry.path)}
-                        title="Copy full remote path"
-                      >
-                        {#if copiedPath === entry.path}
-                          <Check size={12} class="text-running" />
-                        {:else}
-                          <Copy size={12} />
-                        {/if}
-                      </button>
-                    </td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
+        {/each}
+      </div>
+    {:else if errorMsg}
+      <!-- The alert above is the whole state; a stale listing would mislead. -->
+    {:else if !isConnected}
+      <div class="empty-state h-full">
+        <div class="empty-state-icon"><HardDrive size={18} /></div>
+        {#if selectedConnection}
+          <div class="empty-state-title">Browse remote files</div>
+          <p class="empty-state-desc">
+            Connect to {selectedConnection.name} to browse its files over SFTP.
+          </p>
+          <div class="empty-state-action">
+            <button type="button" class="btn btn-secondary" onclick={handleConnectClick}>
+              Connect to {selectedConnection.name}
+            </button>
           </div>
         {:else}
-          <div class="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
-            {#each filteredEntries as entry}
+          <div class="empty-state-title">No hosts yet</div>
+          <p class="empty-state-desc">Add a host first, then come back here to browse its files.</p>
+        {/if}
+      </div>
+    {:else if filteredEntries.length === 0}
+      <div class="empty-state h-full">
+        <div class="empty-state-icon"><Folder size={18} /></div>
+        {#if filterQuery.trim()}
+          <div class="empty-state-title">No files match</div>
+          <p class="empty-state-desc">Nothing in {currentPath} matches “{filterQuery.trim()}”.</p>
+          <div class="empty-state-action">
+            <button type="button" class="btn btn-secondary" onclick={() => (filterQuery = "")}>Clear filter</button>
+          </div>
+        {:else if hiddenCount > 0}
+          <div class="empty-state-title">Only hidden files here</div>
+          <p class="empty-state-desc">{currentPath} contains {hiddenCount} hidden {hiddenCount === 1 ? "entry" : "entries"}.</p>
+          <div class="empty-state-action">
+            <button type="button" class="btn btn-secondary" onclick={() => (showHidden = true)}>Show hidden files</button>
+          </div>
+        {:else}
+          <div class="empty-state-title">This folder is empty</div>
+          <p class="empty-state-desc">{currentPath} has no files or folders.</p>
+          {#if canGoUp}
+            <div class="empty-state-action">
+              <button type="button" class="btn btn-secondary" onclick={navigateUp}>
+                <ArrowUp size={14} />
+                Parent directory
+              </button>
+            </div>
+          {/if}
+        {/if}
+      </div>
+    {:else if viewMode === "list"}
+      <div class="table-wrap">
+        <table class="data-table table-fixed">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th class="w-[96px] text-right">Size</th>
+              <th class="hidden w-[148px] md:table-cell">Modified</th>
+              <th class="hidden w-[120px] sm:table-cell">Permissions</th>
+              <th class="w-[56px]"><span class="sr-only">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each filteredEntries as entry (entry.path)}
               {@const Icon = getFileIcon(entry)}
-              <section class="panel flex min-w-0 items-center gap-3 px-3 py-2.5">
-                <button
-                  type="button"
-                  class="flex min-w-0 flex-1 items-center gap-2 border-none bg-transparent text-left"
-                  onclick={() => handleEntryClick(entry)}
-                  title={entry.is_dir ? "Open directory" : "Copy full remote path"}
-                >
-                  <Icon size={16} class={entry.is_dir ? "shrink-0 text-accent" : "shrink-0 text-muted"} />
-                  <div class="min-w-0">
-                    <p class="m-0 truncate text-xs font-semibold text-primary">{entry.name}</p>
-                    <p class="m-0 font-mono text-xs text-muted">{entry.is_dir ? "Folder" : formatBytes(entry.size)} · {entry.permissions || "rw-r--r--"}</p>
-                  </div>
-                </button>
-                <button type="button" class="btn-icon" onclick={() => copyPath(entry.path)} title="Copy full remote path">
-                  {#if copiedPath === entry.path}
-                    <Check size={12} class="text-running" />
-                  {:else}
-                    <Copy size={12} />
-                  {/if}
-                </button>
-              </section>
+              <tr class="cursor-default" ondblclick={() => entry.is_dir && loadDirectory(entry.path)}>
+                <td>
+                  <button
+                    type="button"
+                    class="flex w-full min-w-0 cursor-pointer items-center gap-2.5 text-left"
+                    onclick={() => handleEntryClick(entry)}
+                    title={entry.is_dir ? `Open ${entry.name}` : `Copy path of ${entry.name}`}
+                  >
+                    <Icon size={14} class="shrink-0 {entry.is_dir ? 'text-accent' : 'text-muted'}" />
+                    <span class="truncate {entry.is_dir ? 'font-medium text-primary' : 'text-primary'}">{entry.name}</span>
+                  </button>
+                </td>
+                <td class="text-right font-mono text-xs tabular-nums {entry.is_dir ? 'text-muted' : 'text-secondary'}">
+                  {entry.is_dir ? "—" : formatBytes(entry.size)}
+                </td>
+                <td class="hidden truncate text-xs text-muted tabular-nums md:table-cell">{entry.modified || "—"}</td>
+                <td class="hidden truncate font-mono text-xs text-muted sm:table-cell">{entry.permissions || "—"}</td>
+                <td>
+                  <div class="row-actions">{@render copyButton(entry)}</div>
+                </td>
+              </tr>
             {/each}
+          </tbody>
+        </table>
+      </div>
+    {:else}
+      <div class="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
+        {#each filteredEntries as entry (entry.path)}
+          {@const Icon = getFileIcon(entry)}
+          <div class="card card-interactive group flex min-w-0 items-center gap-1 py-2 pl-3 pr-1.5">
+            <button
+              type="button"
+              class="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 text-left"
+              onclick={() => handleEntryClick(entry)}
+              title={entry.is_dir ? `Open ${entry.name}` : `Copy path of ${entry.name}`}
+            >
+              <Icon size={16} class="shrink-0 {entry.is_dir ? 'text-accent' : 'text-muted'}" />
+              <span class="flex min-w-0 flex-col">
+                <span class="truncate text-sm text-primary {entry.is_dir ? 'font-medium' : ''}">{entry.name}</span>
+                <span class="truncate font-mono text-2xs text-muted">
+                  {entry.is_dir ? "Folder" : formatBytes(entry.size)} · {entry.permissions || "—"}
+                </span>
+              </span>
+            </button>
+            <div class="row-actions">{@render copyButton(entry)}</div>
           </div>
-        {/if}
-      {:else}
-        <div class="empty-state empty-state-dashed">
-          <div class="empty-state-icon">
-            <Folder size={22} />
-          </div>
-          <p class="empty-state-title">Empty directory</p>
-          <p class="empty-state-desc">No files or folders found in {currentPath}</p>
-        </div>
-      {/if}
-    </div>
+        {/each}
+      </div>
+    {/if}
+  </div>
 
-    <div class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border bg-surface-input/40 px-6 py-2 text-xs text-muted">
-      <div class="flex items-center gap-4">
-        <span>{summary.dirs} folders</span>
-        <span>{summary.files} files</span>
-        <span>Total {formatBytes(summary.totalSize)}</span>
-      </div>
-      <div class="max-w-full truncate font-mono">{currentPath}</div>
-    </div>
-  {:else}
-    <div class="view-content flex items-center justify-center">
-      <div class="empty-state empty-state-dashed">
-        <div class="empty-state-icon">
-          <HardDrive size={22} />
-        </div>
-        <h3 class="empty-state-title">No SFTP session</h3>
-        <p class="empty-state-desc">Select an SSH host and connect to browse remote paths.</p>
-        {#if selectedConnection}
-          <button type="button" class="btn btn-primary empty-state-action" onclick={handleConnectClick}>
-            <Power size={14} />
-            <span>Connect to {selectedConnection.name}</span>
-          </button>
+  {#if isConnected}
+    <footer class="flex h-8 shrink-0 items-center justify-between gap-4 border-t border-border-subtle px-6 text-xs text-muted">
+      <span class="tabular-nums">
+        {summary.dirs} {summary.dirs === 1 ? "folder" : "folders"} · {summary.files} {summary.files === 1 ? "file" : "files"} · {formatBytes(summary.totalSize)}
+        {#if filterQuery.trim()}
+          · {filteredEntries.length} shown
         {/if}
-      </div>
-    </div>
+      </span>
+      <span class="truncate font-mono" title={currentPath}>{currentPath}</span>
+    </footer>
   {/if}
 </div>
