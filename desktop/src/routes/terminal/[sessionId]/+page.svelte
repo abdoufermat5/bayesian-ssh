@@ -14,6 +14,7 @@
 
   let connectionName = $state("Terminal");
   let loadError = $state<string | null>(null);
+  let status = $state<"connected" | "exited">("connected");
 
   const sessionId = $derived(page.params.sessionId ?? "");
 
@@ -116,7 +117,9 @@
       });
 
       try {
-        handle = await initPopoutTerminal(sessionId);
+        handle = await initPopoutTerminal(sessionId, {
+          onExit: () => (status = "exited"),
+        });
         if (cancelled || closing) {
           handle.releaseUi();
           return;
@@ -139,49 +142,27 @@
   });
 </script>
 
-<div class="terminal-popout-shell">
+<div class="flex h-dvh flex-col overflow-hidden bg-surface-terminal">
   <TerminalWindowTitleBar
     title={connectionName}
-    onDock={dockToMain}
+    status={loadError ? "exited" : status}
+    onDock={loadError ? undefined : dockToMain}
     onClose={() => getCurrentWindow().close()}
   />
 
   {#if loadError}
-    <div class="terminal-popout-error">
-      <p>{loadError}</p>
+    <div class="empty-state flex-1 bg-surface">
+      <p class="empty-state-title">Couldn't open this session</p>
+      <p class="empty-state-desc">{loadError}</p>
+      <div class="empty-state-action">
+        <button type="button" class="btn btn-secondary" onclick={() => getCurrentWindow().close()}>
+          Close window
+        </button>
+      </div>
     </div>
   {:else}
-    <div class="terminal-popout-body">
-      <div id="terminal-popout-root" class="terminal-popout-target"></div>
+    <div class="box-border min-h-0 flex-1 bg-surface-terminal p-2">
+      <div id="terminal-popout-root" class="h-full w-full"></div>
     </div>
   {/if}
 </div>
-
-<style>
-  .terminal-popout-shell {
-    display: flex;
-    height: 100dvh;
-    flex-direction: column;
-    overflow: hidden;
-    background: var(--color-surface-terminal);
-  }
-
-  .terminal-popout-body {
-    box-sizing: border-box;
-    flex: 1;
-    min-height: 0;
-    padding: 4px;
-    background: var(--color-surface-terminal);
-  }
-
-  .terminal-popout-error {
-    display: flex;
-    flex: 1;
-    align-items: center;
-    justify-content: center;
-    padding: 24px;
-    color: var(--color-muted);
-    font-size: 12px;
-    text-align: center;
-  }
-</style>

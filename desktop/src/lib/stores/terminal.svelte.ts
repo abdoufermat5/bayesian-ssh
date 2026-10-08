@@ -14,8 +14,11 @@ import {
   attachXtermKeyHandler,
   attachXtermLinuxInputFix,
   attachXtermMouseHandlers,
+  attachXtermPtyResize,
   createOutputCoalescer,
   safeWrite,
+  syncPtySize,
+  waitForTerminalFont,
   type OutputCoalescer,
 } from "$lib/utils/terminal-xterm";
 
@@ -30,39 +33,82 @@ export function getTerminalSettings(): DesktopSettings | undefined {
   return _settingsGetter?.();
 }
 
+export const DEFAULT_TERMINAL_FONT_FAMILY =
+  "JetBrains Mono, Fira Code, Cascadia Code, Ubuntu Mono, DejaVu Sans Mono, Liberation Mono, Consolas, monospace";
+
 export function buildTerminalOptions(settings?: DesktopSettings): Record<string, unknown> {
   const s = settings ?? _settingsGetter?.();
   return {
     cursorBlink: s?.terminal_cursor_blink ?? true,
     cursorStyle: (s?.terminal_cursor_style ?? "block") as "block" | "bar" | "underline" | undefined,
-    fontFamily:
-      s?.terminal_font_family ||
-      "JetBrains Mono, Fira Code, Cascadia Code, Ubuntu Mono, DejaVu Sans Mono, Liberation Mono, Consolas, monospace",
+    fontFamily: s?.terminal_font_family || DEFAULT_TERMINAL_FONT_FAMILY,
     fontSize: s?.terminal_font_size ?? 13,
     lineHeight: s?.terminal_line_height ?? 1.18,
     scrollback: s?.terminal_scrollback ?? 10000,
-    smoothScrollDuration: 120,
-    fontLigatures: true,
+    // Smooth scrolling animates every wheel tick and costs frames under load.
+    smoothScrollDuration: 0,
     fontWeight: "normal",
     theme: getCurrentXtermTheme(),
     allowProposedApi: true,
   };
 }
 
+export type TerminalTabStatus = "connecting" | "connected" | "exited" | "error";
+
+/** Reactive tab metadata. The xterm runtime lives outside reactivity. */
 export interface TerminalTab {
-  id: string;
-  name: string;
-  connectionName: string;
+  readonly id: string;
+  readonly name: string;
+  readonly connectionName: string;
+  /** In-terminal search bar open. */
+  showSearch: boolean;
+  status: TerminalTabStatus;
+  /** xterm instance mounted and usable. */
+  ready: boolean;
+  /** Live xterm instance (non-reactive lookup; check `ready` in templates). */
+  readonly term: Terminal | undefined;
+  readonly searchAddon: SearchAddon | undefined;
+}
+
+/** Non-reactive per-tab runtime: xterm objects, buffers and cleanups. */
+interface TabRuntime {
   term?: Terminal;
   fitAddon?: FitAddon;
   searchAddon?: SearchAddon;
-  compositionGuardCleanup?: () => void;
-  mouseCleanup?: () => void;
-  showSearch?: boolean;
-  outputCoalescer?: OutputCoalescer;
-  /** Output that arrived while the tab existed but the xterm instance was
-   *  still being created (reattach flow) — flushed once the terminal opens. */
-  pendingOutput?: string[];
+  coalescer?: OutputCoalescer;
+  /** Output received while the tab is hidden or still being created. */
+  pending: string[];
+  pendingBytes: number;
+  cleanups: Array<() => void>;
+  fitRaf: number | null;
+  /** Cursor blink turned off while the Terminals view is hidden. */
+  blinkSuspended: boolean;
+}
+
+const runtimes = new Map<string, TabRuntime>();
+
+class TabState implements TerminalTab {
+  readonly id: string;
+  readonly name: string;
+  readonly connectionName: string;
+  showSearch = $state(false);
+  status = $state<TerminalTabStatus>("connecting");
+  ready = $state(false);
+
+  constructor(id: string, name: string, connectionName: string, status: TerminalTabStatus) {
+    this.id = id;
+    this.name = name;
+    this.connectionName = connectionName;
+    this.status = status;
+  }
+
+  get term(): Terminal | undefined {
+    return runtimes.get(this.id)?.term;
+  }
+
+  get searchAddon(): SearchAddon | undefined {
+    return runtimes.get(this.id)?.searchAddon;
+  }
 }
 
 export interface DetachedSession {
@@ -96,35 +142,27 @@ export function initThemeSyncForTerminals() {
   });
   observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
 }
+
 export function applyThemeToAllTerminals(settings?: DesktopSettings) {
   const currentTheme = getCurrentXtermTheme();
   if (settings?.terminal_font_size) {
     // Keep keyboard/wheel zoom relative to the saved size, not the default.
     terminalFontSize = settings.terminal_font_size;
   }
-  tabs.forEach((tab) => {
-    if (tab.term) {
-      tab.term.options.theme = currentTheme;
-      if (settings?.terminal_font_family) {
-        tab.term.options.fontFamily = settings.terminal_font_family;
-      }
-      if (settings?.terminal_font_size) {
-        tab.term.options.fontSize = settings.terminal_font_size;
-      }
-      if (settings?.terminal_line_height) {
-        tab.term.options.lineHeight = settings.terminal_line_height;
-      }
-      if (settings?.terminal_cursor_style) {
-        tab.term.options.cursorStyle = settings.terminal_cursor_style;
-      }
-      if (settings?.terminal_cursor_blink !== undefined) {
-        tab.term.options.cursorBlink = settings.terminal_cursor_blink;
-      }
-      if (settings?.terminal_scrollback) {
-        tab.term.options.scrollback = settings.terminal_scrollback;
-      }
+  for (const rt of runtimes.values()) {
+    const term = rt.term;
+    if (!term) continue;
+    term.options.theme = currentTheme;
+    if (settings?.terminal_font_family) term.options.fontFamily = settings.terminal_font_family;
+    if (settings?.terminal_font_size) term.options.fontSize = settings.terminal_font_size;
+    if (settings?.terminal_line_height) term.options.lineHeight = settings.terminal_line_height;
+    if (settings?.terminal_cursor_style) term.options.cursorStyle = settings.terminal_cursor_style;
+    // While hidden, blink stays off; the saved value is restored on show.
+    if (settings?.terminal_cursor_blink !== undefined && !rt.blinkSuspended) {
+      term.options.cursorBlink = settings.terminal_cursor_blink;
     }
-  });
+    if (settings?.terminal_scrollback) term.options.scrollback = settings.terminal_scrollback;
+  }
   fitActiveTerminal();
 }
 
@@ -138,15 +176,16 @@ export function updateTerminalFontSize(newSize: number) {
   if (settings && settings.terminal_font_size !== terminalFontSize) {
     settings.terminal_font_size = terminalFontSize;
   }
-  tabs.forEach((tab) => {
-    if (tab.term && tab.fitAddon) {
-      tab.term.options.fontSize = terminalFontSize;
-      fitTerminal(tab.id, tab.term, tab.fitAddon);
-    }
-  });
+  for (const [id, rt] of runtimes) {
+    if (!rt.term) continue;
+    rt.term.options.fontSize = terminalFontSize;
+    // Hidden tabs are skipped by scheduleFit and refit when activated.
+    scheduleFit(id);
+  }
 }
 
-let tabs = $state<TerminalTab[]>([]);
+/** Metadata only; replaced wholesale on add/remove. */
+let tabs = $state.raw<TabState[]>([]);
 let detachedSessions = $state<DetachedSession[]>([]);
 let popoutSessions = $state<PopoutSession[]>([]);
 let activeSessionCount = $state(0);
@@ -157,13 +196,12 @@ let unlistenOutput: UnlistenFn | null = null;
 let unlistenExit: UnlistenFn | null = null;
 let unlistenSessionClosed: UnlistenFn | null = null;
 let unlistenSessionDocked: UnlistenFn | null = null;
-const resizeObservers = new Map<string, ResizeObserver>();
 
 type ExitCallback = (sessionId: string) => void | Promise<void>;
 
 let onSessionExit: ExitCallback | null = null;
 
-function findTab(tabId: string): TerminalTab | undefined {
+function findTab(tabId: string): TabState | undefined {
   return tabs.find((t) => t.id === tabId);
 }
 
@@ -174,183 +212,238 @@ function findDetachedSession(sessionId: string): DetachedSession | undefined {
 /** Cap on output buffered for a hidden tab before it is handed to xterm. */
 const MAX_PENDING_OUTPUT_BYTES = 256 * 1024;
 
-export function flushPendingTabOutput(tab: TerminalTab) {
-  if (tab.term && tab.pendingOutput && tab.pendingOutput.length > 0) {
-    const combined = tab.pendingOutput.join("");
-    tab.pendingOutput = [];
-    if (tab.outputCoalescer) {
-      tab.outputCoalescer.push(combined);
-    } else {
-      safeWrite(tab.term, combined);
-    }
+function flushRuntime(rt: TabRuntime) {
+  if (!rt.term || rt.pending.length === 0) return;
+  const combined = rt.pending.length === 1 ? rt.pending[0] : rt.pending.join("");
+  rt.pending = [];
+  rt.pendingBytes = 0;
+  if (rt.coalescer) {
+    rt.coalescer.push(combined);
+  } else {
+    safeWrite(rt.term, combined);
   }
+}
+
+export function flushPendingTabOutput(tab: Pick<TerminalTab, "id">) {
+  const rt = runtimes.get(tab.id);
+  if (rt) flushRuntime(rt);
 }
 
 export function setActiveTab(tabId: string | null) {
   if (activeTabId === tabId) return;
   activeTabId = tabId;
   if (!tabId) return;
-  const tab = findTab(tabId);
-  if (tab) {
-    flushPendingTabOutput(tab);
-    if (tab.term && tab.fitAddon) {
-      requestAnimationFrame(() => {
-        fitTerminal(tab.id, tab.term!, tab.fitAddon!);
-        tab.term!.focus();
-      });
-    }
+  const rt = runtimes.get(tabId);
+  if (!rt) return;
+  flushRuntime(rt);
+  if (rt.term) {
+    requestAnimationFrame(() => {
+      scheduleFit(tabId);
+      rt.term?.focus();
+    });
   }
+}
+
+/** False while another view covers the Terminals panel. */
+let terminalsVisible = false;
+
+function desiredCursorBlink(): boolean {
+  return getTerminalSettings()?.terminal_cursor_blink ?? true;
+}
+
+function setBlinkSuspended(rt: TabRuntime, suspend: boolean) {
+  const term = rt.term;
+  if (!term) return;
+  if (suspend) {
+    if (!rt.blinkSuspended && term.options.cursorBlink) {
+      term.options.cursorBlink = false;
+      rt.blinkSuspended = true;
+    }
+  } else if (rt.blinkSuspended) {
+    term.options.cursorBlink = desiredCursorBlink();
+    rt.blinkSuspended = false;
+  }
+}
+
+/** Pause rendering output into xterm (and cursor blink) while the Terminals
+ *  view is hidden; buffered output is flushed into the active tab on show. */
+export function setTerminalsVisible(visible: boolean) {
+  if (terminalsVisible === visible) return;
+  terminalsVisible = visible;
+  for (const rt of runtimes.values()) setBlinkSuspended(rt, !visible);
+  if (!visible || !activeTabId) return;
+  const rt = runtimes.get(activeTabId);
+  if (rt) flushRuntime(rt);
 }
 
 function deliverPtyOutput(sessionId: string, data: string) {
   if (!data) return;
-  const tab = findTab(sessionId);
-  if (!tab) return;
+  // Cheap ownership guard: sessions shown elsewhere (pop-out windows,
+  // detached) have no runtime in this window.
+  const rt = runtimes.get(sessionId);
+  if (!rt) return;
 
-  if (tab.id === activeTabId && tab.term && tab.outputCoalescer) {
+  if (terminalsVisible && sessionId === activeTabId && rt.coalescer) {
     // Anything buffered while the tab was hidden must land before new output.
-    flushPendingTabOutput(tab);
-    tab.outputCoalescer.push(data);
+    if (rt.pending.length > 0) flushRuntime(rt);
+    rt.coalescer.push(data);
     return;
   }
 
   // Background tab (or terminal still being created): buffer in memory
-  // without triggering xterm canvas redraws / layout computations.
-  if (!tab.pendingOutput) tab.pendingOutput = [];
-  const pending = tab.pendingOutput;
-  let pendingBytes = pending.reduce((sum, chunk) => sum + chunk.length, 0) + data.length;
-  if (pendingBytes > MAX_PENDING_OUTPUT_BYTES && tab.term && tab.outputCoalescer) {
+  // without triggering xterm redraws / layout computations.
+  rt.pending.push(data);
+  rt.pendingBytes += data.length;
+  if (rt.pendingBytes <= MAX_PENDING_OUTPUT_BYTES) return;
+  if (rt.coalescer) {
     // Hand a busy hidden tab's output to xterm instead of silently dropping
     // scrollback (and splitting escape sequences) once the buffer is full.
-    pending.push(data);
-    flushPendingTabOutput(tab);
+    flushRuntime(rt);
     return;
   }
-  while (pending.length > 0 && pendingBytes > MAX_PENDING_OUTPUT_BYTES) {
-    pendingBytes -= pending.shift()!.length;
-  }
-  pending.push(data);
-}
-
-function linkTerminal(
-  tabId: string,
-  term: Terminal,
-  fitAddon: FitAddon,
-  searchAddon?: SearchAddon,
-  compositionGuardCleanup?: () => void,
-  mouseCleanup?: () => void,
-  outputCoalescer?: OutputCoalescer,
-) {
-  const index = tabs.findIndex((t) => t.id === tabId);
-  if (index !== -1) {
-    tabs[index].term = term;
-    tabs[index].fitAddon = fitAddon;
-    tabs[index].searchAddon = searchAddon;
-    tabs[index].compositionGuardCleanup = compositionGuardCleanup;
-    tabs[index].mouseCleanup = mouseCleanup;
-    tabs[index].outputCoalescer = outputCoalescer;
-    tabs[index].showSearch = false;
+  while (rt.pending.length > 1 && rt.pendingBytes > MAX_PENDING_OUTPUT_BYTES) {
+    rt.pendingBytes -= rt.pending.shift()!.length;
   }
 }
 
 export function toggleTerminalSearch(tabId?: string) {
   const id = tabId ?? activeTabId;
   if (!id) return;
-  const index = tabs.findIndex((t) => t.id === id);
-  if (index !== -1) {
-    tabs[index].showSearch = !tabs[index].showSearch;
-    tabs = [...tabs];
-  }
+  const tab = findTab(id);
+  if (tab) tab.showSearch = !tab.showSearch;
 }
 
 export function closeTerminalSearch(tabId?: string) {
   const id = tabId ?? activeTabId;
   if (!id) return;
-  const index = tabs.findIndex((t) => t.id === id);
-  if (index !== -1) {
-    tabs[index].showSearch = false;
-    tabs = [...tabs];
-  }
+  const tab = findTab(id);
+  if (tab) tab.showSearch = false;
 }
-
-const fitRequests = new Map<string, number>();
 
 function isContainerVisible(container: HTMLElement | null | undefined): boolean {
   if (!container) return false;
-  // display:none (hidden tab) or detached from the document → skip fitting.
+  // display:none (hidden tab/view) or detached from the document → skip.
   return container.isConnected && container.offsetParent !== null;
 }
 
-function fitTerminal(tabId: string, term: Terminal, fitAddon: FitAddon) {
-  const container = term.element?.parentElement;
-  if (!isContainerVisible(container)) return;
-
-  // Throttle to one fit + resize IPC per animation frame; ResizeObserver
-  // fires continuously while the window is being resized.
-  const pending = fitRequests.get(tabId);
-  if (pending) {
-    cancelAnimationFrame(pending);
-  }
-
-  const raf = requestAnimationFrame(() => {
-    fitRequests.delete(tabId);
+/**
+ * Fit a tab's terminal at most once per animation frame. `fit()` only
+ * resizes when cols/rows change, and the PTY is told via `term.onResize`,
+ * so unchanged layouts never reach the backend.
+ */
+function scheduleFit(tabId: string) {
+  const rt = runtimes.get(tabId);
+  if (!rt?.term || !rt.fitAddon || rt.fitRaf !== null) return;
+  rt.fitRaf = requestAnimationFrame(() => {
+    rt.fitRaf = null;
+    const term = rt.term;
+    if (!term || !rt.fitAddon || !isContainerVisible(term.element?.parentElement)) return;
     try {
-      fitAddon.fit();
-      if (term.cols === 0 || term.rows === 0) return;
-      invoke("resize_pty", {
-        sessionId: tabId,
-        cols: term.cols,
-        rows: term.rows,
-      }).catch(() => {});
+      rt.fitAddon.fit();
     } catch {
       // Container may not have dimensions yet.
     }
   });
-  fitRequests.set(tabId, raf);
 }
 
-function attachTerminalIo(tabId: string, term: Terminal) {
-  attachXtermIo(tabId, term);
+function createRuntime(tabId: string): TabRuntime {
+  const rt: TabRuntime = {
+    pending: [],
+    pendingBytes: 0,
+    cleanups: [],
+    fitRaf: null,
+    blinkSuspended: false,
+  };
+  runtimes.set(tabId, rt);
+  return rt;
 }
 
-function openTerminalInstance(
+function disposeRuntime(tabId: string) {
+  const rt = runtimes.get(tabId);
+  if (!rt) return;
+  runtimes.delete(tabId);
+  if (rt.fitRaf !== null) cancelAnimationFrame(rt.fitRaf);
+  rt.coalescer?.dispose();
+  for (const cleanup of rt.cleanups) {
+    try {
+      cleanup();
+    } catch {
+      // Best effort.
+    }
+  }
+  rt.term?.dispose();
+  rt.pending = [];
+}
+
+/** Re-measure open terminals when the font finished loading after timeout. */
+function remeasureFonts() {
+  for (const [id, rt] of runtimes) {
+    const term = rt.term;
+    if (!term) continue;
+    const family = term.options.fontFamily;
+    term.options.fontFamily = "monospace";
+    term.options.fontFamily = family;
+    scheduleFit(id);
+  }
+}
+
+async function openTerminalInstance(
   tabId: string,
   container: HTMLElement,
   options?: { banner?: string; replay?: string },
-): Terminal {
-  const term = new Terminal(buildTerminalOptions() as ConstructorParameters<typeof Terminal>[0]);
+): Promise<Terminal | null> {
+  const termOptions = buildTerminalOptions();
+  await waitForTerminalFont(String(termOptions.fontFamily), remeasureFonts);
 
+  const rt = runtimes.get(tabId);
+  // Tab closed while the font was loading.
+  if (!rt) return null;
+  if (!container.isConnected) {
+    cleanupTabUi(tabId);
+    return null;
+  }
+
+  const term = new Terminal(termOptions as ConstructorParameters<typeof Terminal>[0]);
   const fitAddon = new FitAddon();
   term.loadAddon(fitAddon);
-
   const { searchAddon } = attachXtermAddons(term);
 
   term.open(container);
-  const compositionGuardCleanup = attachXtermLinuxInputFix(container, term);
-  const mouseCleanup = attachXtermMouseHandlers(container, term);
   const outputCoalescer = createOutputCoalescer(term);
 
-  linkTerminal(tabId, term, fitAddon, searchAddon, compositionGuardCleanup, mouseCleanup, outputCoalescer);
-  attachResizeObserver(tabId, container, term, fitAddon);
-  attachTerminalIo(tabId, term);
+  rt.term = term;
+  rt.fitAddon = fitAddon;
+  rt.searchAddon = searchAddon;
+  rt.coalescer = outputCoalescer;
+  rt.cleanups.push(attachXtermLinuxInputFix(container, term));
+  rt.cleanups.push(attachXtermMouseHandlers(container, term));
 
-  container.addEventListener("mousedown", () => term.focus());
+  attachXtermIo(tabId, term);
+  attachXtermPtyResize(tabId, term);
+
+  const observer = new ResizeObserver(() => scheduleFit(tabId));
+  observer.observe(container);
+  rt.cleanups.push(() => observer.disconnect());
+
+  const onMouseDown = () => term.focus();
+  const onWheel = (e: WheelEvent) => {
+    // Ctrl / Cmd + wheel zoom.
+    if (!(e.ctrlKey || e.metaKey)) return;
+    e.preventDefault();
+    updateTerminalFontSize(terminalFontSize + (e.deltaY < 0 ? 1 : -1));
+  };
+  container.addEventListener("mousedown", onMouseDown);
+  container.addEventListener("wheel", onWheel, { passive: false });
+  rt.cleanups.push(() => {
+    container.removeEventListener("mousedown", onMouseDown);
+    container.removeEventListener("wheel", onWheel);
+  });
 
   attachXtermKeyHandler(term, () => {
     toggleTerminalSearch(tabId);
   });
 
-  // Ctrl / Cmd + Mouse Wheel zoom event listener
-  container.addEventListener("wheel", (e) => {
-    if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-      if (e.deltaY < 0) {
-        updateTerminalFontSize(terminalFontSize + 1);
-      } else {
-        updateTerminalFontSize(terminalFontSize - 1);
-      }
-    }
-  }, { passive: false });
+  if (!terminalsVisible) setBlinkSuspended(rt, true);
 
   // Order matters: replay (older buffered history) first, then any live
   // output that arrived while this terminal was being created (reattach
@@ -361,13 +454,7 @@ function openTerminalInstance(
     });
   }
 
-  const pending = findTab(tabId)?.pendingOutput;
-  if (pending && pending.length > 0) {
-    findTab(tabId)!.pendingOutput = undefined;
-    for (const chunk of pending) {
-      outputCoalescer.push(chunk);
-    }
-  }
+  if (rt.pending.length > 0) flushRuntime(rt);
 
   if (options?.banner && !options?.replay) {
     safeWrite(term, `${options.banner}\r\n`, () => {
@@ -375,7 +462,13 @@ function openTerminalInstance(
     });
   }
 
-  requestAnimationFrame(() => term.focus());
+  const tab = findTab(tabId);
+  if (tab) tab.ready = true;
+
+  requestAnimationFrame(() => {
+    scheduleFit(tabId);
+    term.focus();
+  });
 
   return term;
 }
@@ -386,23 +479,6 @@ async function sealSessionUi(sessionId: string): Promise<void> {
   } catch {
     // Non-fatal if the backend session is already gone.
   }
-}
-
-function attachResizeObserver(tabId: string, container: HTMLElement, term: Terminal, fitAddon: FitAddon) {
-  const observer = new ResizeObserver(() => {
-    fitTerminal(tabId, term, fitAddon);
-  });
-  observer.observe(container);
-  resizeObservers.set(tabId, observer);
-
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => fitTerminal(tabId, term, fitAddon));
-  });
-}
-
-function detachResizeObserver(tabId: string) {
-  resizeObservers.get(tabId)?.disconnect();
-  resizeObservers.delete(tabId);
 }
 
 function removePopoutSession(sessionId: string) {
@@ -433,33 +509,16 @@ async function mountReattachedSession(info: ReattachSessionPayload): Promise<voi
     return;
   }
 
-  const tab: TerminalTab = {
-    id: info.session_id,
-    name: info.connection_name,
-    connectionName: info.connection_name,
-  };
+  const tab = new TabState(info.session_id, info.connection_name, info.connection_name, "connected");
+  const term = await mountTerminalTab(tab, { replay: info.buffered_output });
+  if (!term) return;
 
-  tabs = [...tabs, tab];
-  activeTabId = tab.id;
-
-  const container = await waitForTerminalContainer(tab.id);
-  if (!container) {
-    cleanupTabUi(tab.id);
-    throw new Error("Terminal view is not ready. Try again.");
-  }
-
-  const term = openTerminalInstance(tab.id, container, {
-    replay: info.buffered_output,
-  });
-
-  await tick();
+  // The PTY kept the size of its previous view; align it with this one once
+  // the new terminal has been fitted.
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
-      const mounted = findTab(tab.id);
-      if (mounted?.term && mounted.fitAddon) {
-        fitTerminal(tab.id, mounted.term, mounted.fitAddon);
-        mounted.term.scrollToBottom();
-      }
+      syncPtySize(tab.id, term);
+      term.scrollToBottom();
     });
   });
 }
@@ -469,42 +528,27 @@ function removeDetachedSession(sessionId: string) {
 }
 
 function cleanupTabUi(tabId: string) {
-  const tab = findTab(tabId);
-  tab?.outputCoalescer?.dispose();
-  tab?.compositionGuardCleanup?.();
-  tab?.mouseCleanup?.();
-  tab?.term?.dispose();
-  detachResizeObserver(tabId);
-  const pendingFit = fitRequests.get(tabId);
-  if (pendingFit) {
-    cancelAnimationFrame(pendingFit);
-    fitRequests.delete(tabId);
-  }
-  tabs = tabs.filter((t) => t.id !== tabId);
+  disposeRuntime(tabId);
+  if (findTab(tabId)) tabs = tabs.filter((t) => t.id !== tabId);
 
   if (activeTabId === tabId) {
     setActiveTab(tabs.length > 0 ? tabs[0].id : null);
   }
 }
 
-/** Re-fit all terminals — e.g. when switching back to the Terminals tab. */
+/** Re-fit the active terminal — e.g. when switching back to the Terminals
+ *  view. Hidden tabs are fitted when they become active. */
 export function fitActiveTerminal() {
-  for (const tab of tabs) {
-    if (tab.term && tab.fitAddon) {
-      fitTerminal(tab.id, tab.term, tab.fitAddon);
-    }
-  }
+  if (activeTabId) scheduleFit(activeTabId);
 }
 
 /** Focus the active terminal tab's xterm instance. */
 export function focusActiveTerminal() {
   if (!activeTabId) return;
-  const tab = findTab(activeTabId);
-  if (!tab?.term) return;
-  tab.term.focus();
-  if (tab.fitAddon) {
-    fitTerminal(activeTabId, tab.term, tab.fitAddon);
-  }
+  const term = runtimes.get(activeTabId)?.term;
+  if (!term) return;
+  term.focus();
+  scheduleFit(activeTabId);
 }
 
 async function syncDetachedSessions() {
@@ -570,10 +614,14 @@ export async function initTerminalListeners(onExit?: ExitCallback) {
       }
 
       const tab = findTab(sessionId);
-      // Flush pending output first so the disconnect notice lands after it.
-      if (tab) flushPendingTabOutput(tab);
-      tab?.outputCoalescer?.flush();
-      safeWrite(tab?.term, "\n\x1b[1;33mSession disconnected.\x1b[0m\r\n");
+      if (tab) tab.status = "exited";
+      const rt = runtimes.get(sessionId);
+      if (rt) {
+        // Flush pending output first so the disconnect notice lands after it.
+        flushRuntime(rt);
+        rt.coalescer?.flush();
+        safeWrite(rt.term, "\n\x1b[1;33mSession disconnected.\x1b[0m\r\n");
+      }
 
       setTimeout(() => {
         cleanupTabUi(sessionId);
@@ -636,9 +684,12 @@ async function waitForTerminalContainer(tabId: string): Promise<HTMLElement | nu
 }
 
 async function mountTerminalTab(
-  tab: TerminalTab,
+  tab: TabState,
   options?: { banner?: string; replay?: string },
 ): Promise<Terminal | null> {
+  // The runtime exists before the xterm instance so output arriving during
+  // creation is buffered rather than dropped.
+  createRuntime(tab.id);
   tabs = [...tabs, tab];
   activeTabId = tab.id;
 
@@ -656,18 +707,25 @@ export async function connectSSH(conn: Connection): Promise<void> {
   if (!allowed) return;
 
   const tabId = crypto.randomUUID().replace(/-/g, "").slice(0, 12);
-  const newTab: TerminalTab = { id: tabId, name: conn.name, connectionName: conn.name };
+  const newTab = new TabState(tabId, conn.name, conn.name, "connecting");
 
   const term = await mountTerminalTab(newTab, {
     banner: `\x1b[1;36mInitializing Bayesian-SSH Shell Session to ${conn.name}... \x1b[0m`,
   });
+  // Closed before the terminal finished mounting.
+  if (!term) return;
 
   try {
     await invoke("spawn_pty", { sessionId: tabId, connectionName: conn.name });
+    if (newTab.status === "connecting") newTab.status = "connected";
+    // Resizes during spawn were sent before the PTY existed.
+    const live = runtimes.get(tabId)?.term;
+    if (live) syncPtySize(tabId, live);
     await syncActiveSessionCount();
   } catch (e: unknown) {
+    newTab.status = "error";
     const message = String(e);
-    safeWrite(term ?? undefined, `\n\x1b[1;31mFailed to start session: ${message}\x1b[0m\r\n`);
+    safeWrite(term, `\n\x1b[1;31mFailed to start session: ${message}\x1b[0m\r\n`);
     // Keep the tab open so the user can read the error; auto-close it after
     // a few seconds unless they interact with it.
     setTimeout(() => {
@@ -820,17 +878,7 @@ export async function disconnectTab(tabId: string): Promise<void> {
 
 export async function closeAllTabs(): Promise<number> {
   const count = await invoke<number>("close_all_ptys");
-  for (const tab of [...tabs]) {
-    tab.outputCoalescer?.dispose();
-    tab.compositionGuardCleanup?.();
-    tab.mouseCleanup?.();
-    tab.term?.dispose();
-    detachResizeObserver(tab.id);
-  }
-  for (const raf of fitRequests.values()) {
-    cancelAnimationFrame(raf);
-  }
-  fitRequests.clear();
+  for (const id of [...runtimes.keys()]) disposeRuntime(id);
   tabs = [];
   detachedSessions = [];
   popoutSessions = [];
@@ -841,7 +889,7 @@ export async function closeAllTabs(): Promise<number> {
 
 export function getTerminalState() {
   return {
-    get tabs() {
+    get tabs(): readonly TerminalTab[] {
       return tabs;
     },
     get detachedSessions() {
@@ -852,6 +900,10 @@ export function getTerminalState() {
     },
     get activeTabId() {
       return activeTabId;
+    },
+    /** Metadata of the active tab, if any. */
+    get activeTab(): TerminalTab | undefined {
+      return activeTabId ? findTab(activeTabId) : undefined;
     },
     set activeTabId(value: string | null) {
       setActiveTab(value);

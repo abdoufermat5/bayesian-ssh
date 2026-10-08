@@ -9,11 +9,15 @@ import { getCurrentXtermTheme } from "$lib/utils/theme";
 import { isTerminalFocused } from "$lib/utils/terminal-focus";
 import { buildTerminalOptions } from "$lib/stores/terminal.svelte";
 import {
+  attachXtermAddons,
   attachXtermIo,
   attachXtermKeyHandler,
   attachXtermLinuxInputFix,
+  attachXtermPtyResize,
   createOutputCoalescer,
   safeWrite,
+  syncPtySize,
+  waitForTerminalFont,
 } from "$lib/utils/terminal-xterm";
 
 export interface PopoutTerminalHandle {
@@ -28,7 +32,10 @@ interface ClaimInfo {
   buffered_output: string;
 }
 
-export async function initPopoutTerminal(sessionId: string): Promise<PopoutTerminalHandle> {
+export async function initPopoutTerminal(
+  sessionId: string,
+  options?: { onExit?: () => void },
+): Promise<PopoutTerminalHandle> {
   const windowLabel = getCurrentWindow().label;
   const info = await invoke<ClaimInfo>("claim_popout_session", { sessionId, windowLabel });
 
@@ -40,6 +47,26 @@ export async function initPopoutTerminal(sessionId: string): Promise<PopoutTermi
   let compositionGuardCleanup: (() => void) | null = null;
   let outputCoalescer: ReturnType<typeof createOutputCoalescer> | null = null;
   let closing = false;
+
+  const fit = () => {
+    if (!term || !fitAddon) return;
+    try {
+      fitAddon.fit();
+    } catch {
+      // Container may not have dimensions yet.
+    }
+  };
+
+  // Throttle refits to one per animation frame (window drags fire a storm
+  // of resize events).
+  let fitRaf: number | null = null;
+  const scheduleFit = () => {
+    if (fitRaf !== null) return;
+    fitRaf = requestAnimationFrame(() => {
+      fitRaf = null;
+      fit();
+    });
+  };
 
   const container = await waitForContainer("terminal-popout-root");
   if (!container) {
@@ -57,10 +84,21 @@ export async function initPopoutTerminal(sessionId: string): Promise<PopoutTermi
     // Keep defaults if settings are unavailable.
   }
 
-  term = new Terminal(buildTerminalOptions(settings) as ConstructorParameters<typeof Terminal>[0]);
+  const termOptions = buildTerminalOptions(settings);
+  // Measure cells with the real font, not a fallback.
+  await waitForTerminalFont(String(termOptions.fontFamily), () => {
+    if (!term) return;
+    const family = term.options.fontFamily;
+    term.options.fontFamily = "monospace";
+    term.options.fontFamily = family;
+    scheduleFit();
+  });
+
+  term = new Terminal(termOptions as ConstructorParameters<typeof Terminal>[0]);
 
   fitAddon = new FitAddon();
   term.loadAddon(fitAddon);
+  attachXtermAddons(term);
   term.open(container);
   compositionGuardCleanup = attachXtermLinuxInputFix(container, term);
   outputCoalescer = createOutputCoalescer(term);
@@ -87,6 +125,7 @@ export async function initPopoutTerminal(sessionId: string): Promise<PopoutTermi
     if (term) {
       safeWrite(term, "\n\x1b[1;33mSession disconnected.\x1b[0m\r\n");
     }
+    options?.onExit?.();
   });
 
   if (info.buffered_output) {
@@ -98,33 +137,9 @@ export async function initPopoutTerminal(sessionId: string): Promise<PopoutTermi
   }
 
   attachXtermIo(sessionId, term);
+  // `fit()` only resizes on real grid changes; the PTY hears about those.
+  attachXtermPtyResize(sessionId, term);
   attachXtermKeyHandler(term);
-
-  const fit = () => {
-    if (!term || !fitAddon) return;
-    try {
-      fitAddon.fit();
-      if (term.cols === 0 || term.rows === 0) return;
-      invoke("resize_pty", {
-        sessionId,
-        cols: term.cols,
-        rows: term.rows,
-      }).catch(() => {});
-    } catch {
-      // Container may not have dimensions yet.
-    }
-  };
-
-  // Throttle refits to one per animation frame (window drags fire a storm
-  // of resize events).
-  let fitRaf: number | null = null;
-  const scheduleFit = () => {
-    if (fitRaf !== null) return;
-    fitRaf = requestAnimationFrame(() => {
-      fitRaf = null;
-      fit();
-    });
-  };
 
   // Dynamic theme mutation observer
   themeObserver = new MutationObserver(() => {
@@ -171,7 +186,13 @@ export async function initPopoutTerminal(sessionId: string): Promise<PopoutTermi
 
   resizeObserver = new ResizeObserver(() => scheduleFit());
   resizeObserver.observe(container);
-  requestAnimationFrame(() => requestAnimationFrame(fit));
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      fit();
+      // The PTY still has the size of the view it came from.
+      if (term) syncPtySize(sessionId, term);
+    }),
+  );
 
   const releaseUi = () => {
     window.removeEventListener("keydown", handleKeydown);

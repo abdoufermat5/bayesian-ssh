@@ -1,28 +1,24 @@
 <script lang="ts">
   import {
     AppWindow,
-    ArrowDown,
     ChevronDown,
     ChevronUp,
     Download,
-    GripVertical,
+    Eraser,
     Layers,
     Link2,
     Minus,
+    MoreHorizontal,
     OctagonX,
-    Play,
     Plus,
     Search,
-    Server,
     TerminalSquare,
-    Trash2,
     Unlink,
     X,
-    ZoomIn,
-    ZoomOut,
   } from "lucide-svelte";
   import type { Connection } from "$lib/types";
   import { notify } from "$lib/stores/notifications.svelte";
+  import { formatRelative } from "$lib/utils/timezone";
   import { downloadTerminalScrollback } from "$lib/utils/terminal-xterm";
   import { tabPopOutDrag } from "$lib/actions/tabPopOutDrag";
   import {
@@ -33,17 +29,18 @@
   } from "$lib/actions/tabBarReattachDrop";
   import {
     closeTerminalSearch,
-    connectSSH,
     detachTab,
     disconnectTab,
     dockPopoutSession,
     focusPopoutSession,
+    getTerminalFontSize,
     getTerminalState,
     popOutTab,
     reattachSession,
     toggleTerminalSearch,
     updateTerminalFontSize,
-    getTerminalFontSize,
+    type TerminalTab,
+    type TerminalTabStatus,
   } from "$lib/stores/terminal.svelte";
 
   interface Props {
@@ -51,14 +48,26 @@
     searchQuery?: string;
     onCloseAll: () => void;
     onManageSessions: () => void;
+    onConnect: (conn: Connection) => void | Promise<void>;
   }
 
-  let { connections, searchQuery = $bindable(""), onCloseAll, onManageSessions }: Props = $props();
+  let {
+    connections,
+    searchQuery = $bindable(""),
+    onCloseAll,
+    onManageSessions,
+    onConnect,
+  }: Props = $props();
 
   const terminalState = getTerminalState();
+  const activeTab = $derived(terminalState.activeTab);
+
   let tabSearchQueries = $state<Record<string, string>>({});
-  let showQuickLauncher = $state(false);
+  let showLauncher = $state(false);
   let launcherQuery = $state("");
+  let launcherIndex = $state(0);
+  let showMoreMenu = $state(false);
+  let tabStrip = $state<HTMLDivElement | null>(null);
 
   const awaySessions = $derived.by((): SessionDragPayload[] => [
     ...terminalState.popoutSessions.map((session) => ({
@@ -73,24 +82,99 @@
     })),
   ]);
 
-  const filteredConnections = $derived.by(() => {
-    const q = launcherQuery.trim().toLowerCase();
-    if (!q) return connections.slice(0, 8);
-    return connections.filter(
-      (c) =>
-        c.name.toLowerCase().includes(q) ||
-        c.host.toLowerCase().includes(q) ||
-        c.user.toLowerCase().includes(q),
-    );
+  /** Most recently used hosts first; never-used hosts keep their ranking. */
+  const recentHosts = $derived.by(() => {
+    const used = connections
+      .filter((c) => c.last_used)
+      .sort((a, b) => Date.parse(b.last_used!) - Date.parse(a.last_used!));
+    const rest = connections.filter((c) => !c.last_used);
+    return [...used, ...rest].slice(0, 6);
   });
 
-  async function handleConnect(conn: Connection) {
-    showQuickLauncher = false;
+  const launcherResults = $derived.by(() => {
+    const q = launcherQuery.trim().toLowerCase();
+    if (!q) return connections.slice(0, 8);
+    return connections
+      .filter(
+        (c) =>
+          c.name.toLowerCase().includes(q) ||
+          c.host.toLowerCase().includes(q) ||
+          c.user.toLowerCase().includes(q),
+      )
+      .slice(0, 30);
+  });
+
+  // Keep the active tab visible in an overflowing strip.
+  $effect(() => {
+    const id = terminalState.activeTabId;
+    if (!id || !tabStrip) return;
+    tabStrip
+      .querySelector<HTMLElement>(`[data-tab-id="${id}"]`)
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  });
+
+  function statusDot(status: TerminalTabStatus): string {
+    switch (status) {
+      case "connected":
+        return "status-dot-success";
+      case "connecting":
+        return "status-dot-warning";
+      case "error":
+        return "status-dot-error";
+      default:
+        return "status-dot-offline";
+    }
+  }
+
+  function statusLabel(status: TerminalTabStatus): string {
+    switch (status) {
+      case "connected":
+        return "Connected";
+      case "connecting":
+        return "Connecting";
+      case "error":
+        return "Failed to connect";
+      default:
+        return "Disconnected";
+    }
+  }
+
+  function hostLine(conn: Connection): string {
+    return `${conn.user}@${conn.host}${conn.port !== 22 ? `:${conn.port}` : ""}`;
+  }
+
+  function openLauncher() {
+    showMoreMenu = false;
     launcherQuery = "";
+    launcherIndex = 0;
+    showLauncher = !showLauncher;
+  }
+
+  function closeMenus() {
+    showLauncher = false;
+    showMoreMenu = false;
+  }
+
+  async function handleConnect(conn: Connection) {
+    closeMenus();
     try {
-      await connectSSH(conn);
+      await onConnect(conn);
     } catch (e: unknown) {
       notify(String(e), "error");
+    }
+  }
+
+  function handleLauncherKeydown(e: KeyboardEvent) {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      launcherIndex = Math.min(launcherIndex + 1, launcherResults.length - 1);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      launcherIndex = Math.max(launcherIndex - 1, 0);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const conn = launcherResults[launcherIndex];
+      if (conn) void handleConnect(conn);
     }
   }
 
@@ -106,788 +190,547 @@
     }
   }
 
+  function activateAway(session: SessionDragPayload) {
+    if (session.kind === "popout") void focusPopoutSession(session.sessionId);
+    else void handleDropReattach(session);
+  }
+
   function handleAwayDragStart(event: DragEvent, payload: SessionDragPayload) {
     event.dataTransfer?.setData(SESSION_DRAG_MIME, encodeSessionDrag(payload));
-    if (event.dataTransfer) {
-      event.dataTransfer.effectAllowed = "move";
-    }
-    (event.target as HTMLElement).classList.add("away-chip-dragging");
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+    (event.currentTarget as HTMLElement).classList.add("away-chip-dragging");
   }
 
   function handleAwayDragEnd(event: DragEvent) {
-    (event.target as HTMLElement).classList.remove("away-chip-dragging");
+    (event.currentTarget as HTMLElement).classList.remove("away-chip-dragging");
+  }
+
+  /** Vertical wheel scrolls the overflowing tab strip sideways. */
+  function horizontalWheel(node: HTMLElement) {
+    const onWheel = (e: WheelEvent) => {
+      if (e.shiftKey || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      if (node.scrollWidth <= node.clientWidth) return;
+      e.preventDefault();
+      node.scrollLeft += e.deltaY;
+    };
+    node.addEventListener("wheel", onWheel, { passive: false });
+    return { destroy: () => node.removeEventListener("wheel", onWheel) };
   }
 
   function zoomTerminal(delta: number) {
-    const current = getTerminalFontSize();
-    updateTerminalFontSize(current + delta);
+    updateTerminalFontSize(getTerminalFontSize() + delta);
+  }
+
+  function runSearch(tab: TerminalTab, backwards = false) {
+    const query = tabSearchQueries[tab.id] ?? "";
+    if (!query) return;
+    if (backwards) tab.searchAddon?.findPrevious(query);
+    else tab.searchAddon?.findNext(query);
+  }
+
+  function closeSearch(tab: TerminalTab) {
+    tab.searchAddon?.clearDecorations();
+    closeTerminalSearch(tab.id);
+    tab.term?.focus();
+  }
+
+  function runMenuAction(action: () => void | Promise<void>) {
+    showMoreMenu = false;
+    void action();
+  }
+
+  function focusOnMount(node: HTMLInputElement) {
+    requestAnimationFrame(() => {
+      node.focus();
+      node.select();
+    });
+  }
+
+  function handleWindowKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape" && (showLauncher || showMoreMenu)) {
+      e.preventDefault();
+      closeMenus();
+    }
   }
 </script>
 
-<div class="flex flex-1 min-h-0 w-full overflow-hidden bg-surface-terminal relative">
-  <div class="flex-1 min-w-0 min-h-0 flex flex-col overflow-visible bg-surface-terminal relative">
-    <div
-      class="terminal-command-deck shrink-0 select-none"
-      use:tabBarReattachDrop={handleDropReattach}
-    >
-      <div class="terminal-tab-row">
-        <div class="terminal-tab-strip">
-          {#each terminalState.tabs as tab (tab.id)}
-            <div
-              class="terminal-tab group {terminalState.activeTabId === tab.id ? 'terminal-tab-active' : 'terminal-tab-idle'}"
-              use:tabPopOutDrag={tab.id}
-              onclick={() => (terminalState.activeTabId = tab.id)}
-              role="button"
-              tabindex="0"
-              title={`${tab.name} (drag to pop out)`}
-              onkeydown={(e) => {
-                if (e.key === "Enter" || e.key === " ") terminalState.activeTabId = tab.id;
-              }}
-            >
-              <span class="terminal-live-rail"></span>
-              <Server size={12} class="shrink-0 opacity-80" />
-              <span class="terminal-tab-label" title={tab.name}>{tab.name}</span>
+<svelte:window onkeydown={handleWindowKeydown} />
 
-              <div class="terminal-tab-secondary-actions">
-                <button
-                  type="button"
-                  class="terminal-tab-action"
-                  title="Pop out to separate window"
-                  onclick={(e) => {
-                    e.stopPropagation();
-                    void popOutTab(tab.id);
-                  }}
-                >
-                  <AppWindow size={12} />
-                </button>
-
-                <button
-                  type="button"
-                  class="terminal-tab-action"
-                  title="Run in background (detach)"
-                  onclick={(e) => {
-                    e.stopPropagation();
-                    void detachTab(tab.id);
-                  }}
-                >
-                  <Unlink size={12} />
-                </button>
-              </div>
-
-              <button
-                type="button"
-                class="terminal-tab-close"
-                title="Close session"
-                onclick={(e) => {
-                  e.stopPropagation();
-                  disconnectTab(tab.id);
-                }}
-              >
-                <X size={12} />
-              </button>
-            </div>
-          {/each}
-
-          {#each awaySessions as session (session.sessionId)}
-            <div
-              class="away-session-chip terminal-away-chip group"
-              draggable="true"
-              title={session.kind === 'popout' ? 'Click to focus window, or drag to dock' : 'Click or drag to reattach'}
-              ondragstart={(event) => handleAwayDragStart(event, session)}
-              ondragend={handleAwayDragEnd}
-              onclick={() => {
-                if (session.kind === 'popout') {
-                  void focusPopoutSession(session.sessionId);
-                } else {
-                  void handleDropReattach(session);
-                }
-              }}
-              ondblclick={() => void handleDropReattach(session)}
-              role="button"
-              tabindex="0"
-              onkeydown={(e) => {
-                if (e.key === 'Enter') {
-                  if (session.kind === 'popout') void focusPopoutSession(session.sessionId);
-                  else void handleDropReattach(session);
-                }
-              }}
-            >
-              <GripVertical size={12} class="opacity-70 shrink-0" />
-              {#if session.kind === "popout"}
-                <AppWindow size={12} class="shrink-0 text-accent" />
-              {:else}
-                <Link2 size={12} class="shrink-0 text-amber-400" />
-              {/if}
-              <span class="truncate">{session.name}</span>
-              <button
-                type="button"
-                class="ml-1 p-0.5 rounded hover:bg-surface-elevated text-muted hover:text-primary transition-colors opacity-75 group-hover:opacity-100"
-                title={session.kind === 'popout' ? 'Dock to main window' : 'Reattach session'}
-                onclick={(e) => {
-                  e.stopPropagation();
-                  void handleDropReattach(session);
-                }}
-              >
-                <Link2 size={11} />
-              </button>
-            </div>
-          {/each}
-        </div>
-
-        <div class="terminal-new-session">
-          <button
-            type="button"
-            class="terminal-control terminal-control-primary"
-            onclick={() => (showQuickLauncher = !showQuickLauncher)}
-            title="Open new SSH session"
-          >
-            <Plus size={14} />
-            <span>New</span>
-          </button>
-
-          {#if showQuickLauncher}
-            <div
-              class="fixed inset-0 z-40"
-              onclick={() => (showQuickLauncher = false)}
-              role="presentation"
-            ></div>
-            <div
-              class="terminal-launcher-popover"
-            >
-              <div class="terminal-launcher-search">
-                <Search size={12} class="text-muted" />
-                <input
-                  type="text"
-                  placeholder="Select host to connect..."
-                  bind:value={launcherQuery}
-                  class="terminal-launcher-input"
-                />
-              </div>
-
-              <div class="terminal-launcher-list">
-                {#each filteredConnections as conn}
-                  <button
-                    type="button"
-                    class="terminal-launcher-option group"
-                    onclick={() => handleConnect(conn)}
-                  >
-                    <div class="flex flex-col min-w-0">
-                      <span class="font-semibold text-primary truncate group-hover:text-accent">{conn.name}</span>
-                      <span class="font-mono text-[10px] text-muted truncate">{conn.user}@{conn.host}:{conn.port}</span>
-                    </div>
-                    <Play size={11} class="text-accent opacity-0 group-hover:opacity-100 transition-opacity shrink-0" fill="currentColor" />
-                  </button>
-                {:else}
-                  <div class="p-3 text-center text-xs text-muted">No matching hosts</div>
-                {/each}
-              </div>
-            </div>
-          {/if}
-        </div>
-      </div>
-
-      <div class="terminal-tool-row">
-        {#if terminalState.activeTabId}
-          {@const activeTab = terminalState.tabs.find((t) => t.id === terminalState.activeTabId)}
-
-          <button
-            type="button"
-            class="terminal-control"
-            onclick={() => toggleTerminalSearch(terminalState.activeTabId ?? undefined)}
-            title="Search Terminal (Ctrl+F)"
-          >
-            <Search size={12} />
-            <span class="hidden md:inline">Find</span>
-          </button>
-
-          {#if activeTab?.term}
-            <button
-              type="button"
-              class="terminal-control"
-              onclick={() => downloadTerminalScrollback(activeTab.term!, activeTab.name)}
-              title="Export session scrollback"
-            >
-              <Download size={12} />
-              <span class="hidden md:inline">Export</span>
-            </button>
-
-            <button
-              type="button"
-              class="terminal-icon-control"
-              onclick={() => activeTab.term?.clear()}
-              title="Clear terminal screen"
-            >
-              <Trash2 size={12} />
-            </button>
-
-            <div class="terminal-stepper" aria-label="Terminal font size">
-              <button
-                type="button"
-                class="terminal-stepper-button"
-                onclick={() => zoomTerminal(1)}
-                title="Increase font size (Ctrl +)"
-              >
-                <Plus size={11} />
-              </button>
-              <button
-                type="button"
-                class="terminal-stepper-button"
-                onclick={() => zoomTerminal(-1)}
-                title="Decrease font size (Ctrl -)"
-              >
-                <Minus size={11} />
-              </button>
-            </div>
-          {/if}
-        {/if}
-
-        <!-- Away Sessions Badge -->
-        {#if terminalState.externalSessionCount > 0}
-          <button
-            type="button"
-            class="terminal-control terminal-control-accent"
-            onclick={onManageSessions}
-            title="Manage detached and popout sessions"
-          >
-            <Layers size={12} />
-            <span>{terminalState.externalSessionCount} away</span>
-          </button>
-        {/if}
-
-        <!-- Close All Sessions -->
-        {#if terminalState.totalSessionCount > 0}
-          <button
-            type="button"
-            class="terminal-control terminal-control-danger"
-            onclick={onCloseAll}
-            title="Terminate all active SSH sessions"
-          >
-            <OctagonX size={12} />
-            <span class="hidden sm:inline">Close all</span>
-          </button>
-        {/if}
-      </div>
-    </div>
-
-    <!-- Active Terminal Surface or Empty State -->
-    {#if terminalState.tabs.length > 0}
-      <div class="flex-1 min-h-0 relative bg-surface-terminal overflow-hidden">
-        {#each terminalState.tabs as tab (tab.id)}
-          <div
-            class="absolute inset-0 px-2 py-1 box-border overflow-hidden"
-            class:hidden={terminalState.activeTabId !== tab.id}
-          >
-            {#if tab.showSearch}
-              <div
-                class="terminal-search-overlay"
-              >
-                <Search size={14} class="text-accent shrink-0" />
-                <input
-                  type="text"
-                  placeholder="Find in scrollback..."
-                  class="terminal-search-input"
-                  bind:value={tabSearchQueries[tab.id]}
-                  oninput={() => tab.searchAddon?.findNext(tabSearchQueries[tab.id] ?? "")}
-                  onkeydown={(e) => {
-                    if (e.key === "Enter") {
-                      if (e.shiftKey) tab.searchAddon?.findPrevious(tabSearchQueries[tab.id] ?? "");
-                      else tab.searchAddon?.findNext(tabSearchQueries[tab.id] ?? "");
-                    } else if (e.key === "Escape") {
-                      closeTerminalSearch(tab.id);
-                      tab.term?.focus();
-                    }
-                  }}
-                />
-                <button
-                  type="button"
-                  class="terminal-overlay-button"
-                  title="Previous match (Shift+Enter)"
-                  onclick={() => tab.searchAddon?.findPrevious(tabSearchQueries[tab.id] ?? "")}
-                >
-                  <ChevronUp size={14} />
-                </button>
-                <button
-                  type="button"
-                  class="terminal-overlay-button"
-                  title="Next match (Enter)"
-                  onclick={() => tab.searchAddon?.findNext(tabSearchQueries[tab.id] ?? "")}
-                >
-                  <ChevronDown size={14} />
-                </button>
-                <button
-                  type="button"
-                  class="terminal-overlay-button terminal-overlay-button-danger"
-                  title="Close search (Esc)"
-                  onclick={() => {
-                    closeTerminalSearch(tab.id);
-                    tab.term?.focus();
-                  }}
-                >
-                  <X size={14} />
-                </button>
-              </div>
-            {/if}
-
-            <div id="terminal-{tab.id}" class="terminal-fit-target w-full h-full"></div>
-          </div>
-        {/each}
-      </div>
-    {:else if terminalState.externalSessionCount > 0}
-      <!-- Away Sessions Reattach Landing Zone -->
-      <div
-        class="flex-1 flex flex-col items-center justify-center p-12 text-center min-h-0 reattach-drop-zone"
-        use:tabBarReattachDrop={handleDropReattach}
-      >
-        <div class="terminal-empty-icon">
-          <Layers size={28} />
-        </div>
-        <h3 class="text-base font-bold text-primary mb-1">
-          {terminalState.externalSessionCount} Background {terminalState.externalSessionCount === 1 ? 'Session' : 'Sessions'} Running
-        </h3>
-        <p class="text-xs text-muted max-w-sm leading-relaxed mb-4">
-          Your remote SSH sessions are running in background processes or popout windows.
-          Drag any session chip onto this canvas or click manage sessions.
-        </p>
-        <div class="flex flex-wrap gap-2 justify-center max-w-md mb-4">
-          {#each awaySessions as session (session.sessionId)}
-            <button
-              type="button"
-              class="away-session-chip terminal-reattach-chip"
-              onclick={() => void handleDropReattach(session)}
-              title="Click to reattach session"
-            >
-              {#if session.kind === "popout"}
-                <AppWindow size={13} />
-              {:else}
-                <Link2 size={13} />
-              {/if}
-              <span>{session.name}</span>
-            </button>
-          {/each}
-        </div>
+{#snippet recentHostList()}
+  <div class="mt-5 w-full max-w-md text-left">
+    <div class="section-label mb-2 px-1">Recent hosts</div>
+    <div class="panel overflow-hidden">
+      {#each recentHosts as conn, i (conn.id)}
         <button
           type="button"
-          class="btn btn-secondary"
-          onclick={onManageSessions}
+          class="group flex h-11 w-full cursor-pointer items-center gap-3 px-3 text-left transition-colors duration-fast hover:bg-surface-hover {i > 0 ? 'border-t border-border-subtle' : ''}"
+          title="Connect to {conn.name}"
+          onclick={() => handleConnect(conn)}
         >
-          Manage All Sessions
+          <TerminalSquare size={14} class="shrink-0 text-muted group-hover:text-primary" />
+          <div class="flex min-w-0 flex-1 flex-col">
+            <span class="truncate text-sm text-primary">{conn.name}</span>
+            <span class="mono truncate text-muted">{hostLine(conn)}</span>
+          </div>
+          <span class="shrink-0 text-xs text-muted group-hover:hidden">
+            {conn.last_used ? formatRelative(conn.last_used) : "Never used"}
+          </span>
+          <span class="hidden shrink-0 text-xs text-accent group-hover:inline">Connect</span>
         </button>
-      </div>
-    {:else}
-      <!-- Empty State: No Active Sessions -->
-      <div class="flex-1 flex flex-col items-center justify-center p-12 text-center min-h-0 bg-surface select-none">
-        <div class="terminal-empty-icon">
-          <TerminalSquare size={32} />
-        </div>
-        <h3 class="text-base font-bold text-primary mb-1.5">No Active Terminal Sessions</h3>
-        <p class="text-xs text-muted max-w-md leading-relaxed mb-6">
-          Choose a server from your Bayesian ranking to launch a high-performance interactive SSH terminal session.
-        </p>
+      {/each}
+    </div>
+  </div>
+{/snippet}
 
-        <!-- Quick Connect Chips -->
-        {#if connections.length > 0}
-          <div class="flex flex-col items-center gap-2 max-w-lg w-full">
-            <span class="eyebrow text-[10px]">Frequent Servers</span>
-            <div class="flex flex-wrap gap-2 justify-center">
-              {#each connections.slice(0, 4) as conn}
+{#snippet awayIcon(kind: SessionDragPayload["kind"])}
+  {#if kind === "popout"}
+    <AppWindow size={14} class="shrink-0" />
+  {:else}
+    <Unlink size={14} class="shrink-0" />
+  {/if}
+{/snippet}
+
+{#if terminalState.tabs.length > 0}
+  <div class="flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-surface-terminal">
+    <!-- Keep a page heading for the sessions layout too: the tab strip acts as
+         the visual header, so the accessible title is visually hidden. -->
+    <h1 class="sr-only">Terminals</h1>
+    <!-- Tab strip + active-session toolbar -->
+    <div
+      class="relative z-20 flex h-10 shrink-0 select-none items-center gap-1 border-b border-border bg-surface px-2"
+      use:tabBarReattachDrop={handleDropReattach}
+    >
+      <div
+        bind:this={tabStrip}
+        class="scrollbar-none flex min-w-0 items-center gap-0.5 overflow-x-auto"
+        role="tablist"
+        aria-label="Terminal sessions"
+        tabindex="-1"
+        use:horizontalWheel
+      >
+        {#each terminalState.tabs as tab (tab.id)}
+          {@const isActive = terminalState.activeTabId === tab.id}
+          <div
+            data-tab-id={tab.id}
+            class="group flex h-7 max-w-48 shrink-0 cursor-pointer items-center gap-2 rounded-md pl-2.5 pr-1 text-xs transition-colors duration-fast
+              {isActive ? 'bg-surface-active text-primary' : 'text-muted hover:bg-surface-hover hover:text-primary'}"
+            use:tabPopOutDrag={tab.id}
+            onclick={() => (terminalState.activeTabId = tab.id)}
+            onauxclick={(e) => {
+              if (e.button === 1) {
+                e.preventDefault();
+                void disconnectTab(tab.id);
+              }
+            }}
+            onkeydown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                terminalState.activeTabId = tab.id;
+              }
+            }}
+            role="tab"
+            tabindex="0"
+            aria-selected={isActive}
+            title="{tab.name} · {statusLabel(tab.status)} — drag out to open in a window"
+          >
+            <span class="status-dot status-dot-sm {statusDot(tab.status)}" aria-hidden="true"></span>
+            <span class="min-w-0 truncate font-medium">{tab.name}</span>
+            <button
+              type="button"
+              class="inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-muted transition-colors duration-fast hover:bg-surface-hover hover:text-primary focus-visible:opacity-100
+                {isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}"
+              aria-label="Close {tab.name}"
+              title="Close session"
+              onclick={(e) => {
+                e.stopPropagation();
+                void disconnectTab(tab.id);
+              }}
+            >
+              <X size={14} />
+            </button>
+          </div>
+        {/each}
+
+        {#if awaySessions.length > 0}
+          <span class="mx-1 h-4 w-px shrink-0 bg-border" aria-hidden="true"></span>
+          {#each awaySessions as session (session.sessionId)}
+            <div
+              class="group flex h-7 shrink-0 cursor-grab items-center gap-1.5 rounded-md border border-dashed border-border pl-2 pr-0.5 text-xs text-muted transition-colors duration-fast hover:border-border-hover hover:text-primary"
+              draggable="true"
+              title={session.kind === "popout"
+                ? `${session.name} — in its own window. Click to focus, drag here to dock.`
+                : `${session.name} — running in the background. Click to reattach.`}
+              ondragstart={(event) => handleAwayDragStart(event, session)}
+              ondragend={handleAwayDragEnd}
+              onclick={() => activateAway(session)}
+              ondblclick={() => void handleDropReattach(session)}
+              onkeydown={(e) => {
+                if (e.key === "Enter") activateAway(session);
+              }}
+              role="button"
+              tabindex="0"
+            >
+              {@render awayIcon(session.kind)}
+              <span class="max-w-32 truncate">{session.name}</span>
+              <button
+                type="button"
+                class="btn-icon btn-icon-sm size-5"
+                aria-label={session.kind === "popout" ? `Dock ${session.name}` : `Reattach ${session.name}`}
+                title={session.kind === "popout" ? "Dock to this window" : "Reattach"}
+                onclick={(e) => {
+                  e.stopPropagation();
+                  void handleDropReattach(session);
+                }}
+              >
+                <Link2 size={14} />
+              </button>
+            </div>
+          {/each}
+        {/if}
+      </div>
+
+      <div class="relative shrink-0">
+        <button
+          type="button"
+          class="btn-icon {showLauncher ? 'bg-surface-hover text-primary' : ''}"
+          aria-label="New session"
+          aria-expanded={showLauncher}
+          title="New session"
+          onclick={openLauncher}
+        >
+          <Plus size={14} />
+        </button>
+        {#if showLauncher}
+          <div class="fixed inset-0 z-40" role="presentation" onclick={closeMenus}></div>
+          <div class="popover absolute left-0 top-full mt-1 flex w-72 flex-col gap-1">
+            <div class="search-box h-8">
+              <Search size={14} class="shrink-0" />
+              <input
+                type="text"
+                placeholder="Connect to host…"
+                aria-label="Filter hosts"
+                bind:value={launcherQuery}
+                oninput={() => (launcherIndex = 0)}
+                onkeydown={handleLauncherKeydown}
+                use:focusOnMount
+              />
+            </div>
+            <div class="flex max-h-72 flex-col overflow-y-auto" role="listbox" aria-label="Hosts">
+              {#each launcherResults as conn, i (conn.id)}
                 <button
                   type="button"
-                  class="terminal-quick-chip group"
+                  class="menu-item h-auto flex-col items-start gap-0 py-1.5 {i === launcherIndex ? 'menu-item-active' : ''}"
+                  role="option"
+                  aria-selected={i === launcherIndex}
+                  onmouseenter={() => (launcherIndex = i)}
                   onclick={() => handleConnect(conn)}
                 >
-                  <Play size={10} class="text-accent" fill="currentColor" />
-                  <span>{conn.name}</span>
-                  <span class="text-[10px] font-mono text-muted group-hover:text-secondary">
-                    {conn.user}@{conn.host}
-                  </span>
+                  <span class="w-full truncate text-sm text-primary">{conn.name}</span>
+                  <span class="mono w-full truncate text-muted">{hostLine(conn)}</span>
                 </button>
+              {:else}
+                <p class="px-2 py-3 text-center text-xs text-muted">No matching hosts</p>
               {/each}
             </div>
           </div>
         {/if}
       </div>
-    {/if}
+
+      <div class="min-w-2 flex-1 self-stretch" aria-hidden="true"></div>
+
+      {#if activeTab}
+        <button
+          type="button"
+          class="btn-icon {activeTab.showSearch ? 'bg-surface-hover text-primary' : ''}"
+          aria-label="Find in terminal"
+          aria-pressed={activeTab.showSearch}
+          title="Find (Ctrl+F)"
+          onclick={() => toggleTerminalSearch(activeTab.id)}
+        >
+          <Search size={14} />
+        </button>
+
+        <div class="flex h-7 shrink-0 items-center rounded-md border border-border" role="group" aria-label="Font size">
+          <button
+            type="button"
+            class="btn-icon btn-icon-sm"
+            aria-label="Decrease font size"
+            title="Smaller text (Ctrl −)"
+            onclick={() => zoomTerminal(-1)}
+          >
+            <Minus size={14} />
+          </button>
+          <span class="w-6 text-center text-xs tabular-nums text-secondary" title="Font size">{getTerminalFontSize()}</span>
+          <button
+            type="button"
+            class="btn-icon btn-icon-sm"
+            aria-label="Increase font size"
+            title="Larger text (Ctrl +)"
+            onclick={() => zoomTerminal(1)}
+          >
+            <Plus size={14} />
+          </button>
+        </div>
+      {/if}
+
+      {#if terminalState.externalSessionCount > 0}
+        <button
+          type="button"
+          class="btn btn-ghost btn-sm"
+          title="Manage background and pop-out sessions"
+          onclick={onManageSessions}
+        >
+          <Layers size={14} />
+          {terminalState.externalSessionCount} away
+        </button>
+      {/if}
+
+      <div class="relative shrink-0">
+        <button
+          type="button"
+          class="btn-icon {showMoreMenu ? 'bg-surface-hover text-primary' : ''}"
+          aria-label="More session actions"
+          aria-haspopup="menu"
+          aria-expanded={showMoreMenu}
+          title="More"
+          onclick={() => {
+            showLauncher = false;
+            showMoreMenu = !showMoreMenu;
+          }}
+        >
+          <MoreHorizontal size={14} />
+        </button>
+        {#if showMoreMenu}
+          <div class="fixed inset-0 z-40" role="presentation" onclick={closeMenus}></div>
+          <div class="popover absolute right-0 top-full mt-1 w-56" role="menu">
+            {#if activeTab}
+              <button
+                type="button"
+                class="menu-item"
+                role="menuitem"
+                onclick={() => runMenuAction(() => popOutTab(activeTab.id))}
+              >
+                <AppWindow size={14} />
+                Open in new window
+              </button>
+              <button
+                type="button"
+                class="menu-item"
+                role="menuitem"
+                onclick={() => runMenuAction(() => detachTab(activeTab.id))}
+              >
+                <Unlink size={14} />
+                Run in background
+              </button>
+              <div class="menu-separator"></div>
+              <button
+                type="button"
+                class="menu-item"
+                role="menuitem"
+                disabled={!activeTab.ready}
+                onclick={() =>
+                  runMenuAction(() => {
+                    if (activeTab.term) downloadTerminalScrollback(activeTab.term, activeTab.name);
+                  })}
+              >
+                <Download size={14} />
+                Export scrollback
+              </button>
+              <button
+                type="button"
+                class="menu-item"
+                role="menuitem"
+                disabled={!activeTab.ready}
+                onclick={() => runMenuAction(() => activeTab.term?.clear())}
+              >
+                <Eraser size={14} />
+                Clear screen
+              </button>
+              <div class="menu-separator"></div>
+            {/if}
+            <button
+              type="button"
+              class="menu-item"
+              role="menuitem"
+              onclick={() => runMenuAction(onManageSessions)}
+            >
+              <Layers size={14} />
+              Manage sessions…
+            </button>
+            {#if terminalState.totalSessionCount > 0}
+              <button
+                type="button"
+                class="menu-item menu-item-danger"
+                role="menuitem"
+                onclick={() => runMenuAction(onCloseAll)}
+              >
+                <OctagonX size={14} />
+                Close all sessions
+              </button>
+            {/if}
+          </div>
+        {/if}
+      </div>
+    </div>
+
+    <!-- Terminal surfaces; inactive tabs stay mounted with display:none. -->
+    <div class="relative min-h-0 flex-1 overflow-hidden bg-surface-terminal">
+      {#each terminalState.tabs as tab (tab.id)}
+        <div
+          class="absolute inset-0 box-border overflow-hidden p-2"
+          class:hidden={terminalState.activeTabId !== tab.id}
+          role="tabpanel"
+          aria-label={tab.name}
+        >
+          {#if tab.showSearch}
+            <div class="popover absolute right-4 top-2 z-10 flex items-center gap-0.5">
+              <Search size={14} class="ml-1.5 shrink-0 text-muted" />
+              <input
+                type="text"
+                placeholder="Find in scrollback"
+                aria-label="Find in scrollback"
+                class="h-7 w-52 min-w-0 bg-transparent px-1.5 text-sm text-primary outline-none placeholder:text-muted"
+                bind:value={tabSearchQueries[tab.id]}
+                use:focusOnMount
+                oninput={() => runSearch(tab)}
+                onkeydown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    runSearch(tab, e.shiftKey);
+                  } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    closeSearch(tab);
+                  }
+                }}
+              />
+              <button
+                type="button"
+                class="btn-icon btn-icon-sm"
+                aria-label="Previous match"
+                title="Previous match (Shift+Enter)"
+                onclick={() => runSearch(tab, true)}
+              >
+                <ChevronUp size={14} />
+              </button>
+              <button
+                type="button"
+                class="btn-icon btn-icon-sm"
+                aria-label="Next match"
+                title="Next match (Enter)"
+                onclick={() => runSearch(tab)}
+              >
+                <ChevronDown size={14} />
+              </button>
+              <span class="mx-0.5 h-4 w-px bg-border" aria-hidden="true"></span>
+              <button
+                type="button"
+                class="btn-icon btn-icon-sm"
+                aria-label="Close search"
+                title="Close (Esc)"
+                onclick={() => closeSearch(tab)}
+              >
+                <X size={14} />
+              </button>
+            </div>
+          {/if}
+
+          <div id="terminal-{tab.id}" class="h-full w-full"></div>
+        </div>
+      {/each}
+    </div>
   </div>
-</div>
+{:else}
+  <header class="view-header">
+    <div class="flex min-w-0 items-baseline gap-2.5">
+      <h1 class="view-title">Terminals</h1>
+      <span class="text-sm tabular-nums text-muted">
+        {awaySessions.length > 0 ? `${awaySessions.length} away` : "No open sessions"}
+      </span>
+    </div>
+    {#if awaySessions.length > 0}
+      <div class="view-actions">
+        <button type="button" class="btn btn-ghost" onclick={onManageSessions}>
+          <Layers size={14} />
+          Manage sessions
+        </button>
+      </div>
+    {/if}
+  </header>
+
+  <div class="view-body flex flex-col" use:tabBarReattachDrop={handleDropReattach}>
+    <div class="empty-state my-auto">
+      {#if awaySessions.length > 0}
+        <div class="empty-state-icon"><Layers size={16} /></div>
+        <p class="empty-state-title">
+          {awaySessions.length === 1 ? "1 session is" : `${awaySessions.length} sessions are`} running elsewhere
+        </p>
+        <p class="empty-state-desc">Reattach a session to bring it back into this window, or drag it here.</p>
+
+        <div class="panel mt-5 w-full max-w-md overflow-hidden text-left" role="list">
+          {#each awaySessions as session, i (session.sessionId)}
+            <div
+              class="flex h-11 items-center gap-3 px-3 {i > 0 ? 'border-t border-border-subtle' : ''}"
+              draggable="true"
+              role="listitem"
+              ondragstart={(event) => handleAwayDragStart(event, session)}
+              ondragend={handleAwayDragEnd}
+            >
+              <span class="text-muted">{@render awayIcon(session.kind)}</span>
+              <div class="flex min-w-0 flex-1 flex-col">
+                <span class="truncate text-sm text-primary">{session.name}</span>
+                <span class="text-xs text-muted">
+                  {session.kind === "popout" ? "In its own window" : "Running in the background"}
+                </span>
+              </div>
+              {#if session.kind === "popout"}
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm"
+                  onclick={() => void focusPopoutSession(session.sessionId)}
+                >
+                  Focus
+                </button>
+              {/if}
+              <button
+                type="button"
+                class="btn btn-secondary btn-sm"
+                onclick={() => void handleDropReattach(session)}
+              >
+                <Link2 size={14} />
+                {session.kind === "popout" ? "Dock" : "Reattach"}
+              </button>
+            </div>
+          {/each}
+        </div>
+        {#if recentHosts.length > 0}{@render recentHostList()}{/if}
+      {:else}
+        <div class="empty-state-icon"><TerminalSquare size={16} /></div>
+        <p class="empty-state-title">No open sessions</p>
+        <p class="empty-state-desc">
+          {recentHosts.length > 0
+            ? "Pick a host to open an SSH session."
+            : "Add a host in Hosts, then connect to it here."}
+        </p>
+
+        {#if recentHosts.length > 0}{@render recentHostList()}{/if}
+      {/if}
+    </div>
+  </div>
+{/if}
 
 <style>
-  .terminal-command-deck {
-    position: relative;
-    z-index: 30;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 8px;
-    padding: 4px 8px;
-    overflow: visible;
-    border-bottom: 1px solid var(--color-border);
-    background: var(--color-surface);
-  }
-
-  .terminal-tab-row {
-    display: flex;
-    min-width: 0;
-    align-items: stretch;
-    gap: 6px;
-    overflow: visible;
-  }
-
-  .terminal-tab-strip {
-    display: flex;
-    min-width: 0;
-    flex: 1;
-    align-items: stretch;
-    gap: 4px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding-bottom: 1px;
-  }
-
-  .terminal-tab {
-    position: relative;
-    display: inline-grid;
-    grid-template-columns: 2px auto minmax(50px, 140px) auto auto;
-    align-items: center;
-    gap: 6px;
-    min-height: 28px;
-    max-width: 240px;
-    flex: 0 0 auto;
-    padding: 0 4px 0 0;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    color: var(--color-secondary);
-    background: var(--color-surface-input);
-    cursor: pointer;
-    transition: background-color var(--transition-duration-fast), border-color var(--transition-duration-fast),
-      color var(--transition-duration-fast);
-  }
-
-  .terminal-tab:hover,
-  .terminal-tab:focus-visible,
-  .terminal-tab:focus-within {
-    color: var(--color-primary);
-    border-color: var(--color-border-hover);
-    background: var(--color-surface-hover);
-  }
-
-  .terminal-tab-active {
-    color: var(--color-primary);
-    border-color: var(--color-border-hover);
-    background: var(--color-surface-terminal);
-  }
-
-  .terminal-tab-label {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 11px;
-    font-weight: 600;
-    line-height: 1;
-  }
-
-  .terminal-live-rail {
-    align-self: stretch;
-    width: 2px;
-    border-radius: var(--radius-xs) 0 0 var(--radius-xs);
-    background: var(--color-success);
-  }
-
-  .terminal-tab-secondary-actions {
-    display: inline-flex;
-    align-items: center;
-    gap: 2px;
-    opacity: 0;
-    transition: opacity var(--transition-duration-fast);
-  }
-
-  .terminal-tab:hover .terminal-tab-secondary-actions,
-  .terminal-tab:focus-within .terminal-tab-secondary-actions {
-    opacity: 0.8;
-  }
-
-  .terminal-tab-action,
-  .terminal-tab-close,
-  .terminal-overlay-button,
-  .terminal-stepper-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border: 0;
-    background: transparent;
-    color: var(--color-muted);
-    cursor: pointer;
-    transition: background-color var(--transition-duration-fast), color var(--transition-duration-fast);
-  }
-
-  .terminal-tab-action,
-  .terminal-tab-close {
-    width: 20px;
-    height: 20px;
-    border-radius: var(--radius-xs);
-  }
-
-  .terminal-tab-close {
-    opacity: 0;
-    transition: opacity var(--transition-duration-fast);
-  }
-
-  .terminal-tab:hover .terminal-tab-close,
-  .terminal-tab:focus-within .terminal-tab-close {
-    opacity: 0.8;
-  }
-
-  .terminal-tab-action:hover,
-  .terminal-tab-action:focus-visible,
-  .terminal-overlay-button:hover,
-  .terminal-overlay-button:focus-visible,
-  .terminal-stepper-button:hover,
-  .terminal-stepper-button:focus-visible {
-    color: var(--color-primary);
-    background: var(--color-surface-hover);
-  }
-
-  .terminal-tab-close:hover,
-  .terminal-tab-close:focus-visible,
-  .terminal-overlay-button-danger:hover,
-  .terminal-overlay-button-danger:focus-visible {
-    color: var(--color-error);
-    background: color-mix(in srgb, var(--color-error) 16%, transparent);
-  }
-
-  .terminal-away-chip,
-  .terminal-reattach-chip,
-  .terminal-quick-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    background: var(--color-surface-input);
-    color: var(--color-secondary);
-    font-size: 11px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: background-color var(--transition-duration-fast), border-color var(--transition-duration-fast),
-      color var(--transition-duration-fast);
-  }
-
-  .terminal-away-chip {
-    max-width: 170px;
-    min-height: 28px;
-    padding: 0 8px;
-    cursor: grab;
-  }
-
-  .terminal-reattach-chip,
-  .terminal-quick-chip {
-    padding: 6px 10px;
-  }
-
-  .terminal-away-chip:hover,
-  .terminal-reattach-chip:hover,
-  .terminal-quick-chip:hover {
-    border-color: var(--color-border-hover);
-    background: var(--color-surface-hover);
-    color: var(--color-primary);
-  }
-
-  .terminal-new-session {
-    position: relative;
-    z-index: 50;
-    flex: 0 0 auto;
-  }
-
-  .terminal-tool-row {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 3px;
-    min-width: max-content;
-  }
-
-  .terminal-control,
-  .terminal-icon-control,
-  .terminal-stepper {
-    min-height: 28px;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    background: var(--color-surface-input);
-    color: var(--color-secondary);
-  }
-
-  .terminal-control,
-  .terminal-icon-control {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    padding: 0 8px;
-    font-size: 11px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: background-color var(--transition-duration-fast), border-color var(--transition-duration-fast),
-      color var(--transition-duration-fast);
-  }
-
-  .terminal-icon-control {
-    width: 28px;
-    padding: 0;
-  }
-
-  .terminal-control:hover,
-  .terminal-control:focus-visible,
-  .terminal-icon-control:hover,
-  .terminal-icon-control:focus-visible {
-    border-color: var(--color-border-hover);
-    background: var(--color-surface-hover);
-    color: var(--color-primary);
-  }
-
-  .terminal-control-primary,
-  .terminal-control-accent {
-    border-color: var(--color-border-hover);
-    color: var(--color-primary);
-  }
-
-  .terminal-control-danger {
-    border-color: color-mix(in srgb, var(--color-error) 24%, var(--color-border));
-    color: var(--color-error);
-  }
-
-  .terminal-control-danger:hover,
-  .terminal-control-danger:focus-visible {
-    background: color-mix(in srgb, var(--color-error) 12%, var(--color-surface));
-    color: var(--color-error);
-  }
-
-  .terminal-stepper {
-    display: inline-flex;
-    align-items: center;
-    padding: 1px;
-  }
-
-  .terminal-stepper-button {
-    width: 22px;
-    height: 22px;
-    border-radius: var(--radius-xs);
-  }
-
-  .terminal-launcher-popover {
-    position: absolute;
-    right: 0;
-    top: calc(100% + 4px);
-    z-index: 60;
-    display: flex;
-    width: min(300px, calc(100vw - 24px));
-    max-height: min(340px, calc(100vh - 96px));
-    flex-direction: column;
-    gap: 6px;
-    overflow: hidden;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    background: var(--color-surface-raised);
-    padding: 6px;
-    box-shadow: var(--shadow-lg);
-    animation: popover-enter var(--transition-duration-base) var(--ease-out) forwards;
-  }
-
-  .terminal-launcher-search {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    background: var(--color-surface-input);
-    padding: 5px 8px;
-    font-size: 11px;
-  }
-
-  .terminal-launcher-input,
-  .terminal-search-input {
-    width: 100%;
-    min-width: 0;
-    border: 0;
-    outline: 0;
-    background: transparent;
-    color: var(--color-primary);
-    font-family: var(--font-mono);
-    font-size: 11px;
-  }
-
-  .terminal-launcher-input::placeholder,
-  .terminal-search-input::placeholder {
-    color: var(--color-muted);
-  }
-
-  .terminal-launcher-list {
-    display: flex;
-    max-height: 240px;
-    flex-direction: column;
-    gap: 1px;
-    overflow-y: auto;
-    padding-right: 2px;
-  }
-
-  .terminal-launcher-option {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    border: 1px solid transparent;
-    border-radius: var(--radius-sm);
-    background: transparent;
-    padding: 6px 8px;
-    text-align: left;
-    cursor: pointer;
-    transition: background-color var(--transition-duration-fast), border-color var(--transition-duration-fast);
-  }
-
-  .terminal-launcher-option:hover,
-  .terminal-launcher-option:focus-visible {
-    background: var(--color-surface-hover);
-  }
-
-  .terminal-search-overlay {
-    position: absolute;
-    top: 10px;
-    right: 16px;
-    z-index: 40;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    background: var(--color-surface-raised);
-    padding: 4px 6px;
-    box-shadow: var(--shadow-lg);
-    animation: popover-enter var(--transition-duration-base) var(--ease-out) forwards;
-  }
-
-  .terminal-search-input {
-    width: 200px;
-  }
-
-  .terminal-overlay-button {
-    width: 24px;
-    height: 24px;
-    border-radius: var(--radius-xs);
-  }
-
-  .terminal-empty-icon {
-    display: flex;
-    width: 48px;
-    height: 48px;
-    align-items: center;
-    justify-content: center;
-    margin-bottom: 14px;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    background: var(--color-surface-input);
-    color: var(--color-muted);
-  }
-
+  /* Drop target highlight while dragging a pop-out/background session. */
   :global(.tab-bar-drop-active) {
-    background: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface)) !important;
-    box-shadow: inset 0 -2px 0 var(--color-accent) !important;
+    background: color-mix(in srgb, var(--color-accent) 6%, var(--color-surface)) !important;
+    outline: 1px dashed color-mix(in srgb, var(--color-accent) 60%, transparent);
+    outline-offset: -3px;
+  }
+  /* Tab being dragged far enough to pop out on release. */
+  :global(.tab-dragging-out) {
+    opacity: 0.55;
+    outline: 1px dashed var(--color-accent);
+    outline-offset: -1px;
   }
   :global(.away-chip-dragging) {
     opacity: 0.5;

@@ -1,16 +1,17 @@
 <script lang="ts">
   import { getCurrentWindow } from "@tauri-apps/api/window";
-  import { Link2, Minus, Server, Square, X } from "lucide-svelte";
-  import { refreshWindowState } from "$lib/stores/window.svelte";
+  import { Link2 } from "lucide-svelte";
 
   interface Props {
     title: string;
     dockHintActive?: boolean;
+    /** Session state shown as a dot before the title. */
+    status?: "connected" | "exited";
     onClose?: () => void | Promise<void>;
     onDock?: () => void | Promise<void>;
   }
 
-  let { title, dockHintActive = false, onClose, onDock }: Props = $props();
+  let { title, dockHintActive = false, status = "connected", onClose, onDock }: Props = $props();
 
   const appWindow = getCurrentWindow();
 
@@ -24,12 +25,7 @@
 
   async function handleWindowMaximize() {
     try {
-      if (await appWindow.isMaximized()) {
-        await appWindow.unmaximize();
-      } else {
-        await appWindow.maximize();
-      }
-      await refreshWindowState();
+      await appWindow.toggleMaximize();
     } catch (e) {
       console.error(e);
     }
@@ -49,167 +45,89 @@
 </script>
 
 <header
-  class="terminal-window-bar {dockHintActive ? 'terminal-window-bar-dock' : ''}"
+  class="flex h-9 shrink-0 select-none items-center gap-3 border-b border-border pl-3 transition-colors duration-fast
+    {dockHintActive ? 'bg-surface-hover' : 'bg-chrome'}"
+  data-tauri-drag-region
 >
-  <div class="terminal-window-title" data-tauri-drag-region>
-    <span class="terminal-window-mark">
-      <Server size={13} />
-    </span>
-    <span class="terminal-window-name">{title}</span>
+  <div class="flex min-w-0 flex-1 items-center gap-2" data-tauri-drag-region>
+    <span
+      class="status-dot status-dot-sm {status === 'connected' ? 'status-dot-success' : 'status-dot-offline'}"
+      title={status === "connected" ? "Connected" : "Disconnected"}
+      aria-hidden="true"
+    ></span>
+    <span class="truncate text-sm font-medium text-primary" data-tauri-drag-region>{title}</span>
     {#if dockHintActive}
-      <span class="terminal-dock-hint">Drop onto main window to dock</span>
+      <span class="shrink-0 text-xs text-accent">Drop onto the main window to dock</span>
     {/if}
   </div>
 
-  <div class="terminal-window-actions">
+  <div class="flex h-full shrink-0 items-center">
     {#if onDock}
       <button
-        class="terminal-window-dock"
+        type="button"
+        class="btn btn-ghost btn-sm mr-1"
+        title="Move this session back into the main window"
         onclick={() => onDock?.()}
-        title="Dock back to main window"
       >
-        <Link2 size={13} />
-        <span>Dock</span>
+        <Link2 size={14} />
+        Dock
       </button>
     {/if}
-    <button
-      class="terminal-window-button"
-      onclick={handleWindowMinimize}
-      title="Minimize"
-    >
-      <Minus size={13} />
-    </button>
-    <button
-      class="terminal-window-button"
-      onclick={handleWindowMaximize}
-      title="Maximize/Restore"
-    >
-      <Square size={11} />
-    </button>
-    <button
-      class="terminal-window-button terminal-window-button-close"
-      onclick={handleWindowClose}
-      title="Close"
-    >
-      <X size={14} />
-    </button>
+    <div class="flex h-full items-stretch">
+      <button
+        type="button"
+        class="window-btn"
+        onclick={handleWindowMinimize}
+        title="Minimize"
+        aria-label="Minimize"
+      >
+        <svg viewBox="0 0 10 10" class="size-2.5" fill="none" stroke="currentColor" stroke-width="1.2">
+          <path d="M1 5.5h8" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        class="window-btn"
+        onclick={handleWindowMaximize}
+        title="Maximize"
+        aria-label="Maximize or restore"
+      >
+        <svg viewBox="0 0 10 10" class="size-2.5" fill="none" stroke="currentColor" stroke-width="1.2">
+          <rect x="1.5" y="1.5" width="7" height="7" rx="1" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        class="window-btn window-btn-close"
+        onclick={handleWindowClose}
+        title="Close session"
+        aria-label="Close session"
+      >
+        <svg viewBox="0 0 10 10" class="size-2.5" fill="none" stroke="currentColor" stroke-width="1.2">
+          <path d="M1.5 1.5l7 7M8.5 1.5l-7 7" />
+        </svg>
+      </button>
+    </div>
   </div>
 </header>
 
 <style>
-  .terminal-window-bar {
-    display: flex;
-    height: 34px;
-    flex-shrink: 0;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    overflow: hidden;
-    border-bottom: 1px solid var(--color-border);
-    background: var(--color-surface);
-    color: var(--color-secondary);
-    user-select: none;
-    transition: background-color var(--transition-duration-fast), border-color var(--transition-duration-fast);
-  }
-
-  .terminal-window-bar-dock {
-    border-bottom-color: var(--color-border-hover);
-    background: var(--color-surface-hover);
-  }
-
-  .terminal-window-title {
-    display: flex;
-    min-width: 0;
-    flex: 1;
-    align-items: center;
-    gap: 8px;
-    height: 100%;
-    padding-left: 10px;
-    color: var(--color-primary);
-  }
-
-  .terminal-window-mark {
+  /* Mirrors the main window's TitleBar controls. */
+  .window-btn {
     display: inline-flex;
-    width: 20px;
-    height: 20px;
+    width: 44px;
     align-items: center;
     justify-content: center;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-xs);
-    background: var(--color-surface-input);
-    color: var(--color-muted);
-  }
-
-  .terminal-window-name {
-    overflow: hidden;
-    color: var(--color-primary);
-    font-size: 11px;
-    font-weight: 800;
-    line-height: 1;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .terminal-dock-hint {
-    flex: 0 0 auto;
-    color: var(--color-accent);
-    font-size: 11px;
-    font-weight: 700;
-    white-space: nowrap;
-  }
-
-  .terminal-window-actions {
-    display: flex;
-    flex: 0 0 auto;
-    align-items: center;
-    gap: 2px;
-    height: 100%;
-    padding-right: 4px;
-  }
-
-  .terminal-window-dock,
-  .terminal-window-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border: 1px solid transparent;
-    border-radius: var(--radius-xs);
-    background: transparent;
     color: var(--color-muted);
     cursor: pointer;
-    transition: background-color var(--transition-duration-fast), border-color var(--transition-duration-fast),
-      color var(--transition-duration-fast);
+    transition: background-color 100ms, color 100ms;
   }
-
-  .terminal-window-dock {
-    gap: 6px;
-    height: 26px;
-    margin-right: 4px;
-    padding: 0 9px;
-    border-color: color-mix(in srgb, var(--color-accent) 38%, var(--color-border));
-    color: var(--color-accent);
-    font-size: 11px;
-    font-weight: 800;
-  }
-
-  .terminal-window-button {
-    width: 38px;
-    height: 28px;
-  }
-
-  .terminal-window-dock:hover,
-  .terminal-window-dock:focus-visible,
-  .terminal-window-button:hover,
-  .terminal-window-button:focus-visible {
-    border-color: var(--color-border-hover);
+  .window-btn:hover {
     background: var(--color-surface-hover);
     color: var(--color-primary);
   }
-
-  .terminal-window-button-close:hover,
-  .terminal-window-button-close:focus-visible {
-    border-color: color-mix(in srgb, var(--color-error) 34%, var(--color-border));
-    background: color-mix(in srgb, var(--color-error) 16%, var(--color-surface));
-    color: var(--color-error);
+  .window-btn-close:hover {
+    background: var(--color-error);
+    color: white;
   }
 </style>

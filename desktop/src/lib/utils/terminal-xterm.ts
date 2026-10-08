@@ -10,7 +10,6 @@ import {
   type IClipboardProvider,
 } from "@xterm/addon-clipboard";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { CanvasAddon } from "@xterm/addon-canvas";
 import { ImageAddon } from "@xterm/addon-image";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 
@@ -26,6 +25,48 @@ function writePty(sessionId: string, data: string): void {
 export function attachXtermIo(sessionId: string, term: Terminal): void {
   term.onData((data) => writePty(sessionId, data));
   term.onBinary((data) => writePty(sessionId, data));
+}
+
+/** Tell the backend PTY the terminal's current size. */
+export function syncPtySize(sessionId: string, term: Terminal): void {
+  if (term.cols <= 0 || term.rows <= 0) return;
+  invoke("resize_pty", { sessionId, cols: term.cols, rows: term.rows }).catch(() => {});
+}
+
+/**
+ * Forward real grid changes to the PTY. `FitAddon.fit()` only resizes when
+ * the proposed cols/rows differ, so the remote side gets a SIGWINCH (and a
+ * full-screen redraw) only when the grid actually changed.
+ */
+export function attachXtermPtyResize(sessionId: string, term: Terminal): void {
+  term.onResize(() => syncPtySize(sessionId, term));
+}
+
+let fontWait: Promise<void> | null = null;
+
+/**
+ * Resolve once the terminal font is loaded (or after a short timeout), so
+ * xterm measures its cell size with the real font on `term.open`. If the font
+ * only arrives after the timeout, `onLateLoad` lets callers re-measure.
+ */
+export function waitForTerminalFont(fontFamily: string, onLateLoad?: () => void): Promise<void> {
+  if (fontWait) return fontWait;
+  if (typeof document === "undefined" || !document.fonts) return Promise.resolve();
+  let timedOut = false;
+  const load = document.fonts
+    .load(`13px ${fontFamily}`)
+    .then(() => {
+      if (timedOut) onLateLoad?.();
+    })
+    .catch(() => {});
+  const timeout = new Promise<void>((resolve) =>
+    setTimeout(() => {
+      timedOut = true;
+      resolve();
+    }, 1200),
+  );
+  fontWait = Promise.race([load, timeout]);
+  return fontWait;
 }
 
 /**
@@ -53,7 +94,6 @@ export interface LoadedAddons {
   unicode11Addon: Unicode11Addon;
   imageAddon: ImageAddon;
   webglAddon?: WebglAddon;
-  canvasAddon?: CanvasAddon;
 }
 
 /**
@@ -94,7 +134,8 @@ export function attachXtermAddons(term: Terminal): LoadedAddons {
   const searchAddon = new SearchAddon();
   const clipboardAddon = new ClipboardAddon(undefined, new WriteOnlyClipboardProvider());
   const unicode11Addon = new Unicode11Addon();
-  const imageAddon = new ImageAddon();
+  // Cap decoded image memory per terminal (default is 128 MB).
+  const imageAddon = new ImageAddon({ storageLimit: 16 });
 
   term.loadAddon(webLinksAddon);
   term.loadAddon(searchAddon);
@@ -108,34 +149,24 @@ export function attachXtermAddons(term: Terminal): LoadedAddons {
     // Non-fatal if Unicode version 11 provider is already active.
   }
 
+  // WebGL renderer when available; xterm's built-in DOM renderer is the
+  // fallback (the canvas addon is not compatible with xterm 6).
   let webglAddon: WebglAddon | undefined;
-  let canvasAddon: CanvasAddon | undefined;
-
-  const installCanvasFallback = () => {
-    if (canvasAddon) return;
-    try {
-      canvasAddon = new CanvasAddon();
-      term.loadAddon(canvasAddon);
-    } catch {
-      // Fall back to standard DOM renderer if Canvas/WebGL unavailable.
-    }
-  };
-
   try {
-    webglAddon = new WebglAddon();
-    webglAddon.onContextLoss(() => {
-      // A lost WebGL context would otherwise leave a permanently blank
-      // terminal — dispose it and switch to the canvas renderer.
-      webglAddon?.dispose();
-      webglAddon = undefined;
-      installCanvasFallback();
+    const addon = new WebglAddon();
+    addon.onContextLoss(() => {
+      // A lost context would leave a blank terminal; disposing the addon
+      // hands rendering back to the DOM renderer.
+      addon.dispose();
+      if (webglAddon === addon) webglAddon = undefined;
     });
-    term.loadAddon(webglAddon);
+    term.loadAddon(addon);
+    webglAddon = addon;
   } catch {
-    installCanvasFallback();
+    // WebGL unavailable — stay on the DOM renderer.
   }
 
-  return { searchAddon, webLinksAddon, clipboardAddon, unicode11Addon, imageAddon, webglAddon, canvasAddon };
+  return { searchAddon, webLinksAddon, clipboardAddon, unicode11Addon, imageAddon, webglAddon };
 }
 
 /** Export terminal scrollback buffer as a plain text string. */
