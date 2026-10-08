@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { Terminal, Upload, ArrowRight, Lock, KeyRound } from "lucide-svelte";
+  import { ArrowLeft, Check, FolderOpen, X } from "lucide-svelte";
   import ModalShell from "$lib/components/ui/ModalShell.svelte";
   import type { OnboardingPayload } from "$lib/types";
   import { invoke } from "@tauri-apps/api/core";
   import { notify } from "$lib/stores/notifications.svelte";
+  import { applyTheme, normalizeTheme, type AppTheme } from "$lib/utils/theme";
 
   interface Props {
     defaultUser: string;
@@ -15,8 +16,18 @@
 
   let { defaultUser, defaultSshConfigPath, configRoot, onBrowseSshConfig, onComplete }: Props = $props();
 
+  const STEPS = ["Welcome", "Profile", "OpenSSH import", "Appearance", "Done"] as const;
+  const LAST = STEPS.length - 1;
+
+  const THEMES: { id: AppTheme; label: string; desc: string }[] = [
+    { id: "zinc", label: "Graphite", desc: "Neutral gray, blue accent" },
+    { id: "slate", label: "Slate", desc: "Cool blue-gray, sky accent" },
+    { id: "cyberpunk", label: "Midnight", desc: "Deep navy, cyan accent" },
+    { id: "oled", label: "OLED", desc: "True black, white accent" },
+  ];
+
+  let step = $state(0);
   let busy = $state(false);
-  let showAdvanced = $state(false);
 
   // Form fields
   let default_user = $state("");
@@ -24,6 +35,11 @@
   let ssh_config_path = $state("");
   let profileName = $state("default");
   let import_ssh_config = $state(true);
+  let auto_start_agent = $state(false);
+  let fuzzy_search = $state(false);
+  let theme = $state<AppTheme>(
+    normalizeTheme(typeof document !== "undefined" ? (document.documentElement.dataset.theme ?? "zinc") : "zinc"),
+  );
 
   // Backup restore state
   let selectedBackupPath = $state("");
@@ -39,19 +55,41 @@
     }
   });
 
-  async function handleQuickStart() {
+  const portInvalid = $derived(!Number.isInteger(default_port) || default_port < 1 || default_port > 65535);
+  const profileTrimmed = $derived(profileName.trim() || "default");
+
+  function next() {
+    if (step === 1 && portInvalid) return;
+    if (step < LAST) step += 1;
+  }
+
+  function back() {
+    if (step > 0) step -= 1;
+  }
+
+  function pickTheme(id: AppTheme) {
+    theme = id;
+    applyTheme(id); // live preview; persisted by complete_onboarding
+  }
+
+  async function browseConfig() {
+    const picked = await onBrowseSshConfig();
+    if (picked) ssh_config_path = picked;
+  }
+
+  async function finish() {
     busy = true;
     try {
       await onComplete({
-        profile_name: profileName.trim() || "default",
-        create_profile: profileName.trim() !== "default" && profileName.trim().length > 0,
+        profile_name: profileTrimmed,
+        create_profile: profileTrimmed !== "default",
         default_user: default_user.trim() || defaultUser || "root",
-        default_port: default_port || 22,
+        default_port: portInvalid ? 22 : default_port,
         ssh_config_path: ssh_config_path.trim() || null,
-        theme: "zinc",
-        auto_start_agent: false,
+        theme,
+        auto_start_agent,
         import_ssh_config,
-        fuzzy_search: false,
+        fuzzy_search,
       });
     } finally {
       busy = false;
@@ -85,7 +123,7 @@
         default_user: default_user || defaultUser || "root",
         default_port: 22,
         ssh_config_path: null,
-        theme: "zinc",
+        theme,
         auto_start_agent: false,
         import_ssh_config: false,
         fuzzy_search: false,
@@ -104,7 +142,8 @@
     }
   }
 
-  async function submitPassphrase() {
+  async function submitPassphrase(e?: SubmitEvent) {
+    e?.preventDefault();
     // Send the passphrase verbatim: export (Settings → Profiles) does not
     // trim, so trimming here would make backups with edge whitespace unrestorable.
     if (!restorePassphrase || !selectedBackupPath) return;
@@ -117,193 +156,287 @@
       profile_name: "default",
       create_profile: false,
       default_user: default_user.trim() || defaultUser || "root",
-      default_port: default_port || 22,
+      default_port: portInvalid ? 22 : default_port,
       ssh_config_path: null,
-      theme: "zinc",
+      theme,
       auto_start_agent: false,
       import_ssh_config: false,
       fuzzy_search: false,
     });
   }
+
+  function handleSubmit(e: SubmitEvent) {
+    e.preventDefault();
+    if (busy) return;
+    if (step === LAST) void finish();
+    else next();
+  }
+
+  // Move focus to the first field of each step (or the primary button).
+  function focusStep(node: HTMLElement) {
+    requestAnimationFrame(() => {
+      const target =
+        node.querySelector<HTMLElement>("[data-autofocus]") ??
+        node.querySelector<HTMLElement>("input:not([type=checkbox])") ??
+        document.getElementById("ob-primary");
+      target?.focus({ preventScroll: true });
+    });
+  }
 </script>
 
-<ModalShell
-  open={true}
-  title="Bayesian SSH - Setup"
-  onClose={handleSkip}
-  closeOnEscape={false}
-  closeOnBackdrop={false}
-  width="full"
-  overlayStyle="top: var(--titlebar-h, 36px)"
-  panelClass="items-center overflow-y-auto select-none"
+<div
+  class="fixed inset-x-0 bottom-0 top-[var(--titlebar-h,36px)] z-[90] flex overflow-y-auto bg-surface"
+  role="main"
+  aria-label="First-run setup"
 >
-  <button
-    type="button"
-    class="absolute top-4 right-5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-transparent border border-border text-muted hover:text-primary hover:bg-white/5 transition-colors cursor-pointer text-xs font-medium"
-    onclick={handleSkip}
-    title="Skip setup and get started with defaults"
-  >
+  <button type="button" class="btn btn-ghost btn-sm absolute right-4 top-3" onclick={handleSkip} disabled={busy}>
     Skip setup
-    <ArrowRight size={13} />
   </button>
 
-  <div class="w-full max-w-[480px] flex flex-col gap-6 my-auto p-6">
-    
-    <!-- Header -->
-    <div class="flex flex-col items-center text-center gap-2">
-      <div class="w-12 h-12 rounded-2xl bg-white/[0.05] border border-white/10 flex items-center justify-center mb-1 text-primary shadow-inner">
-        <Terminal size={24} />
+  <!-- Anchored near the top (not centered) so the stepper doesn't jump as step heights change. -->
+  <div class="mx-auto mb-10 mt-[14vh] flex h-fit w-full max-w-[520px] flex-col gap-5 px-6">
+    <!-- Stepper -->
+    <ol class="m-0 grid list-none grid-cols-5 gap-2 p-0" aria-label="Setup progress">
+      {#each STEPS as label, i (label)}
+        <li class="flex min-w-0 flex-col gap-1.5" aria-current={i === step ? "step" : undefined}>
+          <span class="h-0.5 rounded-full {i <= step ? 'bg-accent' : 'bg-surface-active'}"></span>
+          <span class="truncate text-xs {i === step ? 'text-primary' : i < step ? 'text-secondary' : 'text-muted'}">
+            {label}
+          </span>
+        </li>
+      {/each}
+    </ol>
+
+    <form class="flex flex-col rounded-xl border border-border bg-panel" novalidate onsubmit={handleSubmit}>
+      {#key step}
+        <div class="flex flex-col gap-5 p-6" use:focusStep>
+          {#if step === 0}
+            <div class="flex flex-col gap-3">
+              <svg viewBox="0 0 20 20" class="size-10" aria-hidden="true">
+                <rect width="20" height="20" rx="5" fill="var(--color-accent)" />
+                <path d="M5.5 7l3 3-3 3" fill="none" stroke="var(--color-on-accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M10.5 13.25h4" stroke="var(--color-on-accent)" stroke-width="1.6" stroke-linecap="round" />
+              </svg>
+              <div class="flex flex-col gap-1.5">
+                <h1 class="m-0 text-lg font-semibold tracking-[-0.01em] text-primary">Welcome to Bayesian SSH</h1>
+                <p class="m-0 text-sm leading-relaxed text-secondary">
+                  A keyboard-first manager for your SSH hosts. Setup takes under a minute: pick your defaults,
+                  import hosts from OpenSSH and choose a theme.
+                </p>
+              </div>
+            </div>
+            <div class="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2.5">
+              <span class="flex min-w-0 flex-col gap-0.5">
+                <span class="text-sm text-primary">Moving from another machine?</span>
+                <span class="text-xs text-muted">Restore hosts from a backup file (.json or .enc).</span>
+              </span>
+              <button type="button" class="btn btn-secondary btn-sm" onclick={handleRestoreBackup} disabled={busy}>
+                Restore backup
+              </button>
+            </div>
+          {:else if step === 1}
+            <div class="flex flex-col gap-1">
+              <h1 class="m-0 text-lg font-semibold tracking-[-0.01em] text-primary">Profile and defaults</h1>
+              <p class="m-0 text-sm text-muted">Used when a host doesn't set its own user or port.</p>
+            </div>
+            <div class="flex flex-col gap-4">
+              <div class="field">
+                <label for="ob-profile" class="field-label">Profile name</label>
+                <input
+                  id="ob-profile"
+                  type="text"
+                  class="input"
+                  placeholder="default"
+                  autocomplete="off"
+                  spellcheck="false"
+                  bind:value={profileName}
+                />
+                <span class="field-hint">Profiles keep separate host lists, e.g. work and personal.</span>
+              </div>
+              <div class="grid grid-cols-[1fr_96px] gap-3">
+                <div class="field">
+                  <label for="ob-user" class="field-label">Default user</label>
+                  <input
+                    id="ob-user"
+                    type="text"
+                    class="input input-mono"
+                    autocomplete="off"
+                    spellcheck="false"
+                    bind:value={default_user}
+                  />
+                </div>
+                <div class="field">
+                  <label for="ob-port" class="field-label">Default port</label>
+                  <input
+                    id="ob-port"
+                    type="number"
+                    min="1"
+                    max="65535"
+                    class="input input-mono tabular-nums"
+                    class:input-invalid={portInvalid}
+                    bind:value={default_port}
+                  />
+                </div>
+              </div>
+              {#if portInvalid}
+                <span class="field-error -mt-2">Port must be between 1 and 65535.</span>
+              {/if}
+              <label for="ob-agent" class="flex cursor-pointer items-center justify-between gap-4">
+                <span class="flex flex-col gap-0.5">
+                  <span class="text-sm text-primary">Start the SSH agent on launch</span>
+                  <span class="text-xs text-muted">Keeps added keys available to every session.</span>
+                </span>
+                <input id="ob-agent" type="checkbox" class="switch" bind:checked={auto_start_agent} />
+              </label>
+            </div>
+          {:else if step === 2}
+            <div class="flex flex-col gap-1">
+              <h1 class="m-0 text-lg font-semibold tracking-[-0.01em] text-primary">Import from OpenSSH</h1>
+              <p class="m-0 text-sm text-muted">Bring in the hosts you already have in your SSH config.</p>
+            </div>
+            <div class="flex flex-col gap-4">
+              <label for="ob-import" class="flex cursor-pointer items-center justify-between gap-4">
+                <span class="flex flex-col gap-0.5">
+                  <span class="text-sm text-primary">Import hosts</span>
+                  <span class="text-xs text-muted">Hosts are copied into this profile. Your config file is only read.</span>
+                </span>
+                <input id="ob-import" type="checkbox" class="switch" bind:checked={import_ssh_config} />
+              </label>
+              <div class="field">
+                <label for="ob-ssh-config" class="field-label">Config file</label>
+                <div class="flex gap-2">
+                  <input
+                    id="ob-ssh-config"
+                    type="text"
+                    class="input input-mono flex-1"
+                    placeholder="~/.ssh/config"
+                    spellcheck="false"
+                    bind:value={ssh_config_path}
+                    disabled={!import_ssh_config}
+                  />
+                  <button type="button" class="btn btn-secondary" onclick={browseConfig} disabled={!import_ssh_config}>
+                    <FolderOpen size={14} />
+                    Browse
+                  </button>
+                </div>
+              </div>
+            </div>
+          {:else if step === 3}
+            <div class="flex flex-col gap-1">
+              <h1 class="m-0 text-lg font-semibold tracking-[-0.01em] text-primary">Appearance</h1>
+              <p class="m-0 text-sm text-muted">You can change the theme later in Settings.</p>
+            </div>
+            <div class="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Theme">
+              {#each THEMES as t (t.id)}
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={theme === t.id}
+                  class="card card-interactive flex items-start justify-between gap-2 px-3 py-2.5 text-left {theme === t.id ? 'card-selected' : ''}"
+                  onclick={() => pickTheme(t.id)}
+                  data-autofocus={theme === t.id ? true : undefined}
+                >
+                  <span class="flex min-w-0 flex-col gap-0.5">
+                    <span class="text-sm text-primary">{t.label}</span>
+                    <span class="truncate text-xs text-muted">{t.desc}</span>
+                  </span>
+                  {#if theme === t.id}<Check size={14} class="mt-0.5 shrink-0 text-accent" />{/if}
+                </button>
+              {/each}
+            </div>
+            <label for="ob-fuzzy" class="flex cursor-pointer items-center justify-between gap-4">
+              <span class="flex flex-col gap-0.5">
+                <span class="text-sm text-primary">Fuzzy host search</span>
+                <span class="text-xs text-muted">Match typos and partial host names.</span>
+              </span>
+              <input id="ob-fuzzy" type="checkbox" class="switch" bind:checked={fuzzy_search} />
+            </label>
+          {:else}
+            <div class="flex flex-col gap-1">
+              <h1 class="m-0 text-lg font-semibold tracking-[-0.01em] text-primary">You're all set</h1>
+              <p class="m-0 text-sm text-muted">Review your choices. Everything can be changed in Settings.</p>
+            </div>
+            <dl class="m-0 grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 rounded-md border border-border px-3 py-2.5 text-sm">
+              <dt class="text-muted">Profile</dt>
+              <dd class="m-0 truncate text-primary">{profileTrimmed}</dd>
+              <dt class="text-muted">Defaults</dt>
+              <dd class="m-0 truncate font-mono text-xs leading-5 text-primary">
+                {default_user.trim() || defaultUser || "root"}:{portInvalid ? 22 : default_port}
+              </dd>
+              <dt class="text-muted">SSH agent</dt>
+              <dd class="m-0 text-primary">{auto_start_agent ? "Starts on launch" : "Manual"}</dd>
+              <dt class="text-muted">OpenSSH import</dt>
+              <dd class="m-0 truncate text-primary" title={ssh_config_path}>
+                {import_ssh_config ? (ssh_config_path.trim() || "~/.ssh/config") : "Skipped"}
+              </dd>
+              <dt class="text-muted">Theme</dt>
+              <dd class="m-0 text-primary">{THEMES.find((t) => t.id === theme)?.label}</dd>
+            </dl>
+          {/if}
+        </div>
+      {/key}
+
+      <div class="flex items-center gap-2 border-t border-border px-6 py-3">
+        {#if step > 0}
+          <button type="button" class="btn btn-ghost" onclick={back} disabled={busy}>
+            <ArrowLeft size={14} />
+            Back
+          </button>
+        {/if}
+        <span class="ml-auto text-xs tabular-nums text-muted">Step {step + 1} of {STEPS.length}</span>
+        <button
+          id="ob-primary"
+          type="submit"
+          class="btn btn-primary"
+          disabled={busy || (step === 1 && portInvalid)}
+        >
+          {#if busy}<span class="spinner"></span>{/if}
+          {step === 0 ? "Get started" : step === LAST ? "Open Bayesian SSH" : "Continue"}
+        </button>
       </div>
-      <h1 class="m-0 text-xl font-bold tracking-tight text-white">Bayesian SSH</h1>
-      <p class="m-0 text-xs text-muted max-w-[340px]">Fast, intelligent SSH session manager with Bayesian search.</p>
-    </div>
+    </form>
 
-    <!-- Primary Action Cards -->
-    <div class="flex flex-col gap-3">
-      
-      <!-- Option 1: Quick Start -->
-      <button
-        type="button"
-        class="group p-4 rounded-xl border border-white/10 bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/20 transition-all duration-150 flex items-center justify-between text-left cursor-pointer disabled:opacity-50"
-        onclick={handleQuickStart}
-        disabled={busy}
-      >
-        <div class="flex items-center gap-3.5">
-          <div class="w-9 h-9 rounded-lg bg-accent/10 border border-accent/20 text-accent flex items-center justify-center shrink-0">
-            <ArrowRight size={18} />
-          </div>
-          <div>
-            <div class="text-xs font-semibold text-white group-hover:text-accent transition-colors">Start Fresh Workspace</div>
-            <div class="text-[11px] text-muted mt-0.5">Initialize default profile & import OpenSSH config</div>
-          </div>
-        </div>
-        <span class="text-xs font-medium text-muted group-hover:text-white transition-colors">Setup &rarr;</span>
-      </button>
-
-      <!-- Option 2: Restore Backup -->
-      <button
-        type="button"
-        class="group p-4 rounded-xl border border-white/10 bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/20 transition-all duration-150 flex items-center justify-between text-left cursor-pointer disabled:opacity-50"
-        onclick={handleRestoreBackup}
-        disabled={busy}
-      >
-        <div class="flex items-center gap-3.5">
-          <div class="w-9 h-9 rounded-lg bg-white/[0.05] border border-white/10 text-primary flex items-center justify-center shrink-0">
-            <Upload size={18} />
-          </div>
-          <div>
-            <div class="text-xs font-semibold text-white group-hover:text-accent transition-colors">Restore from Backup</div>
-            <div class="text-[11px] text-muted mt-0.5">Load complete backup file (.json or .enc)</div>
-          </div>
-        </div>
-        <span class="text-xs font-medium text-muted group-hover:text-white transition-colors">Open file &rarr;</span>
-      </button>
-
-    </div>
-
-    <!-- Toggle Advanced Settings -->
-    <div class="flex flex-col items-center">
-      <button
-        type="button"
-        class="text-[11px] text-muted hover:text-secondary transition-colors cursor-pointer bg-transparent border-none py-1"
-        onclick={() => (showAdvanced = !showAdvanced)}
-      >
-        {showAdvanced ? "Hide options" : "Advanced setup options \u2193"}
-      </button>
-
-      {#if showAdvanced}
-        <div class="w-full mt-3 p-4 rounded-xl border border-white/10 bg-white/[0.01] flex flex-col gap-3 text-left">
-          <div class="grid grid-cols-2 gap-3">
-            <div class="flex flex-col gap-1">
-              <label for="ob-user" class="text-[10px] font-semibold text-muted uppercase tracking-wider">Default User</label>
-              <input
-                id="ob-user"
-                type="text"
-                class="bg-white/[0.04] border border-white/10 text-white text-xs py-1.5 px-2.5 rounded-lg outline-none focus:border-accent"
-                bind:value={default_user}
-              />
-            </div>
-            <div class="flex flex-col gap-1">
-              <label for="ob-port" class="text-[10px] font-semibold text-muted uppercase tracking-wider">Default Port</label>
-              <input
-                id="ob-port"
-                type="number"
-                class="bg-white/[0.04] border border-white/10 text-white text-xs py-1.5 px-2.5 rounded-lg outline-none focus:border-accent"
-                bind:value={default_port}
-              />
-            </div>
-          </div>
-
-          <div class="flex flex-col gap-1">
-            <label for="ob-profile" class="text-[10px] font-semibold text-muted uppercase tracking-wider">Workspace Name</label>
-            <input
-              id="ob-profile"
-              type="text"
-              class="bg-white/[0.04] border border-white/10 text-white text-xs py-1.5 px-2.5 rounded-lg outline-none focus:border-accent"
-              placeholder="default"
-              bind:value={profileName}
-            />
-          </div>
-
-          <label class="flex items-center gap-2 text-xs text-secondary cursor-pointer mt-1">
-            <input type="checkbox" bind:checked={import_ssh_config} class="accent-accent" />
-            <span>Import ~/.ssh/config hosts automatically</span>
-          </label>
-        </div>
-      {/if}
-    </div>
-
-    <!-- Footer note -->
-    <div class="text-center text-[11px] text-muted/60 font-mono">
-      Config path: {configRoot}
-    </div>
-
+    {#if configRoot}
+      <p class="m-0 truncate text-center font-mono text-xs text-muted" title={configRoot}>{configRoot}</p>
+    {/if}
   </div>
-</ModalShell>
+</div>
 
 <ModalShell
   open={showPassphraseInput}
-  title="Encrypted Backup"
+  title="Encrypted backup"
   onClose={() => (showPassphraseInput = false)}
   closeOnBackdrop={false}
   width="sm"
 >
-  <div class="p-5 flex flex-col gap-4">
-    <div class="flex items-center gap-3 text-primary">
-      <Lock size={20} class="text-accent" />
-      <div>
-        <h3 class="m-0 text-sm font-bold">Encrypted Backup</h3>
-        <p class="m-0 text-[11px] text-muted mt-0.5">Enter passphrase to decrypt and restore</p>
+  <form class="flex min-h-0 flex-1 flex-col" novalidate onsubmit={submitPassphrase}>
+    <div class="modal-header">
+      <div class="min-w-0">
+        <h2 class="modal-title">Encrypted backup</h2>
+        <p class="modal-subtitle">Enter the passphrase used when the backup was exported.</p>
+      </div>
+      <button type="button" class="modal-close" onclick={() => (showPassphraseInput = false)} aria-label="Close">
+        <X size={16} />
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label for="ob-passphrase" class="field-label">Passphrase</label>
+        <input
+          id="ob-passphrase"
+          type="password"
+          class="input"
+          autocomplete="off"
+          bind:value={restorePassphrase}
+        />
       </div>
     </div>
-
-    <div class="flex flex-col gap-1">
-      <input
-        type="password"
-        class="bg-surface-input border border-border text-primary py-2 px-3 rounded-lg outline-none text-xs focus:border-accent"
-        placeholder="Passphrase"
-        bind:value={restorePassphrase}
-        onkeydown={(e) => e.key === "Enter" && submitPassphrase()}
-      />
-    </div>
-
-    <div class="flex justify-end gap-2">
-      <button
-        type="button"
-        class="py-1.5 px-3 rounded-lg text-xs text-secondary hover:text-primary bg-transparent border border-border cursor-pointer"
-        onclick={() => (showPassphraseInput = false)}
-      >
-        Cancel
-      </button>
-      <button
-        type="button"
-        class="py-1.5 px-3.5 rounded-lg text-xs font-semibold bg-accent text-white hover:bg-accent-hover flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-        onclick={submitPassphrase}
-        disabled={busy || !restorePassphrase}
-      >
-        <KeyRound size={13} />
-        Decrypt
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" onclick={() => (showPassphraseInput = false)}>Cancel</button>
+      <button type="submit" class="btn btn-primary" disabled={busy || !restorePassphrase}>
+        {#if busy}<span class="spinner"></span>{/if}
+        Restore
       </button>
     </div>
-  </div>
+  </form>
 </ModalShell>

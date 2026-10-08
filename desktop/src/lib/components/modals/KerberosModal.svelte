@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Eye, EyeOff, KeyRound, RefreshCw, ShieldCheck, X, ChevronDown, ChevronUp, Settings2 } from "lucide-svelte";
+  import { Eye, EyeOff, X, ChevronRight } from "lucide-svelte";
   import ModalShell from "$lib/components/ui/ModalShell.svelte";
   import type { KerberosStatus } from "$lib/stores/kerberos.svelte";
   import { formatKerberosRemaining } from "$lib/stores/kerberos.svelte";
@@ -38,14 +38,15 @@
   let showPassword = $state(false);
   let needsPassword = $state(false);
 
-  // Advanced options states
   let showAdvanced = $state(false);
   let forwardable = $state(true);
   let proxiable = $state(false);
   let lifetime = $state("");
   let renewLifetime = $state("");
 
-  const health = $derived.by(() => {
+  type Health = "unavailable" | "missing" | "expired" | "warning" | "valid";
+
+  const health = $derived.by((): Health => {
     if (!status.tools_available) return "unavailable";
     if (!status.has_ticket) return "missing";
     if (remainingSeconds !== null && remainingSeconds <= 0) return "expired";
@@ -54,10 +55,26 @@
     return "valid";
   });
 
+  const HEALTH_UI: Record<Health, { label: string; dot: string; text: string; bar: string }> = {
+    unavailable: { label: "Unavailable", dot: "status-dot-offline", text: "text-muted", bar: "bg-faint" },
+    missing: { label: "No ticket", dot: "status-dot-offline", text: "text-secondary", bar: "bg-faint" },
+    expired: { label: "Expired", dot: "status-dot-error", text: "text-error", bar: "bg-error" },
+    warning: { label: "Expiring soon", dot: "status-dot-warning", text: "text-warning", bar: "bg-warning" },
+    valid: { label: "Valid", dot: "status-dot-success", text: "text-success", bar: "bg-success" },
+  };
+  const ui = $derived(HEALTH_UI[health]);
+
   const progressPercent = $derived.by(() => {
     if (remainingSeconds === null || !ticketLifetimeSeconds || ticketLifetimeSeconds <= 0) return 0;
     return Math.max(0, Math.min(100, (remainingSeconds / ticketLifetimeSeconds) * 100));
   });
+
+  // Renew uses kinit -R only when a ticket exists; otherwise acquire a new one.
+  const renewing = $derived(status.has_ticket);
+  const showPasswordField = $derived(!renewing || needsPassword);
+  const canSubmit = $derived(
+    !loading && (renewing ? !needsPassword || password.trim() !== "" : password.trim() !== ""),
+  );
 
   $effect(() => {
     const candidate = status.principal ?? status.suggested_principal;
@@ -66,271 +83,222 @@
     }
   });
 
-  async function handleRenew() {
-    await onRenew(needsPassword ? password : undefined);
-  }
-
-  async function handleAcquire() {
-    await onAcquire(principal, password, forwardable, proxiable, lifetime, renewLifetime);
+  async function handleSubmit(e: SubmitEvent) {
+    e.preventDefault();
+    if (!canSubmit) return;
+    if (renewing) {
+      await onRenew(needsPassword ? password : undefined);
+    } else {
+      await onAcquire(principal, password, forwardable, proxiable, lifetime, renewLifetime);
+    }
   }
 </script>
 
-<ModalShell
-  open={true}
-  title="Kerberos Ticket"
-  onClose={onClose}
-  width="md"
->
-  <div class="flex justify-between items-center px-6 py-5 border-b border-border">
-      <div class="flex gap-3 items-start text-accent">
-        <ShieldCheck size={20} class="mt-0.5 text-accent" />
-        <div>
-          <h2 id="kerberos-modal-title" class="text-base font-semibold tracking-tight m-0 text-primary">Kerberos Ticket</h2>
-          <p class="text-xs text-muted mt-0.5">Keep your GSSAPI sessions alive with a valid ticket</p>
-        </div>
+<ModalShell open={true} title="Kerberos ticket" {onClose} width="md">
+  <form class="flex min-h-0 flex-1 flex-col" novalidate onsubmit={handleSubmit}>
+    <div class="modal-header">
+      <div class="min-w-0">
+        <h2 class="modal-title">Kerberos ticket</h2>
+        <p class="modal-subtitle">A valid ticket keeps GSSAPI sessions signed in.</p>
       </div>
-      <button
-        type="button"
-        class="bg-transparent border-none text-muted cursor-pointer flex p-1 rounded-md transition-all duration-100 hover:text-primary hover:bg-white/5"
-        onclick={onClose}
-        aria-label="Close"
-      >
+      <button type="button" class="modal-close" onclick={onClose} aria-label="Close">
         <X size={16} />
       </button>
     </div>
 
-    <div class="px-6 py-5 flex flex-col gap-4 max-h-[60vh] overflow-y-auto">
+    <div class="modal-body flex flex-col gap-4">
       {#if !status.tools_available}
-        <div class="alert alert-error text-xs leading-normal">
-          Kerberos tools are not installed. Install <code>krb5-user</code> (or your platform's Kerberos client) to use GSSAPI authentication.
+        <div class="alert alert-warning">
+          <div class="flex flex-col gap-0.5">
+            <span class="alert-title">Kerberos tools not found</span>
+            <span class="text-secondary">
+              Install <code class="font-mono">krb5-user</code> (or your platform's Kerberos client) to use GSSAPI
+              authentication.
+            </span>
+          </div>
         </div>
       {:else}
-        {#if status.client_configured}
-          <div class="panel p-3 text-xs text-secondary leading-normal">
-            Kerberos client configured
-            {#if status.default_realm}
-              — default realm <code class="font-mono text-accent">{status.default_realm}</code>
-            {/if}
-          </div>
-        {/if}
-
-        <div class="border border-border bg-white/[0.01] rounded-xl px-4 py-3.5 flex flex-col gap-3">
-          <div class="flex items-center justify-between pb-2.5 border-b border-border/60">
-            <span class="text-xs text-secondary font-medium">Ticket status</span>
-            <div class="flex items-center gap-1.5">
-              <span class="w-2 h-2 rounded-full
-                {health === 'valid' ? 'bg-success' :
-                 health === 'warning' ? 'bg-warning' :
-                 'bg-danger'}"
-              ></span>
-              <span class="text-xs font-semibold
-                {health === 'valid' ? 'text-success' :
-                 health === 'warning' ? 'text-warning' :
-                 'text-danger'}"
-              >
-                {#if health === "valid"}Valid
-                {:else if health === "warning"}Expiring soon
-                {:else if health === "missing"}No ticket
-                {:else}Expired{/if}
-              </span>
-            </div>
-          </div>
-
-          <div class="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-[12px]">
-            {#if status.principal && status.has_ticket}
-              <span class="text-muted font-medium">Principal</span>
-              <span class="text-primary font-mono text-right break-all">{status.principal}</span>
-            {:else if status.suggested_principal}
-              <span class="text-muted font-medium">Suggested principal</span>
-              <span class="text-primary font-mono text-right break-all">{status.suggested_principal}</span>
-            {/if}
-
-            {#if status.config_path}
-              <span class="text-muted font-medium">Config</span>
-              <span class="text-primary font-mono text-[11px] text-right break-all">{status.config_path}</span>
-            {/if}
-
-            <span class="text-muted font-medium">Time remaining</span>
-            <span class="font-mono text-right font-bold text-accent">{formatKerberosRemaining(remainingSeconds)}</span>
-
-            {#if status.cache_path}
-              <span class="text-muted font-medium">Cache path</span>
-              <span class="text-primary font-mono text-[11px] text-right break-all">{status.cache_path}</span>
-            {/if}
-
-            {#if status.renewable && status.renew_until}
-              <span class="text-muted font-medium">Renewable until</span>
-              <span class="text-primary font-mono text-[11px] text-right">{new Date(status.renew_until * 1000).toLocaleString()}</span>
+        <!-- Status summary -->
+        <div class="flex flex-col gap-3 rounded-lg border border-border bg-panel p-4">
+          <div class="flex items-center justify-between gap-3">
+            <span class="flex items-center gap-2">
+              <span class="status-dot {ui.dot}" aria-hidden="true"></span>
+              <span class="text-sm font-medium {ui.text}">{ui.label}</span>
+            </span>
+            {#if status.has_ticket}
+              <span class="font-mono text-sm tabular-nums text-primary">{formatKerberosRemaining(remainingSeconds)}</span>
             {/if}
           </div>
 
-          {#if status.has_ticket && remainingSeconds !== null}
-            <div class="mt-1">
-              <div class="h-1 rounded-full bg-surface-input overflow-hidden" aria-hidden="true">
-                <div class="h-full rounded-full bg-accent transition-all duration-300" style:width="{progressPercent}%"></div>
-              </div>
+          {#if status.has_ticket && remainingSeconds !== null && ticketLifetimeSeconds}
+            <div class="h-1 overflow-hidden rounded-full bg-surface-active" aria-hidden="true">
+              <div class="h-full rounded-full {ui.bar}" style:width="{progressPercent}%"></div>
             </div>
           {/if}
+
+          <dl class="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
+            {#if status.principal && status.has_ticket}
+              <dt class="text-muted">Principal</dt>
+              <dd class="m-0 truncate text-right font-mono text-secondary" title={status.principal}>{status.principal}</dd>
+            {/if}
+            {#if status.default_realm}
+              <dt class="text-muted">Default realm</dt>
+              <dd class="m-0 truncate text-right font-mono text-secondary">{status.default_realm}</dd>
+            {:else if !status.client_configured}
+              <dt class="text-muted">Client</dt>
+              <dd class="m-0 text-right text-secondary">Not configured</dd>
+            {/if}
+            {#if status.renewable && status.renew_until}
+              <dt class="text-muted">Renewable until</dt>
+              <dd class="m-0 truncate text-right tabular-nums text-secondary">
+                {new Date(status.renew_until * 1000).toLocaleString()}
+              </dd>
+            {/if}
+            {#if status.cache_path}
+              <dt class="text-muted">Cache</dt>
+              <dd class="m-0 truncate text-right font-mono text-secondary" title={status.cache_path}>{status.cache_path}</dd>
+            {/if}
+            {#if status.config_path}
+              <dt class="text-muted">Config</dt>
+              <dd class="m-0 truncate text-right font-mono text-secondary" title={status.config_path}>{status.config_path}</dd>
+            {/if}
+          </dl>
         </div>
 
         {#if error}
-          <div class="p-3.5 rounded-lg border border-danger/35 bg-danger/8 text-red-200 text-xs leading-normal">{error}</div>
+          <div class="alert alert-error" role="alert">{error}</div>
         {/if}
 
-        <div class="flex flex-col gap-3.5">
-          <div class="border border-border rounded-xl p-4 bg-white/[0.01] flex flex-col gap-3">
-            <div class="flex items-center gap-2 text-xs font-semibold text-primary">
-              <RefreshCw size={14} />
-              <span>{status.has_ticket ? "Renew ticket" : "Acquire ticket"}</span>
-            </div>
-            <p class="text-xs text-muted leading-relaxed">
-              {#if status.has_ticket}
-                Tries passwordless renewal first (<code>kinit -R</code>). Enter your password if renewal requires it.
+        <!-- Renew / acquire -->
+        <div class="flex flex-col gap-3">
+          <div class="flex flex-col gap-0.5">
+            <h3 class="m-0 text-sm font-medium text-primary">{renewing ? "Renew ticket" : "Get a ticket"}</h3>
+            <p class="m-0 text-xs leading-snug text-muted">
+              {#if renewing}
+                Tries a passwordless renewal (<code class="font-mono">kinit -R</code>) first.
               {:else}
-                Enter your Kerberos principal and password to obtain a GSSAPI credential ticket.
+                Sign in with your Kerberos principal and password.
               {/if}
             </p>
+          </div>
 
-            {#if !status.has_ticket}
-              <div class="flex flex-col gap-1.5">
-                <label class="text-[11px] font-semibold text-secondary uppercase tracking-wider pl-0.5" for="kerberos-principal">Principal</label>
-                <input
-                  id="kerberos-principal"
-                  type="text"
-                  class="bg-surface-input border border-border text-primary py-2 px-3 rounded-lg outline-none text-[13px] transition-all duration-100 hover:border-border-hover focus:border-border-focus focus:shadow-[0_0_0_3px_rgba(59,130,246,0.12)]"
-                  placeholder="user@REALM.EXAMPLE"
-                  bind:value={principal}
-                  autocomplete="username"
-                />
-              </div>
-            {/if}
-
-            <label class="flex items-center gap-2 text-[12px] cursor-pointer select-none text-secondary py-1" for="kerberos-needs-password">
-              <input id="kerberos-needs-password" type="checkbox" bind:checked={needsPassword} class="cursor-pointer accent-accent w-[16px] h-[16px]" />
-              <span>Password required for renewal</span>
+          {#if !renewing}
+            <div class="field">
+              <label class="field-label" for="kerberos-principal">Principal</label>
+              <input
+                id="kerberos-principal"
+                type="text"
+                class="input input-mono"
+                placeholder="user@REALM.EXAMPLE"
+                autocomplete="username"
+                spellcheck="false"
+                bind:value={principal}
+              />
+            </div>
+          {:else}
+            <label for="kerberos-needs-password" class="flex cursor-pointer items-center justify-between gap-4">
+              <span class="text-sm text-secondary">Renewal needs my password</span>
+              <input id="kerberos-needs-password" type="checkbox" class="switch" bind:checked={needsPassword} />
             </label>
+          {/if}
 
-            {#if !status.has_ticket || needsPassword}
-              <div class="flex flex-col gap-1.5">
-                <label class="text-[11px] font-semibold text-secondary uppercase tracking-wider pl-0.5" for="kerberos-password">Password</label>
-                <div class="relative">
-                  <input
-                    id="kerberos-password"
-                    type={showPassword ? "text" : "password"}
-                    class="w-full bg-surface-input border border-border text-primary py-2 pl-3 pr-10 rounded-lg outline-none text-[13px] transition-all duration-100 hover:border-border-hover focus:border-border-focus focus:shadow-[0_0_0_3px_rgba(59,130,246,0.12)]"
-                    placeholder="Kerberos password"
-                    bind:value={password}
-                    autocomplete="current-password"
-                  />
-                  <button
-                    type="button"
-                    class="absolute right-2 top-1/2 -translate-y-1/2 border-none bg-transparent text-muted cursor-pointer inline-flex p-1 hover:text-primary"
-                    onclick={() => (showPassword = !showPassword)}
-                    aria-label={showPassword ? "Hide password" : "Show password"}
-                  >
-                    {#if showPassword}
-                      <EyeOff size={16} />
-                    {:else}
-                      <Eye size={16} />
-                    {/if}
-                  </button>
-                </div>
-              </div>
-            {/if}
-
-            {#if !status.has_ticket}
-              <div class="border border-border/85 rounded-xl bg-white/[0.01] overflow-hidden mt-1">
+          {#if showPasswordField}
+            <div class="field">
+              <label class="field-label" for="kerberos-password">Password</label>
+              <div class="relative">
+                <input
+                  id="kerberos-password"
+                  type={showPassword ? "text" : "password"}
+                  class="input pr-9"
+                  placeholder="Kerberos password"
+                  autocomplete="current-password"
+                  bind:value={password}
+                  data-autofocus
+                />
                 <button
                   type="button"
-                  class="w-full flex items-center justify-between px-4 py-3 bg-transparent border-none cursor-pointer text-xs font-semibold text-secondary hover:text-primary transition-colors outline-none"
-                  onclick={() => (showAdvanced = !showAdvanced)}
+                  class="btn-icon btn-icon-sm absolute right-1 top-1/2 -translate-y-1/2"
+                  onclick={() => (showPassword = !showPassword)}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
                 >
-                  <div class="flex items-center gap-2">
-                    <Settings2 size={14} class="text-muted" />
-                    <span>Advanced Ticket Options</span>
-                  </div>
-                  {#if showAdvanced}
-                    <ChevronUp size={14} class="text-muted" />
-                  {:else}
-                    <ChevronDown size={14} class="text-muted" />
-                  {/if}
+                  {#if showPassword}<EyeOff size={14} />{:else}<Eye size={14} />{/if}
                 </button>
-
-                {#if showAdvanced}
-                  <div class="px-4 pb-4 pt-1.5 border-t border-border/40 flex flex-col gap-3.5 bg-black/[0.05]">
-                    <div class="flex items-center justify-between gap-4">
-                      <div class="flex flex-col gap-0.5">
-                        <span class="text-xs font-medium text-secondary">Forwardable ticket (-f)</span>
-                        <span class="text-[10px] text-muted">Allow ticket to be forwarded to remote hosts</span>
-                      </div>
-                      <input
-                        type="checkbox"
-                        bind:checked={forwardable}
-                        class="w-[16px] h-[16px] accent-accent cursor-pointer shrink-0"
-                      />
-                    </div>
-
-                    <div class="flex items-center justify-between gap-4">
-                      <div class="flex flex-col gap-0.5">
-                        <span class="text-xs font-medium text-secondary">Proxiable ticket (-p)</span>
-                        <span class="text-[10px] text-muted">Allow ticket to be proxied to other hosts</span>
-                      </div>
-                      <input
-                        type="checkbox"
-                        bind:checked={proxiable}
-                        class="w-[16px] h-[16px] accent-accent cursor-pointer shrink-0"
-                      />
-                    </div>
-
-                    <div class="grid grid-cols-2 gap-3">
-                      <div class="flex flex-col gap-1.5">
-                        <label for="krb-opt-lifetime" class="text-[10px] font-semibold text-muted uppercase tracking-wider pl-0.5">Ticket Lifetime (-l)</label>
-                        <input
-                          id="krb-opt-lifetime"
-                          type="text"
-                          placeholder="e.g. 10h, 1d (blank for default)"
-                          bind:value={lifetime}
-                          class="bg-surface-input border border-border text-primary py-1.5 px-3 rounded-lg outline-none text-xs transition-all duration-100 hover:border-border-hover focus:border-border-focus"
-                        />
-                      </div>
-
-                      <div class="flex flex-col gap-1.5">
-                        <label for="krb-opt-renew-lifetime" class="text-[10px] font-semibold text-muted uppercase tracking-wider pl-0.5">Renew Lifetime (-r)</label>
-                        <input
-                          id="krb-opt-renew-lifetime"
-                          type="text"
-                          placeholder="e.g. 7d (blank for default)"
-                          bind:value={renewLifetime}
-                          class="bg-surface-input border border-border text-primary py-1.5 px-3 rounded-lg outline-none text-xs transition-all duration-100 hover:border-border-hover focus:border-border-focus"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                {/if}
               </div>
-            {/if}
+            </div>
+          {/if}
 
-            <button
-              type="button"
-              class="btn btn-primary w-full"
-              disabled={loading || (!status.has_ticket && !password.trim()) || (needsPassword && !password.trim())}
-              onclick={() => (status.has_ticket ? handleRenew() : handleAcquire())}
-            >
-              <KeyRound size={14} />
-              <span>{loading ? "Working..." : status.has_ticket ? "Renew ticket" : "Acquire ticket"}</span>
-            </button>
-          </div>
+          {#if !renewing}
+            <div class="rounded-md border border-border">
+              <button
+                type="button"
+                class="flex h-9 w-full cursor-pointer items-center gap-1.5 rounded-md px-3 text-left text-sm text-secondary transition-colors hover:text-primary"
+                aria-expanded={showAdvanced}
+                aria-controls="krb-advanced"
+                onclick={() => (showAdvanced = !showAdvanced)}
+              >
+                <ChevronRight
+                  size={14}
+                  class="text-muted transition-transform duration-150 {showAdvanced ? 'rotate-90' : ''}"
+                />
+                Ticket options
+              </button>
+              {#if showAdvanced}
+                <div id="krb-advanced" class="flex flex-col gap-3 border-t border-border-subtle p-3">
+                  <label for="krb-forwardable" class="flex cursor-pointer items-center justify-between gap-4">
+                    <span class="flex flex-col gap-0.5">
+                      <span class="text-sm text-secondary">Forwardable <span class="mono text-muted">-f</span></span>
+                      <span class="text-xs text-muted">Allow the ticket to be forwarded to remote hosts.</span>
+                    </span>
+                    <input id="krb-forwardable" type="checkbox" class="switch" bind:checked={forwardable} />
+                  </label>
+                  <label for="krb-proxiable" class="flex cursor-pointer items-center justify-between gap-4">
+                    <span class="flex flex-col gap-0.5">
+                      <span class="text-sm text-secondary">Proxiable <span class="mono text-muted">-p</span></span>
+                      <span class="text-xs text-muted">Allow the ticket to be proxied to other hosts.</span>
+                    </span>
+                    <input id="krb-proxiable" type="checkbox" class="switch" bind:checked={proxiable} />
+                  </label>
+                  <div class="grid grid-cols-2 gap-3">
+                    <div class="field">
+                      <label for="krb-opt-lifetime" class="field-label">Lifetime <span class="mono text-muted">-l</span></label>
+                      <input
+                        id="krb-opt-lifetime"
+                        type="text"
+                        placeholder="10h"
+                        spellcheck="false"
+                        bind:value={lifetime}
+                        class="input input-mono"
+                      />
+                    </div>
+                    <div class="field">
+                      <label for="krb-opt-renew-lifetime" class="field-label">Renewable for <span class="mono text-muted">-r</span></label>
+                      <input
+                        id="krb-opt-renew-lifetime"
+                        type="text"
+                        placeholder="7d"
+                        spellcheck="false"
+                        bind:value={renewLifetime}
+                        class="input input-mono"
+                      />
+                    </div>
+                    <span class="field-hint col-span-2">Leave empty to use the realm defaults.</span>
+                  </div>
+                </div>
+              {/if}
+            </div>
+          {/if}
         </div>
       {/if}
     </div>
 
-    <div class="flex justify-end gap-2 px-6 py-4 border-t border-border">
-      <button
-        type="button"
-        class="btn btn-secondary"
-        onclick={onClose}
-      >
-        Close
-      </button>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" onclick={onClose}>Close</button>
+      {#if status.tools_available}
+        <button type="submit" class="btn btn-primary" disabled={!canSubmit}>
+          {#if loading}<span class="spinner"></span>{/if}
+          {renewing ? "Renew ticket" : "Get ticket"}
+        </button>
+      {/if}
     </div>
+  </form>
 </ModalShell>

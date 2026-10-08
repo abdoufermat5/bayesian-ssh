@@ -1,31 +1,26 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
+  import { untrack } from "svelte";
+  import { SvelteSet } from "svelte/reactivity";
   import {
-    AlertCircle,
-    Bookmark,
     Check,
-    CheckCircle2,
-    Clock,
+    ChevronRight,
     Copy,
     Download,
     Maximize2,
     Minimize2,
     Play,
     Plus,
-    RefreshCw,
     Search,
-    Server,
-    ShieldAlert,
-    Terminal,
     Trash2,
     TriangleAlert,
     X,
-    XCircle,
   } from "lucide-svelte";
   import type { Connection } from "$lib/types";
   import { notify } from "$lib/stores/notifications.svelte";
   import { copyTextWithFallback } from "$lib/utils/terminal-xterm";
   import ModalShell from "$lib/components/ui/ModalShell.svelte";
+  import CustomSelect from "$lib/components/ui/CustomSelect.svelte";
 
   interface BatchExecHostResult {
     connection_id: string;
@@ -72,47 +67,56 @@
   let { show, connections, onClose }: Props = $props();
 
   const DEFAULT_TEMPLATES: CommandTemplate[] = [
-    { id: "uptime", name: "System Uptime", command: "uptime" },
-    { id: "disk", name: "Disk Usage", command: "df -h" },
-    { id: "memory", name: "Memory Stats", command: "free -m" },
-    { id: "load", name: "Load Average", command: "cat /proc/loadavg" },
-    { id: "users", name: "Logged-in Users", command: "w" },
+    { id: "uptime", name: "Uptime", command: "uptime" },
+    { id: "disk", name: "Disk usage", command: "df -h" },
+    { id: "memory", name: "Memory", command: "free -m" },
+    { id: "load", name: "Load average", command: "cat /proc/loadavg" },
+    { id: "users", name: "Logged-in users", command: "w" },
     { id: "docker", name: "Containers", command: "docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'" },
-    { id: "services", name: "Failed Services", command: "systemctl --failed" },
-    { id: "ssh-ver", name: "SSH Version", command: "ssh -V 2>&1" },
+    { id: "services", name: "Failed services", command: "systemctl --failed" },
+    { id: "ssh-ver", name: "SSH version", command: "ssh -V 2>&1" },
+  ];
+  const BUILTIN_TEMPLATE_IDS = new Set(DEFAULT_TEMPLATES.map((t) => t.id));
+
+  const EXPORT_OPTIONS = [
+    { value: "md", label: "Markdown" },
+    { value: "csv", label: "CSV" },
+    { value: "json", label: "JSON" },
+    { value: "txt", label: "Plain text" },
   ];
 
-  // ─── Modal State ─────────────────────────────────────────────────────────────
+  // ─── Modal state ─────────────────────────────────────────────────────────────
   let activeTab = $state<"execute" | "history" | "templates">("execute");
-  let isFullscreen = $state<boolean>(false);
-  let initialized = $state<boolean>(false);
+  let isFullscreen = $state(false);
+  let initialized = $state(false);
 
-  // ─── Execution State ─────────────────────────────────────────────────────────
-  let selectedIds = $state<string[]>([]);
-  let hostFilter = $state<string>("");
-  let command = $state<string>("uptime");
-  let dryRun = $state<boolean>(true);
-  let timeoutSecs = $state<number>(10);
-  let running = $state<boolean>(false);
-  let results = $state<BatchExecHostResult[] | null>(null);
-  let activeResultIndex = $state<number>(0);
+  // ─── Execution state ─────────────────────────────────────────────────────────
+  const selectedIds = new SvelteSet<string>();
+  let hostFilter = $state("");
+  let tagFilter = $state<string | null>(null);
+  let command = $state("uptime");
+  let dryRun = $state(true);
+  let timeoutSecs = $state(10);
+  let running = $state(false);
+  let results = $state.raw<BatchExecHostResult[] | null>(null);
+  const expandedResults = new SvelteSet<string>();
   let outputTab = $state<"all" | "stdout" | "stderr">("all");
-  let copied = $state<boolean>(false);
+  let copiedId = $state<string | null>(null);
   let exportFormat = $state<"md" | "csv" | "json" | "txt">("md");
 
-  // ─── Templates & History ─────────────────────────────────────────────────────
-  let history = $state<BatchRunRecord[]>([]);
-  let templates = $state<CommandTemplate[]>([]);
-  let newTemplateName = $state<string>("");
-  let newTemplateCmd = $state<string>("");
+  // ─── Templates & history ─────────────────────────────────────────────────────
+  let history = $state.raw<BatchRunRecord[]>([]);
+  let templates = $state.raw<CommandTemplate[]>([]);
+  let newTemplateName = $state("");
+  let newTemplateCmd = $state("");
 
-  // ─── Environment Status ──────────────────────────────────────────────────────
+  // ─── Environment status ──────────────────────────────────────────────────────
   let envStatus = $state<EnvStatus | null>(null);
-  let envWarningDismissed = $state<boolean>(false);
+  let envWarningDismissed = $state(false);
 
   $effect(() => {
     if (show && !initialized) {
-      selectedIds = connections.map((c) => c.id);
+      untrack(() => replaceSelection(connections.map((c) => c.id)));
       initialized = true;
       invoke<EnvStatus>("get_env_status")
         .then((s) => (envStatus = s))
@@ -126,80 +130,80 @@
     }
   });
 
-  const filteredConnections = $derived.by(() => {
-    const q = hostFilter.trim().toLowerCase();
-    if (!q) return connections;
-    return connections.filter(
-      (c) =>
-        c.name.toLowerCase().includes(q) ||
-        c.host.toLowerCase().includes(q) ||
-        c.user.toLowerCase().includes(q) ||
-        c.tags.some((t) => t.toLowerCase().includes(q)),
-    );
-  });
-
-  const targetedConnections = $derived.by(() =>
-    connections.filter((c) => selectedIds.includes(c.id)),
-  );
-
-  const hasProductionTarget = $derived.by(() =>
-    targetedConnections.some(
-      (c) =>
-        c.name.toLowerCase().includes("prod") ||
-        c.tags.some((t) => t.toLowerCase().includes("prod")),
+  const prodIds = $derived(
+    new Set(
+      connections
+        .filter((c) => c.name.toLowerCase().includes("prod") || c.tags.some((t) => t.toLowerCase().includes("prod")))
+        .map((c) => c.id),
     ),
   );
 
-  const showEnvWarning = $derived.by(
-    () =>
-      !envWarningDismissed &&
-      envStatus !== null &&
-      envStatus.warnings &&
-      envStatus.warnings.length > 0,
+  const allTags = $derived.by(() => {
+    const set = new Set<string>();
+    for (const c of connections) for (const t of c.tags) set.add(t);
+    return Array.from(set).sort();
+  });
+
+  const filteredConnections = $derived.by(() => {
+    const q = hostFilter.trim().toLowerCase();
+    if (!q && !tagFilter) return connections;
+    return connections.filter(
+      (c) =>
+        (!tagFilter || c.tags.includes(tagFilter)) &&
+        (!q ||
+          c.name.toLowerCase().includes(q) ||
+          c.host.toLowerCase().includes(q) ||
+          c.user.toLowerCase().includes(q) ||
+          c.tags.some((t) => t.toLowerCase().includes(q))),
+    );
+  });
+
+  const targetedConnections = $derived(connections.filter((c) => selectedIds.has(c.id)));
+  const hasProductionTarget = $derived(targetedConnections.some((c) => prodIds.has(c.id)));
+  const isFiltered = $derived(hostFilter.trim() !== "" || tagFilter !== null);
+  const failedCount = $derived(results ? results.filter((r) => !r.success).length : 0);
+
+  const showEnvWarning = $derived(
+    !envWarningDismissed && (envStatus?.warnings?.length ?? 0) > 0,
   );
 
   function toggleSelect(id: string) {
-    if (selectedIds.includes(id)) {
-      selectedIds = selectedIds.filter((i) => i !== id);
-    } else {
-      selectedIds = [...selectedIds, id];
-    }
+    if (selectedIds.has(id)) selectedIds.delete(id);
+    else selectedIds.add(id);
   }
 
+  function replaceSelection(ids: Iterable<string>) {
+    selectedIds.clear();
+    for (const id of ids) selectedIds.add(id);
+  }
+
+  /** Selects every visible host (all hosts when no filter is active). */
   function selectAll() {
-    selectedIds = connections.map((c) => c.id);
+    for (const c of isFiltered ? filteredConnections : connections) selectedIds.add(c.id);
   }
 
+  /** Clears the visible hosts (all hosts when no filter is active). */
   function selectNone() {
-    selectedIds = [];
+    if (!isFiltered) {
+      selectedIds.clear();
+      return;
+    }
+    for (const c of filteredConnections) selectedIds.delete(c.id);
   }
 
   function selectInvert() {
-    const set = new Set(selectedIds);
-    selectedIds = connections.filter((c) => !set.has(c.id)).map((c) => c.id);
+    replaceSelection(connections.filter((c) => !selectedIds.has(c.id)).map((c) => c.id));
   }
 
   function selectProdOnly() {
-    selectedIds = connections
-      .filter(
-        (c) =>
-          c.name.toLowerCase().includes("prod") ||
-          c.tags.some((t) => t.toLowerCase().includes("prod")),
-      )
-      .map((c) => c.id);
+    replaceSelection(prodIds);
   }
 
   function selectNonProd() {
-    selectedIds = connections
-      .filter(
-        (c) =>
-          !c.name.toLowerCase().includes("prod") &&
-          !c.tags.some((t) => t.toLowerCase().includes("prod")),
-      )
-      .map((c) => c.id);
+    replaceSelection(connections.filter((c) => !prodIds.has(c.id)).map((c) => c.id));
   }
 
-  // ─── Storage Helpers ─────────────────────────────────────────────────────────
+  // ─── Storage helpers ─────────────────────────────────────────────────────────
   function loadHistory() {
     try {
       const raw = localStorage.getItem("bayesian-ssh-batch-history");
@@ -228,15 +232,8 @@
   function loadTemplates() {
     try {
       const raw = localStorage.getItem("bayesian-ssh-batch-templates");
-      if (raw) {
-        const parsed = JSON.parse(raw) as CommandTemplate[];
-        templates = [
-          ...DEFAULT_TEMPLATES,
-          ...parsed.filter((t) => !DEFAULT_TEMPLATES.some((d) => d.id === t.id)),
-        ];
-      } else {
-        templates = [...DEFAULT_TEMPLATES];
-      }
+      const parsed = raw ? (JSON.parse(raw) as CommandTemplate[]) : [];
+      templates = [...DEFAULT_TEMPLATES, ...parsed.filter((t) => !BUILTIN_TEMPLATE_IDS.has(t.id))];
     } catch {
       templates = [...DEFAULT_TEMPLATES];
     }
@@ -244,19 +241,17 @@
 
   function saveTemplates() {
     try {
-      const custom = templates.filter((t) => !DEFAULT_TEMPLATES.some((d) => d.id === t.id));
+      const custom = templates.filter((t) => !BUILTIN_TEMPLATE_IDS.has(t.id));
       localStorage.setItem("bayesian-ssh-batch-templates", JSON.stringify(custom));
     } catch {}
   }
 
   function addTemplate() {
     if (!newTemplateName.trim() || !newTemplateCmd.trim()) return;
-    const item: CommandTemplate = {
-      id: `user-${Date.now()}`,
-      name: newTemplateName.trim(),
-      command: newTemplateCmd.trim(),
-    };
-    templates = [...templates, item];
+    templates = [
+      ...templates,
+      { id: `user-${Date.now()}`, name: newTemplateName.trim(), command: newTemplateCmd.trim() },
+    ];
     saveTemplates();
     newTemplateName = "";
     newTemplateCmd = "";
@@ -272,39 +267,45 @@
   function applyTemplate(cmd: string) {
     command = cmd;
     activeTab = "execute";
-    notify("Template applied to runner", "info");
+  }
+
+  function showResults(res: BatchExecHostResult[]) {
+    results = res;
+    outputTab = "all";
+    expandedResults.clear();
+    // Few hosts: open everything. Otherwise open only the failures.
+    for (const r of res) if (res.length <= 3 || !r.success) expandedResults.add(r.connection_id);
   }
 
   // ─── Execution ───────────────────────────────────────────────────────────────
   async function executeBatch() {
-    if (selectedIds.length === 0) {
-      notify("Please select at least one target host.", "error");
+    if (selectedIds.size === 0) {
+      notify("Select at least one host.", "error");
       return;
     }
     if (!command.trim()) {
-      notify("Please enter a command to execute.", "error");
+      notify("Enter a command to run.", "error");
       return;
     }
 
+    const connectionIds = targetedConnections.map((c) => c.id);
     running = true;
     results = null;
     const startedAt = Date.now();
     try {
       const res = await invoke<BatchExecHostResult[]>("run_batch_command", {
-        connectionIds: selectedIds,
+        connectionIds,
         command: command.trim(),
         dryRun,
         timeoutSecs: Number(timeoutSecs),
       });
-      results = res;
-      activeResultIndex = 0;
-      outputTab = "all";
+      showResults(res);
 
       const record: BatchRunRecord = {
         id: crypto.randomUUID(),
         timestamp: startedAt,
         command: command.trim(),
-        targetCount: selectedIds.length,
+        targetCount: connectionIds.length,
         dryRun,
         results: res,
         durationMs: Date.now() - startedAt,
@@ -313,13 +314,11 @@
       saveHistory();
 
       notify(
-        dryRun
-          ? `Dry-run preview generated for ${res.length} host(s).`
-          : `Executed command on ${res.length} host(s).`,
+        dryRun ? `Dry run previewed on ${res.length} host(s)` : `Command ran on ${res.length} host(s)`,
         "success",
       );
     } catch (err) {
-      notify(`Batch execution error: ${err}`, "error");
+      notify(`Batch execution failed: ${err}`, "error");
     } finally {
       running = false;
     }
@@ -334,16 +333,9 @@
       const esc = (s: string) => `"${(s ?? "").replace(/"/g, '""')}"`;
       const lines = ["name,host,user,exit_code,duration_ms,success,stdout,stderr"];
       for (const r of results) {
-        lines.push([
-          esc(r.name),
-          esc(r.host),
-          esc(r.user),
-          r.exit_code,
-          r.duration_ms,
-          r.success,
-          esc(r.stdout),
-          esc(r.stderr),
-        ].join(","));
+        lines.push(
+          [esc(r.name), esc(r.host), esc(r.user), r.exit_code, r.duration_ms, r.success, esc(r.stdout), esc(r.stderr)].join(","),
+        );
       }
       content = lines.join("\n");
     } else if (exportFormat === "txt") {
@@ -367,28 +359,33 @@
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    const ext = exportFormat === "csv" ? "csv" : exportFormat === "json" ? "json" : exportFormat === "txt" ? "txt" : "md";
-    a.download = `batch_${new Date().toISOString().slice(0, 19).replace(/[:.]/g, "-")}.${ext}`;
+    a.download = `batch_${new Date().toISOString().slice(0, 19).replace(/[:.]/g, "-")}.${exportFormat}`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
-  function copyActiveOutput() {
-    if (!results || !results[activeResultIndex]) return;
-    const active = results[activeResultIndex];
-    const text = `Host: ${active.name} (${active.user}@${active.host})\nExit Code: ${active.exit_code}\n\nSTDOUT:\n${active.stdout}\n\nSTDERR:\n${active.stderr}`;
-    copyTextWithFallback(text);
-    copied = true;
-    setTimeout(() => (copied = false), 2000);
+  function copyOutput(r: BatchExecHostResult) {
+    copyTextWithFallback(
+      `Host: ${r.name} (${r.user}@${r.host})\nExit Code: ${r.exit_code}\n\nSTDOUT:\n${r.stdout}\n\nSTDERR:\n${r.stderr}`,
+    );
+    copiedId = r.connection_id;
+    setTimeout(() => (copiedId = null), 2000);
+  }
+
+  function toggleExpanded(id: string) {
+    if (expandedResults.has(id)) expandedResults.delete(id);
+    else expandedResults.add(id);
   }
 
   function handleModalKeydown(e: KeyboardEvent) {
-    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
     const isMod = e.ctrlKey || e.metaKey;
     if (isMod && e.key === "Enter" && !running) {
       e.preventDefault();
       void executeBatch();
-    } else if (isMod && e.shiftKey && e.key.toLowerCase() === "d") {
+      return;
+    }
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+    if (isMod && e.shiftKey && e.key.toLowerCase() === "d") {
       e.preventDefault();
       dryRun = !dryRun;
     }
@@ -397,593 +394,472 @@
 
 <svelte:window onkeydown={(e) => { if (show) handleModalKeydown(e); }} />
 
+{#snippet resultOutput(r: BatchExecHostResult)}
+  {@const showOut = outputTab !== "stderr" && r.stdout}
+  {@const showErr = outputTab !== "stdout" && r.stderr}
+  <div class="relative">
+    <button
+      type="button"
+      class="btn-icon btn-icon-sm absolute right-1.5 top-1.5"
+      aria-label="Copy output of {r.name}"
+      title="Copy output"
+      onclick={() => copyOutput(r)}
+    >
+      {#if copiedId === r.connection_id}
+        <Check size={14} class="text-success" />
+      {:else}
+        <Copy size={14} />
+      {/if}
+    </button>
+    <div class="code-block max-h-72 overflow-y-auto pr-9">
+      {#if showOut}
+        <pre class="m-0 whitespace-pre-wrap break-words font-mono">{r.stdout}</pre>
+      {/if}
+      {#if showErr}
+        <pre class="m-0 whitespace-pre-wrap break-words font-mono text-error {showOut ? 'mt-2 border-t border-border pt-2' : ''}">{r.stderr}</pre>
+      {/if}
+      {#if !showOut && !showErr}
+        <span class="text-muted">No {outputTab === "all" ? "output" : outputTab} (exit {r.exit_code})</span>
+      {/if}
+    </div>
+  </div>
+{/snippet}
+
 {#if show}
   <ModalShell
     open={show}
-    title="Multi-Host Command Execution"
-    onClose={onClose}
+    title="Run command on hosts"
+    {onClose}
     width={isFullscreen ? "full" : "lg"}
-    overlayStyle={isFullscreen ? "" : "padding: 20px"}
-    panelClass="w-[94vw] max-w-6xl h-[86vh] max-h-[900px] flex flex-col overflow-hidden text-primary bg-surface border border-border rounded-2xl shadow-2xl transition-all duration-150"
+    panelStyle={isFullscreen ? "" : "max-width: 1120px; height: min(780px, calc(100dvh - 48px));"}
+    overlayStyle={isFullscreen ? "padding: 0" : ""}
   >
-    <!-- Modal Header -->
-    <header class="px-5 py-3.5 flex items-center justify-between border-b border-border bg-surface-subtle/50 shrink-0 select-none">
-      <div class="flex items-center gap-3">
-        <div class="p-2 rounded-xl bg-accent/10 text-accent border border-accent/20">
-          <Terminal size={18} />
-        </div>
-        <div>
-          <div class="flex items-center gap-2">
-            <h2 class="text-sm font-bold text-primary tracking-tight">Batch Command Runner</h2>
-            <span class="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-surface-elevated text-muted border border-border">
-              {targetedConnections.length} target{targetedConnections.length === 1 ? "" : "s"}
-            </span>
-          </div>
-          <p class="text-[11px] text-muted leading-tight">Parallel orchestration across remote SSH hosts with dry-run protection</p>
-        </div>
+    <header class="modal-header">
+      <div class="min-w-0">
+        <h2 class="modal-title">Run command on hosts</h2>
+        <p class="modal-subtitle">Run one command on several hosts in parallel. Preview with a dry run first.</p>
       </div>
-
-      <!-- Navigation Tabs -->
-      <nav class="flex items-center gap-1 p-1 rounded-xl bg-surface-elevated border border-border">
+      <div class="flex shrink-0 items-center gap-0.5">
         <button
           type="button"
-          class="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition-all {activeTab === 'execute' ? 'bg-surface text-primary shadow-xs' : 'text-muted hover:text-primary'}"
-          onclick={() => (activeTab = "execute")}
-        >
-          <Play size={12} />
-          <span>Runner</span>
-        </button>
-
-        <button
-          type="button"
-          class="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition-all {activeTab === 'history' ? 'bg-surface text-primary shadow-xs' : 'text-muted hover:text-primary'}"
-          onclick={() => (activeTab = "history")}
-        >
-          <Clock size={12} />
-          <span>History</span>
-          {#if history.length > 0}
-            <span class="ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] bg-accent/20 text-accent">{history.length}</span>
-          {/if}
-        </button>
-
-        <button
-          type="button"
-          class="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition-all {activeTab === 'templates' ? 'bg-surface text-primary shadow-xs' : 'text-muted hover:text-primary'}"
-          onclick={() => (activeTab = "templates")}
-        >
-          <Bookmark size={12} />
-          <span>Templates</span>
-        </button>
-      </nav>
-
-      <!-- Window Actions -->
-      <div class="flex items-center gap-1">
-        <button
-          type="button"
-          class="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-surface-elevated transition-colors"
-          title={isFullscreen ? "Restore window" : "Maximize window"}
+          class="btn-icon"
+          aria-label={isFullscreen ? "Restore size" : "Maximize"}
+          title={isFullscreen ? "Restore size" : "Maximize"}
           onclick={() => (isFullscreen = !isFullscreen)}
         >
-          {#if isFullscreen}
-            <Minimize2 size={15} />
-          {:else}
-            <Maximize2 size={15} />
-          {/if}
+          {#if isFullscreen}<Minimize2 size={14} />{:else}<Maximize2 size={14} />{/if}
         </button>
-        <button
-          type="button"
-          class="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-surface-elevated transition-colors"
-          onclick={onClose}
-          title="Close dialog (Esc)"
-        >
-          <X size={15} />
+        <button type="button" class="modal-close mr-0 mt-0" aria-label="Close" onclick={onClose}>
+          <X size={16} />
         </button>
       </div>
     </header>
 
-    <!-- Env Warning Alert -->
+    <nav class="tabs shrink-0 px-5" aria-label="Batch sections">
+      <button type="button" class="tab {activeTab === 'execute' ? 'tab-active' : ''}" onclick={() => (activeTab = "execute")}>
+        Run
+      </button>
+      <button type="button" class="tab {activeTab === 'history' ? 'tab-active' : ''}" onclick={() => (activeTab = "history")}>
+        History
+        {#if history.length > 0}<span class="count">{history.length}</span>{/if}
+      </button>
+      <button type="button" class="tab {activeTab === 'templates' ? 'tab-active' : ''}" onclick={() => (activeTab = "templates")}>
+        Templates
+      </button>
+    </nav>
+
     {#if showEnvWarning}
-      <div class="mx-5 mt-3 px-3.5 py-2.5 rounded-xl border border-warning/30 bg-warning/10 flex items-center justify-between text-xs text-amber-300 shrink-0">
-        <div class="flex items-center gap-2.5 min-w-0">
-          <TriangleAlert size={16} class="shrink-0 text-warning" />
-          <div class="truncate">
-            <span class="font-bold mr-1">SSH Environment Warning:</span>
-            <span class="opacity-90">{envStatus?.warnings[0]}</span>
-          </div>
-        </div>
+      <div class="alert alert-warning mx-5 mt-3 shrink-0 items-center">
+        <TriangleAlert size={14} class="shrink-0" />
+        <span class="min-w-0 flex-1"><span class="alert-title">SSH environment:</span> {envStatus?.warnings[0]}</span>
         <button
           type="button"
-          class="p-1 rounded text-warning hover:bg-warning/20 transition-colors shrink-0"
+          class="btn-icon btn-icon-sm text-warning"
+          aria-label="Dismiss warning"
           onclick={() => (envWarningDismissed = true)}
-          title="Dismiss warning"
         >
-          <X size={13} />
+          <X size={14} />
         </button>
       </div>
     {/if}
 
-    <!-- ── TAB: EXECUTE (MAIN RUNNER) ──────────────────────────────────────── -->
     {#if activeTab === "execute"}
-      <div class="flex flex-1 min-h-0 divide-x divide-border overflow-hidden">
-        <!-- LEFT COLUMN: Server Selector Deck -->
-        <aside class="w-60 md:w-72 shrink-0 flex flex-col min-h-0 bg-surface-subtle/30">
-          <div class="p-3 border-b border-border space-y-2.5">
+      <div class="flex min-h-0 flex-1 overflow-hidden">
+        <!-- Host picker -->
+        <aside class="flex w-72 shrink-0 flex-col border-r border-border">
+          <div class="flex flex-col gap-2 px-4 pb-2 pt-4">
             <div class="flex items-center justify-between">
-              <span class="text-[11px] font-bold text-muted uppercase tracking-wider">Target Hosts</span>
-              <span class="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/25">
-                {selectedIds.length} of {connections.length}
-              </span>
+              <span class="section-label">Hosts</span>
+              <span class="text-xs tabular-nums text-muted">{selectedIds.size} of {connections.length} selected</span>
             </div>
-
-            <div class="relative">
-              <Search size={13} class="absolute left-2.5 top-2.5 text-muted pointer-events-none" />
-              <input
-                type="text"
-                bind:value={hostFilter}
-                placeholder="Filter by name, host, tag..."
-                class="w-full pl-8 pr-2.5 py-1.5 rounded-lg bg-surface-input border border-border text-xs text-primary focus:border-accent focus:outline-none placeholder:text-muted/60"
-              />
-            </div>
-
-            <!-- Quick Filter Pills -->
-            <div class="flex items-center gap-1 flex-wrap text-[10px]">
-              <button type="button" class="px-2 py-0.5 rounded bg-surface border border-border text-muted hover:text-primary transition-colors cursor-pointer" onclick={selectAll}>All</button>
-              <button type="button" class="px-2 py-0.5 rounded bg-surface border border-border text-muted hover:text-primary transition-colors cursor-pointer" onclick={selectNone}>None</button>
-              <button type="button" class="px-2 py-0.5 rounded bg-surface border border-border text-muted hover:text-primary transition-colors cursor-pointer" onclick={selectInvert}>Invert</button>
-              <button type="button" class="px-2 py-0.5 rounded bg-surface border border-border text-muted hover:text-primary transition-colors cursor-pointer" onclick={selectProdOnly}>Prod</button>
-              <button type="button" class="px-2 py-0.5 rounded bg-surface border border-border text-muted hover:text-primary transition-colors cursor-pointer" onclick={selectNonProd}>Non-Prod</button>
-            </div>
-          </div>
-
-          <!-- Server List -->
-          <div class="flex-1 min-h-0 overflow-y-auto p-2 space-y-1">
-            {#each filteredConnections as conn (conn.id)}
-              {@const isSelected = selectedIds.includes(conn.id)}
-              {@const isProd = conn.name.toLowerCase().includes("prod") || conn.tags.some((t) => t.toLowerCase().includes("prod"))}
-              <button
-                type="button"
-                class="flex items-center justify-between w-full px-2.5 py-2 rounded-xl text-left text-xs transition-all border cursor-pointer select-none
-                  {isSelected ? 'bg-accent/10 border-accent/30 text-primary font-medium' : 'bg-transparent border-transparent text-muted hover:bg-surface-elevated hover:text-primary'}"
-                onclick={() => toggleSelect(conn.id)}
-              >
-                <div class="flex items-center gap-2.5 min-w-0 truncate">
-                  <span class="w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 transition-colors
-                    {isSelected ? 'bg-accent border-accent text-white' : 'border-border bg-surface'}">
-                    {#if isSelected}
-                      <Check size={10} strokeWidth={3} />
-                    {/if}
-                  </span>
-                  <div class="min-w-0 truncate">
-                    <div class="truncate font-medium">{conn.name}</div>
-                    <div class="text-[10px] font-mono text-muted truncate">{conn.user}@{conn.host}</div>
-                  </div>
-                </div>
-
-                {#if isProd}
-                  <span class="ml-1 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30 uppercase shrink-0">
-                    PROD
-                  </span>
-                {/if}
-              </button>
-            {:else}
-              <div class="p-6 text-center text-xs text-muted">No servers match query</div>
-            {/each}
-          </div>
-
-          <!-- Bottom Safety Config -->
-          <div class="p-3 border-t border-border bg-surface-elevated/40 space-y-2.5">
-            <label class="flex items-start gap-2.5 text-xs text-primary cursor-pointer select-none p-2 rounded-xl bg-surface border border-border hover:border-border-strong transition-colors">
-              <input type="checkbox" bind:checked={dryRun} class="mt-0.5 rounded border-border text-accent focus:ring-accent" />
-              <div>
-                <span class="font-bold text-[11px] block">Dry Run Mode</span>
-                <span class="text-[10px] text-muted leading-tight block">Simulate execution without sending command to remote shells</span>
-              </div>
+            <label class="search-box">
+              <Search size={14} class="shrink-0" />
+              <input type="text" bind:value={hostFilter} placeholder="Filter hosts" aria-label="Filter hosts" />
             </label>
-
-            <div class="flex items-center justify-between gap-2 px-1">
-              <label for="batch-timeout" class="text-[11px] font-medium text-muted">Timeout (sec)</label>
-              <input
-                id="batch-timeout"
-                type="number"
-                min="1"
-                max="300"
-                bind:value={timeoutSecs}
-                class="w-20 px-2 py-1 rounded-lg bg-surface border border-border text-xs font-mono text-center text-primary focus:border-accent focus:outline-none"
-              />
+            {#if allTags.length > 0}
+              <div class="flex flex-wrap gap-1">
+                {#each allTags as tag (tag)}
+                  <button
+                    type="button"
+                    class="chip h-6 px-2 {tagFilter === tag ? 'chip-active' : ''}"
+                    aria-pressed={tagFilter === tag}
+                    onclick={() => (tagFilter = tagFilter === tag ? null : tag)}
+                  >
+                    {tag}
+                  </button>
+                {/each}
+              </div>
+            {/if}
+            <div class="-mx-1 flex items-center gap-0.5">
+              <button type="button" class="btn btn-ghost btn-sm px-1.5" onclick={selectAll}>All</button>
+              <button type="button" class="btn btn-ghost btn-sm px-1.5" onclick={selectNone}>None</button>
+              <button type="button" class="btn btn-ghost btn-sm px-1.5" onclick={selectInvert}>Invert</button>
+              <span class="mx-1 h-4 w-px bg-border"></span>
+              <button type="button" class="btn btn-ghost btn-sm px-1.5" onclick={selectProdOnly}>Prod</button>
+              <button type="button" class="btn btn-ghost btn-sm px-1.5" onclick={selectNonProd}>Non-prod</button>
             </div>
+          </div>
+
+          <div class="min-h-0 flex-1 overflow-y-auto border-t border-border-subtle px-2 py-1.5">
+            {#each filteredConnections as conn (conn.id)}
+              <label
+                class="flex h-11 cursor-pointer items-center gap-2.5 rounded-md px-2 transition-colors duration-fast hover:bg-surface-hover"
+              >
+                <input
+                  type="checkbox"
+                  class="checkbox"
+                  checked={selectedIds.has(conn.id)}
+                  onchange={() => toggleSelect(conn.id)}
+                />
+                <span class="flex min-w-0 flex-1 flex-col">
+                  <span class="truncate text-sm text-primary">{conn.name}</span>
+                  <span class="truncate font-mono text-xs text-muted">{conn.user}@{conn.host}</span>
+                </span>
+                {#if prodIds.has(conn.id)}
+                  <span class="badge badge-warning">prod</span>
+                {/if}
+              </label>
+            {:else}
+              <p class="m-0 px-2 py-8 text-center text-xs text-muted">No hosts match the filter.</p>
+            {/each}
           </div>
         </aside>
 
-        <!-- RIGHT COLUMN: Command & Results Deck -->
-        <main class="flex-1 flex flex-col min-h-0 p-4 overflow-hidden space-y-3">
-          <!-- Production Warning Alert -->
-          {#if hasProductionTarget && !dryRun}
-            <div class="px-3.5 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-2.5 text-amber-300 text-xs shrink-0">
-              <ShieldAlert size={18} class="shrink-0 text-amber-400" />
-              <div class="flex-1 min-w-0">
-                <span class="font-bold block text-amber-200">Production Servers Targeted</span>
-                <span class="opacity-90 leading-tight">Live commands will execute immediately on production nodes. Review syntax carefully.</span>
+        <!-- Command + results -->
+        <section class="flex min-w-0 flex-1 flex-col">
+          <div class="flex shrink-0 flex-col gap-3 border-b border-border p-4">
+            {#if hasProductionTarget && !dryRun}
+              <div class="alert alert-warning">
+                <TriangleAlert size={14} class="mt-0.5 shrink-0" />
+                <span>
+                  <span class="alert-title">Production hosts selected.</span>
+                  Dry run is off, so the command runs for real on production.
+                </span>
               </div>
-            </div>
-          {/if}
+            {/if}
 
-          <!-- Command Editor -->
-          <div class="space-y-1.5 shrink-0">
-            <div class="flex items-center justify-between">
-              <label for="exec-command-input" class="text-[10px] font-bold text-muted uppercase tracking-wider">Remote Command</label>
-              <span class="text-[10px] text-muted">Press <kbd class="px-1 py-0.5 rounded bg-surface-elevated border border-border font-mono">Ctrl+Enter</kbd> to execute</span>
-            </div>
-
-            <div class="relative">
-              <input
+            <div class="field">
+              <div class="flex items-center justify-between">
+                <label class="field-label" for="exec-command-input">Command</label>
+                <span class="flex items-center gap-1 text-xs text-muted">
+                  <kbd class="kbd">Ctrl</kbd><kbd class="kbd">↵</kbd> to run
+                </span>
+              </div>
+              <textarea
                 id="exec-command-input"
-                type="text"
+                class="input input-mono resize-y"
+                rows="3"
+                spellcheck="false"
                 bind:value={command}
                 placeholder="e.g. uptime, systemctl status nginx, df -h"
-                class="w-full px-3.5 py-2.5 rounded-xl bg-surface-input border border-border text-sm font-mono text-primary focus:border-accent focus:outline-none shadow-inner"
-                onkeydown={(e) => { if (e.key === "Enter" && !running) void executeBatch(); }}
-              />
+              ></textarea>
             </div>
 
-            <!-- Quick Presets -->
-            <div class="flex items-center gap-1.5 flex-wrap pt-0.5">
-              <span class="text-[10px] font-medium text-muted mr-1">Presets:</span>
-              {#each ["uptime", "df -h", "free -m", "w", "docker ps", "systemctl status"] as preset}
+            <div class="flex flex-wrap items-center gap-1.5">
+              {#each templates.slice(0, 8) as tmpl (tmpl.id)}
                 <button
                   type="button"
-                  class="px-2 py-0.5 rounded-lg bg-surface-elevated border border-border text-[10px] font-mono text-muted hover:text-accent hover:border-accent/40 transition-colors cursor-pointer"
-                  onclick={() => (command = preset)}
+                  class="chip h-6 px-2 {command === tmpl.command ? 'chip-active' : ''}"
+                  title={tmpl.command}
+                  onclick={() => (command = tmpl.command)}
                 >
-                  {preset}
+                  {tmpl.name}
                 </button>
               {/each}
               <button
                 type="button"
-                class="ml-auto text-[10px] text-accent hover:underline flex items-center gap-1 cursor-pointer"
+                class="link ml-auto flex items-center gap-1 text-xs"
+                disabled={!command.trim()}
                 onclick={() => {
-                  if (command.trim()) {
-                    newTemplateCmd = command.trim();
-                    newTemplateName = command.trim().split(" ")[0] || "Custom";
-                    activeTab = "templates";
-                  }
+                  newTemplateCmd = command.trim();
+                  newTemplateName = command.trim().split(" ")[0] || "Custom";
+                  activeTab = "templates";
                 }}
               >
-                <Plus size={10} />
-                <span>Save Template</span>
+                <Plus size={14} />
+                Save as template
               </button>
             </div>
-          </div>
 
-          <!-- Action & Export Bar -->
-          <div class="flex items-center justify-between pt-1 border-t border-border shrink-0">
-            <div class="flex items-center gap-2">
-              <span class="text-xs text-muted">
-                Executing on <strong class="text-primary">{selectedIds.length}</strong> server{selectedIds.length === 1 ? "" : "s"}
-              </span>
-            </div>
-
-            <div class="flex items-center gap-2">
-              {#if results && results.length > 0 && !running}
-                <div class="flex items-center gap-1">
-                  <select
-                    bind:value={exportFormat}
-                    class="px-2.5 py-1.5 rounded-xl bg-surface-input border border-border text-xs text-primary focus:border-accent focus:outline-none cursor-pointer"
-                  >
-                    <option value="md">Markdown</option>
-                    <option value="csv">CSV</option>
-                    <option value="json">JSON</option>
-                    <option value="txt">Plain Text</option>
-                  </select>
-                  <button
-                    type="button"
-                    class="px-3 py-1.5 rounded-xl bg-surface-elevated border border-border text-xs text-primary hover:border-border-strong flex items-center gap-1.5 transition-colors cursor-pointer"
-                    onclick={exportResults}
-                    title="Download results"
-                  >
-                    <Download size={13} />
-                    <span>Export</span>
-                  </button>
-                </div>
-              {/if}
-
+            <div class="flex items-center gap-4">
+              <label class="flex cursor-pointer items-center gap-2 text-sm text-secondary">
+                <input type="checkbox" class="switch" bind:checked={dryRun} />
+                Dry run
+              </label>
+              <label class="flex items-center gap-2 text-sm text-secondary">
+                Timeout
+                <input
+                  type="number"
+                  min="1"
+                  max="300"
+                  class="input input-mono h-7 w-16 text-center"
+                  bind:value={timeoutSecs}
+                  aria-label="Timeout in seconds"
+                />
+                <span class="text-xs text-muted">s</span>
+              </label>
               <button
                 type="button"
-                class="flex items-center gap-2 px-4 py-1.5 rounded-xl text-xs font-semibold shadow-sm transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed
-                  {dryRun ? 'bg-surface-elevated hover:bg-surface-active text-primary border border-border' : hasProductionTarget ? 'bg-amber-600 hover:bg-amber-500 text-white' : 'bg-accent hover:bg-accent-hover text-white'}"
+                class="btn ml-auto {dryRun || !hasProductionTarget ? 'btn-primary' : 'btn-danger'}"
                 onclick={executeBatch}
-                disabled={running || selectedIds.length === 0}
+                disabled={running || selectedIds.size === 0}
               >
                 {#if running}
-                  <RefreshCw size={13} class="animate-spin" />
-                  <span>Executing ({selectedIds.length})...</span>
+                  <span class="spinner"></span>
+                  Running on {selectedIds.size}…
                 {:else}
-                  <Play size={13} />
-                  <span>{dryRun ? "Preview Dry Run" : "Execute Command"}</span>
+                  <Play size={14} />
+                  {dryRun ? "Preview" : "Run"} on {selectedIds.size} host{selectedIds.size === 1 ? "" : "s"}
                 {/if}
               </button>
             </div>
           </div>
 
-          <!-- Results View -->
-          {#if results}
-            <div class="flex-1 flex min-h-0 border border-border rounded-2xl overflow-hidden bg-surface-terminal">
-              <!-- Result Hosts Sidebar -->
-              <div class="w-56 shrink-0 border-r border-border overflow-y-auto p-1.5 space-y-1 bg-surface-subtle/40">
-                {#each results as res, idx (res.connection_id)}
-                  <button
-                    type="button"
-                    class="flex items-center justify-between w-full px-2.5 py-2 rounded-xl text-left text-xs transition-all border cursor-pointer
-                      {activeResultIndex === idx ? 'bg-surface-elevated text-primary border-border-strong font-semibold shadow-xs' : 'text-muted border-transparent hover:text-primary hover:bg-surface-subtle'}"
-                    onclick={() => (activeResultIndex = idx)}
-                  >
-                    <div class="truncate min-w-0">
-                      <div class="truncate font-medium">{res.name}</div>
-                      <div class="text-[10px] font-mono opacity-70 truncate">{res.duration_ms}ms · exit {res.exit_code}</div>
-                    </div>
-                    {#if res.success}
-                      <CheckCircle2 size={14} class="text-emerald-400 shrink-0 ml-1.5" />
-                    {:else}
-                      <XCircle size={14} class="text-rose-400 shrink-0 ml-1.5" />
-                    {/if}
-                  </button>
-                {/each}
+          <div class="min-h-0 flex-1 overflow-y-auto p-4">
+            {#if running}
+              <div class="empty-state py-12">
+                <span class="spinner mb-3 size-5 text-accent"></span>
+                <div class="empty-state-title">Running on {selectedIds.size} host{selectedIds.size === 1 ? "" : "s"}</div>
+                <div class="empty-state-desc">Each host times out after {timeoutSecs}s.</div>
               </div>
-
-              <!-- Output Inspector -->
-              {#if results[activeResultIndex]}
-                {@const active = results[activeResultIndex]}
-                <div class="flex-1 flex flex-col min-h-0 p-3.5 overflow-hidden bg-surface-terminal">
-                  <div class="flex items-center justify-between pb-2.5 mb-2.5 border-b border-border/80 text-xs shrink-0">
-                    <div class="flex items-center gap-2.5 min-w-0">
-                      <span class="font-bold text-primary truncate">{active.name}</span>
-                      <span class="font-mono text-muted text-[11px]">{active.user}@{active.host}</span>
-                      <span class="px-2 py-0.5 rounded text-[10px] font-mono {active.success ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'}">
-                        exit {active.exit_code} · {active.duration_ms}ms
-                      </span>
-                    </div>
-
-                    <div class="flex items-center gap-2">
-                      <!-- Output View Selector -->
-                      <div class="flex items-center rounded-lg bg-surface-elevated p-0.5 border border-border text-[10px]">
-                        <button
-                          type="button"
-                          class="px-2 py-0.5 rounded transition-colors {outputTab === 'all' ? 'bg-surface text-primary font-semibold' : 'text-muted hover:text-primary'}"
-                          onclick={() => (outputTab = "all")}
-                        >
-                          All
-                        </button>
-                        <button
-                          type="button"
-                          class="px-2 py-0.5 rounded transition-colors {outputTab === 'stdout' ? 'bg-surface text-primary font-semibold' : 'text-muted hover:text-primary'}"
-                          onclick={() => (outputTab = "stdout")}
-                        >
-                          Stdout
-                        </button>
-                        <button
-                          type="button"
-                          class="px-2 py-0.5 rounded transition-colors {outputTab === 'stderr' ? 'bg-surface text-primary font-semibold' : 'text-muted hover:text-primary'}"
-                          onclick={() => (outputTab = "stderr")}
-                        >
-                          Stderr
-                        </button>
-                      </div>
-
+            {:else if results}
+              <div class="mb-2 flex items-center gap-3">
+                <span class="text-sm font-medium text-primary">Results</span>
+                <span class="flex items-center gap-1.5 text-xs tabular-nums text-muted">
+                  <span>{results.length - failedCount} passed</span>
+                  {#if failedCount > 0}
+                    <span aria-hidden="true">·</span>
+                    <span class="text-error">{failedCount} failed</span>
+                  {/if}
+                </span>
+                <div class="ml-auto flex items-center gap-2">
+                  <div class="segmented h-7" role="group" aria-label="Output stream">
+                    {#each [["all", "All"], ["stdout", "stdout"], ["stderr", "stderr"]] as [value, label] (value)}
                       <button
                         type="button"
-                        class="p-1.5 rounded-lg bg-surface-elevated border border-border text-muted hover:text-primary transition-colors cursor-pointer"
-                        onclick={copyActiveOutput}
-                        title="Copy host output"
+                        class="segmented-item {outputTab === value ? 'segmented-item-active' : ''}"
+                        aria-pressed={outputTab === value}
+                        onclick={() => (outputTab = value as typeof outputTab)}
                       >
-                        {#if copied}
-                          <Check size={13} class="text-emerald-400" />
-                        {:else}
-                          <Copy size={13} />
-                        {/if}
+                        {label}
                       </button>
-                    </div>
+                    {/each}
                   </div>
-
-                  <!-- Terminal Pre Code Display -->
-                  <div class="flex-1 min-h-0 overflow-y-auto font-mono text-xs p-3.5 rounded-xl bg-black/40 text-primary border border-border/80 space-y-3">
-                    {#if (outputTab === "all" || outputTab === "stdout") && active.stdout}
-                      <div>
-                        {#if outputTab === "all" && active.stderr}
-                          <span class="text-muted text-[9px] uppercase block mb-1 font-sans tracking-widest">stdout</span>
-                        {/if}
-                        <pre class="m-0 whitespace-pre-wrap font-mono leading-relaxed selection:bg-accent/30">{active.stdout}</pre>
-                      </div>
-                    {/if}
-
-                    {#if (outputTab === "all" || outputTab === "stderr") && active.stderr}
-                      <div class="{outputTab === 'all' && active.stdout ? 'border-t border-border/60 pt-2.5 mt-2.5' : ''}">
-                        {#if outputTab === "all"}
-                          <span class="text-rose-400 text-[9px] uppercase block mb-1 font-sans tracking-widest">stderr</span>
-                        {/if}
-                        <pre class="m-0 whitespace-pre-wrap font-mono text-rose-300 leading-relaxed selection:bg-rose-500/30">{active.stderr}</pre>
-                      </div>
-                    {/if}
-
-                    {#if !active.stdout && !active.stderr}
-                      <div class="h-full flex items-center justify-center text-muted italic text-center p-6">
-                        No output returned from remote process (exit {active.exit_code})
-                      </div>
-                    {/if}
-                  </div>
+                  <CustomSelect
+                    options={EXPORT_OPTIONS}
+                    value={exportFormat}
+                    onChange={(v) => (exportFormat = v as typeof exportFormat)}
+                    size="sm"
+                    class="w-32"
+                  />
+                  <button type="button" class="btn btn-secondary btn-sm" onclick={exportResults}>
+                    <Download size={14} />
+                    Export
+                  </button>
                 </div>
-              {/if}
-            </div>
-          {:else if !running}
-            <!-- Empty Ready State -->
-            <div class="flex-1 flex flex-col items-center justify-center gap-3 text-center p-8 border border-dashed border-border rounded-2xl bg-surface-subtle/20">
-              <div class="p-3 rounded-2xl bg-surface-elevated text-muted border border-border">
-                <Terminal size={28} />
               </div>
-              <div>
-                <p class="text-sm font-semibold text-primary mb-1">Command Ready for Dispatch</p>
-                <p class="text-xs text-muted max-w-sm leading-relaxed">
-                  Select target nodes on the left deck, specify your command, and click <strong>Preview Dry Run</strong> to inspect before executing.
-                </p>
-              </div>
-            </div>
-          {:else}
-            <!-- Running State -->
-            <div class="flex-1 flex flex-col items-center justify-center gap-3 text-center p-8 border border-border rounded-2xl bg-surface-subtle/20">
-              <RefreshCw size={28} class="text-accent animate-spin" />
-              <p class="text-sm font-semibold text-primary">Dispatching to {selectedIds.length} node(s)...</p>
-              <p class="text-xs text-muted">Running parallel remote sessions with {timeoutSecs}s timeout</p>
-            </div>
-          {/if}
-        </main>
-      </div>
 
-    <!-- ── TAB: HISTORY ────────────────────────────────────────────────────── -->
-    {:else if activeTab === "history"}
-      <div class="flex-1 flex flex-col min-h-0 p-5 overflow-hidden">
-        <div class="flex items-center justify-between pb-3 border-b border-border shrink-0">
-          <div>
-            <h3 class="text-sm font-bold text-primary">Execution Audit Log</h3>
-            <p class="text-xs text-muted">Recent multi-host batches executed in this workspace</p>
+              <div class="table-wrap">
+                {#each results as r, i (r.connection_id)}
+                  {@const open = expandedResults.has(r.connection_id)}
+                  <div class={i > 0 ? "border-t border-border-subtle" : ""}>
+                    <button
+                      type="button"
+                      class="flex h-11 w-full cursor-pointer items-center gap-3 px-4 text-left text-sm transition-colors duration-fast hover:bg-surface-hover"
+                      aria-expanded={open}
+                      onclick={() => toggleExpanded(r.connection_id)}
+                    >
+                      <ChevronRight
+                        size={14}
+                        class="shrink-0 text-muted transition-transform duration-fast {open ? 'rotate-90' : ''}"
+                      />
+                      <span class="w-16 shrink-0">
+                        <span class="badge {r.success ? 'badge-success' : 'badge-error'}">exit {r.exit_code}</span>
+                      </span>
+                      <span class="truncate text-primary">{r.name}</span>
+                      <span class="min-w-0 truncate font-mono text-xs text-muted">{r.user}@{r.host}</span>
+                      <span class="ml-auto shrink-0 font-mono text-xs tabular-nums text-muted">{r.duration_ms} ms</span>
+                    </button>
+                    {#if open}
+                      <div class="px-4 pb-3 pl-11">
+                        {@render resultOutput(r)}
+                      </div>
+                    {/if}
+                  </div>
+                {/each}
+              </div>
+            {:else}
+              <div class="empty-state py-12">
+                <div class="empty-state-title">No results yet</div>
+                <div class="empty-state-desc">Pick hosts, enter a command, then preview it with a dry run before running it for real.</div>
+              </div>
+            {/if}
           </div>
+        </section>
+      </div>
+    {:else if activeTab === "history"}
+      <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-5">
+        <div class="flex items-center justify-between">
+          <span class="text-xs text-muted">Last {history.length} batch run{history.length === 1 ? "" : "s"} in this workspace</span>
           {#if history.length > 0}
-            <button
-              type="button"
-              class="px-3 py-1.5 rounded-xl bg-surface-elevated border border-border text-xs text-rose-400 hover:border-rose-500/40 flex items-center gap-1.5 transition-colors cursor-pointer"
-              onclick={clearHistory}
-            >
-              <Trash2 size={13} />
-              <span>Clear History</span>
+            <button type="button" class="btn btn-danger-ghost btn-sm" onclick={clearHistory}>
+              <Trash2 size={14} />
+              Clear history
             </button>
           {/if}
         </div>
 
-        <div class="flex-1 min-h-0 overflow-y-auto mt-3 space-y-2">
-          {#each history as item (item.id)}
-            {@const successCount = item.results?.filter((r) => r.success).length ?? 0}
-            <div class="p-3.5 rounded-xl border border-border bg-surface-elevated/40 hover:border-border-strong transition-all flex items-center justify-between gap-4">
-              <div class="min-w-0 flex-1 space-y-1">
-                <div class="flex items-center gap-2">
-                  <span class="font-mono text-xs text-primary font-semibold truncate">{item.command}</span>
-                  <span class="px-2 py-0.5 rounded text-[9px] font-mono uppercase {item.dryRun ? 'bg-accent/15 text-accent border border-accent/25' : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25'}">
-                    {item.dryRun ? "Dry Run" : "Live Exec"}
-                  </span>
-                </div>
-                <div class="flex items-center gap-3 text-[11px] text-muted font-mono">
-                  <span>{new Date(item.timestamp).toLocaleString()}</span>
-                  <span>·</span>
-                  <span>{item.targetCount} targets ({successCount}/{item.targetCount} passed)</span>
-                  <span>·</span>
-                  <span>{item.durationMs}ms</span>
-                </div>
-              </div>
-
-              <div class="flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  class="px-3 py-1.5 rounded-lg bg-surface border border-border text-xs text-primary hover:border-accent hover:text-accent transition-colors cursor-pointer"
-                  onclick={() => {
-                    command = item.command;
-                    dryRun = item.dryRun;
-                    results = item.results;
-                    activeTab = "execute";
-                    notify("Loaded run results into inspector", "info");
-                  }}
-                >
-                  Inspect
-                </button>
-                <button
-                  type="button"
-                  class="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent-hover transition-colors cursor-pointer"
-                  onclick={() => {
-                    command = item.command;
-                    dryRun = item.dryRun;
-                    activeTab = "execute";
-                    void executeBatch();
-                  }}
-                >
-                  Run Again
-                </button>
-              </div>
-            </div>
-          {:else}
-            <div class="h-64 flex flex-col items-center justify-center gap-2 text-center text-muted">
-              <Clock size={28} class="opacity-50" />
-              <p class="text-xs">No batch executions recorded yet</p>
-            </div>
-          {/each}
-        </div>
-      </div>
-
-    <!-- ── TAB: TEMPLATES ──────────────────────────────────────────────────── -->
-    {:else if activeTab === "templates"}
-      <div class="flex-1 flex flex-col min-h-0 p-5 overflow-hidden">
-        <div class="flex items-center justify-between pb-3 border-b border-border shrink-0">
-          <div>
-            <h3 class="text-sm font-bold text-primary">Command Templates &amp; Runbooks</h3>
-            <p class="text-xs text-muted">Store reusable diagnostic commands and operational checklists</p>
+        {#if history.length > 0}
+          <div class="table-wrap min-h-0 overflow-y-auto">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Command</th>
+                  <th class="w-24">Mode</th>
+                  <th class="w-28">Hosts</th>
+                  <th class="w-20">Duration</th>
+                  <th class="w-44">When</th>
+                  <th class="w-40"><span class="sr-only">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each history as item (item.id)}
+                  {@const passed = item.results?.filter((r) => r.success).length ?? 0}
+                  <tr>
+                    <td class="max-w-0"><span class="block truncate font-mono text-xs text-primary">{item.command}</span></td>
+                    <td><span class="badge {item.dryRun ? 'badge-neutral' : 'badge-accent'}">{item.dryRun ? "Dry run" : "Live"}</span></td>
+                    <td class="tabular-nums">
+                      <span class={passed < item.targetCount ? "text-error" : ""}>{passed}/{item.targetCount}</span> passed
+                    </td>
+                    <td class="font-mono text-xs tabular-nums">{item.durationMs} ms</td>
+                    <td class="text-xs">{new Date(item.timestamp).toLocaleString()}</td>
+                    <td>
+                      <div class="row-actions">
+                        <button
+                          type="button"
+                          class="btn btn-ghost btn-sm"
+                          onclick={() => {
+                            command = item.command;
+                            dryRun = item.dryRun;
+                            showResults(item.results);
+                            activeTab = "execute";
+                          }}
+                        >
+                          Inspect
+                        </button>
+                        <button
+                          type="button"
+                          class="btn btn-secondary btn-sm"
+                          onclick={() => {
+                            command = item.command;
+                            dryRun = item.dryRun;
+                            activeTab = "execute";
+                            void executeBatch();
+                          }}
+                        >
+                          Run again
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
           </div>
-        </div>
-
-        <!-- Add Template Bar -->
-        <div class="mt-3 p-3 rounded-xl bg-surface-elevated border border-border flex items-center gap-2 shrink-0">
-          <input
-            type="text"
-            bind:value={newTemplateName}
-            placeholder="Template name (e.g. Health Check)"
-            class="w-48 px-3 py-1.5 rounded-lg bg-surface-input border border-border text-xs text-primary focus:border-accent focus:outline-none"
-          />
-          <input
-            type="text"
-            bind:value={newTemplateCmd}
-            placeholder="Command string (e.g. curl -I https://localhost:443)"
-            class="flex-1 px-3 py-1.5 rounded-lg bg-surface-input border border-border text-xs font-mono text-primary focus:border-accent focus:outline-none"
-          />
-          <button
-            type="button"
-            class="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-semibold hover:bg-accent-hover transition-colors cursor-pointer flex items-center gap-1.5"
-            onclick={addTemplate}
-            disabled={!newTemplateName.trim() || !newTemplateCmd.trim()}
-          >
-            <Plus size={13} />
-            <span>Add Template</span>
+        {:else}
+          <div class="empty-state">
+            <div class="empty-state-title">No batch runs yet</div>
+            <div class="empty-state-desc">Runs and dry runs appear here so you can inspect or repeat them.</div>
+          </div>
+        {/if}
+      </div>
+    {:else}
+      <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-5">
+        <form
+          class="flex shrink-0 items-end gap-2"
+          onsubmit={(e) => {
+            e.preventDefault();
+            addTemplate();
+          }}
+        >
+          <div class="field w-52">
+            <label class="field-label" for="tmpl-name">Name</label>
+            <input id="tmpl-name" class="input" bind:value={newTemplateName} placeholder="Health check" />
+          </div>
+          <div class="field flex-1">
+            <label class="field-label" for="tmpl-cmd">Command</label>
+            <input
+              id="tmpl-cmd"
+              class="input input-mono"
+              bind:value={newTemplateCmd}
+              placeholder="curl -sI https://localhost"
+              spellcheck="false"
+            />
+          </div>
+          <button type="submit" class="btn btn-secondary" disabled={!newTemplateName.trim() || !newTemplateCmd.trim()}>
+            <Plus size={14} />
+            Add template
           </button>
-        </div>
+        </form>
 
-        <!-- Templates Grid -->
-        <div class="flex-1 min-h-0 overflow-y-auto mt-3 grid grid-cols-2 gap-2.5">
-          {#each templates as tmpl (tmpl.id)}
-            {@const isBuiltin = DEFAULT_TEMPLATES.some((d) => d.id === tmpl.id)}
-            <div class="p-3 rounded-xl border border-border bg-surface-subtle/30 hover:border-border-strong transition-all flex flex-col justify-between gap-2">
-              <div>
-                <div class="flex items-center justify-between gap-2 mb-1">
-                  <span class="text-xs font-bold text-primary">{tmpl.name}</span>
-                  <span class="text-[9px] font-mono px-1.5 py-0.2 rounded {isBuiltin ? 'bg-surface-elevated text-muted' : 'bg-accent/15 text-accent'}">
-                    {isBuiltin ? "Built-in" : "Custom"}
-                  </span>
-                </div>
-                <pre class="m-0 text-[11px] font-mono text-muted bg-surface-input/80 p-2 rounded-lg border border-border/60 overflow-x-auto select-all">{tmpl.command}</pre>
-              </div>
-
-              <div class="flex items-center justify-end gap-2 pt-1">
-                {#if !isBuiltin}
-                  <button
-                    type="button"
-                    class="p-1 rounded text-muted hover:text-rose-400 hover:bg-surface-elevated transition-colors cursor-pointer"
-                    title="Delete template"
-                    onclick={() => deleteTemplate(tmpl.id)}
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                {/if}
-                <button
-                  type="button"
-                  class="px-3 py-1 rounded-lg bg-surface-elevated border border-border text-xs text-primary hover:border-accent hover:text-accent transition-colors cursor-pointer"
-                  onclick={() => applyTemplate(tmpl.command)}
-                >
-                  Use Template
-                </button>
-              </div>
-            </div>
-          {/each}
+        <div class="table-wrap min-h-0 overflow-y-auto">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th class="w-48">Name</th>
+                <th>Command</th>
+                <th class="w-24">Type</th>
+                <th class="w-36"><span class="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each templates as tmpl (tmpl.id)}
+                {@const builtin = BUILTIN_TEMPLATE_IDS.has(tmpl.id)}
+                <tr>
+                  <td class="text-primary">{tmpl.name}</td>
+                  <td class="max-w-0"><span class="block truncate font-mono text-xs" title={tmpl.command}>{tmpl.command}</span></td>
+                  <td><span class="badge {builtin ? 'badge-neutral' : 'badge-accent'}">{builtin ? "Built-in" : "Custom"}</span></td>
+                  <td>
+                    <div class="row-actions">
+                      {#if !builtin}
+                        <button
+                          type="button"
+                          class="btn-icon btn-icon-danger"
+                          aria-label="Delete template {tmpl.name}"
+                          onclick={() => deleteTemplate(tmpl.id)}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      {/if}
+                      <button type="button" class="btn btn-secondary btn-sm" onclick={() => applyTemplate(tmpl.command)}>
+                        Use
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
         </div>
       </div>
     {/if}

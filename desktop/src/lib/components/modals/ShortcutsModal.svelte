@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Command, X } from "lucide-svelte";
+  import { X } from "lucide-svelte";
   import ModalShell from "$lib/components/ui/ModalShell.svelte";
 
   interface Props {
@@ -9,68 +9,107 @@
 
   let { show, onClose }: Props = $props();
 
-  const shortcuts = [
-    { key: "/  or  Ctrl+K", description: "Focus search bar" },
-    { key: "N  or  Ctrl+N", description: "Open Add Connection modal" },
-    { key: "1", description: "Switch to Hosts / Connections tab" },
-    { key: "2", description: "Switch to Terminals tab" },
-    { key: "3", description: "Switch to Keys tab" },
-    { key: "4", description: "Switch to Security Audit tab" },
-    { key: "5", description: "Switch to History / Logs tab" },
-    { key: "6", description: "Switch to Settings tab" },
-    { key: "↑ / ↓", description: "Navigate host list" },
-    { key: "Enter", description: "Connect to selected host" },
-    { key: "Ctrl + E", description: "Edit selected host" },
-    { key: "Escape", description: "Close active modal / Clear search" },
-    { key: "?  or  F1", description: "Toggle keyboard shortcuts guide" },
+  const MOD =
+    typeof navigator !== "undefined" && /mac/i.test(navigator.platform || navigator.userAgent) ? "⌘" : "Ctrl";
+
+  /** Each shortcut lists alternative key combos; each combo is a list of keys. */
+  type Shortcut = { action: string; combos: string[][] };
+  type Section = { title: string; note?: string; items: Shortcut[] };
+
+  // Mirrors +page.svelte (palette / help), appState.handleGlobalKeydown
+  // (filter, new host, views, terminal font) and ConnectionsView (host list).
+  const columns: Section[][] = [
+    [
+      {
+        title: "General",
+        items: [
+          { action: "Command palette", combos: [[MOD, "K"]] },
+          { action: "Keyboard shortcuts", combos: [["?"], ["F1"], [MOD, "/"]] },
+          { action: "Close dialog or clear filter", combos: [["Esc"]] },
+        ],
+      },
+      {
+        title: "Views",
+        items: [
+          { action: "Hosts", combos: [["1"]] },
+          { action: "Terminals", combos: [["2"]] },
+          { action: "Keys", combos: [["3"]] },
+          { action: "Security audit", combos: [["4"]] },
+          { action: "History", combos: [["5"]] },
+          { action: "Settings", combos: [["6"]] },
+        ],
+      },
+    ],
+    [
+      {
+        title: "Hosts",
+        items: [
+          { action: "Focus filter", combos: [["/"]] },
+          { action: "New host", combos: [["N"], [MOD, "N"]] },
+          { action: "Move selection", combos: [["↑", "↓"], ["J", "K"]] },
+          { action: "Connect to selected host", combos: [["Enter"]] },
+          { action: "Edit selected host", combos: [[MOD, "E"]] },
+        ],
+      },
+      {
+        title: "Terminal",
+        note: "In the Terminals view, when the terminal isn't focused.",
+        items: [
+          { action: "Increase font size", combos: [[MOD, "+"]] },
+          { action: "Decrease font size", combos: [[MOD, "−"]] },
+          { action: "Reset font size", combos: [[MOD, "0"]] },
+        ],
+      },
+    ],
   ];
 </script>
 
 {#if show}
-  <ModalShell
-    open={show}
-    title="Keyboard Shortcuts"
-    onClose={onClose}
-    width="md"
-    panelClass="p-6 space-y-5"
-  >
-    <!-- Header -->
-    <div class="flex items-center justify-between pb-3 border-b border-border">
-        <h2 class="text-base font-bold text-primary flex items-center gap-2 m-0">
-          <Command size={18} class="text-accent" />
-          Keyboard Shortcuts & Productivity
-        </h2>
-        <button
-          type="button"
-          class="btn-icon"
-          onclick={onClose}
-          title="Close"
-          aria-label="Close"
-        >
-          <X size={16} />
-        </button>
+  <ModalShell open={show} title="Keyboard shortcuts" {onClose} width="lg">
+    <div class="modal-header">
+      <div class="min-w-0">
+        <h2 class="modal-title">Keyboard shortcuts</h2>
+        <p class="modal-subtitle">Single-key shortcuts work when no text field is focused.</p>
       </div>
+      <button type="button" class="modal-close" onclick={onClose} aria-label="Close">
+        <X size={16} />
+      </button>
+    </div>
 
-      <!-- Shortcuts Table -->
-      <div class="space-y-2 max-h-80 overflow-y-auto pr-1">
-        {#each shortcuts as shortcut}
-          <div class="flex items-center justify-between gap-4 p-2 rounded-lg bg-surface-input/60 border border-border/50 text-xs">
-            <span class="text-secondary font-medium">{shortcut.description}</span>
-            <kbd class="kbd kbd-accent shrink-0">{shortcut.key}</kbd>
-          </div>
-        {/each}
-      </div>
+    <div class="modal-body grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-2">
+      {#each columns as column, ci (ci)}
+        <div class="flex min-w-0 flex-col gap-5">
+          {#each column as section (section.title)}
+            <section class="flex flex-col gap-1">
+              <h3 class="section-label m-0 mb-1">{section.title}</h3>
+              <ul class="m-0 flex list-none flex-col p-0">
+                {#each section.items as item (item.action)}
+                  <li class="flex h-8 items-center justify-between gap-4 border-b border-border-subtle last:border-b-0">
+                    <span class="truncate text-sm text-secondary">{item.action}</span>
+                    <span class="flex shrink-0 items-center gap-1.5">
+                      {#each item.combos as combo, i (i)}
+                        {#if i > 0}<span class="text-xs text-muted">or</span>{/if}
+                        <span class="flex items-center gap-0.5">
+                          {#each combo as key, ki (ki)}
+                            <kbd class="kbd">{key}</kbd>
+                          {/each}
+                        </span>
+                      {/each}
+                    </span>
+                  </li>
+                {/each}
+              </ul>
+              {#if section.note}
+                <p class="m-0 mt-1 text-xs text-muted">{section.note}</p>
+              {/if}
+            </section>
+          {/each}
+        </div>
+      {/each}
+    </div>
 
-      <!-- Footer -->
-      <div class="pt-2 border-t border-border flex justify-between items-center text-[11px] text-muted">
-        <span>Press <kbd class="kbd">Esc</kbd> to close</span>
-        <button
-          type="button"
-          class="btn btn-primary"
-          onclick={onClose}
-        >
-          Got it
-        </button>
-      </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" onclick={onClose} data-autofocus>Close</button>
+    </div>
   </ModalShell>
 {/if}

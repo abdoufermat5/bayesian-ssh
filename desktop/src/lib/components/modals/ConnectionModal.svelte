@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { X, Key, Tag } from "lucide-svelte";
+  import { X, FolderOpen, ChevronRight } from "lucide-svelte";
   import ModalShell from "$lib/components/ui/ModalShell.svelte";
 
   interface Props {
@@ -34,6 +34,16 @@
     onBrowseKey,
   }: Props = $props();
 
+  const title = $derived(isEditing ? "Edit host" : "New host");
+
+  // Advanced starts open when the host already uses a jump host.
+  let showAdvanced = $state(Boolean(modalBastion?.trim() || modalBastionUser?.trim()));
+
+  // Validation errors appear only after the first submit attempt, then live.
+  let attempted = $state(false);
+  const nameError = $derived(attempted && !modalName.trim() ? "Name is required" : null);
+  const hostError = $derived(attempted && !modalHost.trim() ? "Host is required" : null);
+
   const parsedTags = $derived(
     modalTagsString
       ? modalTagsString
@@ -46,194 +56,218 @@
   function removeTag(tagToRemove: string) {
     modalTagsString = parsedTags.filter((t) => t !== tagToRemove).join(", ");
   }
+
+  function handleSubmit(e: SubmitEvent) {
+    e.preventDefault();
+    attempted = true;
+    if (!modalName.trim()) {
+      document.getElementById("c-name")?.focus();
+      return;
+    }
+    if (!modalHost.trim()) {
+      document.getElementById("c-host")?.focus();
+      return;
+    }
+    onSave();
+  }
 </script>
 
-<ModalShell
-  open={true}
-  title={isEditing ? "Edit Connection" : "New SSH Connection"}
-  onClose={onClose}
-  panelClass="w-full max-w-xl"
->
-  <div class="modal-header">
-    <h2 class="modal-title">
-      {isEditing ? "Edit Connection" : "New SSH Connection"}
-    </h2>
-    <button
-      type="button"
-      class="modal-close"
-      onclick={onClose}
-      aria-label="Close"
-    >
-      <X size={18} />
-    </button>
-  </div>
-
-  <div class="modal-body flex flex-col gap-4">
-    <!-- Connection Name -->
-    <div class="field">
-      <label for="c-name" class="field-label">Connection Name</label>
-      <input
-        id="c-name"
-        type="text"
-        placeholder="e.g. Production Cluster Gateway"
-        bind:value={modalName}
-        class="input"
-      />
+<ModalShell open={true} {title} {onClose} width="form">
+  <form class="flex min-h-0 flex-1 flex-col" novalidate onsubmit={handleSubmit}>
+    <div class="modal-header">
+      <div class="min-w-0">
+        <h2 class="modal-title">{title}</h2>
+        <p class="modal-subtitle">
+          {isEditing ? "Changes apply to new sessions." : "Saved to the active profile."}
+        </p>
+      </div>
+      <button type="button" class="modal-close" onclick={onClose} aria-label="Close">
+        <X size={16} />
+      </button>
     </div>
 
-    <!-- Host and Port -->
-    <div class="flex gap-3">
-      <div class="field flex-1">
-        <label for="c-host" class="field-label">Hostname / IP Address</label>
+    <div class="modal-body flex flex-col gap-4">
+      <div class="field">
+        <label for="c-name" class="field-label">Name</label>
         <input
-          id="c-host"
+          id="c-name"
           type="text"
-          placeholder="e.g. 192.168.1.50 or ec2-host.aws.com"
-          bind:value={modalHost}
-          class="input font-mono text-xs"
+          placeholder="prod-api-1"
+          autocomplete="off"
+          spellcheck="false"
+          bind:value={modalName}
+          class="input"
+          class:input-invalid={nameError}
+          aria-invalid={nameError ? "true" : undefined}
+          aria-describedby={nameError ? "c-name-error" : undefined}
+          data-autofocus
         />
+        {#if nameError}
+          <span id="c-name-error" class="field-error">{nameError}</span>
+        {/if}
       </div>
-      <div class="field w-28 shrink-0">
-        <label for="c-port" class="field-label">Port</label>
-        <input
-          id="c-port"
-          type="number"
-          bind:value={modalPort}
-          class="input font-mono text-xs"
-          placeholder="22"
-        />
-      </div>
-    </div>
 
-    <!-- Username & Identity File -->
-    <div class="flex gap-3">
-      <div class="field w-40 shrink-0">
-        <label for="c-user" class="field-label">SSH Username</label>
+      <div class="grid grid-cols-[1fr_96px] gap-3">
+        <div class="field">
+          <label for="c-host" class="field-label">Host</label>
+          <input
+            id="c-host"
+            type="text"
+            placeholder="10.0.0.12 or api.example.com"
+            autocomplete="off"
+            spellcheck="false"
+            bind:value={modalHost}
+            class="input input-mono"
+            class:input-invalid={hostError}
+            aria-invalid={hostError ? "true" : undefined}
+            aria-describedby={hostError ? "c-host-error" : undefined}
+          />
+          {#if hostError}
+            <span id="c-host-error" class="field-error">{hostError}</span>
+          {/if}
+        </div>
+        <div class="field">
+          <label for="c-port" class="field-label">Port</label>
+          <input
+            id="c-port"
+            type="number"
+            min="1"
+            max="65535"
+            placeholder="22"
+            bind:value={modalPort}
+            class="input input-mono tabular-nums"
+          />
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="c-user" class="field-label">User</label>
         <input
           id="c-user"
           type="text"
-          placeholder="root"
+          placeholder="Default user"
+          autocomplete="off"
+          spellcheck="false"
           bind:value={modalUser}
-          class="input font-mono text-xs"
+          class="input input-mono"
         />
       </div>
 
-      <div class="field flex-1">
-        <label for="c-key" class="field-label">Identity File (Private Key)</label>
+      <div class="field">
+        <label for="c-key" class="field-label">Identity file</label>
         <div class="flex gap-2">
           <input
             id="c-key"
             type="text"
             placeholder="~/.ssh/id_ed25519"
+            autocomplete="off"
+            spellcheck="false"
             bind:value={modalKeyPath}
-            class="input flex-1 font-mono text-xs"
+            class="input input-mono flex-1"
           />
-          <button
-            type="button"
-            class="btn btn-secondary shrink-0"
-            onclick={onBrowseKey}
-            title="Browse SSH key file"
-          >
-            <Key size={13} />
-            <span>Browse</span>
+          <button type="button" class="btn btn-secondary" onclick={onBrowseKey}>
+            <FolderOpen size={14} />
+            Browse
           </button>
         </div>
+        <span class="field-hint">Leave empty to use the SSH agent or your default keys.</span>
       </div>
-    </div>
 
-    <!-- Kerberos Authentication -->
-    <div
-      class="flex cursor-pointer items-center gap-2.5 rounded-lg border border-border/60 bg-surface-input/40 px-3 py-2 text-xs text-secondary select-none hover:bg-surface-hover/50 transition-colors"
-      onclick={() => (modalUseKerberos = !modalUseKerberos)}
-      role="presentation"
-    >
-      <input
-        id="c-krb"
-        type="checkbox"
-        bind:checked={modalUseKerberos}
-        onclick={(e) => e.stopPropagation()}
-        class="cursor-pointer accent-accent w-4 h-4"
-      />
-      <label for="c-krb" class="cursor-pointer font-medium text-primary">Enable Kerberos / GSSAPI Authentication</label>
-    </div>
-
-    <!-- Bastion Jump Host -->
-    <div class="settings-section-title my-1">
-      <span>BASTION JUMP HOST (OPTIONAL)</span>
-      <span class="flex-1 h-px bg-border"></span>
-    </div>
-
-    <div class="flex gap-3">
-      <div class="field flex-1">
-        <label for="c-bastion" class="field-label">Bastion Hostname</label>
-        <input
-          id="c-bastion"
-          type="text"
-          placeholder="bastion.internal.corp"
-          bind:value={modalBastion}
-          class="input font-mono text-xs"
-        />
-      </div>
-      <div class="field w-40 shrink-0">
-        <label for="c-bastion-user" class="field-label">Bastion User</label>
-        <input
-          id="c-bastion-user"
-          type="text"
-          placeholder="jumpuser"
-          bind:value={modalBastionUser}
-          class="input font-mono text-xs"
-        />
-      </div>
-    </div>
-
-    <!-- Tags -->
-    <div class="field">
-      <label for="c-tags" class="field-label flex items-center gap-1">
-        <Tag size={12} class="text-muted" />
-        <span>Tags (Separated by commas)</span>
+      <label
+        for="c-krb"
+        class="flex cursor-pointer items-center justify-between gap-4 rounded-md border border-border px-3 py-2.5"
+      >
+        <span class="flex min-w-0 flex-col gap-0.5">
+          <span class="text-sm text-primary">Kerberos (GSSAPI)</span>
+          <span class="text-xs text-muted">Authenticate with your Kerberos ticket.</span>
+        </span>
+        <input id="c-krb" type="checkbox" class="switch" bind:checked={modalUseKerberos} />
       </label>
-      <input
-        id="c-tags"
-        type="text"
-        placeholder="e.g. backend, aws, production"
-        bind:value={modalTagsString}
-        class="input"
-      />
-      {#if parsedTags.length > 0}
-        <div class="flex flex-wrap gap-1 mt-1.5">
-          {#each parsedTags as tag}
-            <span class="tag flex items-center gap-1">
-              <span>#{tag}</span>
-              <button
-                type="button"
-                class="text-muted hover:text-error cursor-pointer border-none bg-transparent p-0 inline-flex items-center"
-                onclick={() => removeTag(tag)}
-                title={`Remove #${tag}`}
-                aria-label={`Remove #${tag}`}
-              >
-                <X size={10} />
-              </button>
-            </span>
-          {/each}
-        </div>
-      {/if}
+
+      <div class="field">
+        <label for="c-tags" class="field-label">Tags</label>
+        <input
+          id="c-tags"
+          type="text"
+          placeholder="prod, aws, backend"
+          autocomplete="off"
+          spellcheck="false"
+          bind:value={modalTagsString}
+          class="input"
+        />
+        {#if parsedTags.length > 0}
+          <div class="flex flex-wrap gap-1">
+            {#each parsedTags as tag (tag)}
+              <span class="tag gap-1 pr-0.5">
+                {tag}
+                <button
+                  type="button"
+                  class="inline-flex size-4 cursor-pointer items-center justify-center rounded-xs text-muted transition-colors hover:text-error"
+                  onclick={() => removeTag(tag)}
+                  aria-label={`Remove tag ${tag}`}
+                >
+                  <X size={10} />
+                </button>
+              </span>
+            {/each}
+          </div>
+        {:else}
+          <span class="field-hint">Separate tags with commas.</span>
+        {/if}
+      </div>
+
+      <div class="rounded-md border border-border">
+        <button
+          type="button"
+          class="flex h-9 w-full cursor-pointer items-center gap-1.5 rounded-md px-3 text-left text-sm text-secondary transition-colors hover:text-primary"
+          aria-expanded={showAdvanced}
+          aria-controls="c-advanced"
+          onclick={() => (showAdvanced = !showAdvanced)}
+        >
+          <ChevronRight
+            size={14}
+            class="text-muted transition-transform duration-150 {showAdvanced ? 'rotate-90' : ''}"
+          />
+          Advanced
+          {#if !showAdvanced && modalBastion.trim()}
+            <span class="ml-auto truncate font-mono text-xs text-muted">via {modalBastion}</span>
+          {/if}
+        </button>
+        {#if showAdvanced}
+          <div id="c-advanced" class="grid grid-cols-[1fr_160px] gap-3 border-t border-border-subtle px-3 pb-3 pt-3">
+            <div class="field">
+              <label for="c-bastion" class="field-label">Jump host</label>
+              <input
+                id="c-bastion"
+                type="text"
+                placeholder="bastion.example.com"
+                autocomplete="off"
+                spellcheck="false"
+                bind:value={modalBastion}
+                class="input input-mono"
+              />
+            </div>
+            <div class="field">
+              <label for="c-bastion-user" class="field-label">Jump user</label>
+              <input
+                id="c-bastion-user"
+                type="text"
+                placeholder="Same as user"
+                autocomplete="off"
+                spellcheck="false"
+                bind:value={modalBastionUser}
+                class="input input-mono"
+              />
+            </div>
+            <span class="field-hint col-span-2">Sessions connect to the jump host first, then to this host.</span>
+          </div>
+        {/if}
+      </div>
     </div>
-  </div>
 
     <div class="modal-footer">
-      <button
-        type="button"
-        class="btn btn-secondary"
-        onclick={onClose}
-      >
-        Cancel
-      </button>
-      <button
-        type="button"
-        class="btn btn-primary"
-        onclick={onSave}
-      >
-        Save Server
-      </button>
+      <button type="button" class="btn btn-secondary" onclick={onClose}>Cancel</button>
+      <button type="submit" class="btn btn-primary">{isEditing ? "Save changes" : "Add host"}</button>
     </div>
+  </form>
 </ModalShell>

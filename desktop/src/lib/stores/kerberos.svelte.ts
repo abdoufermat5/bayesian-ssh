@@ -36,14 +36,32 @@ const EMPTY_STATUS: KerberosStatus = {
 let status = $state<KerberosStatus>(EMPTY_STATUS);
 let showModal = $state(false);
 let pendingConnection = $state<Connection | null>(null);
-let expiresAtMs = $state<number | null>(null);
 let ticketLifetimeSeconds = $state<number | null>(null);
 let liveRemainingSeconds = $state<number | null>(null);
-let pollTimer: ReturnType<typeof setInterval> | null = null;
-let tickTimer: ReturnType<typeof setInterval> | null = null;
-let warnMinutes = $state(15);
-let warnedForExpiry = $state<number | null>(null);
+
+// Internal bookkeeping: never read by templates, so plain variables.
+let expiresAtMs: number | null = null;
+let warnMinutes = 15;
+let warnedForExpiry: number | null = null;
 let onExpiryWarning: ((message: string) => void) | null = null;
+
+/** klist is spawned at most once a minute, and only while the window is visible. */
+const POLL_MS = 60_000;
+/** The countdown ticks every second only in the final hour; otherwise every 30 s. */
+const FAST_TICK_MS = 1_000;
+const SLOW_TICK_MS = 30_000;
+const FAST_TICK_WINDOW_S = 3600;
+
+let monitoring = false;
+/** Set only by a successful status call: no Kerberos client on this machine. */
+let toolsMissing = false;
+let pollTimer: number | undefined;
+let tickTimer: number | undefined;
+let visibilityListenerAttached = false;
+
+function isDocumentHidden(): boolean {
+  return typeof document !== "undefined" && document.visibilityState === "hidden";
+}
 
 function updateLiveRemainingSeconds(): number | null {
   if (!expiresAtMs) {
@@ -63,6 +81,54 @@ function syncExpiryFromStatus(next: KerberosStatus) {
     ticketLifetimeSeconds = null;
   }
   updateLiveRemainingSeconds();
+  scheduleTick();
+}
+
+/** Next klist poll; skipped while hidden or when Kerberos tools are absent. */
+function schedulePoll() {
+  clearTimeout(pollTimer);
+  if (!monitoring || toolsMissing || isDocumentHidden()) return;
+  pollTimer = window.setTimeout(async () => {
+    await refreshKerberosStatus();
+    schedulePoll();
+  }, POLL_MS);
+}
+
+/**
+ * Countdown tick. Runs only while a ticket with a known expiry exists. The
+ * delay never overshoots the warning threshold or the expiry, so warnings
+ * (and tray notifications while hidden) still fire on time.
+ */
+function scheduleTick() {
+  clearTimeout(tickTimer);
+  if (!monitoring || expiresAtMs === null) return;
+  const remaining = liveRemainingSeconds;
+  if (remaining !== null && remaining <= 0) return; // expired: already warned; polls pick up renewals
+
+  const fast = !isDocumentHidden() && remaining !== null && remaining < FAST_TICK_WINDOW_S;
+  let delay = fast ? FAST_TICK_MS : SLOW_TICK_MS;
+  if (remaining !== null) {
+    const untilWarn = remaining - warnMinutes * 60;
+    if (untilWarn > 0) delay = Math.min(delay, untilWarn * 1000);
+    delay = Math.min(delay, remaining * 1000);
+  }
+
+  tickTimer = window.setTimeout(() => {
+    maybeWarnExpiry(updateLiveRemainingSeconds());
+    scheduleTick();
+  }, Math.max(delay, FAST_TICK_MS));
+}
+
+function handleVisibilityChange() {
+  if (!monitoring) return;
+  if (isDocumentHidden()) {
+    clearTimeout(pollTimer);
+    scheduleTick(); // drop to the slow cadence
+    return;
+  }
+  // Visible again: refresh immediately, then resume the regular cadence.
+  if (toolsMissing) return;
+  void refreshKerberosStatus().then(schedulePoll);
 }
 
 export function formatKerberosRemaining(seconds: number | null | undefined): string {
@@ -118,12 +184,14 @@ export async function refreshKerberosStatus(): Promise<KerberosStatus> {
   try {
     const next = await invoke<KerberosStatus>("get_kerberos_status");
     status = next;
+    toolsMissing = !next.tools_available;
     syncExpiryFromStatus(next);
     maybeWarnExpiry(getLiveRemainingSeconds());
     return next;
   } catch {
+    // Transient IPC failure: clear the ticket view but keep polling.
     status = EMPTY_STATUS;
-    expiresAtMs = null;
+    syncExpiryFromStatus(EMPTY_STATUS);
     return EMPTY_STATUS;
   }
 }
@@ -176,6 +244,9 @@ export async function ensureKerberosForConnection(conn: Connection): Promise<boo
 
 export function openKerberosModal() {
   showModal = true;
+  // Polling is slow (and paused while hidden); show fresh data on open. This
+  // also restarts polling if Kerberos tools were installed since the last check.
+  void refreshKerberosStatus().then(schedulePoll);
 }
 
 export function closeKerberosModal() {
@@ -204,23 +275,23 @@ export function startKerberosMonitoring(options?: {
   }
 
   stopKerberosMonitoring();
-  void refreshKerberosStatus();
-
-  pollTimer = setInterval(() => {
-    void refreshKerberosStatus();
-  }, 30_000);
-
-  tickTimer = setInterval(() => {
-    const remaining = updateLiveRemainingSeconds();
-    maybeWarnExpiry(remaining);
-  }, 1_000);
+  monitoring = true;
+  if (!visibilityListenerAttached && typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    visibilityListenerAttached = true;
+  }
+  // The first status decides whether polling is needed at all.
+  void refreshKerberosStatus().then(schedulePoll);
 }
 
 export function stopKerberosMonitoring() {
-  if (pollTimer) clearInterval(pollTimer);
-  if (tickTimer) clearInterval(tickTimer);
-  pollTimer = null;
-  tickTimer = null;
+  monitoring = false;
+  clearTimeout(pollTimer);
+  clearTimeout(tickTimer);
+  if (visibilityListenerAttached) {
+    document.removeEventListener("visibilitychange", handleVisibilityChange);
+    visibilityListenerAttached = false;
+  }
 }
 
 export function getKerberosState() {

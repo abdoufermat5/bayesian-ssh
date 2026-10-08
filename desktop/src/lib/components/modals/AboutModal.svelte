@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import { TerminalSquare, X, ShieldCheck, Cpu, HardDrive, Info, Heart, ExternalLink } from "lucide-svelte";
+  import { openUrl } from "@tauri-apps/plugin-opener";
+  import { X, ExternalLink } from "lucide-svelte";
   import ModalShell from "$lib/components/ui/ModalShell.svelte";
   import type { WorkspaceInfo } from "$lib/types";
 
@@ -14,105 +14,92 @@
 
   let { show, workspace = null, activeEnv = "default", onClose }: Props = $props();
 
-  let appVersion = $state<string>("...");
+  const REPO = "https://github.com/abdoufermat5/bayesian-ssh";
+  const LINKS = [
+    { label: "Source code", href: REPO },
+    { label: "Release notes", href: `${REPO}/releases` },
+    { label: "Report an issue", href: `${REPO}/issues/new` },
+  ];
 
-  onMount(() => {
-    (async () => {
-      try {
-        const ver = await invoke<string>("get_app_version");
-        appVersion = `v${ver}`;
-      } catch {
-        appVersion = "unknown";
-      }
-    })();
+  let appVersion = $state<string | null>(null);
+  let versionRequested = false;
+
+  // Fetch the version lazily the first time the dialog opens.
+  $effect(() => {
+    if (!show || versionRequested) return;
+    versionRequested = true;
+    invoke<string>("get_app_version")
+      .then((v) => (appVersion = v))
+      .catch(() => (appVersion = "unknown"));
   });
+
+  function open(href: string) {
+    openUrl(href).catch(() => window.open(href, "_blank", "noopener,noreferrer"));
+  }
 </script>
 
 {#if show}
-  <ModalShell
-    open={show}
-    title="About Bayesian SSH"
-    onClose={onClose}
-    width="md"
-  >
+  <ModalShell open={show} title="About Bayesian SSH" {onClose} width="md">
     <div class="modal-header">
-        <div class="flex items-center gap-3">
-          <div class="icon-tile">
-            <TerminalSquare size={18} />
-          </div>
-          <div>
-            <h2 class="modal-title flex items-center gap-2">
-              Bayesian SSH
-              <span class="tag text-accent">
-                {appVersion}
-              </span>
-            </h2>
-            <p class="modal-subtitle">Fast & lightweight SSH session manager with Kerberos support</p>
-          </div>
+      <div class="flex min-w-0 items-center gap-3">
+        <svg viewBox="0 0 20 20" class="size-9 shrink-0" aria-hidden="true">
+          <rect width="20" height="20" rx="5" fill="var(--color-accent)" />
+          <path d="M5.5 7l3 3-3 3" fill="none" stroke="var(--color-on-accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M10.5 13.25h4" stroke="var(--color-on-accent)" stroke-width="1.6" stroke-linecap="round" />
+        </svg>
+        <div class="min-w-0">
+          <h2 class="modal-title">Bayesian SSH</h2>
+          <p class="modal-subtitle tabular-nums">
+            {#if appVersion}Version {appVersion}{:else}<span class="skeleton inline-block h-3 w-16 align-middle"></span>{/if}
+          </p>
         </div>
-        <button
-          type="button"
-          class="modal-close"
-          onclick={onClose}
-          title="Close"
-          aria-label="Close"
-        >
-          <X size={16} />
-        </button>
       </div>
+      <button type="button" class="modal-close" onclick={onClose} aria-label="Close">
+        <X size={16} />
+      </button>
+    </div>
 
-      <div class="modal-body flex flex-col gap-3">
-        <div class="settings-section">
-          <div class="flex justify-between items-center text-muted">
-            <span class="flex items-center gap-1.5 font-medium">
-              <Cpu size={13} class="text-accent" />
-              Core Engine
-            </span>
-            <span class="font-mono text-[11px] text-primary">bayesian-ssh-core {appVersion}</span>
-          </div>
+    <div class="modal-body flex flex-col gap-4">
+      <p class="m-0 text-sm leading-relaxed text-secondary">
+        A keyboard-first SSH host manager. It ranks hosts by how often and how recently you use them,
+        and supports jump hosts, Kerberos, tunnels and file transfer.
+      </p>
 
-          <div class="flex justify-between items-center text-muted">
-            <span class="flex items-center gap-1.5 font-medium">
-              <ShieldCheck size={13} class="text-running" />
-              Security Suite
-            </span>
-            <span class="font-mono text-[11px] text-primary">PBKDF2 + AES-GCM + POSIX 0600</span>
-          </div>
-
-          <div class="flex justify-between items-center text-muted">
-            <span class="flex items-center gap-1.5 font-medium">
-              <HardDrive size={13} class="text-accent" />
-              Active Profile
-            </span>
-            <span class="font-mono text-[11px] text-primary">{activeEnv}</span>
-          </div>
-        </div>
-
+      <dl class="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 rounded-md border border-border bg-panel px-3 py-2.5 text-xs">
+        <dt class="text-muted">Profile</dt>
+        <dd class="m-0 truncate font-mono text-secondary">{activeEnv}</dd>
         {#if workspace}
-          <div class="system-value space-y-1 break-all">
-            <div><span class="text-primary font-sans font-semibold">Config:</span> {workspace.config_root}</div>
-            <div><span class="text-primary font-sans font-semibold">Database:</span> {workspace.database_path}</div>
-          </div>
+          <dt class="text-muted">Config</dt>
+          <dd class="m-0 truncate font-mono text-secondary" title={workspace.config_root}>{workspace.config_root}</dd>
+          <dt class="text-muted">Database</dt>
+          <dd class="m-0 truncate font-mono text-secondary" title={workspace.database_path}>{workspace.database_path}</dd>
         {/if}
-      </div>
+        <dt class="text-muted">License</dt>
+        <dd class="m-0 text-secondary">MIT</dd>
+      </dl>
 
-      <div class="px-5 pb-4 text-xs text-muted leading-relaxed">
-        <p class="m-0">
-          Crafted for developers who want keyboard-first SSH host management, smart frequency ranking, and zero bloat.
-        </p>
+      <div class="flex flex-wrap gap-x-4 gap-y-1">
+        {#each LINKS as link (link.href)}
+          <a
+            class="link inline-flex items-center gap-1 text-sm"
+            href={link.href}
+            target="_blank"
+            rel="noreferrer"
+            onclick={(e) => {
+              e.preventDefault();
+              open(link.href);
+            }}
+          >
+            {link.label}
+            <ExternalLink size={12} />
+          </a>
+        {/each}
       </div>
+    </div>
 
-      <div class="modal-footer justify-between text-[11px] text-muted">
-        <span class="flex items-center gap-1">
-          Made with <Heart size={11} class="text-error fill-error" /> by Abdoufermat
-        </span>
-        <button
-          type="button"
-          class="btn btn-primary"
-          onclick={onClose}
-        >
-          Close
-        </button>
-      </div>
+    <div class="modal-footer justify-between">
+      <span class="text-xs text-muted">Made by Abdoufermat</span>
+      <button type="button" class="btn btn-secondary" onclick={onClose}>Close</button>
+    </div>
   </ModalShell>
 {/if}

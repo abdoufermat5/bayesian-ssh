@@ -1,14 +1,11 @@
 <script lang="ts">
   import {
     Activity,
-    Check,
     Clock,
-    Command,
     HardDrive,
     KeyRound,
     Network,
     Palette,
-    Play,
     Plus,
     Search,
     Server,
@@ -19,6 +16,7 @@
     Wrench,
     X,
   } from "lucide-svelte";
+  import { tick } from "svelte";
   import type { AppTab, Connection, DesktopSettings } from "$lib/types";
 
   interface Props {
@@ -55,313 +53,340 @@
     onSelectTheme,
   }: Props = $props();
 
-  let query = $state("");
-  let selectedIndex = $state(0);
-  let inputElement = $state<HTMLInputElement | null>(null);
+  type Category = "Hosts" | "Actions" | "Navigation" | "Themes";
+  const CATEGORY_ORDER: Category[] = ["Hosts", "Actions", "Navigation", "Themes"];
 
   interface CommandItem {
     id: string;
     title: string;
+    /** Secondary text; rendered monospace when `mono` is set (host addresses). */
     subtitle?: string;
-    category: "Hosts" | "Navigation" | "Actions" | "Themes";
+    mono?: boolean;
+    /** Extra searchable text that is not displayed (tags, aliases). */
+    keywords?: string;
+    category: Category;
     icon: typeof Server;
     badge?: string;
+    /** Keyboard shortcut hint, one entry per key cap. */
+    keys?: string[];
     action: () => void;
   }
 
-  const allItems = $derived.by((): CommandItem[] => {
-    const list: CommandItem[] = [];
+  interface CommandGroup {
+    category: Category;
+    start: number;
+    items: CommandItem[];
+  }
 
-    // 1. Quick Navigation
-    const nav: Array<{ tab: AppTab; label: string; icon: typeof Server }> = [
-      { tab: "connections", label: "Go to Hosts", icon: Server },
-      { tab: "terminals", label: "Go to Terminals", icon: TerminalSquare },
+  const THEMES: Array<{ id: string; label: string }> = [
+    { id: "zinc", label: "Zinc" },
+    { id: "cyberpunk", label: "Midnight" },
+    { id: "oled", label: "OLED black" },
+    { id: "slate", label: "Slate" },
+  ];
+
+  let query = $state("");
+  let selectedIndex = $state(0);
+  let inputElement = $state<HTMLInputElement | null>(null);
+  let listElement = $state<HTMLElement | null>(null);
+
+  function run(fn: () => void) {
+    fn();
+    onClose();
+  }
+
+  const staticItems = $derived.by((): CommandItem[] => {
+    const nav: Array<{ tab: AppTab; label: string; icon: typeof Server; key?: string }> = [
+      { tab: "connections", label: "Go to hosts", icon: Server, key: "1" },
+      { tab: "terminals", label: "Go to terminals", icon: TerminalSquare, key: "2" },
       ...(settings.enable_sftp !== false
-        ? [{ tab: "sftp" as AppTab, label: "Go to SFTP File Browser", icon: HardDrive }]
+        ? [{ tab: "sftp" as AppTab, label: "Go to files", icon: HardDrive }]
         : []),
       ...(settings.enable_tunneling !== false
-        ? [{ tab: "tunnels" as AppTab, label: "Go to Tunnel Studio", icon: Network }]
+        ? [{ tab: "tunnels" as AppTab, label: "Go to tunnels", icon: Network }]
         : []),
-      { tab: "keys", label: "Go to SSH Keys Manager", icon: KeyRound },
-      { tab: "audit", label: "Go to Security Auditor", icon: ShieldCheck },
-      { tab: "history", label: "Go to Session Logs", icon: Clock },
-      { tab: "settings", label: "Go to Settings", icon: Settings },
+      { tab: "keys", label: "Go to SSH keys", icon: KeyRound, key: "3" },
+      { tab: "audit", label: "Go to security audit", icon: ShieldCheck, key: "4" },
+      { tab: "history", label: "Go to history", icon: Clock, key: "5" },
+      { tab: "settings", label: "Go to settings", icon: Settings, key: "6" },
     ];
 
-    for (const item of nav) {
-      list.push({
-        id: `nav-${item.tab}`,
-        title: item.label,
-        category: "Navigation",
-        icon: item.icon,
-        action: () => {
-          onSelectTab(item.tab);
-          onClose();
-        },
-      });
-    }
-
-    // 2. Global Actions
-    list.push({
-      id: "act-new-server",
-      title: "New Server Connection",
-      subtitle: "Add a new SSH host to configuration",
-      category: "Actions",
-      icon: Plus,
-      badge: "N",
-      action: () => {
-        onOpenAddModal();
-        onClose();
+    const actions: CommandItem[] = [
+      {
+        id: "act-new-server",
+        title: "New host",
+        subtitle: "Add an SSH host",
+        category: "Actions",
+        icon: Plus,
+        keys: ["N"],
+        action: () => run(onOpenAddModal),
       },
-    });
-
-    list.push({
-      id: "act-ping-all",
-      title: "Ping All Saved Hosts",
-      subtitle: "Check reachability and latency for all servers",
-      category: "Actions",
-      icon: Activity,
-      action: () => {
-        onPingAll();
-        onClose();
+      {
+        id: "act-batch-exec",
+        title: "Run command on hosts",
+        subtitle: "Batch execution with dry run",
+        keywords: "batch multi exec",
+        category: "Actions",
+        icon: Terminal,
+        action: () => run(onOpenBatchExec),
       },
-    });
-
-    list.push({
-      id: "act-batch-exec",
-      title: "Run Batch Command",
-      subtitle: "Safe multi-host concurrent command execution",
-      category: "Actions",
-      icon: Terminal,
-      action: () => {
-        onOpenBatchExec();
-        onClose();
+      {
+        id: "act-ping-all",
+        title: "Ping all hosts",
+        subtitle: "Check reachability and latency",
+        category: "Actions",
+        icon: Activity,
+        action: () => run(onPingAll),
       },
-    });
-
-    list.push({
-      id: "act-fix-perms",
-      title: "Fix Insecure Key Permissions",
-      subtitle: "Automatically chmod 0600 on SSH keys and 0700 on ~/.ssh",
-      category: "Actions",
-      icon: Wrench,
-      action: () => {
-        onFixPermissions();
-        onClose();
+      {
+        id: "act-sessions",
+        title: "Manage sessions",
+        subtitle: "Open tabs, pop-outs and detached sessions",
+        category: "Actions",
+        icon: TerminalSquare,
+        action: () => run(onOpenSessionManager),
       },
-    });
-
-    list.push({
-      id: "act-sessions",
-      title: "Manage Active & Detached Sessions",
-      subtitle: "View running tabs, pop-outs, and background jobs",
-      category: "Actions",
-      icon: TerminalSquare,
-      action: () => {
-        onOpenSessionManager();
-        onClose();
+      {
+        id: "act-fix-perms",
+        title: "Fix key permissions",
+        subtitle: "chmod 600 on keys, 700 on ~/.ssh",
+        category: "Actions",
+        icon: Wrench,
+        action: () => run(onFixPermissions),
       },
-    });
+    ];
 
-    // 3. Themes
-    const themes = ["zinc", "cyberpunk", "oled", "slate"];
-    for (const t of themes) {
-      list.push({
-        id: `theme-${t}`,
-        title: `Switch Theme to ${t.charAt(0).toUpperCase() + t.slice(1)}`,
-        subtitle: settings.theme === t ? "Currently active" : undefined,
-        category: "Themes",
-        icon: Palette,
-        badge: settings.theme === t ? "Active" : undefined,
-        action: () => {
-          onSelectTheme(t);
-          onClose();
-        },
-      });
-    }
+    const navItems: CommandItem[] = nav.map((item) => ({
+      id: `nav-${item.tab}`,
+      title: item.label,
+      subtitle: activeTab === item.tab ? "Current view" : undefined,
+      category: "Navigation",
+      icon: item.icon,
+      keys: item.key ? [item.key] : undefined,
+      action: () => run(item.tab === "keys" ? onOpenKeys : () => onSelectTab(item.tab)),
+    }));
 
-    // 4. SSH Hosts (Bayesian ranked)
-    for (const conn of connections) {
-      list.push({
+    const themeItems: CommandItem[] = THEMES.map((t) => ({
+      id: `theme-${t.id}`,
+      title: `Theme: ${t.label}`,
+      keywords: `switch appearance ${t.id}`,
+      category: "Themes",
+      icon: Palette,
+      badge: settings.theme === t.id ? "Active" : undefined,
+      action: () => run(() => onSelectTheme(t.id)),
+    }));
+
+    return [...actions, ...navItems, ...themeItems];
+  });
+
+  const hostItems = $derived(
+    connections.map(
+      (conn): CommandItem => ({
         id: `host-${conn.id}`,
         title: conn.name,
-        subtitle: `${conn.user}@${conn.host}:${conn.port}${conn.tags.length ? ` · #${conn.tags.join(" #")}` : ""}`,
+        subtitle: `${conn.user}@${conn.host}${conn.port !== 22 ? `:${conn.port}` : ""}`,
+        mono: true,
+        keywords: conn.tags.join(" "),
         category: "Hosts",
         icon: Server,
         badge: conn.use_kerberos ? "krb5" : undefined,
-        action: () => {
-          onConnectHost(conn);
-          onClose();
-        },
-      });
-    }
+        action: () => run(() => onConnectHost(conn)),
+      }),
+    ),
+  );
 
-    return list;
-  });
-
-  const filteredItems = $derived.by(() => {
+  const groups = $derived.by((): CommandGroup[] => {
     const q = query.trim().toLowerCase();
+    const buckets: Record<Category, CommandItem[]> = { Hosts: [], Actions: [], Navigation: [], Themes: [] };
+
     if (!q) {
-      // Default view: Show top hosts, then quick actions, then navigation
-      const hosts = allItems.filter((i) => i.category === "Hosts").slice(0, 5);
-      const actions = allItems.filter((i) => i.category === "Actions");
-      const nav = allItems.filter((i) => i.category === "Navigation").slice(0, 4);
-      return [...hosts, ...actions, ...nav];
+      // Default view: top-ranked hosts, then actions and navigation.
+      buckets.Hosts = hostItems.slice(0, 5);
+      for (const item of staticItems) {
+        if (item.category !== "Themes") buckets[item.category].push(item);
+      }
+    } else {
+      for (const item of [...hostItems, ...staticItems]) {
+        if (
+          item.title.toLowerCase().includes(q) ||
+          item.subtitle?.toLowerCase().includes(q) ||
+          item.keywords?.toLowerCase().includes(q) ||
+          item.category.toLowerCase().includes(q)
+        ) {
+          buckets[item.category].push(item);
+        }
+      }
     }
 
-    return allItems.filter((item) => {
-      const matchTitle = item.title.toLowerCase().includes(q);
-      const matchSubtitle = item.subtitle?.toLowerCase().includes(q) ?? false;
-      const matchCat = item.category.toLowerCase().includes(q);
-      return matchTitle || matchSubtitle || matchCat;
-    });
+    const out: CommandGroup[] = [];
+    let start = 0;
+    for (const category of CATEGORY_ORDER) {
+      const items = buckets[category];
+      if (items.length === 0) continue;
+      out.push({ category, start, items });
+      start += items.length;
+    }
+    return out;
   });
+
+  const flatItems = $derived(groups.flatMap((g) => g.items));
+
+  let previousFocus: HTMLElement | null = null;
 
   $effect(() => {
-    if (open) {
-      query = "";
-      selectedIndex = 0;
-      requestAnimationFrame(() => inputElement?.focus());
-    }
+    if (!open) return;
+    previousFocus = document.activeElement as HTMLElement | null;
+    query = "";
+    selectedIndex = 0;
+    const raf = requestAnimationFrame(() => inputElement?.focus());
+    return () => {
+      cancelAnimationFrame(raf);
+      previousFocus?.focus();
+    };
   });
 
-  $effect(() => {
-    // Keep index bounded
-    if (selectedIndex >= filteredItems.length && filteredItems.length > 0) {
-      selectedIndex = filteredItems.length - 1;
-    }
-  });
+  async function select(index: number) {
+    selectedIndex = index;
+    await tick();
+    listElement
+      ?.querySelector<HTMLElement>(`[data-index="${index}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }
 
   function handleKeydown(e: KeyboardEvent) {
+    const count = flatItems.length;
     if (e.key === "Escape") {
       e.preventDefault();
+      e.stopPropagation();
       onClose();
-    } else if (e.key === "ArrowDown") {
+    } else if (e.key === "ArrowDown" && count > 0) {
       e.preventDefault();
-      selectedIndex = (selectedIndex + 1) % Math.max(1, filteredItems.length);
-    } else if (e.key === "ArrowUp") {
+      void select((selectedIndex + 1) % count);
+    } else if (e.key === "ArrowUp" && count > 0) {
       e.preventDefault();
-      selectedIndex = (selectedIndex - 1 + filteredItems.length) % Math.max(1, filteredItems.length);
+      void select((selectedIndex - 1 + count) % count);
     } else if (e.key === "Enter") {
       e.preventDefault();
-      if (filteredItems[selectedIndex]) {
-        filteredItems[selectedIndex].action();
-      }
+      flatItems[Math.min(selectedIndex, count - 1)]?.action();
     }
   }
 </script>
 
 {#if open}
-  <!-- Backdrop -->
   <div
-    class="fixed inset-0 z-[200] flex items-start justify-center p-4 pt-12 sm:pt-[10vh] bg-black/70 backdrop-blur-md transition-opacity duration-fast"
+    class="fixed inset-0 z-[200] flex items-start justify-center bg-overlay px-4 pt-[15vh]"
+    style="animation: fade-in 120ms ease-out"
     role="presentation"
-    onclick={(e) => {
+    onpointerdown={(e) => {
       if (e.target === e.currentTarget) onClose();
     }}
   >
-    <!-- Palette Container -->
     <div
-      class="w-full max-w-xl rounded-2xl border border-white/10 bg-surface-raised/95 shadow-2xl overflow-hidden flex flex-col max-h-[82vh] sm:max-h-[70vh] animate-in fade-in zoom-in-95 duration-150"
+      class="flex max-h-[min(560px,72vh)] w-full max-w-[640px] flex-col overflow-hidden rounded-xl border border-border-hover bg-surface-raised shadow-xl"
+      style="animation: popover-enter 140ms var(--ease-out)"
       role="dialog"
       aria-modal="true"
-      aria-label="Command Palette"
+      aria-label="Command palette"
       tabindex="-1"
       onkeydown={handleKeydown}
     >
-      <!-- Search Input Bar -->
-      <div class="flex items-center gap-3 px-4 py-3.5 border-b border-border/80 bg-surface-input/50">
-        <Search size={18} class="text-accent shrink-0" />
+      <div class="flex h-13 shrink-0 items-center gap-3 border-b border-border px-4">
+        <Search size={16} class="shrink-0 text-muted" />
         <input
           bind:this={inputElement}
           type="text"
           bind:value={query}
-          placeholder="Search hosts, commands, or jump to view... (Esc to close)"
-          class="bg-transparent border-none text-sm text-primary placeholder:text-muted outline-none w-full font-sans"
+          oninput={() => (selectedIndex = 0)}
+          placeholder="Search hosts, actions and views"
+          aria-label="Search commands"
+          role="combobox"
+          aria-expanded="true"
+          aria-controls="command-palette-list"
+          aria-activedescendant={flatItems[selectedIndex] ? `cmd-${flatItems[selectedIndex].id}` : undefined}
+          autocomplete="off"
+          spellcheck="false"
+          class="h-full min-w-0 flex-1 border-none bg-transparent text-base text-primary outline-none placeholder:text-muted"
         />
         {#if query}
           <button
             type="button"
-            onclick={() => (query = "")}
-            class="text-muted hover:text-primary p-1 rounded-full bg-transparent border-none cursor-pointer"
+            class="btn-icon btn-icon-sm"
+            aria-label="Clear search"
+            onclick={() => {
+              query = "";
+              selectedIndex = 0;
+              inputElement?.focus();
+            }}
           >
             <X size={14} />
           </button>
         {/if}
-        <span class="kbd text-[10px] text-muted shrink-0">ESC</span>
       </div>
 
-      <!-- Results List -->
-      <div class="flex-1 min-h-0 overflow-y-auto p-2 flex flex-col gap-0.5 scrollbar-none">
-        {#if filteredItems.length > 0}
-          {#each filteredItems as item, index}
-            <button
-              type="button"
-              class="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg border text-left cursor-pointer transition-all duration-fast
-                {selectedIndex === index
-                  ? 'border-border-strong bg-surface-active text-primary shadow-sm'
-                  : 'border-transparent text-secondary bg-transparent hover:bg-surface-hover hover:text-primary'}"
-              onmouseenter={() => (selectedIndex = index)}
-              onclick={item.action}
-            >
-              <div class="flex items-center gap-3 min-w-0">
-                <div
-                  class="w-6 h-6 rounded-md flex items-center justify-center shrink-0 border
-                    {selectedIndex === index
-                      ? 'bg-surface-elevated text-accent border-border-strong'
-                      : 'bg-surface-input border-border text-muted'}"
-                >
-                  <item.icon size={13} />
-                </div>
-                <div class="flex flex-col min-w-0">
-                  <span class="text-xs font-medium truncate leading-tight {selectedIndex === index ? 'text-primary font-semibold' : ''}">
-                    {item.title}
-                  </span>
-                  {#if item.subtitle}
-                    <span class="text-[11px] font-mono text-muted truncate leading-tight mt-0.5">
-                      {item.subtitle}
-                    </span>
-                  {/if}
-                </div>
-              </div>
-
-              <div class="flex items-center gap-2 shrink-0">
-                <span class="text-[9px] uppercase font-mono tracking-wider px-1.5 py-0.5 rounded bg-surface border border-border text-muted">
-                  {item.category}
-                </span>
-                {#if item.badge}
-                  <span class="badge badge-subtle text-[10px]">
-                    {item.badge}
-                  </span>
+      <div
+        bind:this={listElement}
+        id="command-palette-list"
+        class="min-h-0 flex-1 overflow-y-auto p-1.5"
+        role="listbox"
+        aria-label="Commands"
+      >
+        {#each groups as group (group.category)}
+          <div role="group" aria-label={group.category} class="pb-1">
+            <div class="section-label px-2 pb-1 pt-2">{group.category}</div>
+            {#each group.items as item, i (item.id)}
+              {@const index = group.start + i}
+              {@const active = index === selectedIndex}
+              <button
+                type="button"
+                id="cmd-{item.id}"
+                data-index={index}
+                role="option"
+                aria-selected={active}
+                tabindex="-1"
+                class="flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-md px-2 text-left text-sm transition-colors duration-fast {active
+                  ? 'bg-surface-active text-primary'
+                  : 'text-secondary'}"
+                onmousemove={() => {
+                  if (selectedIndex !== index) selectedIndex = index;
+                }}
+                onclick={item.action}
+              >
+                <item.icon size={14} class="shrink-0 {active ? 'text-primary' : 'text-muted'}" />
+                <span class="shrink-0 truncate {active ? 'text-primary' : 'text-primary/90'}">{item.title}</span>
+                {#if item.subtitle}
+                  <span class="min-w-0 truncate text-xs text-muted {item.mono ? 'font-mono' : ''}">{item.subtitle}</span>
                 {/if}
-              </div>
-            </button>
-          {/each}
-        {:else}
-          <div class="py-12 flex flex-col items-center justify-center text-muted gap-2">
-            <Command size={28} class="opacity-40" />
-            <p class="text-xs font-medium">No results found for "{query}"</p>
-            <p class="text-[11px] opacity-70">Try searching for host name, user, or action name</p>
+                <span class="ml-auto flex shrink-0 items-center gap-1.5 pl-2">
+                  {#if item.badge}
+                    <span class="badge badge-neutral">{item.badge}</span>
+                  {/if}
+                  {#if item.category === "Hosts" && active}
+                    <span class="text-xs text-muted">Connect</span>
+                    <kbd class="kbd">↵</kbd>
+                  {:else if item.keys}
+                    {#each item.keys as key (key)}
+                      <kbd class="kbd">{key}</kbd>
+                    {/each}
+                  {/if}
+                </span>
+              </button>
+            {/each}
           </div>
-        {/if}
+        {:else}
+          <div class="flex flex-col items-center gap-1 px-6 py-10 text-center">
+            <p class="m-0 text-sm font-medium text-primary">No results for “{query.trim()}”</p>
+            <p class="m-0 text-xs text-muted">Try a host name, address, tag or action.</p>
+          </div>
+        {/each}
       </div>
 
-      <!-- Footer Bar -->
-      <div class="px-4 py-2 border-t border-border/80 bg-surface-input/30 flex items-center justify-between text-[11px] text-muted">
-        <div class="flex items-center gap-3">
-          <span class="flex items-center gap-1">
-            <span class="kbd text-[9px]">↑</span>
-            <span class="kbd text-[9px]">↓</span>
-            Navigate
-          </span>
-          <span class="flex items-center gap-1">
-            <span class="kbd text-[9px]">↵</span>
-            Select
-          </span>
-        </div>
-        <span class="font-mono text-[10px] text-muted/70">
-          {filteredItems.length} available {filteredItems.length === 1 ? 'item' : 'items'}
+      <div class="flex h-9 shrink-0 items-center gap-4 border-t border-border px-3 text-xs text-muted">
+        <span class="flex items-center gap-1.5">
+          <kbd class="kbd">↑</kbd><kbd class="kbd">↓</kbd> Navigate
         </span>
+        <span class="flex items-center gap-1.5"><kbd class="kbd">↵</kbd> Open</span>
+        <span class="flex items-center gap-1.5"><kbd class="kbd">esc</kbd> Close</span>
+        <span class="ml-auto tabular-nums">{flatItems.length} {flatItems.length === 1 ? "result" : "results"}</span>
       </div>
     </div>
   </div>
