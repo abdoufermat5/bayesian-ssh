@@ -16,6 +16,10 @@
     id?: string;
     class?: string;
     disabled?: boolean;
+    /** Muted inline prefix inside the trigger, e.g. "Sort". */
+    label?: string;
+    /** Use the compact 28px trigger. */
+    size?: "sm" | "md";
   }
 
   let {
@@ -26,6 +30,8 @@
     id,
     class: className = "",
     disabled = false,
+    label,
+    size = "md",
   }: Props = $props();
 
   let isOpen = $state(false);
@@ -127,62 +133,63 @@
 
 <div
   bind:this={containerRef}
-  class="relative inline-block w-full text-xs font-medium text-primary select-none {className}"
+  class="relative inline-block select-none {/(^|\s)!?w-/.test(className) ? '' : 'w-full'} {className}"
 >
-  <!-- Trigger Button -->
   <button
     bind:this={triggerRef}
     type="button"
     role="combobox"
     {id}
-    class="flex w-full cursor-pointer items-center justify-between gap-2 rounded-md border border-border bg-surface-input px-3 py-2 text-sm transition-colors duration-fast
-      {isOpen ? 'border-accent shadow-[0_0_0_2px_var(--color-accent-muted)]' : 'hover:border-border-hover hover:bg-surface-hover'}
-      {disabled ? 'opacity-50 cursor-not-allowed' : ''}"
+    class="flex w-full cursor-pointer items-center gap-2 rounded-md border bg-surface-input text-left transition-[border-color,box-shadow] duration-fast
+      {size === 'sm' ? 'h-7 px-2 text-xs' : 'h-8 px-2.5 text-sm'}
+      {isOpen ? 'border-border-focus shadow-[0_0_0_3px_var(--color-accent-muted)]' : 'border-border hover:border-border-hover'}
+      {disabled ? 'cursor-not-allowed opacity-50' : ''}"
     onclick={() => {
       if (disabled) return;
       if (isOpen) closeSelect(true);
       else openSelect(selectedIndex);
     }}
     onkeydown={handleKeydown}
+    aria-label={label || selectedOption?.label || placeholder}
     aria-expanded={isOpen}
     aria-controls={isOpen ? listboxId : undefined}
     aria-haspopup="listbox"
     aria-activedescendant={activeOptionId}
     {disabled}
   >
-    <span class="truncate text-left text-primary">
+    {#if label}
+      <span class="shrink-0 text-muted">{label}</span>
+    {/if}
+    <span class="min-w-0 flex-1 truncate {selectedOption ? 'text-primary' : 'text-muted'}">
       {selectedOption ? selectedOption.label : placeholder}
     </span>
-    <ChevronDown size={14} class="text-muted shrink-0 transition-transform duration-200 {isOpen ? 'rotate-180 text-accent' : ''}" />
+    <ChevronDown size={14} class="shrink-0 text-muted transition-transform duration-fast {isOpen ? 'rotate-180' : ''}" />
   </button>
 
-  <!-- Dropdown Menu Popup -->
   {#if isOpen}
     <div
       id={listboxId}
-      class="absolute top-full left-0 right-0 z-50 mt-1 max-h-60 overflow-y-auto rounded-md border border-border bg-surface-raised py-1 shadow-lg animate-[popover-enter_0.12s_var(--ease-out)_forwards]"
+      class="popover absolute left-0 top-full mt-1 max-h-64 min-w-full overflow-y-auto"
       role="listbox"
     >
       {#each options as option, index}
         <button
           type="button"
           id={`${id ?? "custom-select"}-option-${index}`}
-          class="flex w-full cursor-pointer items-center justify-between px-3 py-2 text-left text-sm text-secondary transition-colors
-            {activeIndex === index ? 'bg-surface-hover text-primary' : ''}
-            {value === option.value ? 'text-accent font-semibold' : ''}"
+          class="menu-item h-auto min-h-8 py-1.5 {activeIndex === index ? 'menu-item-active' : ''} {value === option.value ? 'text-primary' : ''}"
           onmouseenter={() => (activeIndex = index)}
           onclick={() => selectOption(option.value)}
           role="option"
           aria-selected={value === option.value}
         >
-          <div class="flex flex-col min-w-0 pr-2">
-            <span class="truncate">{option.label}</span>
+          <span class="flex min-w-0 flex-1 flex-col">
+            <span class="truncate whitespace-nowrap">{option.label}</span>
             {#if option.description}
-              <span class="truncate text-xs font-normal text-muted">{option.description}</span>
+              <span class="truncate text-xs text-muted">{option.description}</span>
             {/if}
-          </div>
+          </span>
           {#if value === option.value}
-            <Check size={14} class="text-accent shrink-0" />
+            <Check size={14} class="shrink-0 text-accent" />
           {/if}
         </button>
       {/each}

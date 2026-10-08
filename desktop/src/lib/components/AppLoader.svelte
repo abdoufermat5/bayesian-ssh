@@ -1,40 +1,29 @@
 <script lang="ts">
-  import { ShieldCheck } from "lucide-svelte";
-
   interface Props {
     title?: string;
     subtitle?: string;
   }
 
-  let {
-    title = "Initializing Bayesian SSH",
-    subtitle = "Loading environment, security policies, and connection registry...",
-  }: Props = $props();
+  let { title = "Bayesian SSH", subtitle = "Loading hosts and settings…" }: Props = $props();
 </script>
 
 <div
-  class="fixed inset-0 z-[300] flex flex-col items-center justify-center gap-6 bg-surface p-6 text-center select-none overflow-hidden"
+  class="fixed inset-0 z-[300] flex select-none flex-col items-center justify-center gap-5 bg-chrome p-6 text-center"
+  role="status"
+  aria-live="polite"
 >
-  <!-- Logo mark -->
-  <div class="relative flex items-center justify-center">
-    <div
-      class="flex h-16 w-16 items-center justify-center rounded-2xl border border-border bg-panel shadow-md"
-    >
-      <ShieldCheck size={28} class="text-accent" />
-    </div>
-    <div class="pointer-events-none absolute -inset-1.5 rounded-3xl border border-border/60"></div>
-  </div>
+  <svg viewBox="0 0 20 20" class="size-10" aria-hidden="true">
+    <rect width="20" height="20" rx="5" fill="var(--color-accent)" />
+    <path d="M5.5 7l3 3-3 3" fill="none" stroke="var(--color-on-accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M10.5 13.25h4" stroke="var(--color-on-accent)" stroke-width="1.8" stroke-linecap="round" />
+  </svg>
 
-  <!-- Title & subtitle -->
   <div class="flex flex-col gap-1">
-    <h2 class="m-0 text-base font-semibold tracking-tight text-primary">{title}</h2>
+    <h1 class="m-0 text-sm font-semibold text-primary">{title}</h1>
     <p class="m-0 text-xs text-muted">{subtitle}</p>
   </div>
 
-  <!-- Indeterminate progress: subtle, one moving element -->
-  <div class="h-1 w-44 overflow-hidden rounded-full bg-surface-input">
-    <div
-      class="h-full w-1/3 rounded-full bg-accent/70 animate-[loader-slide_1.2s_var(--ease-out)_infinite]"
-    ></div>
+  <div class="h-0.5 w-40 overflow-hidden rounded-full bg-surface-hover">
+    <div class="h-full w-1/3 rounded-full bg-accent animate-[loader-slide_1.2s_var(--ease-out)_infinite]"></div>
   </div>
 </div>

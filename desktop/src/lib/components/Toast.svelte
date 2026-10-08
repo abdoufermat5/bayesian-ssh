@@ -1,36 +1,32 @@
 <script lang="ts">
   import { CheckCircle2, AlertCircle, Info, X } from "lucide-svelte";
-  import { getNotificationState, dismissNotification } from "$lib/stores/notifications.svelte";
-
-  const notification = getNotificationState();
+  import { getToasts, dismissNotification } from "$lib/stores/notifications.svelte";
 </script>
 
-{#if notification.visible}
-  <div
-    class="toast {notification.type === 'success'
-      ? 'toast-success'
-      : notification.type === 'error'
-        ? 'toast-error'
-        : 'toast-info'}"
-    role={notification.type === "error" ? "alert" : "status"}
-    aria-live={notification.type === "error" ? "assertive" : "polite"}
-  >
-    {#if notification.type === "success"}
-      <CheckCircle2 size={16} class="text-success shrink-0" />
-    {:else if notification.type === "error"}
-      <AlertCircle size={16} class="text-error shrink-0" />
-    {:else}
-      <Info size={16} class="text-accent shrink-0" />
-    {/if}
-    <span>{notification.text}</span>
-    <button
-      type="button"
-      onclick={dismissNotification}
-      title="Dismiss notification"
-      aria-label="Dismiss notification"
-      class="btn-icon shrink-0"
-    >
-      <X size={14} />
-    </button>
-  </div>
-{/if}
+<div
+  class="pointer-events-none fixed bottom-4 right-4 z-[400] flex flex-col items-end gap-2"
+  aria-live="polite"
+>
+  {#each getToasts() as toast (toast.id)}
+    <div class="toast" role={toast.type === "error" ? "alert" : "status"}>
+      <span class="mt-px flex shrink-0">
+        {#if toast.type === "success"}
+          <CheckCircle2 size={16} class="text-success" />
+        {:else if toast.type === "error"}
+          <AlertCircle size={16} class="text-error" />
+        {:else}
+          <Info size={16} class="text-accent" />
+        {/if}
+      </span>
+      <span class="min-w-0 flex-1 break-words leading-snug">{toast.text}</span>
+      <button
+        type="button"
+        onclick={() => dismissNotification(toast.id)}
+        aria-label="Dismiss notification"
+        class="btn-icon btn-icon-sm -mr-1 -mt-0.5"
+      >
+        <X size={14} />
+      </button>
+    </div>
+  {/each}
+</div>

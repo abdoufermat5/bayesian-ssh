@@ -1,7 +1,14 @@
+<script lang="ts" module>
+  // Open shells in mount order; the last one is topmost. Used so Escape /
+  // Tab only reach the topmost dialog when focus sits outside every dialog.
+  const openStack: symbol[] = [];
+  let bodyOverflowBeforeModals = "";
+</script>
+
 <script lang="ts">
   import type { Snippet } from "svelte";
 
-  type ModalWidth = "sm" | "md" | "lg" | "full";
+  type ModalWidth = "sm" | "md" | "form" | "lg" | "full";
 
   interface Props {
     open: boolean;
@@ -9,6 +16,7 @@
     onClose: () => void;
     closeOnEscape?: boolean;
     closeOnBackdrop?: boolean;
+    /** sm 400px (confirms), md 480px, form 560px, lg 768px, full = whole window. */
     width?: ModalWidth;
     /** Extra classes appended to the panel (e.g. max-height overrides). */
     panelClass?: string;
@@ -39,10 +47,11 @@
   let panelRef = $state<HTMLElement | null>(null);
 
   const WIDTH_CLASSES: Record<ModalWidth, string> = {
-    sm: "w-full max-w-sm",
-    md: "w-full max-w-md",
-    lg: "w-full max-w-3xl",
-    full: "w-full h-full max-w-none rounded-none border-none shadow-none",
+    sm: "max-w-[400px]",
+    md: "max-w-[480px]",
+    form: "max-w-[560px]",
+    lg: "max-w-3xl",
+    full: "h-full max-h-none max-w-none rounded-none border-none shadow-none",
   };
 
   const FOCUSABLE_SELECTOR = [
@@ -58,7 +67,21 @@
 
   function getFocusableElements(): HTMLElement[] {
     if (!panelRef) return [];
-    return Array.from(panelRef.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
+    return Array.from(panelRef.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
+      (el) => el.offsetParent !== null || el === document.activeElement,
+    );
+  }
+
+  /** Initial focus: explicit [data-autofocus], else the first field, else the
+   *  first control that isn't the header close button, else the panel. */
+  function focusInitial() {
+    if (!panelRef) return;
+    const explicit = panelRef.querySelector<HTMLElement>("[data-autofocus]");
+    if (explicit) return explicit.focus();
+    const focusables = getFocusableElements();
+    const field = focusables.find((el) => el.matches("input, textarea, select"));
+    const target = field ?? focusables.find((el) => !el.classList.contains("modal-close"));
+    (target ?? panelRef).focus();
   }
 
   // Nested popups (e.g. CustomSelect dropdowns) handle Escape themselves;
@@ -74,16 +97,20 @@
   $effect(() => {
     if (!open) return;
 
+    const id = Symbol("modal");
+    if (openStack.length === 0) bodyOverflowBeforeModals = document.body.style.overflow;
+    openStack.push(id);
     const previousActive = document.activeElement as HTMLElement | null;
-    const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
     function handleKeydown(e: KeyboardEvent) {
       const active = document.activeElement as HTMLElement | null;
-      // If focus lives inside a nested dialog (e.g. Onboarding's passphrase
-      // prompt), that dialog owns Escape/Tab handling — defer to it.
+      // Focus inside a dialog: that dialog owns the key. Focus elsewhere
+      // (body, backdrop click): only the topmost shell reacts.
       const containingDialog = active?.closest('[role="dialog"]');
-      const ownsFocus = !containingDialog || containingDialog === panelRef;
+      const ownsFocus = containingDialog
+        ? containingDialog === panelRef
+        : openStack[openStack.length - 1] === id;
 
       if (e.key === "Escape") {
         if (closeOnEscape && ownsFocus && !isInsideNestedPopup(e.target)) {
@@ -96,7 +123,11 @@
       // Focus trap: cycle Tab / Shift+Tab among focusable children.
       if (e.key !== "Tab" || !ownsFocus) return;
       const focusables = getFocusableElements();
-      if (focusables.length === 0) return;
+      if (focusables.length === 0) {
+        e.preventDefault();
+        panelRef?.focus();
+        return;
+      }
       const first = focusables[0];
       const last = focusables[focusables.length - 1];
 
@@ -110,17 +141,15 @@
     }
 
     window.addEventListener("keydown", handleKeydown);
-
-    // Initial focus on the first focusable child once the panel is laid out.
-    const raf = requestAnimationFrame(() => {
-      getFocusableElements()[0]?.focus();
-    });
+    const raf = requestAnimationFrame(focusInitial);
 
     return () => {
       window.removeEventListener("keydown", handleKeydown);
       cancelAnimationFrame(raf);
-      document.body.style.overflow = previousOverflow;
-      previousActive?.focus();
+      const idx = openStack.indexOf(id);
+      if (idx !== -1) openStack.splice(idx, 1);
+      if (openStack.length === 0) document.body.style.overflow = bodyOverflowBeforeModals;
+      if (previousActive?.isConnected) previousActive.focus({ preventScroll: true });
     };
   });
 </script>
@@ -136,7 +165,7 @@
   >
     <div
       bind:this={panelRef}
-      class="modal-panel {WIDTH_CLASSES[width]} {panelClass}"
+      class="modal-panel outline-none {WIDTH_CLASSES[width]} {panelClass}"
       style={panelStyle}
       role="dialog"
       aria-modal="true"
