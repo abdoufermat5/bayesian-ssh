@@ -21,6 +21,10 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 PKG_NAME="bayesian-ssh"
 VERSION="$(grep '^version = ' "${ROOT_DIR}/crates/cli/Cargo.toml" | head -n 1 | cut -d'"' -f2)"
+# dpkg and rpm forbid '-' in the upstream version and sort '~' before the final
+# release, so 2.6.0-rc.1 is packaged as 2.6.0~rc.1. File names keep VERSION:
+# GitHub rewrites '~' in release asset names, which would break SHA256SUMS.
+PKG_VERSION="${VERSION//-/\~}"
 ARCH="$(uname -m)"
 if [ "$ARCH" = "x86_64" ]; then
     DEB_ARCH="amd64"
@@ -115,7 +119,7 @@ cp -r "${BUILD_DIR}" "${DEB_STAGE}"
 mkdir -p "${DEB_STAGE}/DEBIAN"
 cat <<EOF > "${DEB_STAGE}/DEBIAN/control"
 Package: ${PKG_NAME}
-Version: ${VERSION}
+Version: ${PKG_VERSION}
 Architecture: ${DEB_ARCH}
 Maintainer: Abdoufermat5 <abdoufermat5@users.noreply.github.com>
 Section: utils
@@ -155,7 +159,7 @@ if command -v rpmbuild >/dev/null 2>&1; then
     SPEC_FILE="${RPM_TOPDIR}/SPECS/${PKG_NAME}.spec"
     cat <<EOF > "${SPEC_FILE}"
 Name:           ${PKG_NAME}
-Version:        ${VERSION}
+Version:        ${PKG_VERSION}
 Release:        1%{?dist}
 Summary:        Fast and lightweight SSH session manager with Kerberos support
 License:        MIT
@@ -181,19 +185,20 @@ fi
 ${RPM_FILES}
 
 %changelog
-* Sun Jul 26 2026 Abdoufermat5 <abdoufermat5@users.noreply.github.com> - ${VERSION}-1
-- Release ${VERSION}
+* Sun Jul 26 2026 Abdoufermat5 <abdoufermat5@users.noreply.github.com> - ${PKG_VERSION}-1
+- Release ${PKG_VERSION}
 EOF
 
     rpmbuild -bb --define "_topdir ${RPM_TOPDIR}" "${SPEC_FILE}"
     RPM_RESULT="$(find "${RPM_TOPDIR}/RPMS" -name "*.rpm" | head -n 1)"
     if [ -n "${RPM_RESULT}" ]; then
-        cp "${RPM_RESULT}" "${OUT_DIR}/"
-        echo "✅ RPM package created: ${OUT_DIR}/$(basename "${RPM_RESULT}")"
+        RPM_FILE="${OUT_DIR}/${PKG_NAME}-${VERSION}-1.${RPM_ARCH}.rpm"
+        cp "${RPM_RESULT}" "${RPM_FILE}"
+        echo "✅ RPM package created: ${RPM_FILE}"
     fi
 elif command -v fpm >/dev/null 2>&1; then
     echo "📦 Building RPM package using FPM..."
-    fpm -s dir -t rpm -n "${PKG_NAME}" -v "${VERSION}" \
+    fpm -s dir -t rpm -n "${PKG_NAME}" -v "${PKG_VERSION}" \
         -a "${RPM_ARCH}" \
         --description "Fast and lightweight SSH session manager with Kerberos support" \
         --url "https://github.com/abdoufermat5/bayesian-ssh" \
