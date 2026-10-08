@@ -111,6 +111,29 @@ export function formatDate(iso: string, setting: string): string {
   return formatWithTimezone(iso, setting, "date");
 }
 
+const RELATIVE_UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
+  ["year", 365 * 24 * 3600],
+  ["month", 30 * 24 * 3600],
+  ["week", 7 * 24 * 3600],
+  ["day", 24 * 3600],
+  ["hour", 3600],
+  ["minute", 60],
+];
+const relativeFormatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto", style: "short" });
+
+/** "just now", "5 min. ago", "yesterday"… Timezone-independent by nature. */
+export function formatRelative(iso: string, now = Date.now()): string {
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return "—";
+  const seconds = Math.round((then - now) / 1000);
+  const abs = Math.abs(seconds);
+  if (abs < 45) return "just now";
+  for (const [unit, size] of RELATIVE_UNITS) {
+    if (abs >= size) return relativeFormatter.format(Math.round(seconds / size), unit);
+  }
+  return relativeFormatter.format(Math.round(seconds / 60), "minute");
+}
+
 export function formatTimezoneLabel(setting: string): string {
   if (normalizeTimezoneSetting(setting) === SYSTEM_TIMEZONE) {
     return `System (${getSystemTimezone()})`;

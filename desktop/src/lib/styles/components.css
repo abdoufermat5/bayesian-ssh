@@ -2,98 +2,173 @@
 /* COMPONENT PRIMITIVES                                          */
 /* ============================================================ */
 /* Shared, token-driven classes for every screen. If a pattern
-   repeats in markup, it belongs here — never inline a fifth
-   variant. Full usage rules: docs/src/design/design-system.md.  */
+   repeats in markup, it belongs here — never inline a variant.
+   Usage rules: docs/src/design/design-system.md.               */
 
 @layer components {
-  /* ---- Buttons ---------------------------------------------------
-     Hierarchy: primary (one per view) > secondary > ghost > link.
-     Destructive is reserved for irreversible actions.              */
+  /* ================================================================
+     BUTTONS
+     Hierarchy: primary (≤ one per view) > secondary > ghost.
+     Danger only for irreversible actions. Sizes: sm 28px, md 32px,
+     lg 36px. Icon buttons are square and always need aria-label.
+     ================================================================ */
   .btn {
-    @apply inline-flex select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors duration-fast cursor-pointer disabled:cursor-not-allowed disabled:opacity-40;
-    min-height: 30px;
+    @apply inline-flex h-8 shrink-0 cursor-pointer select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-transparent px-3 text-sm font-medium leading-none transition-colors duration-fast disabled:pointer-events-none disabled:opacity-45;
   }
+  /* Filled with accent-strong so on-accent text meets 4.5:1 in every theme. */
   .btn-primary {
-    @apply bg-accent text-on-accent font-semibold hover:bg-accent-hover shadow-xs;
+    @apply bg-accent-strong text-on-accent hover:brightness-110;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 1px 2px rgba(0, 0, 0, 0.3);
   }
   .btn-secondary {
-    @apply border border-border bg-surface-input text-secondary hover:border-border-hover hover:bg-surface-hover hover:text-primary;
+    @apply border-border bg-panel text-primary hover:border-border-hover hover:bg-surface-hover;
   }
   .btn-ghost {
-    @apply border border-transparent bg-transparent text-secondary hover:bg-surface-hover hover:text-primary;
+    @apply bg-transparent text-secondary hover:bg-surface-hover hover:text-primary;
   }
   .btn-danger {
-    @apply border border-error/30 bg-error/10 text-error hover:border-error/45 hover:bg-error/20;
+    @apply bg-error text-white hover:brightness-110;
   }
-  .btn-icon {
-    @apply rounded-md p-1.5 text-muted transition-colors duration-fast hover:bg-surface-hover hover:text-primary;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 28px;
-    min-height: 28px;
-    cursor: pointer;
+  .btn-danger-ghost {
+    @apply bg-transparent text-error hover:bg-error/12;
   }
   .btn-sm {
-    @apply gap-1 px-2 py-1 text-2xs min-h-[26px];
+    @apply h-7 gap-1 px-2.5 text-xs;
   }
   .btn-lg {
-    @apply rounded-lg px-3.5 py-2 text-sm;
+    @apply h-9 px-4 text-sm;
+  }
+  .btn-block {
+    @apply w-full;
+  }
+  .btn-icon {
+    @apply inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted transition-colors duration-fast hover:bg-surface-hover hover:text-primary disabled:pointer-events-none disabled:opacity-40;
+  }
+  .btn-icon-sm {
+    @apply size-6 rounded-sm;
+  }
+  .btn-icon-danger {
+    @apply hover:bg-error/12 hover:text-error;
   }
 
-  /* ---- Inputs ----------------------------------------------------- */
+  /* ================================================================
+     FORM CONTROLS
+     ================================================================ */
   .input {
-    @apply w-full rounded-md border border-border bg-surface-input px-3 py-1.5 text-xs text-primary outline-none transition-colors duration-fast placeholder:text-muted hover:border-border-hover focus:border-accent focus:ring-1 focus:ring-accent;
+    @apply h-8 w-full min-w-0 rounded-md border border-border bg-surface-input px-2.5 text-sm text-primary outline-none transition-[border-color,box-shadow] duration-fast placeholder:text-muted hover:border-border-hover focus:border-border-focus disabled:opacity-50;
+  }
+  .input:focus {
+    box-shadow: 0 0 0 3px var(--color-accent-muted);
+  }
+  .input-mono {
+    @apply font-mono text-xs;
+  }
+  textarea.input {
+    @apply h-auto py-2 leading-relaxed;
+  }
+  .input-invalid {
+    @apply border-error/60 focus:border-error;
   }
   .search-box {
-    @apply flex items-center gap-2 rounded-md border border-border bg-surface-input px-2.5 py-1 transition-colors duration-fast focus-within:border-accent focus-within:ring-1 focus-within:ring-accent;
+    @apply flex h-8 min-w-0 items-center gap-2 rounded-md border border-border bg-surface-input px-2.5 text-muted transition-[border-color,box-shadow] duration-fast hover:border-border-hover focus-within:border-border-focus;
+  }
+  .search-box:focus-within {
+    box-shadow: 0 0 0 3px var(--color-accent-muted);
+  }
+  .search-box > input {
+    @apply h-full w-full min-w-0 border-none bg-transparent text-sm text-primary outline-none placeholder:text-muted;
   }
 
-  /* ---- Tags & badges ---------------------------------------------- */
-  .tag {
-    @apply inline-flex items-center gap-1 rounded-xs border border-border bg-white/[0.03] px-1.5 py-0.5 font-mono text-2xs text-secondary select-none;
+  .field {
+    @apply flex min-w-0 flex-col gap-1.5;
   }
+  .field-label {
+    @apply text-xs font-medium text-secondary;
+  }
+  .field-hint {
+    @apply text-xs leading-snug text-muted;
+  }
+  .field-error {
+    @apply text-xs text-error;
+  }
+
+  /* Toggle switch: <input type="checkbox" class="switch"> */
+  .switch {
+    @apply relative h-[18px] w-8 shrink-0 cursor-pointer appearance-none rounded-full border border-border-hover bg-surface-active transition-colors duration-base disabled:cursor-not-allowed disabled:opacity-45;
+  }
+  .switch::after {
+    content: "";
+    @apply absolute left-[2px] top-[2px] size-3 rounded-full bg-secondary transition-transform duration-base;
+  }
+  .switch:checked {
+    @apply border-accent bg-accent;
+  }
+  .switch:checked::after {
+    @apply translate-x-[14px] bg-on-accent;
+  }
+
+  /* Checkbox: <input type="checkbox" class="checkbox"> */
+  .checkbox {
+    @apply relative size-4 shrink-0 cursor-pointer appearance-none rounded-xs border border-border-strong bg-surface-input transition-colors duration-fast;
+  }
+  .checkbox:checked {
+    @apply border-accent bg-accent;
+  }
+  .checkbox:checked::after {
+    content: "";
+    position: absolute;
+    left: 4.5px;
+    top: 1.5px;
+    width: 5px;
+    height: 9px;
+    border: solid var(--color-on-accent);
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+  }
+
+  /* ================================================================
+     BADGES, TAGS, KBD, STATUS
+     ================================================================ */
   .badge {
-    @apply inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-2xs font-medium tracking-normal select-none;
+    @apply inline-flex h-5 shrink-0 select-none items-center gap-1 whitespace-nowrap rounded-sm px-1.5 text-2xs font-medium leading-none;
   }
   .badge-neutral {
-    @apply border-border bg-white/[0.03] text-secondary;
-  }
-  .badge-subtle {
-    @apply border-border bg-white/[0.04] text-secondary;
+    @apply bg-surface-active text-secondary;
   }
   .badge-accent {
-    @apply border-accent/25 bg-accent/10 text-accent;
+    @apply bg-accent/14 text-accent;
   }
   .badge-success {
-    @apply border-success/25 bg-success/10 text-success;
-  }
-  .badge-running {
-    @apply border-running/25 bg-running/10 text-running;
+    @apply bg-success/14 text-success;
   }
   .badge-warning {
-    @apply border-warning/25 bg-warning/10 text-warning;
+    @apply bg-warning/14 text-warning;
   }
   .badge-error {
-    @apply border-error/25 bg-error/10 text-error;
+    @apply bg-error/14 text-error;
   }
-  .flag {
-    @apply inline-flex items-center gap-1 rounded-xs border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-2xs font-mono font-medium text-secondary uppercase tracking-wider select-none;
+  .badge-mono {
+    @apply font-mono uppercase tracking-wide;
   }
-  .flag-accent {
-    @apply border-accent/25 bg-accent/10 text-accent;
+  .count {
+    @apply inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-surface-active px-1.5 font-mono text-2xs font-medium text-secondary;
   }
 
-  /* ---- Connection / state indicators ----------------------------- */
+  .tag {
+    @apply inline-flex h-5 shrink-0 select-none items-center rounded-sm border border-border px-1.5 text-2xs text-secondary;
+  }
+
+  .kbd {
+    @apply inline-flex h-[18px] min-w-[18px] select-none items-center justify-center rounded-xs border border-border-hover bg-surface-hover px-1 font-sans text-2xs font-medium text-secondary;
+  }
+
   .status-dot {
-    @apply inline-block h-2 w-2 shrink-0 rounded-full;
+    @apply inline-block size-2 shrink-0 rounded-full;
   }
   .status-dot-sm {
-    @apply h-1.5 w-1.5;
+    @apply size-1.5;
   }
-  .status-dot-running {
-    @apply bg-success;
-  }
+  .status-dot-running,
   .status-dot-success {
     @apply bg-success;
   }
@@ -104,190 +179,275 @@
     @apply bg-error;
   }
   .status-dot-offline {
-    @apply bg-muted/40;
+    @apply bg-faint;
   }
-  .status-dot-pulse {
-    /* Calm static glow instead of constant annoying pulse */
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-running) 20%, transparent);
-  }
-
-  /* ---- Keyboard shortcuts ----------------------------------------- */
-  .kbd {
-    @apply inline-flex h-5 min-w-5 items-center justify-center rounded-xs border border-border bg-surface-raised px-1.5 font-mono text-2xs font-medium text-secondary select-none;
-  }
-  .kbd-accent {
-    @apply border-accent/30 bg-accent/10 text-accent;
+  .status-dot-live {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-running) 22%, transparent);
   }
 
-  /* ---- Text helpers ----------------------------------------------- */
-  .eyebrow {
-    @apply text-2xs font-semibold uppercase tracking-wider text-muted select-none;
-  }
-  .table-header {
-    @apply text-2xs font-semibold uppercase tracking-wider text-muted select-none;
+  /* ================================================================
+     TEXT HELPERS
+     ================================================================ */
+  .section-label {
+    @apply select-none text-2xs font-medium uppercase tracking-[0.06em] text-muted;
   }
   .link {
-    @apply cursor-pointer text-accent transition-colors duration-fast hover:text-accent-hover hover:underline;
-    text-underline-offset: 2px;
+    @apply cursor-pointer text-accent underline-offset-2 transition-colors duration-fast hover:text-accent-hover hover:underline;
+  }
+  .mono {
+    @apply font-mono text-xs;
+  }
+  .code-block {
+    @apply overflow-x-auto rounded-md border border-border bg-surface-input px-3 py-2 font-mono text-xs leading-relaxed text-secondary;
   }
 
-  /* ---- Containers ------------------------------------------------- */
-  .panel {
-    @apply rounded-lg border border-border bg-panel;
+  /* ================================================================
+     APP SHELL
+     ================================================================ */
+  .app-shell {
+    @apply flex h-[100dvh] w-full min-h-0 flex-col overflow-hidden bg-chrome;
   }
-  .divider {
-    @apply h-px w-full border-0 bg-border/60;
+  .titlebar {
+    @apply relative z-50 grid h-[var(--titlebar-h)] shrink-0 select-none items-center bg-chrome pl-3;
+    grid-template-columns: 1fr minmax(0, 420px) 1fr;
   }
-  .row {
-    @apply cursor-pointer outline-none transition-colors duration-fast hover:bg-surface-hover/60;
+  .sidebar {
+    @apply flex min-h-0 shrink-0 select-none flex-col bg-chrome;
+    transition: width 160ms var(--ease-out);
   }
-  .row-active {
-    @apply bg-white/[0.04];
+  .nav-section {
+    @apply flex flex-col gap-px;
   }
-
-  .app-deck {
-    position: relative;
-    background: var(--color-surface);
-  }
-  .app-layer {
-    @apply relative z-10;
-  }
-  .window-titlebar {
-    @apply flex h-[var(--titlebar-h)] shrink-0 items-center justify-between gap-4 border-b border-border bg-surface px-3 text-xs select-none;
-  }
-  .workspace-topbar {
-    @apply relative z-30 flex h-[var(--topbar-h)] shrink-0 items-center justify-between gap-4 border-b border-border bg-surface px-5 select-none;
-  }
-  .sidebar-shell {
-    @apply relative z-20 flex min-h-0 shrink-0 flex-col overflow-visible border-r border-border bg-surface-input select-none;
-    transition: width 150ms ease;
-  }
-  .toolbar-band {
-    @apply flex shrink-0 flex-wrap items-center justify-between gap-2.5 border-y border-border/80 bg-surface-input/30 px-5 py-2;
-  }
-  .view-header {
-    @apply flex shrink-0 flex-wrap items-center justify-between gap-4 border-b border-border bg-surface px-5 py-3.5;
-  }
-  .view-content {
-    @apply min-h-0 flex-1 overflow-auto px-5 py-4;
-  }
-
-  .brand-mark {
-    @apply flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-border bg-white/[0.04] text-primary;
-  }
-  .icon-tile {
-    @apply flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border bg-surface-input text-secondary;
-  }
-  .command-trigger {
-    @apply flex w-72 max-w-sm cursor-pointer items-center justify-between gap-3 rounded-md border border-border bg-surface-input/70 px-3 py-1.5 text-xs text-muted shadow-xs transition-colors hover:border-border-hover hover:bg-surface-hover hover:text-primary;
+  .nav-section-label {
+    @apply px-2.5 pb-1 pt-4 text-2xs font-medium text-muted;
   }
   .nav-item {
-    @apply relative flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-xs font-medium text-secondary transition-colors duration-fast hover:bg-surface-hover hover:text-primary;
+    @apply relative flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-left text-sm text-secondary transition-colors duration-fast hover:bg-surface-hover hover:text-primary;
   }
   .nav-item-active {
-    @apply bg-white/[0.07] font-semibold text-primary;
-    box-shadow: inset 2px 0 0 var(--color-accent);
+    @apply bg-surface-active text-primary;
   }
   .nav-item-collapsed {
     @apply justify-center px-0;
   }
-  .status-card {
-    @apply flex cursor-pointer items-center justify-between gap-2 rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-surface-hover;
-  }
-  .filter-chip {
-    @apply cursor-pointer rounded-md border px-2 py-0.5 text-2xs font-medium transition-colors select-none;
-  }
-  .filter-chip-active {
-    @apply border-accent/30 bg-accent/15 text-accent font-semibold;
-  }
-  .filter-chip-idle {
-    @apply border-border bg-surface-input text-muted hover:border-border-hover hover:text-primary;
-  }
-  .toolbar-btn {
-    @apply flex cursor-pointer items-center gap-1.5 rounded-md border border-border bg-surface-input px-2.5 py-1 text-xs font-medium text-secondary transition-colors hover:border-border-hover hover:bg-surface-hover hover:text-primary;
-  }
-  .toolbar-btn-danger {
-    @apply border-error/30 bg-transparent text-error hover:bg-error/15 hover:text-error;
-  }
-  .segmented-control {
-    @apply flex rounded-md border border-border bg-surface-input p-0.5;
-  }
-  .segmented-button {
-    @apply cursor-pointer rounded-xs border-none p-1 text-muted transition-colors hover:text-secondary;
-  }
-  .segmented-button-active {
-    @apply bg-surface-hover text-primary shadow-xs;
+
+  /* The workspace is an inset card inside the chrome. */
+  .workspace {
+    @apply relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-tl-xl border-l border-t border-border bg-surface;
   }
 
+  /* ================================================================
+     VIEW LAYOUT — every top-level view uses exactly this structure:
+       .view > .view-header (title + actions)
+             > .view-toolbar (optional filters)
+             > .view-body (scroll area)
+     ================================================================ */
+  .view {
+    @apply flex min-h-0 w-full flex-1 flex-col overflow-hidden;
+  }
+  .view-header {
+    @apply flex h-[var(--header-h)] shrink-0 items-center justify-between gap-4 px-6;
+  }
+  .view-title {
+    @apply m-0 flex min-w-0 items-center gap-2 truncate text-base font-semibold tracking-[-0.01em] text-primary;
+  }
+  .view-subtitle {
+    @apply truncate text-xs text-muted;
+  }
+  .view-actions {
+    @apply flex shrink-0 items-center gap-2;
+  }
+  .view-toolbar {
+    @apply flex shrink-0 flex-wrap items-center gap-2 px-6 pb-3;
+  }
+  .view-body {
+    @apply min-h-0 flex-1 overflow-auto px-6 pb-6;
+  }
+
+  /* ================================================================
+     CONTAINERS
+     ================================================================ */
+  .panel {
+    @apply rounded-lg border border-border bg-panel;
+  }
+  .panel-header {
+    @apply flex items-center justify-between gap-3 border-b border-border px-4 py-3;
+  }
+  .panel-title {
+    @apply m-0 text-sm font-semibold text-primary;
+  }
+  .panel-body {
+    @apply p-4;
+  }
+  .card {
+    @apply rounded-lg border border-border bg-panel transition-colors duration-fast;
+  }
+  .card-interactive {
+    @apply cursor-pointer hover:border-border-hover hover:bg-surface-hover;
+  }
+  .card-selected {
+    @apply border-accent/50 bg-accent/6;
+  }
+  .divider {
+    @apply h-px w-full shrink-0 border-0 bg-border;
+  }
+  .stat {
+    @apply flex flex-col gap-1 rounded-lg border border-border bg-panel px-4 py-3;
+  }
+  .stat-label {
+    @apply text-xs text-muted;
+  }
+  .stat-value {
+    @apply text-xl font-semibold tabular-nums tracking-tight text-primary;
+  }
+
+  /* ================================================================
+     DATA TABLE — apply to <table>. Rows hover; .is-selected marks
+     the keyboard selection.
+     ================================================================ */
+  .table-wrap {
+    @apply overflow-hidden rounded-lg border border-border bg-panel;
+  }
   .data-table {
-    @apply overflow-hidden rounded-lg border border-border bg-surface-input/20;
+    @apply w-full border-collapse text-sm;
   }
-  .data-header {
-    @apply flex items-center border-b border-border bg-surface-input/60 px-4 py-2 text-2xs font-semibold uppercase tracking-wider text-muted select-none;
+  .data-table thead th {
+    @apply sticky top-0 z-[1] h-9 select-none border-b border-border bg-panel px-3 text-left text-xs font-medium text-muted;
   }
-  .data-row {
-    @apply flex cursor-pointer items-center px-4 py-2 text-xs text-secondary transition-colors hover:bg-surface-hover/60 hover:text-primary;
+  .data-table tbody tr {
+    @apply transition-colors duration-fast;
   }
-  .machine-text {
-    @apply font-mono text-xs text-muted;
+  .data-table tbody tr + tr {
+    @apply border-t border-border-subtle;
   }
-  .action-pill {
-    @apply flex cursor-pointer items-center gap-1 rounded-md border border-border bg-surface-input px-2.5 py-1 text-xs font-medium text-secondary transition-colors hover:border-border-hover hover:bg-surface-hover hover:text-primary;
+  .data-table tbody td {
+    @apply h-11 px-3 align-middle text-secondary;
   }
-  .floating-panel {
-    @apply rounded-xl border border-border bg-surface-raised/95 shadow-xl;
+  .data-table tbody tr:hover {
+    @apply bg-surface-hover;
   }
-  .terminal-overlay {
-    @apply absolute right-5 top-3 z-40 flex items-center gap-2 rounded-xl border border-border bg-surface-raised/95 px-3 py-1.5 text-xs shadow-xl backdrop-blur-md;
-    animation: popover-enter 0.15s var(--ease-out) forwards;
+  .data-table tbody tr.is-selected {
+    @apply bg-surface-active;
+  }
+  .data-table th:first-child,
+  .data-table td:first-child {
+    @apply pl-4;
+  }
+  .data-table th:last-child,
+  .data-table td:last-child {
+    @apply pr-4;
+  }
+  /* Actions revealed on row hover / selection / keyboard focus. */
+  .row-actions {
+    @apply flex items-center justify-end gap-0.5 opacity-0 transition-opacity duration-fast;
+  }
+  tr:hover .row-actions,
+  tr.is-selected .row-actions,
+  tr:focus-within .row-actions,
+  .group:hover .row-actions,
+  .group:focus-within .row-actions {
+    @apply opacity-100;
   }
 
-  /* ---- Alerts / error & warning surfaces -------------------------- */
+  /* ================================================================
+     SEGMENTED CONTROL & FILTER CHIPS & TABS
+     ================================================================ */
+  .segmented {
+    @apply inline-flex h-8 items-center gap-0.5 rounded-md border border-border bg-surface-input p-0.5;
+  }
+  .segmented-item {
+    @apply inline-flex h-full cursor-pointer items-center justify-center gap-1.5 rounded-sm px-2 text-xs font-medium text-muted transition-colors duration-fast hover:text-primary;
+  }
+  .segmented-item-active {
+    @apply bg-surface-active text-primary shadow-xs;
+  }
+
+  .chip {
+    @apply inline-flex h-7 shrink-0 cursor-pointer select-none items-center gap-1 whitespace-nowrap rounded-full border border-border px-2.5 text-xs text-secondary transition-colors duration-fast hover:border-border-hover hover:text-primary;
+  }
+  .chip-active {
+    @apply border-accent/45 bg-accent/12 text-accent hover:text-accent;
+  }
+
+  .tabs {
+    @apply flex items-center gap-1 border-b border-border;
+  }
+  .tab {
+    @apply relative -mb-px inline-flex h-9 cursor-pointer items-center gap-1.5 border-b-2 border-transparent px-2.5 text-sm text-muted transition-colors duration-fast hover:text-primary;
+  }
+  .tab-active {
+    @apply border-accent text-primary;
+  }
+
+  /* ================================================================
+     MENUS / POPOVERS
+     ================================================================ */
+  .popover {
+    @apply z-50 rounded-lg border border-border-hover bg-surface-raised p-1 shadow-lg;
+    animation: popover-enter 120ms var(--ease-out);
+  }
+  .menu-item {
+    @apply flex h-8 w-full cursor-pointer items-center gap-2 rounded-sm px-2 text-left text-sm text-secondary transition-colors duration-fast hover:bg-surface-hover hover:text-primary;
+  }
+  .menu-item-active {
+    @apply bg-surface-hover text-primary;
+  }
+  .menu-item-danger {
+    @apply text-error hover:bg-error/12 hover:text-error;
+  }
+  .menu-separator {
+    @apply my-1 h-px bg-border;
+  }
+
+  /* ================================================================
+     ALERTS
+     ================================================================ */
   .alert {
-    @apply flex items-start gap-2.5 rounded-lg border px-3.5 py-3 text-xs leading-relaxed;
+    @apply flex items-start gap-2.5 rounded-md border px-3 py-2.5 text-xs leading-relaxed;
   }
   .alert-error {
-    @apply border-error/35 bg-error/8 text-error;
+    @apply border-error/30 bg-error/8 text-error;
   }
   .alert-warning {
-    @apply border-warning/35 bg-warning/8 text-warning;
+    @apply border-warning/30 bg-warning/8 text-warning;
   }
   .alert-success {
-    @apply border-success/35 bg-success/8 text-success;
+    @apply border-success/30 bg-success/8 text-success;
   }
   .alert-info {
-    @apply border-accent/30 bg-accent/10 text-secondary;
+    @apply border-accent/25 bg-accent/8 text-secondary;
   }
   .alert-title {
     @apply font-semibold text-primary;
   }
 
-  /* ---- Empty states ------------------------------------------------ */
+  /* ================================================================
+     EMPTY STATES
+     ================================================================ */
   .empty-state {
-    @apply flex flex-col items-center justify-center gap-1.5 px-6 py-14 text-center;
+    @apply flex flex-col items-center justify-center gap-1 px-6 py-16 text-center;
   }
   .empty-state-icon {
-    @apply mb-1 flex h-12 w-12 items-center justify-center rounded-xl border border-border bg-surface-input text-muted;
+    @apply mb-3 flex size-10 items-center justify-center rounded-lg border border-border bg-panel text-muted;
   }
   .empty-state-title {
     @apply text-sm font-semibold text-primary;
   }
   .empty-state-desc {
-    @apply max-w-sm text-xs text-muted;
+    @apply max-w-sm text-xs leading-relaxed text-muted;
   }
   .empty-state-action {
-    @apply mt-3;
-  }
-  .empty-state-dashed {
-    @apply w-full rounded-xl border border-dashed border-border;
+    @apply mt-4 flex items-center gap-2;
   }
 
-  /* ---- Loading ----------------------------------------------------- */
+  /* ================================================================
+     LOADING
+     ================================================================ */
   .skeleton {
     position: relative;
     overflow: hidden;
-    border-radius: var(--radius-md);
-    background: color-mix(in srgb, var(--color-surface-hover) 55%, transparent);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-hover);
   }
   .skeleton::after {
     content: "";
@@ -297,153 +457,124 @@
     background: linear-gradient(
       90deg,
       transparent,
-      color-mix(in srgb, var(--color-primary) 7%, transparent),
+      color-mix(in srgb, var(--color-primary) 5%, transparent),
       transparent
     );
     animation: skeleton-shimmer 1.6s ease-in-out infinite;
   }
+  .spinner {
+    @apply inline-block size-3.5 shrink-0 animate-spin rounded-full border-2 border-current border-r-transparent;
+  }
 
-  /* ---- Toast -------------------------------------------------------- */
+  /* ================================================================
+     TOAST
+     ================================================================ */
   .toast {
-    @apply fixed bottom-5 right-5 z-[1000] flex items-center gap-2.5 rounded-xl border bg-surface-raised px-4 py-2.5 text-sm shadow-lg;
-    animation: toast-enter 0.3s var(--ease-out) forwards;
-  }
-  .toast-success {
-    @apply border-success/40;
-  }
-  .toast-error {
-    @apply border-error/40;
-  }
-  .toast-info {
-    @apply border-border;
+    @apply pointer-events-auto flex min-w-[260px] max-w-[420px] items-start gap-2.5 rounded-lg border border-border-hover bg-surface-raised px-3.5 py-3 text-sm text-primary shadow-lg;
+    animation: toast-enter 220ms var(--ease-out);
   }
 
-  /* ---- Modal -------------------------------------------------------- */
+  /* ================================================================
+     MODAL
+     ================================================================ */
   .modal-overlay {
-    @apply fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4;
+    @apply fixed inset-0 z-[100] flex items-center justify-center bg-overlay p-6;
+    animation: fade-in 120ms ease-out;
   }
   .modal-panel {
-    @apply relative flex max-h-[calc(100vh-32px)] flex-col overflow-hidden rounded-xl border border-white/10 bg-surface-raised shadow-2xl;
-    animation: modal-enter 0.16s var(--ease-out) forwards;
+    @apply relative flex max-h-[calc(100dvh-48px)] w-full flex-col overflow-hidden rounded-xl border border-border-hover bg-surface-raised shadow-xl;
+    animation: modal-enter 160ms var(--ease-out);
   }
   .modal-header {
-    @apply flex shrink-0 items-start justify-between gap-4 border-b border-border bg-surface-input/35 px-5 py-3.5;
+    @apply flex shrink-0 items-start justify-between gap-4 px-5 pb-3 pt-4;
   }
   .modal-title {
-    @apply m-0 text-base font-semibold leading-tight text-primary;
+    @apply m-0 text-lg font-semibold leading-tight tracking-[-0.01em] text-primary;
   }
   .modal-subtitle {
-    @apply m-0 mt-0.5 text-xs leading-snug text-muted;
-  }
-  .modal-body {
-    @apply min-h-0 flex-1 overflow-y-auto px-5 py-4;
-  }
-  .modal-footer {
-    @apply flex shrink-0 items-center justify-end gap-2 border-t border-border bg-surface-input/25 px-5 py-3;
-  }
-  .modal-close {
-    @apply inline-flex items-center justify-center rounded-md p-1.5 text-muted transition-colors duration-fast hover:bg-surface-hover hover:text-primary shrink-0 cursor-pointer;
-    min-width: 28px;
-    min-height: 28px;
-  }
-
-  .settings-shell {
-    @apply flex min-h-0 w-full flex-1 overflow-hidden bg-surface text-sm text-primary select-none;
-  }
-  .settings-sidebar {
-    @apply flex w-[190px] min-w-[190px] shrink-0 flex-col border-r border-border bg-surface-input/20;
-  }
-  .settings-nav {
-    @apply flex flex-1 flex-col gap-1 overflow-y-auto px-2.5 pb-3 scrollbar-none;
-  }
-  .settings-nav-item {
-    @apply flex w-full cursor-pointer items-center gap-2 rounded-md border border-transparent px-2 py-2 text-left text-xs font-medium text-secondary outline-none transition-colors duration-fast hover:bg-surface-hover hover:text-primary;
-  }
-  .settings-label {
-    @apply min-w-0 truncate;
-  }
-  .settings-nav-item-active {
-    @apply border-accent/35 bg-accent/15 font-semibold text-primary;
-  }
-  .settings-content {
-    @apply min-h-0 flex-1 overflow-y-auto bg-surface px-5 py-5 overscroll-contain scrollbar-none;
-  }
-  .settings-page {
-    @apply flex max-w-2xl flex-col gap-4;
-  }
-  .settings-heading {
-    @apply m-0 text-base font-semibold leading-tight text-primary;
-  }
-  .settings-desc {
     @apply m-0 mt-1 text-xs leading-snug text-muted;
   }
-  .settings-divider {
-    @apply h-px w-full bg-border/65;
+  .modal-body {
+    @apply min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-1;
   }
-  .settings-section {
-    @apply flex flex-col gap-3 rounded-lg border border-border bg-panel px-4 py-3.5;
+  .modal-footer {
+    @apply flex shrink-0 items-center justify-end gap-2 border-t border-border px-5 py-3;
   }
-  .settings-section-title {
-    @apply flex items-center gap-2 text-2xs font-bold uppercase tracking-wider text-muted;
+  .modal-close {
+    @apply -mr-1.5 -mt-0.5 inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted transition-colors duration-fast hover:bg-surface-hover hover:text-primary;
   }
-  .field {
-    @apply flex flex-col gap-1.5;
+
+  /* ================================================================
+     SETTINGS
+     ================================================================ */
+  .settings-shell {
+    @apply flex min-h-0 w-full flex-1 overflow-hidden;
   }
-  .field-label {
-    @apply text-xs font-semibold text-secondary;
+  .settings-sidebar {
+    @apply flex w-[208px] shrink-0 flex-col gap-px overflow-y-auto border-r border-border px-3 py-4;
   }
-  .field-meta {
-    @apply text-xs leading-snug text-muted;
+  .settings-nav-item {
+    @apply flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-left text-sm text-secondary transition-colors duration-fast hover:bg-surface-hover hover:text-primary;
+  }
+  .settings-nav-item-active {
+    @apply bg-surface-active text-primary;
+  }
+  .settings-content {
+    @apply min-h-0 flex-1 overflow-y-auto overscroll-contain px-8 py-6;
+  }
+  .settings-page {
+    @apply mx-auto flex w-full max-w-[680px] flex-col gap-6;
+  }
+  .settings-heading {
+    @apply m-0 text-lg font-semibold tracking-[-0.01em] text-primary;
+  }
+  .settings-desc {
+    @apply m-0 mt-1 text-sm text-muted;
+  }
+  /* A group of rows in one bordered card. */
+  .settings-group {
+    @apply flex flex-col rounded-lg border border-border bg-panel;
+  }
+  .settings-group-title {
+    @apply mb-2 text-sm font-medium text-primary;
   }
   .setting-row {
-    @apply flex items-center justify-between gap-4 rounded-lg border border-border bg-panel px-4 py-3;
+    @apply flex min-h-14 items-center justify-between gap-6 px-4 py-3;
+  }
+  .settings-group > .setting-row + .setting-row,
+  .settings-group > * + .setting-row,
+  .settings-group > .setting-row + * {
+    @apply border-t border-border-subtle;
   }
   .setting-row-main {
     @apply flex min-w-0 flex-col gap-0.5;
   }
   .setting-title {
-    @apply text-xs font-semibold text-secondary;
+    @apply text-sm text-primary;
   }
   .setting-meta {
     @apply text-xs leading-snug text-muted;
   }
+  .setting-control {
+    @apply flex shrink-0 items-center gap-2;
+  }
   .system-value {
-    @apply rounded-md border border-border bg-surface-input px-3 py-2 font-mono text-xs leading-normal text-secondary;
+    @apply truncate rounded-md border border-border bg-surface-input px-2.5 py-1.5 font-mono text-xs text-secondary;
   }
 
   @media (max-width: 860px) {
     .settings-sidebar {
-      width: 56px;
-      min-width: 56px;
-    }
-    .settings-sidebar-title {
-      display: none;
-    }
-    .settings-nav-item {
-      justify-content: center;
-      padding-left: 0;
-      padding-right: 0;
+      @apply w-14 px-2;
     }
     .settings-label {
       display: none;
     }
-    .settings-content {
-      padding: 16px;
+    .settings-nav-item {
+      @apply justify-center px-0;
     }
-  }
-
-  /* ---- Modern Cards & Panels --------------------------------------- */
-  .panel-glass {
-    @apply rounded-xl border border-border bg-panel/80 backdrop-blur-md;
-  }
-  .metric-tile {
-    @apply flex flex-col gap-1 rounded-xl border border-border bg-surface-input/50 p-3.5 transition-colors duration-fast hover:border-border-hover;
-  }
-  .server-card {
-    @apply flex flex-col justify-between rounded-xl border border-border bg-surface-input/40 p-4 transition-all duration-fast hover:border-accent/40 hover:bg-surface-input hover:shadow-md;
-  }
-  .badge-pill {
-    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-2xs font-semibold;
+    .settings-content {
+      @apply px-5;
+    }
   }
 }
 

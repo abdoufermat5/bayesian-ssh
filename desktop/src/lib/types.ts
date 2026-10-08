@@ -24,7 +24,8 @@ export interface SessionHistoryEntry {
   ended_at?: string;
   status: string | { Error: string };
   exit_code?: number;
-  duration?: number;
+  /** chrono::Duration serializes as [seconds, nanoseconds]. */
+  duration?: [number, number] | number;
 }
 
 export interface ConnectionStats {
