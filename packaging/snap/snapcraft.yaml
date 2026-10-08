@@ -19,7 +19,9 @@ license: MIT
 contact: https://github.com/abdoufermat5/bayesian-ssh/issues
 issues: https://github.com/abdoufermat5/bayesian-ssh/issues
 source-code: https://github.com/abdoufermat5/bayesian-ssh
-website: https://github.com/abdoufermat5/bayesian-ssh
+# Store listing links are set once on the dashboard (upload-metadata does not
+# push them); keep these in step with snapcraft.io/bayesian-ssh/listing.
+website: https://abdoufermat5.github.io/bayesian-ssh/
 # Store listing icon (512x512), copied next to this file by snap-stage.sh.
 icon: bayesian-ssh.png
 description: |

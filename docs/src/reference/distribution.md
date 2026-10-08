@@ -178,6 +178,23 @@ cd target/snap && snapcraft pack
 Without `SNAPCRAFT_STORE_CREDENTIALS` the snap is still built and kept as a
 workflow artifact; the publish step leaves a `::notice::` instead.
 
+### Store listing
+
+On every stable release the `snap` workflow runs `snapcraft upload-metadata`,
+which pushes the icon, summary and description from the snap. It does not
+touch the links or screenshots; those are kept on the listing
+(<https://snapcraft.io/bayesian-ssh/listing>) and survive each sync:
+
+- links: website `https://abdoufermat5.github.io/bayesian-ssh/`, source
+  `https://github.com/abdoufermat5/bayesian-ssh`, issues/contact
+  `https://github.com/abdoufermat5/bayesian-ssh/issues`;
+- screenshots: 1280×800 captures of the desktop app (Hosts, Terminals, command
+  palette, Files, Audit), taken against the e2e mocked backend so they hold
+  only demo data.
+
+Change either on the dashboard, and keep the snapcraft.yaml link fields in
+step.
+
 ## Flatpak (Flathub)
 
 Flatpak is the one channel with no automation secret: Flathub builds from a
