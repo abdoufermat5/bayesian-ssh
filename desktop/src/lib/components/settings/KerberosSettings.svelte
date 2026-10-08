@@ -11,42 +11,47 @@
 
 <div class="settings-page">
   <div>
-    <h3 class="settings-heading">Kerberos GSSAPI</h3>
-    <p class="settings-desc">Configure Kerberos ticket expiry monitoring and automatic renewal warning thresholds</p>
+    <h2 class="settings-heading">Kerberos</h2>
+    <p class="settings-desc">Ticket monitoring for GSSAPI authentication.</p>
   </div>
 
-  <div class="settings-divider"></div>
-
-  <div class="setting-row">
-    <div class="setting-row-main">
-      <span class="setting-title">Monitor ticket expiry</span>
-      <span class="setting-meta">Track remaining ticket lifetime and warn before credentials expire</span>
+  <div class="settings-group">
+    <label class="setting-row cursor-pointer">
+      <span class="setting-row-main">
+        <span class="setting-title">Monitor ticket expiry</span>
+        <span class="setting-meta">Track the remaining ticket lifetime and warn before it expires.</span>
+      </span>
+      <input
+        type="checkbox"
+        class="switch"
+        checked={settings.monitor_kerberos}
+        onchange={(e) => {
+          settings.monitor_kerberos = (e.target as HTMLInputElement).checked;
+          onSave();
+        }}
+      />
+    </label>
+    <div class="setting-row">
+      <div class="setting-row-main">
+        <label class="setting-title" for="settings-kerberos-warn">Warning threshold</label>
+        <span class="setting-meta">Prompt to renew when fewer minutes than this remain.</span>
+      </div>
+      <div class="setting-control">
+        <input
+          id="settings-kerberos-warn"
+          type="number"
+          min="1"
+          max="1440"
+          disabled={!settings.monitor_kerberos}
+          value={settings.kerberos_warn_minutes}
+          onchange={(e) => {
+            settings.kerberos_warn_minutes = Number((e.target as HTMLInputElement).value);
+            onSave();
+          }}
+          class="input w-24 tabular-nums"
+        />
+        <span class="text-sm text-muted">min</span>
+      </div>
     </div>
-    <input
-      type="checkbox"
-      checked={settings.monitor_kerberos}
-      onchange={(e) => {
-        settings.monitor_kerberos = (e.target as HTMLInputElement).checked;
-        onSave();
-      }}
-      class="w-[18px] h-[18px] accent-accent cursor-pointer shrink-0"
-    />
-  </div>
-
-  <div class="field">
-    <label for="settings-kerberos-warn" class="field-label">Warning Threshold (Minutes)</label>
-    <span class="field-meta">Opens the renew ticket prompt when your ticket has less than this many minutes remaining</span>
-    <input
-      id="settings-kerberos-warn"
-      type="number"
-      min="1"
-      max="1440"
-      value={settings.kerberos_warn_minutes}
-      onchange={(e) => {
-        settings.kerberos_warn_minutes = Number((e.target as HTMLInputElement).value);
-        onSave();
-      }}
-      class="input mt-1"
-    />
   </div>
 </div>

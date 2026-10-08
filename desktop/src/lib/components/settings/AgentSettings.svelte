@@ -29,77 +29,91 @@
 
 <div class="settings-page">
   <div>
-    <h3 class="settings-heading">SSH Agent & Defaults</h3>
-    <p class="settings-desc">Configure SSH Agent options and fallback connection values</p>
+    <h2 class="settings-heading">SSH agent</h2>
+    <p class="settings-desc">Agent behaviour and the values used when a host doesn't set its own.</p>
   </div>
 
-  <div class="settings-divider"></div>
-
-  <div class="setting-row">
-    <div class="setting-row-main">
-      <span class="setting-title">Auto-start SSH Agent</span>
-      <span class="setting-meta">Automatically launch internal agent on desktop app startup</span>
-    </div>
-    <input
-      type="checkbox"
-      checked={settings.auto_start_agent}
-      onchange={(e) => {
-        settings.auto_start_agent = (e.target as HTMLInputElement).checked;
-        onSave();
-      }}
-      class="w-[18px] h-[18px] accent-accent cursor-pointer shrink-0"
-    />
-  </div>
-
-  <div class="field">
-    <label for="settings-agent-socket" class="field-label">Custom Agent Socket Path</label>
-    <span class="field-meta">Use a custom system socket path instead of the internal agent</span>
-    <input
-      id="settings-agent-socket"
-      type="text"
-      placeholder="e.g. /tmp/custom-agent.sock (blank to use default)"
-      value={settings.custom_agent_socket}
-      onchange={(e) => {
-        settings.custom_agent_socket = (e.target as HTMLInputElement).value;
-        onSave();
-      }}
-      class="input mt-1"
-    />
-  </div>
-
-  <div class="settings-divider my-1"></div>
-
-  <div class="settings-section">
-    <h4 class="settings-section-title">Fallback Connection Values</h4>
-
-    <div class="grid grid-cols-2 gap-4">
-      <div class="field">
-        <label for="settings-default-user" class="field-label">Default Username</label>
+  <section>
+    <h3 class="settings-group-title">Agent</h3>
+    <div class="settings-group">
+      <label class="setting-row cursor-pointer">
+        <span class="setting-row-main">
+          <span class="setting-title">Start agent on launch</span>
+          <span class="setting-meta">Launch the built-in SSH agent when the app opens.</span>
+        </span>
         <input
-          id="settings-default-user"
-          type="text"
-          value={settings.default_user}
+          type="checkbox"
+          class="switch"
+          checked={settings.auto_start_agent}
           onchange={(e) => {
-            settings.default_user = (e.target as HTMLInputElement).value;
-            saveDefaults();
+            settings.auto_start_agent = (e.target as HTMLInputElement).checked;
+            onSave();
           }}
-          class="input"
         />
-      </div>
-
-      <div class="field">
-        <label for="settings-default-port" class="field-label">Default Port</label>
-        <input
-          id="settings-default-port"
-          type="number"
-          value={settings.default_port}
-          onchange={(e) => {
-            settings.default_port = Number((e.target as HTMLInputElement).value);
-            saveDefaults();
-          }}
-          class="input"
-        />
+      </label>
+      <div class="setting-row">
+        <div class="setting-row-main">
+          <label class="setting-title" for="settings-agent-socket">Custom agent socket</label>
+          <span class="setting-meta">Use an external agent instead. Leave empty for the built-in one.</span>
+        </div>
+        <div class="setting-control">
+          <input
+            id="settings-agent-socket"
+            type="text"
+            placeholder="/tmp/agent.sock"
+            value={settings.custom_agent_socket}
+            onchange={(e) => {
+              settings.custom_agent_socket = (e.target as HTMLInputElement).value;
+              onSave();
+            }}
+            class="input input-mono w-56"
+          />
+        </div>
       </div>
     </div>
-  </div>
+  </section>
+
+  <section>
+    <h3 class="settings-group-title">Connection defaults</h3>
+    <div class="settings-group">
+      <div class="setting-row">
+        <div class="setting-row-main">
+          <label class="setting-title" for="settings-default-user">Default user</label>
+          <span class="setting-meta">Used for hosts without a user.</span>
+        </div>
+        <div class="setting-control">
+          <input
+            id="settings-default-user"
+            type="text"
+            value={settings.default_user}
+            onchange={(e) => {
+              settings.default_user = (e.target as HTMLInputElement).value;
+              saveDefaults();
+            }}
+            class="input w-48"
+          />
+        </div>
+      </div>
+      <div class="setting-row">
+        <div class="setting-row-main">
+          <label class="setting-title" for="settings-default-port">Default port</label>
+          <span class="setting-meta">Used for hosts without a port.</span>
+        </div>
+        <div class="setting-control">
+          <input
+            id="settings-default-port"
+            type="number"
+            min="1"
+            max="65535"
+            value={settings.default_port}
+            onchange={(e) => {
+              settings.default_port = Number((e.target as HTMLInputElement).value);
+              saveDefaults();
+            }}
+            class="input w-48 tabular-nums"
+          />
+        </div>
+      </div>
+    </div>
+  </section>
 </div>

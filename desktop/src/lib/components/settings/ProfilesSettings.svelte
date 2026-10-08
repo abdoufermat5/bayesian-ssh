@@ -1,13 +1,5 @@
 <script lang="ts">
-  import {
-    ShieldCheck,
-    FolderPlus,
-    FolderOpen,
-    RefreshCw,
-    Database,
-    Download,
-    Upload,
-  } from "lucide-svelte";
+  import { Download, FolderOpen, RefreshCw, Upload } from "lucide-svelte";
   import { invoke } from "@tauri-apps/api/core";
   import type { DesktopSettings, EnvInfo, WorkspaceInfo } from "$lib/types";
   import CustomSelect from "$lib/components/ui/CustomSelect.svelte";
@@ -45,6 +37,19 @@
     sshConfigPath = workspace.ssh_config_path || "";
   });
 
+  const profileOptions = $derived(environments.map((env) => ({ value: env.name, label: env.name })));
+
+  const rankingOptions = [
+    { value: "bayesian", label: "Usage-ranked", description: "Frequency + recency scoring" },
+    { value: "fuzzy", label: "Fuzzy match", description: "Literal text matching" },
+  ];
+
+  const systemPaths = $derived([
+    { label: "Config root", value: workspace.config_root },
+    { label: "Profile directory", value: workspace.env_dir },
+    { label: "Database", value: workspace.database_path },
+  ]);
+
   function saveWorkspace() {
     workspace = handleWorkspaceSave(workspace, settings, sshConfigPath, onSaveWorkspace);
   }
@@ -78,7 +83,7 @@
         passphrase: backupPassphrase || null,
         noBastion: false,
       });
-      notify(`Successfully imported ${count} connection(s)!`, "success");
+      notify(`Imported ${count} connection(s)`, "success");
     } catch (err) {
       notify(`Import backup failed: ${err}`, "error");
     }
@@ -87,138 +92,136 @@
 
 <div class="settings-page">
   <div>
-    <h3 class="settings-heading">Profiles & Workspace</h3>
-    <p class="settings-desc">Configure active environment profiles and file paths</p>
+    <h2 class="settings-heading">Profiles & workspace</h2>
+    <p class="settings-desc">Environment profiles, host search and where your data lives.</p>
   </div>
 
-  <div class="settings-divider"></div>
-
-  <div class="field">
-    <label for="settings-profile" class="field-label">Active Profile</label>
-    <span class="field-meta">Hosts and credentials are isolated within environment profiles</span>
-    <div class="flex gap-2 mt-1">
-      <CustomSelect
-        id="settings-profile"
-        class="flex-1"
-        options={environments.map((env) => ({ value: env.name, label: env.name }))}
-        value={workspace.active_env}
-        onChange={(val) => onSwitchEnv(val)}
-      />
-      <button
-        type="button"
-        class="btn btn-secondary"
-        onclick={onManageProfiles}
-      >
-        <FolderPlus size={14} />
-        Manage Profiles
-      </button>
-    </div>
-  </div>
-
-  <div class="field">
-    <label for="settings-ssh-config" class="field-label">OpenSSH Config Path</label>
-    <span class="field-meta">Path to your OpenSSH configuration file for host importing</span>
-    <div class="flex gap-2 mt-1">
-      <input
-        id="settings-ssh-config"
-        type="text"
-        placeholder="~/.ssh/config"
-        bind:value={sshConfigPath}
-        onchange={saveWorkspace}
-        class="input flex-1"
-      />
-      <button
-        type="button"
-        class="btn btn-secondary"
-        onclick={onBrowseSshConfig}
-      >
-        <FolderOpen size={14} />
-        Browse
-      </button>
-    </div>
-    <div class="flex gap-2 mt-1.5">
-      <button
-        type="button"
-        class="btn btn-secondary btn-sm"
-        onclick={onImportSshConfig}
-      >
-        <RefreshCw size={12} />
-        Import OpenSSH hosts
-      </button>
-    </div>
-  </div>
-
-  <div class="settings-divider my-1"></div>
-  <div class="settings-section">
-    <h4 class="settings-section-title">
-      <ShieldCheck size={12} class="text-accent" />
-      <span>Encrypted Backup & Restore</span>
-    </h4>
-    <p class="field-meta">Export your server database encrypted with AES-256-GCM / PBKDF2 or restore from an encrypted backup.</p>
-    <div class="flex flex-wrap gap-2 mt-1">
-      <input
-        type="password"
-        placeholder="Passphrase (optional)"
-        bind:value={backupPassphrase}
-        class="input w-[220px]"
-      />
-      <button
-        type="button"
-        class="btn btn-primary"
-        onclick={handleExportEncryptedBackup}
-      >
-        <Download size={13} />
-        Export Encrypted Backup
-      </button>
-      <button
-        type="button"
-        class="btn btn-secondary"
-        onclick={handleImportEncryptedBackup}
-      >
-        <Upload size={13} />
-        Import Backup File
-      </button>
-    </div>
-  </div>
-
-  <div class="setting-row">
-    <div class="setting-row-main">
-      <span class="setting-title">Host Ranking Mode</span>
-      <span class="setting-meta">Bayesian uses frequency + recency; fuzzy uses text matching</span>
-    </div>
-    <CustomSelect
-      options={[
-        { value: "bayesian", label: "Bayesian ranking", description: "Frequency + recency scoring" },
-        { value: "fuzzy", label: "Fuzzy search", description: "Literal text matching" }
-      ]}
-      value={settings.fuzzy_search ? "fuzzy" : "bayesian"}
-      onChange={(val) => {
-        settings.fuzzy_search = val === "fuzzy";
-        saveDefaults();
-      }}
-    />
-  </div>
-
-  <div class="settings-divider my-1"></div>
-
-  <div class="settings-section">
-    <h4 class="settings-section-title">
-      <Database size={12} />
-      <span>Workspace System Paths</span>
-    </h4>
-    <div class="grid grid-cols-[140px_1fr] gap-x-4 gap-y-3.5 items-center text-xs text-secondary mt-1">
-      <span class="text-muted font-medium">Config root</span>
-      <div class="system-value break-all">
-        <code class="font-mono text-[11px] leading-normal">{workspace.config_root}</code>
+  <section>
+    <h3 class="settings-group-title">Profile</h3>
+    <div class="settings-group">
+      <div class="setting-row">
+        <div class="setting-row-main">
+          <span class="setting-title">Active profile</span>
+          <span class="setting-meta">Hosts and credentials are isolated per profile.</span>
+        </div>
+        <div class="setting-control">
+          <CustomSelect
+            id="settings-profile"
+            class="w-48"
+            size="md"
+            options={profileOptions}
+            value={workspace.active_env}
+            onChange={(val) => onSwitchEnv(val)}
+          />
+          <button type="button" class="btn btn-secondary" onclick={onManageProfiles}>Manage</button>
+        </div>
       </div>
-      <span class="text-muted font-medium">Profile directory</span>
-      <div class="system-value break-all">
-        <code class="font-mono text-[11px] leading-normal">{workspace.env_dir}</code>
-      </div>
-      <span class="text-muted font-medium">Database path</span>
-      <div class="system-value break-all">
-        <code class="font-mono text-[11px] leading-normal">{workspace.database_path}</code>
+      <div class="setting-row">
+        <div class="setting-row-main">
+          <span class="setting-title">Host ranking</span>
+          <span class="setting-meta">How hosts are ordered when you search.</span>
+        </div>
+        <div class="setting-control">
+          <CustomSelect
+            class="w-48"
+            size="md"
+            options={rankingOptions}
+            value={settings.fuzzy_search ? "fuzzy" : "bayesian"}
+            onChange={(val) => {
+              settings.fuzzy_search = val === "fuzzy";
+              saveDefaults();
+            }}
+          />
+        </div>
       </div>
     </div>
-  </div>
+  </section>
+
+  <section>
+    <h3 class="settings-group-title">OpenSSH config</h3>
+    <div class="settings-group">
+      <div class="setting-row">
+        <div class="setting-row-main">
+          <label class="setting-title" for="settings-ssh-config">Config file</label>
+          <span class="setting-meta">Used when importing hosts.</span>
+        </div>
+        <div class="setting-control">
+          <input
+            id="settings-ssh-config"
+            type="text"
+            placeholder="~/.ssh/config"
+            bind:value={sshConfigPath}
+            onchange={saveWorkspace}
+            class="input input-mono w-56"
+          />
+          <button type="button" class="btn btn-secondary" onclick={onBrowseSshConfig}>
+            <FolderOpen size={14} />
+            Browse
+          </button>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div class="setting-row-main">
+          <span class="setting-title">Import hosts</span>
+          <span class="setting-meta">Add hosts defined in the config file to this profile.</span>
+        </div>
+        <div class="setting-control">
+          <button type="button" class="btn btn-secondary" onclick={onImportSshConfig}>
+            <RefreshCw size={14} />
+            Import hosts
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h3 class="settings-group-title">Backup & restore</h3>
+    <div class="settings-group">
+      <div class="setting-row">
+        <div class="setting-row-main">
+          <label class="setting-title" for="settings-backup-passphrase">Passphrase</label>
+          <span class="setting-meta">Encrypts the backup with AES-256-GCM. Leave empty for plain JSON.</span>
+        </div>
+        <div class="setting-control">
+          <input
+            id="settings-backup-passphrase"
+            type="password"
+            placeholder="Optional"
+            autocomplete="new-password"
+            bind:value={backupPassphrase}
+            class="input w-48"
+          />
+        </div>
+      </div>
+      <div class="setting-row">
+        <div class="setting-row-main">
+          <span class="setting-title">Hosts backup</span>
+          <span class="setting-meta">Export every host in this profile, or restore from a backup file.</span>
+        </div>
+        <div class="setting-control">
+          <button type="button" class="btn btn-secondary" onclick={handleImportEncryptedBackup}>
+            <Upload size={14} />
+            Restore…
+          </button>
+          <button type="button" class="btn btn-secondary" onclick={handleExportEncryptedBackup}>
+            <Download size={14} />
+            Export…
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h3 class="settings-group-title">Storage</h3>
+    <div class="settings-group">
+      {#each systemPaths as p (p.label)}
+        <div class="setting-row">
+          <span class="setting-title shrink-0">{p.label}</span>
+          <code class="system-value min-w-0 max-w-[70%]" title={p.value}>{p.value}</code>
+        </div>
+      {/each}
+    </div>
+  </section>
 </div>

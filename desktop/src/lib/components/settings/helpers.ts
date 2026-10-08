@@ -20,7 +20,13 @@ export function syncWorkspaceFromForm(
 
 /**
  * Save the workspace after re-deriving its form-derived fields.
- * Returns the next workspace value; the caller reassigns its `$bindable()` prop.
+ *
+ * The synced fields are written back into `workspace` *before* the save runs:
+ * `onSaveWorkspace` reads the app store's workspace, which is the very object
+ * passed in by `bind:workspace`, so assigning after the callback would persist
+ * the stale value (e.g. a freshly typed SSH config path).
+ *
+ * Returns the workspace value; the caller reassigns its `$bindable()` prop.
  */
 export function handleWorkspaceSave(
   workspace: WorkspaceInfo,
@@ -28,14 +34,16 @@ export function handleWorkspaceSave(
   sshConfigPath: string,
   onSaveWorkspace: () => void
 ): WorkspaceInfo {
-  const next = syncWorkspaceFromForm(workspace, settings, sshConfigPath);
+  Object.assign(workspace, syncWorkspaceFromForm(workspace, settings, sshConfigPath));
   onSaveWorkspace();
-  return next;
+  return workspace;
 }
 
 /**
  * Save both defaults and the workspace after re-deriving form-derived fields.
- * Returns the next workspace value; the caller reassigns its `$bindable()` prop.
+ *
+ * See `handleWorkspaceSave` for why the workspace is mutated in place before
+ * the callbacks fire.
  */
 export function handleDefaultsSave(
   workspace: WorkspaceInfo,
@@ -44,8 +52,8 @@ export function handleDefaultsSave(
   onSave: () => void,
   onSaveWorkspace: () => void
 ): WorkspaceInfo {
-  const next = syncWorkspaceFromForm(workspace, settings, sshConfigPath);
+  Object.assign(workspace, syncWorkspaceFromForm(workspace, settings, sshConfigPath));
   onSave();
   onSaveWorkspace();
-  return next;
+  return workspace;
 }

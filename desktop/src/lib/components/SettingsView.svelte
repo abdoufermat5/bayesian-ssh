@@ -1,6 +1,6 @@
 <script lang="ts">
   import {
-    FileText,
+    History,
     KeyRound,
     Layers,
     Palette,
@@ -46,41 +46,39 @@
   let activeCategory = $state("workspace");
 
   const categories = [
-    { id: "workspace", label: "Profiles & Workspace", icon: Layers },
-    { id: "ssh_agent", label: "SSH Agent & Defaults", icon: KeyRound },
-    { id: "kerberos", label: "Kerberos GSSAPI", icon: ShieldCheck },
-    { id: "terminal", label: "Terminal Emulation", icon: TerminalSquare },
-    { id: "logs", label: "Session Logs", icon: FileText },
-    { id: "appearance", label: "Appearance & Locale", icon: Palette },
-    { id: "features", label: "Features Flags", icon: Sliders },
+    { id: "workspace", label: "Profiles & workspace", icon: Layers },
+    { id: "ssh_agent", label: "SSH agent", icon: KeyRound },
+    { id: "kerberos", label: "Kerberos", icon: ShieldCheck },
+    { id: "terminal", label: "Terminal", icon: TerminalSquare },
+    { id: "logs", label: "History", icon: History },
+    { id: "appearance", label: "Appearance", icon: Palette },
+    { id: "features", label: "Features", icon: Sliders },
   ];
 </script>
 
-<div class="settings-shell">
-  <div class="settings-sidebar">
-    <div class="settings-sidebar-title px-4 pt-5 pb-3">
-      <span class="eyebrow text-[10px]">Preferences</span>
-      <h2 class="text-base font-bold tracking-tight text-primary mt-0.5">Settings</h2>
+<div class="view">
+  <header class="view-header">
+    <div class="flex min-w-0 items-baseline gap-2.5">
+      <h1 class="view-title">Settings</h1>
     </div>
+  </header>
 
-    <div class="settings-nav">
-      {#each categories as cat}
-        <button
-          type="button"
-          class="settings-nav-item
-            {activeCategory === cat.id
-              ? 'settings-nav-item-active'
-              : ''}"
-          onclick={() => (activeCategory = cat.id)}
-          title={cat.label}
-          aria-current={activeCategory === cat.id ? "page" : undefined}
-        >
-          <cat.icon size={15} class={activeCategory === cat.id ? "text-accent" : "text-muted"} />
-          <span class="settings-label">{cat.label}</span>
-        </button>
-      {/each}
-    </div>
-  </div>
+  <div class="settings-shell bg-surface">
+    <nav class="settings-sidebar" aria-label="Settings sections">
+    {#each categories as cat (cat.id)}
+      {@const active = activeCategory === cat.id}
+      <button
+        type="button"
+        class="settings-nav-item {active ? 'settings-nav-item-active' : ''}"
+        onclick={() => (activeCategory = cat.id)}
+        title={cat.label}
+        aria-current={active ? "page" : undefined}
+      >
+        <cat.icon size={16} class="shrink-0 {active ? 'text-primary' : 'text-muted'}" />
+        <span class="settings-label truncate">{cat.label}</span>
+      </button>
+    {/each}
+  </nav>
 
   <div class="settings-content">
     {#if activeCategory === "workspace"}
@@ -95,30 +93,19 @@
         {onBrowseSshConfig}
         {onImportSshConfig}
       />
-    {/if}
-
-    {#if activeCategory === "ssh_agent"}
+    {:else if activeCategory === "ssh_agent"}
       <AgentSettings bind:settings bind:workspace {onSave} {onSaveWorkspace} />
-    {/if}
-
-    {#if activeCategory === "kerberos"}
+    {:else if activeCategory === "kerberos"}
       <KerberosSettings bind:settings {onSave} />
-    {/if}
-
-    {#if activeCategory === "terminal"}
+    {:else if activeCategory === "terminal"}
       <TerminalSettings bind:settings {onSave} />
-    {/if}
-
-    {#if activeCategory === "logs"}
+    {:else if activeCategory === "logs"}
       <LogsSettings bind:settings bind:workspace {onSaveWorkspace} />
-    {/if}
-
-    {#if activeCategory === "appearance"}
+    {:else if activeCategory === "appearance"}
       <AppearanceSettings bind:settings {onSave} {onThemeChange} />
-    {/if}
-
-    {#if activeCategory === "features"}
+    {:else if activeCategory === "features"}
       <FeaturesSettings bind:settings {onSave} />
     {/if}
+  </div>
   </div>
 </div>
