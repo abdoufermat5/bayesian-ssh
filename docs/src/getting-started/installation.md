@@ -48,7 +48,8 @@ The snap ships both the CLI (`bayesian-ssh`, or `bssh` after the alias) and the
 desktop app (`bayesian-ssh.gui`). Strict confinement limits it — `~/.ssh` is
 read-only (`known_hosts` is not updated, `key generate` cannot write there), its
 config/database live under `~/snap/bayesian-ssh/current/.config/bayesian-ssh`,
-and it uses its own `ssh`/`kinit`/`klist`. See
+it uses its own `ssh`, and it has no Kerberos support (Kerberos is optional; use
+a native install if you need it). See
 [Distribution](../reference/distribution.md#snap-store) for the full list and how
 to publish.
 

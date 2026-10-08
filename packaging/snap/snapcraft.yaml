@@ -14,7 +14,7 @@ name: bayesian-ssh
 base: core24
 version: "__VERSION__"
 title: Bayesian SSH
-summary: Fast and lightweight SSH session manager with Kerberos support
+summary: Fast and lightweight SSH session manager with Bayesian-ranked search
 license: MIT
 contact: https://github.com/abdoufermat5/bayesian-ssh/issues
 issues: https://github.com/abdoufermat5/bayesian-ssh/issues
@@ -24,8 +24,12 @@ website: https://github.com/abdoufermat5/bayesian-ssh
 icon: bayesian-ssh.png
 description: |
   Bayesian SSH is a smart, high-performance SSH session manager featuring
-  Bayesian-ranked search, bastion jump-host chaining, Kerberos integration,
-  a CLI and a desktop application.
+  Bayesian-ranked search, bastion jump-host chaining, a CLI and a desktop
+  application.
+
+  Kerberos is optional in Bayesian SSH and not included in the snap: host
+  tickets are not visible from a strictly confined snap. Use a native install
+  (install.sh, .deb, .rpm or AppImage) if you authenticate with Kerberos.
 
   After installing, grant read access to your SSH configuration and keys:
 
@@ -72,20 +76,13 @@ parts:
     source: cli
     organize:
       bayesian-ssh: usr/bin/bayesian-ssh
-    # Programs both apps spawn: ssh/ssh-keygen/ssh-add/ssh-agent, kinit/klist,
-    # and notify-send for desktop notifications. The host's copies are not
-    # reachable from a strict snap.
+    # Programs both apps spawn: ssh/ssh-keygen/ssh-add/ssh-agent and
+    # notify-send for desktop notifications. The host's copies are not
+    # reachable from a strict snap. No Kerberos client: it is optional, and
+    # without kinit/klist the apps report Kerberos as unavailable.
     stage-packages:
       - openssh-client
-      - krb5-user
       - libnotify-bin
-    # krb5-user ships kinit.mit/klist.mit and creates the kinit/klist names
-    # through update-alternatives in its postinst, which stage-packages never
-    # runs; provide the names the apps call.
-    override-prime: |
-      craftctl default
-      ln -sf kinit.mit "$CRAFT_PRIME/usr/bin/kinit"
-      ln -sf klist.mit "$CRAFT_PRIME/usr/bin/klist"
 
   desktop:
     plugin: dump
