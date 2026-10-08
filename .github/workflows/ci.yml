@@ -95,6 +95,14 @@ jobs:
     - name: Build frontend
       run: cd desktop && npm run build
 
+    - name: Install Playwright browser
+      run: cd desktop && npx playwright install --with-deps chromium
+
+    - name: End-to-end tests
+      run: cd desktop && npm run e2e
+      env:
+        CI: true
+
   deploy-docs:
     name: Deploy Docs
     runs-on: ubuntu-latest

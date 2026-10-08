@@ -26,6 +26,9 @@ make gui-dev
 # Run unit and integration tests for the whole workspace
 make test
 
+# Run the desktop end-to-end tests (Playwright; needs the frontend dependencies)
+make e2e
+
 # Format code and run linter (clippy, whole workspace, warnings are errors)
 make format
 make lint

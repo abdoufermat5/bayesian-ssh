@@ -1,4 +1,4 @@
-.PHONY: help frontend gui-dev build release test check format lint install uninstall package flatpak-build snap-build docs clean
+.PHONY: help frontend gui-dev build release test check format lint e2e install uninstall package flatpak-build snap-build docs clean
 
 INSTALL_DIR ?= /usr/local/bin
 
@@ -36,6 +36,14 @@ format: ## Format Rust code
 
 lint: frontend ## Run Clippy linter on the whole workspace
 	cargo clippy --workspace --all-targets -- -D warnings
+
+# End-to-end tests for the desktop GUI (Playwright + chromium). Starts/reuses
+# the Vite dev server on port 1420 and stubs the Tauri IPC layer.
+e2e: ## Run the desktop end-to-end test suite (Playwright)
+	@if [ -d "desktop" ]; then \
+		export PATH=$$PATH:$$HOME/.nvm/versions/node/$$(ls $$HOME/.nvm/versions/node 2>/dev/null | sort -V | tail -n 1)/bin:$$HOME/.cargo/bin; \
+		if command -v npm >/dev/null 2>&1; then cd desktop && ( [ -d "node_modules" ] || npm ci ) && npm run e2e; fi; \
+	fi
 
 install: release ## Install bayesian-ssh, bssh alias, and desktop GUI binary to system
 	sudo install -m 755 target/release/bayesian-ssh "$(INSTALL_DIR)/bayesian-ssh"
