@@ -35,9 +35,10 @@ test.describe("settings", () => {
       { label: "History", marker: page.getByRole("checkbox", { name: /Record session history/ }) },
       { label: "Appearance", marker: page.getByRole("radiogroup", { name: "Theme" }) },
       { label: "Features", marker: page.getByRole("checkbox", { name: /SFTP file browser/ }) },
+      { label: "Updates", marker: page.getByRole("button", { name: "Check for updates" }) },
     ];
 
-    // The rail exposes exactly the seven documented categories.
+    // The rail exposes exactly the eight documented categories.
     await expect(page.locator(SECTIONS).getByRole("button")).toHaveCount(sections.length);
 
     for (const { label, marker } of sections) {

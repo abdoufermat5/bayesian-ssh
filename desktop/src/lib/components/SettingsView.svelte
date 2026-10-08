@@ -4,6 +4,7 @@
     KeyRound,
     Layers,
     Palette,
+    RefreshCw,
     ShieldCheck,
     Sliders,
     TerminalSquare,
@@ -16,6 +17,7 @@
   import LogsSettings from "./settings/LogsSettings.svelte";
   import AppearanceSettings from "./settings/AppearanceSettings.svelte";
   import FeaturesSettings from "./settings/FeaturesSettings.svelte";
+  import UpdatesSettings from "./settings/UpdatesSettings.svelte";
 
   interface Props {
     settings: DesktopSettings;
@@ -53,6 +55,7 @@
     { id: "logs", label: "History", icon: History },
     { id: "appearance", label: "Appearance", icon: Palette },
     { id: "features", label: "Features", icon: Sliders },
+    { id: "updates", label: "Updates", icon: RefreshCw },
   ];
 </script>
 
@@ -105,6 +108,8 @@
       <AppearanceSettings bind:settings {onSave} {onThemeChange} />
     {:else if activeCategory === "features"}
       <FeaturesSettings bind:settings {onSave} />
+    {:else if activeCategory === "updates"}
+      <UpdatesSettings />
     {/if}
   </div>
   </div>

@@ -1,6 +1,6 @@
 [package]
 name = "bayesian-ssh-gui"
-version = "2.5.2"
+version = "2.6.0"
 edition = "2021"
 authors = ["Abdoufermat5"]
 description = "Bayesian SSH Desktop GUI Client"
@@ -41,6 +41,7 @@ chrono = { version = "0.4", features = ["serde"] }
 dirs = "5.0"
 sha2 = "0.10"
 base64 = "0.22"
+tauri-plugin-updater = "2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

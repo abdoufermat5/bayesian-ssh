@@ -262,6 +262,9 @@
     start_agent: () => ({ active: true, socket_path: "/run/user/1000/ssh-agent.sock", keys: ["ED25519 SHA256:abc me@laptop"] }),
     add_key_to_agent: () => null,
     get_app_version: () => "2.4.0",
+    update_managed_by: () => null,
+    check_update: () => null,
+    install_update: () => null,
     get_env_status: () => ({
       ssh_agent_available: !window.__BATCH_ENV_WARN,
       ssh_auth_sock: window.__BATCH_ENV_WARN ? null : "/run/user/1000/ssh-agent.sock",

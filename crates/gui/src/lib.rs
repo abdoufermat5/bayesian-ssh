@@ -1,6 +1,7 @@
 mod commands;
 mod kerberos;
 mod tray;
+mod updater;
 
 use bayesian_ssh::services::agent;
 use commands::{
@@ -24,7 +25,8 @@ pub fn run() {
     #[cfg(unix)]
     init_shell_env();
 
-    tauri::Builder::default()
+    let mut context = tauri::generate_context!();
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
@@ -32,7 +34,12 @@ pub fn run() {
                 let _ = window.unminimize();
                 let _ = window.set_focus();
             }
-        }))
+        }));
+    if let Some(plugin) = updater::plugin(&mut context) {
+        builder = builder.plugin(plugin);
+    }
+
+    builder
         .manage(PtyState {
             sessions: Arc::new(Mutex::new(HashMap::new())),
         })
@@ -112,9 +119,12 @@ pub fn run() {
             commands::list_remote_directory,
             tray::refresh_tray_menu,
             tray::send_desktop_notification,
-            commands::get_env_status
+            commands::get_env_status,
+            updater::check_update,
+            updater::install_update,
+            updater::update_managed_by
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running tauri application");
 }
 

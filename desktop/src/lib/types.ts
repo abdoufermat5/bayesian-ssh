@@ -126,3 +126,17 @@ export interface AuditReport {
   total_warning: number;
   total_info: number;
 }
+
+/** Output of `check_update`; null when this build is current. */
+export interface UpdateInfo {
+  version: string;
+  currentVersion: string;
+  notes: string | null;
+}
+
+/**
+ * Who owns updates for this build. `"snap"`: the Snap Store installs them.
+ * `"manual"`: raw binary / unified package / source build, updated the way it
+ * was installed. `null`: the in-app updater applies.
+ */
+export type UpdateChannel = "snap" | "manual";
