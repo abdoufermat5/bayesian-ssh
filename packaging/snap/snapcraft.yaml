@@ -79,6 +79,13 @@ parts:
       - openssh-client
       - krb5-user
       - libnotify-bin
+    # krb5-user ships kinit.mit/klist.mit and creates the kinit/klist names
+    # through update-alternatives in its postinst, which stage-packages never
+    # runs; provide the names the apps call.
+    override-prime: |
+      craftctl default
+      ln -sf kinit.mit "$CRAFT_PRIME/usr/bin/kinit"
+      ln -sf klist.mit "$CRAFT_PRIME/usr/bin/klist"
 
   desktop:
     plugin: dump
