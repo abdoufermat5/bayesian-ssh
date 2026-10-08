@@ -1,6 +1,7 @@
 use serde::Serialize;
+use std::collections::hash_map::Entry;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use uuid::Uuid;
 
@@ -9,9 +10,17 @@ use bayesian_ssh::database::Database;
 use bayesian_ssh::models::Session;
 
 use super::{
-    get_db_and_config, DetachedSessionInfo, PopoutMainOverlap, PopoutSessionInfo, PtySession,
-    PtyState, ReattachSessionInfo, MAX_DETACHED_BUFFER_BYTES,
+    get_db_and_config, DetachedSessionInfo, PopoutMainOverlap, PopoutOwner, PopoutSessionInfo,
+    PtySession, PtyState, ReattachSessionInfo, MAIN_WINDOW_LABEL, MAX_DETACHED_BUFFER_BYTES,
+    REPLAY_TRIM_SLACK_BYTES,
 };
+
+/// Live output payload consumed by the main window's `pty-output` listener.
+#[derive(Clone, Serialize)]
+struct PtyPayload<'a> {
+    session_id: &'a str,
+    data: &'a str,
+}
 
 struct WindowRect {
     x: i32,
@@ -72,7 +81,10 @@ fn append_to_output_buffer(
         return;
     };
     buffer.push_str(data);
-    if buffer.len() > MAX_DETACHED_BUFFER_BYTES {
+    // Trim in REPLAY_TRIM_SLACK_BYTES steps: draining the front of a 512 KiB
+    // string on every chunk once the buffer is full is an O(n) memmove per
+    // output event.
+    if buffer.len() > MAX_DETACHED_BUFFER_BYTES + REPLAY_TRIM_SLACK_BYTES {
         // `String::drain` panics if the range cuts a multi-byte UTF-8 char —
         // clamp to a char boundary first. Without this, a session printing
         // non-ASCII output would panic the reader thread and freeze the
@@ -125,12 +137,13 @@ fn reap_session(session: PtySession) {
     let PtySession {
         mut child,
         db_session_id,
-        writer,
+        input,
         _master,
         ..
     } = session;
-    // Release our PTY ends first so the child sees the hangup before we block.
-    drop(writer);
+    // Release our PTY ends first so the child sees the hangup before we block
+    // (closing the input queue stops the writer thread, which drops the writer).
+    drop(input);
     drop(_master);
     let exit_code = child
         .wait()
@@ -139,7 +152,8 @@ fn reap_session(session: PtySession) {
     finalize_db_session(db_session_id, exit_code);
 }
 
-#[tauri::command]
+// Opens the database and forks ssh: keep it off the main/UI thread.
+#[tauri::command(async)]
 pub fn spawn_pty(
     app: AppHandle,
     state: State<'_, PtyState>,
@@ -201,7 +215,18 @@ pub fn spawn_pty(
     }
 
     let reader = spawned.reader;
-    let writer = spawned.writer;
+    let mut writer = spawned.writer;
+
+    // Writer thread: drains write_pty input in order, so a child that stops
+    // reading its terminal can never block the IPC thread.
+    let (input, input_rx) = mpsc::channel::<String>();
+    std::thread::spawn(move || {
+        for data in input_rx {
+            if bayesian_ssh::services::pty::write_all(writer.as_mut(), &data).is_err() {
+                break;
+            }
+        }
+    });
 
     // Cancelled flag: set by close_pty so the reader thread won't emit pty-exit
     let cancelled = Arc::new(AtomicBool::new(false));
@@ -212,25 +237,41 @@ pub fn spawn_pty(
     let output_buffer_clone = Arc::clone(&output_buffer);
     let replay_offset = Arc::new(Mutex::new(0));
     let replay_offset_clone = Arc::clone(&replay_offset);
+    let popout_window = PopoutOwner::default();
+    let popout_window_clone = popout_window.clone();
 
-    // Store in global state — _master keeps the PTY master fd alive for the session duration
-    let mut sessions = state.lock_sessions();
-    sessions.insert(
-        session_id.clone(),
-        PtySession {
-            writer,
-            child,
-            _master: spawned.master,
-            cancelled,
-            db_session_id,
-            connection_name: connection.name.clone(),
-            detached,
-            output_buffer,
-            replay_offset,
-            popout_window: None,
-        },
-    );
-    drop(sessions); // release lock before spawning thread
+    let session = PtySession {
+        input,
+        child,
+        _master: spawned.master,
+        cancelled,
+        db_session_id,
+        connection_name: connection.name.clone(),
+        detached,
+        output_buffer,
+        replay_offset,
+        popout_window,
+    };
+
+    // Store in global state — _master keeps the PTY master fd alive for the
+    // session duration. Re-check the id under the lock: commands run
+    // concurrently, so another spawn may have claimed it meanwhile.
+    {
+        let mut sessions = state.lock_sessions();
+        match sessions.entry(session_id.clone()) {
+            Entry::Vacant(slot) => {
+                slot.insert(session);
+            }
+            Entry::Occupied(_) => {
+                drop(sessions);
+                let mut session = session;
+                session.cancelled.store(true, Ordering::SeqCst);
+                let _ = session.child.kill();
+                std::thread::spawn(move || reap_session(session));
+                return Err(format!("PTY session '{session_id}' already exists"));
+            }
+        }
+    }
 
     // Start background thread to read from PTY master and emit to frontend
     let session_id_clone = session_id.clone();
@@ -239,27 +280,34 @@ pub fn spawn_pty(
 
     std::thread::spawn(move || {
         let mut reader = reader;
+        // Pop-out windows listen on the per-session event with the raw string.
+        let popout_output_event = format!("pty-output:{session_id_clone}");
 
         bayesian_ssh::services::pty::read_loop(&mut reader, |str_data| {
             append_to_output_buffer(&output_buffer_clone, &replay_offset_clone, &str_data);
 
-            if !detached_clone.load(Ordering::SeqCst) {
-                // Targeted event for zero-overhead routing to specific tab or window
-                let _ = app_handle.emit(&format!("pty-output:{}", session_id_clone), &str_data);
-
-                #[derive(Clone, Serialize)]
-                struct PtyPayload {
-                    session_id: String,
-                    data: String,
-                }
-                let _ = app_handle.emit(
-                    "pty-output",
-                    PtyPayload {
-                        session_id: session_id_clone.clone(),
-                        data: str_data,
-                    },
-                );
+            if detached_clone.load(Ordering::SeqCst) {
+                return;
             }
+
+            // Emit each chunk once, to the window that owns the session: the
+            // main window consumes the shared `pty-output` event, a pop-out
+            // window its per-session `pty-output:{id}` event.
+            popout_window_clone.with(|owner| match owner {
+                Some(label) => {
+                    let _ = app_handle.emit_to(label, &popout_output_event, str_data.as_str());
+                }
+                None => {
+                    let _ = app_handle.emit_to(
+                        MAIN_WINDOW_LABEL,
+                        "pty-output",
+                        PtyPayload {
+                            session_id: &session_id_clone,
+                            data: &str_data,
+                        },
+                    );
+                }
+            });
         });
 
         // Only emit pty-exit if this was NOT a manual close (avoids ghost events)
@@ -282,8 +330,12 @@ pub fn spawn_pty(
                 }
             };
 
-            let _ = app_handle.emit(&format!("pty-exit:{}", session_id_clone), ());
-            let _ = app_handle.emit("pty-exit", session_id_clone.clone());
+            // A pop-out window shows the disconnect via `pty-exit:{id}`; the
+            // main window tracks every session's exit via `pty-exit`.
+            if let Some(label) = popout_window_clone.get() {
+                let _ = app_handle.emit_to(&label, &format!("pty-exit:{session_id_clone}"), ());
+            }
+            let _ = app_handle.emit_to(MAIN_WINDOW_LABEL, "pty-exit", &session_id_clone);
 
             if let Some(session) = finished {
                 reap_session(session);
@@ -295,21 +347,26 @@ pub fn spawn_pty(
     Ok(())
 }
 
+// Stays synchronous so keystrokes are queued in IPC order (async commands run
+// concurrently and could reorder them); the queue never blocks.
 #[tauri::command]
 pub fn write_pty(
     state: State<'_, PtyState>,
     session_id: String,
     data: String,
 ) -> Result<(), String> {
-    let mut sessions = state.lock_sessions();
-    if let Some(session) = sessions.get_mut(&session_id) {
-        bayesian_ssh::services::pty::write_all(session.writer.as_mut(), &data)?;
-        Ok(())
-    } else {
-        Err(format!("PTY session '{}' not found", session_id))
-    }
+    let sessions = state.lock_sessions();
+    let session = sessions
+        .get(&session_id)
+        .ok_or_else(|| format!("PTY session '{}' not found", session_id))?;
+    session
+        .input
+        .send(data)
+        .map_err(|_| format!("PTY session '{}' is no longer writable", session_id))
 }
 
+// Stays synchronous so the last resize always wins; TIOCSWINSZ is a
+// non-blocking ioctl.
 #[tauri::command]
 pub fn resize_pty(
     state: State<'_, PtyState>,
@@ -347,11 +404,13 @@ pub fn detach_pty(state: State<'_, PtyState>, session_id: String) -> Result<(), 
     }
 
     session.detached.store(true, Ordering::SeqCst);
-    session.popout_window = None;
+    session.popout_window.set(None);
     Ok(())
 }
 
-#[tauri::command]
+// Window creation from a synchronous command can deadlock (Tauri docs); run it
+// off the main thread.
+#[tauri::command(async)]
 pub fn open_terminal_window(
     app: AppHandle,
     state: State<'_, PtyState>,
@@ -366,12 +425,13 @@ pub fn open_terminal_window(
     }
 
     {
-        let mut sessions = state.lock_sessions();
+        let sessions = state.lock_sessions();
         let session = sessions
-            .get_mut(&session_id)
+            .get(&session_id)
             .ok_or_else(|| format!("PTY session '{session_id}' not found"))?;
+        // Route output to the new window before resuming it.
+        session.popout_window.set(Some(label.clone()));
         session.detached.store(false, Ordering::SeqCst);
-        session.popout_window = Some(label.clone());
     }
 
     let window_title = format!("{title} — Bayesian SSH");
@@ -390,9 +450,9 @@ pub fn open_terminal_window(
     if let Err(e) = built {
         // No window will ever claim or dock this session: release the popout
         // binding so the main window can keep using it.
-        if let Some(session) = state.lock_sessions().get_mut(&session_id) {
-            if session.popout_window.as_deref() == Some(label.as_str()) {
-                session.popout_window = None;
+        if let Some(session) = state.lock_sessions().get(&session_id) {
+            if session.popout_window.get().as_deref() == Some(label.as_str()) {
+                session.popout_window.set(None);
             }
         }
         return Err(e.to_string());
@@ -412,13 +472,13 @@ pub fn claim_popout_session(
         .get_mut(&session_id)
         .ok_or_else(|| format!("PTY session '{session_id}' not found"))?;
 
-    match session.popout_window.as_deref() {
-        Some(existing) if existing != window_label.as_str() => {
+    match session.popout_window.get() {
+        Some(existing) if existing != window_label => {
             return Err(format!(
                 "PTY session '{session_id}' is attached to another window"
             ));
         }
-        None => session.popout_window = Some(window_label),
+        None => session.popout_window.set(Some(window_label)),
         _ => {}
     }
 
@@ -457,11 +517,11 @@ pub fn list_popout_sessions(state: State<'_, PtyState>) -> Result<Vec<PopoutSess
         .filter_map(|(session_id, session)| {
             session
                 .popout_window
-                .as_ref()
+                .get()
                 .map(|window_label| PopoutSessionInfo {
                     session_id: session_id.clone(),
                     connection_name: session.connection_name.clone(),
-                    window_label: window_label.clone(),
+                    window_label,
                 })
         })
         .collect())
@@ -480,11 +540,11 @@ pub fn dock_popout_session(
             .get_mut(&session_id)
             .ok_or_else(|| format!("PTY session '{session_id}' not found"))?;
 
-        if session.popout_window.as_deref() != Some(window_label.as_str()) {
+        if session.popout_window.get().as_deref() != Some(window_label.as_str()) {
             return Err(format!("PTY session '{session_id}' is not in this window"));
         }
 
-        session.popout_window = None;
+        session.popout_window.set(None);
         session.detached.store(false, Ordering::SeqCst);
         let buffered_output = take_full_replay(session);
 
@@ -549,7 +609,7 @@ pub fn focus_terminal_window(
         let sessions = state.lock_sessions();
         sessions
             .get(&session_id)
-            .and_then(|session| session.popout_window.clone())
+            .and_then(|session| session.popout_window.get())
             .ok_or_else(|| format!("PTY session '{session_id}' is not popped out"))?
     };
 
@@ -573,8 +633,8 @@ pub fn reattach_pty(
         return Err(format!("PTY session '{}' is not detached", session_id));
     }
 
+    session.popout_window.set(None);
     session.detached.store(false, Ordering::SeqCst);
-    session.popout_window = None;
     let buffered_output = take_full_replay(session);
 
     Ok(ReattachSessionInfo {
@@ -589,7 +649,9 @@ pub fn count_active_sessions(state: State<'_, PtyState>) -> Result<usize, String
     Ok(state.lock_sessions().len())
 }
 
-#[tauri::command]
+// `Child::kill` waits up to ~200 ms for the child to exit after SIGHUP: keep
+// it off the main/UI thread.
+#[tauri::command(async)]
 pub fn close_pty(
     app: AppHandle,
     state: State<'_, PtyState>,
@@ -605,7 +667,7 @@ pub fn close_pty(
         session.cancelled.store(true, Ordering::SeqCst);
 
         if close_window.unwrap_or(true) {
-            if let Some(label) = session.popout_window.clone() {
+            if let Some(label) = session.popout_window.get() {
                 if let Some(window) = app.get_webview_window(&label) {
                     let _ = window.close();
                 }
@@ -621,7 +683,7 @@ pub fn close_pty(
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn close_all_ptys(app: AppHandle, state: State<'_, PtyState>) -> Result<usize, String> {
     let session_ids: Vec<String> = {
         let sessions = state.lock_sessions();

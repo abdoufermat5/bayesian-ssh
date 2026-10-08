@@ -119,29 +119,146 @@ pub fn resize(master: &(dyn MasterPty + Send), cols: u16, rows: u16) -> Result<(
 ///
 /// Stops on EOF (0 bytes) or read error, matching the previous GUI read
 /// loop. Any pending buffered output is flushed before stopping.
+///
+/// A multi-byte UTF-8 character split across two reads is carried over to
+/// the next read instead of being decoded (and corrupted) on its own.
 pub fn read_loop(reader: &mut (dyn Read + Send), mut on_data: impl FnMut(String)) {
     let mut buf = [0u8; READ_CHUNK_SIZE];
     let mut pending = String::new();
+    let mut carry = Utf8Carry::default();
     loop {
         match reader.read(&mut buf) {
-            Ok(0) => {
-                if !pending.is_empty() {
-                    on_data(std::mem::take(&mut pending));
-                }
-                break;
-            }
-            Ok(n) => {
-                pending.push_str(&String::from_utf8_lossy(&buf[..n]));
-                if pending.len() >= FLUSH_THRESHOLD_BYTES || n < buf.len() {
+            Ok(n) if n > 0 => {
+                carry.decode_into(&buf[..n], &mut pending);
+                let partial_read = n < buf.len();
+                if pending.len() >= FLUSH_THRESHOLD_BYTES || (partial_read && !pending.is_empty()) {
                     on_data(std::mem::take(&mut pending));
                 }
             }
-            Err(_) => {
+            // EOF or read error: flush what is left (a dangling partial
+            // character can no longer complete, so decode it lossily).
+            _ => {
+                carry.finish_into(&mut pending);
                 if !pending.is_empty() {
                     on_data(std::mem::take(&mut pending));
                 }
                 break;
             }
         }
+    }
+}
+
+/// Incremental UTF-8 decoder holding back the incomplete trailing bytes of
+/// a character (at most 3) until the next chunk arrives.
+#[derive(Default)]
+struct Utf8Carry {
+    tail: Vec<u8>,
+}
+
+impl Utf8Carry {
+    fn decode_into(&mut self, chunk: &[u8], out: &mut String) {
+        let joined;
+        let mut bytes = if self.tail.is_empty() {
+            chunk
+        } else {
+            self.tail.extend_from_slice(chunk);
+            joined = std::mem::take(&mut self.tail);
+            joined.as_slice()
+        };
+
+        loop {
+            match std::str::from_utf8(bytes) {
+                Ok(valid) => {
+                    out.push_str(valid);
+                    return;
+                }
+                Err(e) => {
+                    let (valid, rest) = bytes.split_at(e.valid_up_to());
+                    // `valid_up_to` marks a verified UTF-8 prefix.
+                    out.push_str(std::str::from_utf8(valid).unwrap_or_default());
+                    match e.error_len() {
+                        // Truncated character at the end: keep it for later.
+                        None => {
+                            self.tail.extend_from_slice(rest);
+                            return;
+                        }
+                        // Genuinely invalid bytes: replace and keep decoding.
+                        Some(len) => {
+                            out.push(char::REPLACEMENT_CHARACTER);
+                            bytes = &rest[len..];
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn finish_into(&mut self, out: &mut String) {
+        if !self.tail.is_empty() {
+            out.push_str(&String::from_utf8_lossy(&self.tail));
+            self.tail.clear();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn decode_chunks(chunks: &[&[u8]]) -> String {
+        let mut carry = Utf8Carry::default();
+        let mut out = String::new();
+        for chunk in chunks {
+            carry.decode_into(chunk, &mut out);
+        }
+        carry.finish_into(&mut out);
+        out
+    }
+
+    #[test]
+    fn multibyte_char_split_across_reads_is_preserved() {
+        let text = "héllo ✓ 🚀";
+        let bytes = text.as_bytes();
+        for split in 0..=bytes.len() {
+            let (a, b) = bytes.split_at(split);
+            assert_eq!(decode_chunks(&[a, b]), text, "split at {split}");
+        }
+    }
+
+    #[test]
+    fn emoji_split_into_single_bytes() {
+        let bytes = "🚀".as_bytes();
+        let chunks: Vec<&[u8]> = bytes.chunks(1).collect();
+        assert_eq!(decode_chunks(&chunks), "🚀");
+    }
+
+    #[test]
+    fn invalid_bytes_are_replaced() {
+        assert_eq!(decode_chunks(&[b"a\xffb"]), "a\u{FFFD}b");
+    }
+
+    #[test]
+    fn dangling_partial_char_at_eof_is_lossy() {
+        assert_eq!(decode_chunks(&[b"ok\xe2\x9c"]), "ok\u{FFFD}");
+    }
+
+    #[test]
+    fn read_loop_reassembles_split_chars() {
+        struct Chunked(Vec<Vec<u8>>);
+        impl Read for Chunked {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                if self.0.is_empty() {
+                    return Ok(0);
+                }
+                let chunk = self.0.remove(0);
+                buf[..chunk.len()].copy_from_slice(&chunk);
+                Ok(chunk.len())
+            }
+        }
+        let bytes = "✓✓".as_bytes();
+        let mut reader = Chunked(vec![bytes[..2].to_vec(), bytes[2..].to_vec()]);
+        let mut out = String::new();
+        read_loop(&mut reader, |s| out.push_str(&s));
+        assert_eq!(out, "✓✓");
     }
 }

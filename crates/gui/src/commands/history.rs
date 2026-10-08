@@ -1,14 +1,14 @@
 use super::get_db_and_config;
 use bayesian_ssh::models::{ConnectionStats, SessionHistoryEntry};
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_stats() -> Result<ConnectionStats, String> {
     let (db, _config) = get_db_and_config()?;
 
     db.get_stats().map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_history(limit: Option<usize>) -> Result<Vec<SessionHistoryEntry>, String> {
     let (db, config) = get_db_and_config()?;
 

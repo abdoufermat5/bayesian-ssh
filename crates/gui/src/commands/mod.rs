@@ -1,9 +1,9 @@
 use portable_pty::Child;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
+use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
@@ -57,9 +57,49 @@ pub fn get_db_and_config() -> Result<(Database, AppConfig), String> {
 }
 
 pub const MAX_DETACHED_BUFFER_BYTES: usize = 512 * 1024;
+/// The replay buffer may grow this far past [`MAX_DETACHED_BUFFER_BYTES`]
+/// before it is trimmed, so the front-drain happens once per 64 KiB of output
+/// instead of on every chunk.
+pub const REPLAY_TRIM_SLACK_BYTES: usize = 64 * 1024;
+
+/// Label of the main application window.
+pub const MAIN_WINDOW_LABEL: &str = "main";
+
+/// Label of the pop-out window that owns a session, shared with the session's
+/// reader thread so live output is routed to that window only. `None` means
+/// the main window owns the session.
+#[derive(Clone, Default)]
+pub struct PopoutOwner(Arc<Mutex<Option<String>>>);
+
+impl PopoutOwner {
+    fn lock(&self) -> std::sync::MutexGuard<'_, Option<String>> {
+        self.0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    pub fn get(&self) -> Option<String> {
+        self.lock().clone()
+    }
+
+    pub fn set(&self, label: Option<String>) {
+        *self.lock() = label;
+    }
+
+    pub fn is_none(&self) -> bool {
+        self.lock().is_none()
+    }
+
+    /// Run `f` with the current owner without cloning the label.
+    pub fn with<R>(&self, f: impl FnOnce(Option<&str>) -> R) -> R {
+        f(self.lock().as_deref())
+    }
+}
 
 pub struct PtySession {
-    pub writer: Box<dyn Write + Send>,
+    /// Input queue drained by the session's writer thread, so `write_pty`
+    /// never blocks the IPC thread on a full PTY and keeps keystroke order.
+    pub input: Sender<String>,
     pub child: Box<dyn Child + Send + Sync>,
     /// Keeps the PTY master alive for the session's lifetime.
     pub _master: Box<dyn portable_pty::MasterPty + Send>,
@@ -71,7 +111,7 @@ pub struct PtySession {
     pub detached: Arc<AtomicBool>,
     pub output_buffer: Arc<Mutex<String>>,
     pub replay_offset: Arc<Mutex<usize>>,
-    pub popout_window: Option<String>,
+    pub popout_window: PopoutOwner,
 }
 
 #[derive(Serialize, Clone, Debug)]

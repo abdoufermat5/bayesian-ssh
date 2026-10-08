@@ -14,7 +14,7 @@ pub fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_ssh_keys() -> Result<Vec<security::SshKeyInfo>, String> {
     security::scan_ssh_keys()
 }
@@ -174,7 +174,7 @@ pub fn copy_ssh_key_to_target(target: String, key_path: Option<String>) -> Resul
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn run_security_audit() -> Result<security::AuditReportDto, String> {
     let config = AppConfig::load(None).map_err(|e| e.to_string())?;
     let database = Database::new(&config).map_err(|e| e.to_string())?;
@@ -200,7 +200,7 @@ pub struct FullBackupPayload {
     pub environments: Vec<BackupEnvironmentData>,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn export_connections_payload(
     output_path: Option<String>,
     passphrase: Option<String>,
@@ -267,7 +267,7 @@ pub fn export_connections_payload(
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn import_connections_payload(
     file_path: String,
     passphrase: Option<String>,
@@ -369,7 +369,7 @@ fn is_importable(conn: &Connection) -> bool {
     conn.validate().is_ok()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn fix_security_permissions() -> Result<usize, String> {
     let config = AppConfig::load(None).map_err(|e| e.to_string())?;
     bayesian_ssh::cli::commands::audit::fix_permissions(&config).map_err(|e| e.to_string())

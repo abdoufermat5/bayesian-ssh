@@ -14,7 +14,7 @@ fn friendly_db_error(e: impl std::fmt::Display) -> String {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_connections(
     query: Option<String>,
     tag_filter: Option<String>,
@@ -33,7 +33,7 @@ pub fn get_connections(
         .map_err(friendly_db_error)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[allow(clippy::too_many_arguments)]
 pub fn add_connection(
     name: String,
@@ -73,7 +73,7 @@ pub fn add_connection(
     db.add_connection(&connection).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 #[allow(clippy::too_many_arguments)]
 pub fn edit_connection(
     id: String,
@@ -125,7 +125,7 @@ pub fn edit_connection(
     db.update_connection(&connection).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn remove_connection(id_or_name: String) -> Result<(), String> {
     let (db, _config) = get_db_and_config()?;
 

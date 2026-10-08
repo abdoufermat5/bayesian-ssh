@@ -120,7 +120,8 @@ pub fn force_quit_application(app: &AppHandle) {
     app.exit(0);
 }
 
-#[tauri::command]
+// Reads the database; menu updates are marshalled to the main thread by Tauri.
+#[tauri::command(async)]
 pub fn refresh_tray_menu(app: AppHandle) -> Result<(), String> {
     if let Some(tray) = app.tray_by_id("default") {
         let menu = build_tray_menu(&app).map_err(|e| e.to_string())?;
@@ -129,7 +130,7 @@ pub fn refresh_tray_menu(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn send_desktop_notification(title: String, body: String) -> Result<(), String> {
     // Strip control characters that could break the shell/script wrappers below.
     let title: String = title.chars().filter(|c| !c.is_control()).collect();

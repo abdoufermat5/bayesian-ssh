@@ -9,7 +9,7 @@ use super::{
 use bayesian_ssh::config::AppConfig;
 use std::path::PathBuf;
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_workspace_info() -> Result<WorkspaceInfo, String> {
     let config = AppConfig::load(None).map_err(|e| e.to_string())?;
     let config_root = bayesian_config_root();
@@ -34,7 +34,7 @@ pub fn get_workspace_info() -> Result<WorkspaceInfo, String> {
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn save_workspace_config(update: WorkspaceConfigUpdate) -> Result<(), String> {
     let mut config = AppConfig::load(None).map_err(|e| e.to_string())?;
 
@@ -69,7 +69,7 @@ pub fn save_workspace_config(update: WorkspaceConfigUpdate) -> Result<(), String
     config.save().map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn needs_onboarding() -> Result<bool, String> {
     let settings_file = bayesian_config_root().join("desktop_settings.json");
 
@@ -82,7 +82,7 @@ pub fn needs_onboarding() -> Result<bool, String> {
     Ok(!settings.onboarding_complete)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn complete_onboarding(payload: OnboardingPayload) -> Result<usize, String> {
     let profile = payload.profile_name.trim().to_string();
     if profile.is_empty() {
@@ -136,7 +136,7 @@ pub fn complete_onboarding(payload: OnboardingPayload) -> Result<usize, String> 
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn load_desktop_settings() -> Result<DesktopSettings, String> {
     let settings_file = dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("~/.config"))
@@ -173,7 +173,7 @@ pub fn load_desktop_settings() -> Result<DesktopSettings, String> {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn save_desktop_settings(settings: DesktopSettings) -> Result<(), String> {
     let config_dir = dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("~/.config"))
@@ -183,7 +183,9 @@ pub fn save_desktop_settings(settings: DesktopSettings) -> Result<(), String> {
     let settings_file = config_dir.join("desktop_settings.json");
 
     let content = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
-    std::fs::write(&settings_file, content).map_err(|e| e.to_string())?;
+    // Atomic replace: commands run concurrently, and two overlapping in-place
+    // writes could otherwise leave a torn settings file.
+    bayesian_ssh::config::atomic_write(&settings_file, &content).map_err(|e| e.to_string())?;
 
     // Keep workspace search mode aligned with desktop fuzzy preference
     if let Ok(mut config) = AppConfig::load(None) {

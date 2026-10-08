@@ -321,7 +321,7 @@ pub fn enforce_secure_file(path: &std::path::Path) {
 /// guarantees the destination is either fully replaced or untouched, even
 /// if the process is killed mid-write. Uses `tempfile::NamedTempFile` so
 /// the temp file is world-unique, created 0600 and cleaned up automatically.
-fn atomic_write(path: &std::path::Path, content: &str) -> Result<()> {
+pub fn atomic_write(path: &std::path::Path, content: &str) -> Result<()> {
     use std::io::Write;
     let parent = path
         .parent()

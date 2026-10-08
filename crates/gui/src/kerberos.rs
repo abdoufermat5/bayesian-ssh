@@ -5,7 +5,8 @@
 
 use bayesian_ssh::services::kerberos;
 
-#[tauri::command]
+// Spawns `klist` (polled periodically): keep it off the main/UI thread.
+#[tauri::command(async)]
 pub fn get_kerberos_status() -> Result<kerberos::KerberosStatus, String> {
     kerberos::get_status()
 }

@@ -2,7 +2,9 @@ use crate::config::AppConfig;
 use crate::models::Connection;
 use anyhow::Result;
 use rusqlite::Connection as SqliteConnection;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
+use std::path::PathBuf;
+use std::sync::Mutex;
 
 pub struct Database {
     pub(crate) conn: SqliteConnection,
@@ -23,23 +25,55 @@ const SCHEMA_VERSION: i32 = 4;
 /// `SQLITE_BUSY`.
 const BUSY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
+/// Database paths whose directory, permissions, schema migrations and indexes
+/// have already been set up by this process. Opening one of these again only
+/// needs a fresh connection — the desktop app opens the database on every
+/// command, and re-running the migration transaction (which takes the write
+/// lock) each time is pure overhead.
+static INITIALIZED_PATHS: Mutex<BTreeSet<PathBuf>> = Mutex::new(BTreeSet::new());
+
 impl Database {
     pub fn new(config: &AppConfig) -> Result<Self> {
+        let path = &config.database_path;
+
+        // Fast path: already initialized by this process. The file must still
+        // exist (opening would recreate it empty) and carry the current schema
+        // version (it may have been replaced, e.g. by `restore`, with an older
+        // database that still needs migrating).
+        let already_initialized = INITIALIZED_PATHS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .contains(path);
+        if already_initialized && path.exists() {
+            let db = Self::open(config)?;
+            if db.current_schema_version()? == SCHEMA_VERSION {
+                return Ok(db);
+            }
+        }
+
         // Ensure database directory exists
-        if let Some(parent) = config.database_path.parent() {
+        if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
             crate::config::enforce_secure_dir(parent);
         }
 
-        let conn = SqliteConnection::open(&config.database_path)?;
-        crate::config::enforce_secure_file(&config.database_path);
-        conn.busy_timeout(BUSY_TIMEOUT)?;
-
-        let db = Database { conn };
+        let db = Self::open(config)?;
+        crate::config::enforce_secure_file(path);
         db.init()?;
 
-        tracing::debug!("Database initialized at {:?}", config.database_path);
+        INITIALIZED_PATHS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(path.clone());
+
+        tracing::debug!("Database initialized at {:?}", path);
         Ok(db)
+    }
+
+    fn open(config: &AppConfig) -> Result<Self> {
+        let conn = SqliteConnection::open(&config.database_path)?;
+        conn.busy_timeout(BUSY_TIMEOUT)?;
+        Ok(Database { conn })
     }
 
     fn init(&self) -> Result<()> {

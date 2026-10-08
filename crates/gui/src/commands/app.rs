@@ -3,13 +3,14 @@ use tauri::AppHandle;
 
 use crate::tray;
 
-#[tauri::command]
+// Closing sessions kills their children (blocking): keep it off the main thread.
+#[tauri::command(async)]
 pub fn quit_app(app: AppHandle) -> Result<(), String> {
     tray::quit_application(&app);
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn force_quit_app(app: AppHandle) -> Result<(), String> {
     tray::force_quit_application(&app);
     Ok(())
@@ -26,7 +27,7 @@ pub struct EnvStatus {
 
 /// Returns the current SSH agent / Kerberos environment status so the frontend
 /// can display a dismissible warning when these are missing.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_env_status() -> EnvStatus {
     let ssh_auth_sock = std::env::var("SSH_AUTH_SOCK").ok();
     let krb5_ccname = std::env::var("KRB5CCNAME").ok();

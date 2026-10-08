@@ -30,7 +30,7 @@ fn resolve_active_socket() -> Option<String> {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_agent_status() -> Result<AgentStatus, String> {
     let socket = resolve_active_socket();
     let active = socket.is_some();
@@ -62,7 +62,7 @@ pub fn get_agent_status() -> Result<AgentStatus, String> {
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn start_agent() -> Result<AgentStatus, String> {
     if let Some(sock) = resolve_active_socket() {
         let test_cmd = Command::new("ssh-add")
@@ -115,7 +115,7 @@ pub fn start_agent() -> Result<AgentStatus, String> {
     get_agent_status()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn add_key_to_agent(key_path: String) -> Result<String, String> {
     let resolved_key = expand_path(&key_path);
 

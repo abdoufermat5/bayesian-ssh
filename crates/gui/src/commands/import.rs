@@ -4,7 +4,7 @@ use bayesian_ssh::database::Database;
 use bayesian_ssh::models::Connection;
 use std::path::PathBuf;
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn import_ssh_config(file: Option<String>) -> Result<usize, String> {
     let (db, config) = get_db_and_config()?;
     let ssh_config_path = if let Some(file) = file.filter(|f| !f.trim().is_empty()) {

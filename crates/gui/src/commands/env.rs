@@ -2,12 +2,12 @@ use super::EnvInfo;
 use bayesian_ssh::config::AppConfig;
 use std::path::PathBuf;
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_active_env() -> Result<String, String> {
     Ok(AppConfig::get_active_env())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn set_active_env(name: String) -> Result<(), String> {
     AppConfig::validate_env_name(&name).map_err(|e| e.to_string())?;
     let envs_dir = dirs::config_dir()
@@ -23,7 +23,7 @@ pub fn set_active_env(name: String) -> Result<(), String> {
     AppConfig::set_active_env(&name).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_environments() -> Result<Vec<EnvInfo>, String> {
     let envs_dir = dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("~/.config"))
@@ -59,7 +59,7 @@ pub fn list_environments() -> Result<Vec<EnvInfo>, String> {
     Ok(envs)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn create_environment(name: String) -> Result<(), String> {
     AppConfig::validate_env_name(&name).map_err(|e| e.to_string())?;
     let envs_dir = dirs::config_dir()
@@ -80,7 +80,7 @@ pub fn create_environment(name: String) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn remove_environment(name: String) -> Result<(), String> {
     // Must run before `name` is joined onto the environments dir: a name like
     // "../.." would otherwise make remove_dir_all delete outside of it.
