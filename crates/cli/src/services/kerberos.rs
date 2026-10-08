@@ -620,11 +620,11 @@ mod tests {
     fn parses_krb5_libdefaults() {
         let content = r#"
 [libdefaults]
-    default_realm = CLOUDSANTE.PRIV
+    default_realm = EXAMPLE.COM
     default_ccache_name = FILE:/tmp/krb5cc_%{uid}
 "#;
         let (realm, principal, ccache) = parse_krb5_libdefaults(content);
-        assert_eq!(realm.as_deref(), Some("CLOUDSANTE.PRIV"));
+        assert_eq!(realm.as_deref(), Some("EXAMPLE.COM"));
         assert!(principal.is_none());
         assert_eq!(ccache.as_deref(), Some("FILE:/tmp/krb5cc_%{uid}"));
     }
