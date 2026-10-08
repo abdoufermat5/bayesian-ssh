@@ -2,6 +2,10 @@
 
 INSTALL_DIR ?= /usr/local/bin
 
+# snap-build: release tag to repackage and target architecture.
+TAG ?=
+ARCH ?= amd64
+
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
@@ -63,8 +67,12 @@ package: ## Build unified .deb and .rpm packages
 flatpak-build: ## Build Flatpak bundle
 	flatpak-builder --force-clean --ccache --install-deps-from=flathub target/flatpak-build packaging/flatpak/com.bayesianssh.App.yml
 
-snap-build: ## Build Snap package
-	snapcraft --manifest=packaging/snap/snapcraft.yaml
+snap-build: ## Build Snap package from a published release (TAG=vX.Y.Z [ARCH=amd64|arm64])
+	@if [ -z "$(TAG)" ]; then \
+		echo "usage: make snap-build TAG=vX.Y.Z [ARCH=amd64|arm64]"; \
+		exit 1; \
+	fi
+	scripts/snap-stage.sh $(TAG) $(ARCH) && cd target/snap && snapcraft pack
 
 docs: ## Build documentation with mdBook
 	mdbook build

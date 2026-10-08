@@ -204,6 +204,28 @@ download_binary() {
         echo -e "${RED}❌ Could not download SHA256SUMS for ${LATEST_TAG}${NC}"
         exit 1
     fi
+
+    # Verify SHA256SUMS is signed by the release workflow. Without cosign the
+    # checksum is still enforced, but its provenance cannot be verified.
+    if command -v cosign &> /dev/null; then
+        echo -e "${BLUE}🔏 Verifying SHA256SUMS signature with cosign...${NC}"
+        if ! curl -fsSL -o SHA256SUMS.sigstore.json "${RELEASE_URL}/SHA256SUMS.sigstore.json"; then
+            echo -e "${RED}❌ Could not download SHA256SUMS.sigstore.json for ${LATEST_TAG}${NC}"
+            exit 1
+        fi
+        if ! cosign verify-blob \
+            --bundle SHA256SUMS.sigstore.json \
+            --certificate-identity-regexp '^https://github\.com/abdoufermat5/bayesian-ssh/\.github/workflows/release\.yml@refs/(tags/v.+|heads/main)$' \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            SHA256SUMS; then
+            echo -e "${RED}❌ Signature verification failed for SHA256SUMS${NC}"
+            exit 1
+        fi
+        echo -e "${GREEN}✅ SHA256SUMS signature verified${NC}"
+    else
+        echo -e "${YELLOW}⚠️  cosign not found; SHA256SUMS signature not verified (install cosign to verify)${NC}"
+    fi
+
     EXPECTED_SHA=$(awk -v f="$ASSET_NAME" '$2 == f || $2 == "*" f {print $1; exit}' SHA256SUMS)
     if [ -z "$EXPECTED_SHA" ]; then
         echo -e "${RED}❌ No checksum for ${ASSET_NAME} in SHA256SUMS${NC}"

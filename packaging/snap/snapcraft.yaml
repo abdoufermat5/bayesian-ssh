@@ -1,78 +1,98 @@
+# Snap package for Bayesian SSH.
+#
+# This repackages the assets of a published GitHub release rather than
+# rebuilding: scripts/snap-stage.sh downloads the CLI binary and the desktop
+# .deb for one architecture, verifies them against SHA256SUMS, and writes this
+# file with __VERSION__ replaced next to them (target/snap by default). Build
+# from that directory, never from here:
+#
+#   scripts/snap-stage.sh v2.6.0 amd64 && cd target/snap && snapcraft pack
+#
+# core24 matches the release runners (ubuntu-24.04, glibc 2.39), so both
+# architectures run on this base.
 name: bayesian-ssh
-base: core22
-version: '2.5.2'
+base: core24
+version: "__VERSION__"
+title: Bayesian SSH
 summary: Fast and lightweight SSH session manager with Kerberos support
+license: MIT
+contact: https://github.com/abdoufermat5/bayesian-ssh/issues
+issues: https://github.com/abdoufermat5/bayesian-ssh/issues
+source-code: https://github.com/abdoufermat5/bayesian-ssh
+website: https://github.com/abdoufermat5/bayesian-ssh
+# Store listing icon (512x512), copied next to this file by snap-stage.sh.
+icon: bayesian-ssh.png
 description: |
-  Bayesian SSH (bssh) is a smart, high-performance SSH session manager featuring
+  Bayesian SSH is a smart, high-performance SSH session manager featuring
   Bayesian-ranked search, bastion jump-host chaining, Kerberos integration,
-  CLI, and a desktop graphical user interface.
+  a CLI and a desktop application.
 
+  After installing, grant read access to your SSH configuration and keys:
+
+    sudo snap connect bayesian-ssh:ssh-keys
+
+  and optionally restore the short command name:
+
+    sudo snap alias bayesian-ssh bssh
 grade: stable
 confinement: strict
 
-architectures:
-  - build-on: amd64
-  - build-on: arm64
+platforms:
+  amd64:
+  arm64:
 
+# webkit2gtk resolves its helper binaries and libraries from a fixed system
+# path; bind the staged copy there (Tauri's Snapcraft guide).
+layout:
+  /usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/webkit2gtk-4.1:
+    bind: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/webkit2gtk-4.1
+
+# `ssh-keys` is not auto-connected: the user connects it once (see the
+# description). It grants read-only access to ~/.ssh and /etc/ssh, so the snap
+# cannot write ~/.ssh/known_hosts or generate keys into ~/.ssh.
 apps:
   bayesian-ssh:
-    command: bin/bayesian-ssh
-    plugs:
-      - network
-      - network-bind
-      - ssh-keys
-      - home
+    command: usr/bin/bayesian-ssh
+    # `bayesian-ssh desktop` launches the GUI from this app's sandbox, so it
+    # needs the same desktop environment as the `gui` app.
+    extensions: [gnome]
+    plugs: [home, network, network-bind, ssh-keys]
 
-  bssh:
-    command: bin/bayesian-ssh
-    plugs:
-      - network
-      - network-bind
-      - ssh-keys
-      - home
-
-  desktop:
-    command: bin/bayesian-ssh-desktop
+  gui:
+    command: usr/bin/bayesian-ssh-gui
     desktop: usr/share/applications/bayesian-ssh-desktop.desktop
-    plugs:
-      - desktop
-      - desktop-legacy
-      - x11
-      - wayland
-      - network
-      - network-bind
-      - ssh-keys
-      - home
+    # The gnome extension provides GTK and the desktop interfaces, including the
+    # tray (StatusNotifier) and org.freedesktop.Notifications.
+    extensions: [gnome]
+    plugs: [home, network, network-bind, ssh-keys]
 
 parts:
-  bayesian-ssh:
-    plugin: nil
+  cli:
+    plugin: dump
+    source: cli
+    organize:
+      bayesian-ssh: usr/bin/bayesian-ssh
+    # Programs both apps spawn: ssh/ssh-keygen/ssh-add/ssh-agent, kinit/klist,
+    # and notify-send for desktop notifications. The host's copies are not
+    # reachable from a strict snap.
+    stage-packages:
+      - openssh-client
+      - krb5-user
+      - libnotify-bin
+
+  desktop:
+    plugin: dump
+    source: bayesian-ssh-desktop.deb
+    source-type: deb
+    # The .deb's Depends:, as in Tauri's Snapcraft guide.
+    stage-packages:
+      - libwebkit2gtk-4.1-0
+      - libgtk-3-0
+      - libayatana-appindicator3-1
     override-build: |
-      cargo build --release --package bayesian-ssh
-      install -Dm755 target/release/bayesian-ssh $CRAFT_PART_INSTALL/bin/bayesian-ssh
-      
-      cd desktop
-      npm ci
-      npm run tauri build -- --config ../crates/gui/tauri.conf.json --no-bundle
-      install -Dm755 ../target/release/bayesian-ssh-gui $CRAFT_PART_INSTALL/bin/bayesian-ssh-desktop
-      install -Dm644 ../crates/gui/icons/128x128.png $CRAFT_PART_INSTALL/usr/share/icons/hicolor/128x128/apps/bayesian-ssh-desktop.png
-      
-      mkdir -p $CRAFT_PART_INSTALL/usr/share/applications
-      cat <<EOF > $CRAFT_PART_INSTALL/usr/share/applications/bayesian-ssh-desktop.desktop
-      [Desktop Entry]
-      Name=Bayesian SSH
-      Comment=Fast and lightweight SSH session manager
-      Exec=bayesian-ssh-desktop
-      Icon=bayesian-ssh-desktop
-      Terminal=false
-      Type=Application
-      Categories=Development;Network;
-      EOF
-    build-packages:
-      - cargo
-      - rustc
-      - nodejs
-      - npm
-      - libssl-dev
-      - libgtk-3-dev
-      - libwebkit2gtk-4.1-dev
+      craftctl default
+      # The .deb ships Icon=bayesian-ssh-gui, which is not on the snap's icon
+      # path; point the desktop entry at the staged icon.
+      sed -i \
+        -e "s|^Icon=bayesian-ssh-gui$|Icon=/usr/share/icons/hicolor/128x128/apps/bayesian-ssh-gui.png|" \
+        "$CRAFT_PART_INSTALL/usr/share/applications/bayesian-ssh-desktop.desktop"
