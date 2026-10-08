@@ -132,11 +132,18 @@ Confinement limits:
 - The app's config and database live under
   `~/snap/bayesian-ssh/current/.config/bayesian-ssh` and are **not** shared with
   a native install or with `install.sh`.
-- `ssh` and its helpers are the snap's own copies.
-- Kerberos is optional in Bayesian SSH and not shipped in the snap: tickets from
-  the host's `/tmp` are not visible to a strict snap, so the apps report
-  Kerberos as unavailable. Use a native install (`install.sh`, `.deb`, `.rpm`
-  or AppImage) if you authenticate with Kerberos.
+- `ssh`, `kinit` and `klist` are the snap's own copies.
+- Kerberos stays optional: the sidebar indicator and expiry warnings only appear
+  once a connection uses Kerberos. Inside the snap:
+  - tickets obtained from the app (Kerberos dialog) or with
+    `bayesian-ssh`-launched `kinit` live in the snap's private `/tmp` and work
+    with no extra step;
+  - to reuse tickets created on the host, run
+    `sudo snap connect bayesian-ssh:kerberos-tickets`. This only works for file
+    caches with `KRB5CCNAME=FILE:/tmp/krb5cc_*` set explicitly on the host
+    (snapd rewrites it to the host path); KCM/KEYRING caches (SSSD, Fedora/RHEL
+    defaults) are not reachable from a strict snap — use a native install
+    (`install.sh`, `.deb`, `.rpm` or AppImage) in that case.
 - The in-app updater is disabled in the snap — the Snap Store owns updates.
 
 Publishing needs a store credential. One-time setup:

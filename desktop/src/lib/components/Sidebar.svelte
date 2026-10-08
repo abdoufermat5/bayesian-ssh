@@ -37,6 +37,8 @@
     onStartAgent: () => void;
     onShowAgentModal: () => void;
     kerberosHealth: KerberosHealth;
+    /** False until a connection uses Kerberos: the indicator stays hidden. */
+    kerberosInUse: boolean;
     kerberosRemainingLabel: string;
     onShowKerberosModal: () => void;
     onShowSessionManager: () => void;
@@ -60,6 +62,7 @@
     onStartAgent,
     onShowAgentModal,
     kerberosHealth,
+    kerberosInUse,
     kerberosRemainingLabel,
     onShowKerberosModal,
     onShowSessionManager,
@@ -282,7 +285,7 @@
       {/if}
     </button>
 
-    {#if kerberosHealth !== "unavailable"}
+    {#if kerberosInUse && kerberosHealth !== "unavailable"}
       <button
         type="button"
         class="nav-item {sidebarCollapsed ? 'nav-item-collapsed' : ''}"

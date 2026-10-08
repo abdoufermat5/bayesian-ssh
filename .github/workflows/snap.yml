@@ -134,3 +134,16 @@ jobs:
         with:
           snap: ${{ steps.file.outputs.snap }}
           release: ${{ steps.channel.outputs.channel }}
+
+      # The store listing (icon, summary, description) is not taken from
+      # uploads; push it from the snap itself. Once per release (amd64 leg) and
+      # only for stable, so a prerelease never rewrites the public listing.
+      # Needs the package_update ACL the store credential already carries.
+      - name: Sync store listing
+        if: steps.creds.outputs.configured == 'true' && matrix.arch == 'amd64' && steps.channel.outputs.channel == 'stable'
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+          SNAP_FILE: ${{ steps.file.outputs.snap }}
+        run: |
+          sudo snap install snapcraft --classic
+          snapcraft upload-metadata --force "$SNAP_FILE"

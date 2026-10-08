@@ -27,9 +27,11 @@ description: |
   Bayesian-ranked search, bastion jump-host chaining, a CLI and a desktop
   application.
 
-  Kerberos is optional in Bayesian SSH and not included in the snap: host
-  tickets are not visible from a strictly confined snap. Use a native install
-  (install.sh, .deb, .rpm or AppImage) if you authenticate with Kerberos.
+  Kerberos is optional. Tickets obtained from inside the app work out of the
+  box. To reuse tickets created on the host (KRB5CCNAME=FILE:/tmp/krb5cc_*),
+  also run:
+
+    sudo snap connect bayesian-ssh:kerberos-tickets
 
   After installing, grant read access to your SSH configuration and keys:
 
@@ -51,16 +53,18 @@ layout:
   /usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/webkit2gtk-4.1:
     bind: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/webkit2gtk-4.1
 
-# `ssh-keys` is not auto-connected: the user connects it once (see the
-# description). It grants read-only access to ~/.ssh and /etc/ssh, so the snap
-# cannot write ~/.ssh/known_hosts or generate keys into ~/.ssh.
+# `ssh-keys` and `kerberos-tickets` are not auto-connected: users connect them
+# once (see the description). `ssh-keys` grants read-only access to ~/.ssh and
+# /etc/ssh, so the snap cannot write ~/.ssh/known_hosts or generate keys into
+# ~/.ssh. `kerberos-tickets` exposes the host's /tmp/krb5cc* caches; snap run
+# rewrites KRB5CCNAME to them when it is set to FILE:/tmp/krb5cc*.
 apps:
   bayesian-ssh:
     command: usr/bin/bayesian-ssh
     # `bayesian-ssh desktop` launches the GUI from this app's sandbox, so it
     # needs the same desktop environment as the `gui` app.
     extensions: [gnome]
-    plugs: [home, network, network-bind, ssh-keys]
+    plugs: [home, network, network-bind, ssh-keys, kerberos-tickets]
 
   gui:
     command: usr/bin/bayesian-ssh-gui
@@ -68,7 +72,7 @@ apps:
     # The gnome extension provides GTK and the desktop interfaces, including the
     # tray (StatusNotifier) and org.freedesktop.Notifications.
     extensions: [gnome]
-    plugs: [home, network, network-bind, ssh-keys]
+    plugs: [home, network, network-bind, ssh-keys, kerberos-tickets]
 
 parts:
   cli:
@@ -76,13 +80,21 @@ parts:
     source: cli
     organize:
       bayesian-ssh: usr/bin/bayesian-ssh
-    # Programs both apps spawn: ssh/ssh-keygen/ssh-add/ssh-agent and
-    # notify-send for desktop notifications. The host's copies are not
-    # reachable from a strict snap. No Kerberos client: it is optional, and
-    # without kinit/klist the apps report Kerberos as unavailable.
+    # Programs both apps spawn: ssh/ssh-keygen/ssh-add/ssh-agent, kinit/klist
+    # (only used for connections that opt into Kerberos), and notify-send for
+    # desktop notifications. The host's copies are not reachable from a strict
+    # snap.
     stage-packages:
       - openssh-client
+      - krb5-user
       - libnotify-bin
+    # krb5-user ships kinit.mit/klist.mit and creates the kinit/klist names
+    # through update-alternatives in its postinst, which stage-packages never
+    # runs; provide the names the apps call.
+    override-prime: |
+      craftctl default
+      ln -sf kinit.mit "$CRAFT_PRIME/usr/bin/kinit"
+      ln -sf klist.mit "$CRAFT_PRIME/usr/bin/klist"
 
   desktop:
     plugin: dump

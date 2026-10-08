@@ -162,6 +162,10 @@ export class AppStateStore {
     getKerberosHealth(getLiveRemainingSeconds(), this.settings.kerberos_warn_minutes),
   );
   kerberosRemainingLabel = $derived(formatKerberosRemaining(getLiveRemainingSeconds()));
+  /** Kerberos is opt-in: its indicator and expiry warnings only matter once a
+   *  connection authenticates with it (new connections inherit the
+   *  "Kerberos by default" setting, so it is covered too). */
+  kerberosInUse = $derived(this.connections.some((conn) => conn.use_kerberos));
 
   showTerminalsPanel = $derived(
     this.activeTab === "terminals" ||
@@ -367,7 +371,7 @@ export class AppStateStore {
   }
 
   handleKerberosWarning = (message: string) => {
-    if (this.showOnboarding) return;
+    if (this.showOnboarding || !this.kerberosInUse) return;
     notify(message, "info");
     invoke("send_desktop_notification", {
       title: "Kerberos Ticket Warning",

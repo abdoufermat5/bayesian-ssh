@@ -76,6 +76,33 @@ test.describe("kerberos modal", () => {
   });
 });
 
+test.describe("kerberos indicator (no Kerberos connection)", () => {
+  test.use({
+    mockOptions: {
+      overrides: {
+        get_connections: () => [
+          {
+            id: "id-plain",
+            name: "plain-host",
+            host: "plain.example.com",
+            user: "deploy",
+            port: 22,
+            tags: [],
+            use_kerberos: false,
+            created_at: "2026-01-01T00:00:00Z",
+          },
+        ],
+      },
+    },
+  });
+
+  test("stays hidden even with Kerberos tools and a valid ticket", async ({ app, page }) => {
+    await app.gotoApp();
+    await expect(page.locator("tr", { hasText: "plain-host" })).toBeVisible();
+    await expect(page.locator('.sidebar [aria-label="Kerberos ticket"]')).toHaveCount(0);
+  });
+});
+
 test.describe("kerberos modal (no ticket)", () => {
   test.use({ mockOptions: { kerberos: "none" } });
 

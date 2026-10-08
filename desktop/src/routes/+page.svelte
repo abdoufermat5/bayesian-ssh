@@ -227,6 +227,7 @@
       onStartAgent={appState.triggerStartAgent}
       onShowAgentModal={() => (appState.showAgentModal = true)}
       kerberosHealth={appState.kerberosHealth}
+      kerberosInUse={appState.kerberosInUse}
       kerberosRemainingLabel={appState.kerberosRemainingLabel}
       onShowKerberosModal={openKerberosModal}
       onShowSessionManager={appState.openSessionManager}
