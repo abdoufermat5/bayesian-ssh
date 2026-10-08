@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Desktop end-to-end tests**: a Playwright suite (`desktop/e2e`, run with `npm run e2e` or `make e2e`) boots the SvelteKit SPA against a stubbed Tauri IPC layer and covers the shell and shortcuts, hosts (list, filtering, sort, keyboard, row actions, ping, batch entry), the host modal, terminals, SFTP, tunnels, keys, audit, history, settings, modals, command palette, batch execution, snippets, toasts, onboarding, themes, accessibility (axe) plus a 2,000-host performance smoke. CI installs the chromium browser and runs it in the `test-desktop` job.
+
 ### Removed
 - **Terminal UI (`bssh tui` / `bssh ui`)**: The ratatui dashboard has been removed. Use the CLI commands or the desktop GUI (`bssh desktop`) instead. The `ratatui` dependency is dropped and `tui.log` is no longer written.
 
@@ -19,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Installer**: `install.sh` verifies release SHA256SUMS, uses a private `mktemp` directory and reads prompts from `/dev/tty`.
 
 ### Fixed
+- Desktop: the Settings view and the Terminals view with open sessions had no page heading, so the view title disappeared (found by the new e2e suite).
+- Desktop: select controls (`CustomSelect`) had no accessible name; screen readers announced them as unlabeled buttons.
+- Desktop: edits to workspace settings (OpenSSH config path and defaults) were saved from a stale copy of the workspace object and could silently revert; they now persist the typed values.
 - Removed tags reappearing after `edit --remove-tags`, and tags dropped when editing a connection found via fuzzy search or alias.
 - `connect`/`add` no longer force port 22 over the stored or configured port; port 0 is rejected.
 - `exec` and `ping` exit non-zero when any host fails and cap parallelism at 16 hosts; `close` refuses PIDs ≤ 1 or outside `i32`.
@@ -28,8 +34,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Copied SSH commands use `-J` for plain jump hosts and quote key paths.
 - `--tags`, `--add-tags` and `--remove-tags` accept comma-separated lists, as the docs show.
 - Desktop: out-of-order terminal output on tab switches, saved terminal font settings ignored, zoom crash, stale search/SFTP results overwriting newer ones, leaked PTY sessions after remote exit, tray menu refresh, and double-moving arrow-key selection.
+- Desktop: database, file and process-spawning commands (connections, history, settings, environments, agent/Kerberos status, PTY spawn/close, tray refresh) no longer run on the UI thread; terminal input is queued to a per-session writer thread instead of blocking on the PTY.
+- Desktop: terminal output is emitted once, only to the window that owns the session, instead of twice to every window; multi-byte UTF-8 characters split across PTY reads are no longer corrupted; the replay buffer is trimmed in 64 KiB steps instead of on every chunk.
+- The database is created, chmod-ed and migrated once per process; later opens only reconnect.
+- Desktop: History showed every session as failed and durations as `NaN` (the backend sends `[secs, nanos]`); the main window could not change its background color or un-minimize (missing capabilities).
+- Desktop performance: the Hosts list is windowed (2,000 hosts: re-render ≈3.9 s → ≈0.1 s) and the grid renders progressively; the hidden Terminals panel no longer renders output or blinks cursors behind other views; `resize_pty` is sent only when the terminal grid actually changes (no more tmux/vim redraws on tab switches); terminal runtime objects are no longer deep-proxied by Svelte; startup loads run concurrently; the window-resize IPC storm and `backdrop-filter` blurs over the terminal canvas are gone; Kerberos polling backs off when unused or the window is hidden.
+- Desktop: secondary text and primary buttons now meet WCAG AA contrast (4.5:1) in every theme; the e2e accessibility check enforces it.
 
 ### Changed
+- **Desktop redesign**: new design system (tokens, primitives, bundled Inter/JetBrains Mono fonts — remote fonts were blocked by the CSP) and every screen rebuilt on it. The title bar hosts the command search; the sidebar has a profile switcher, grouped navigation and agent/Kerberos status; each view has a single header with one primary action. Themes are renamed Graphite, Midnight, OLED black and Slate (stored ids unchanged).
+- Desktop: the Tunnels view no longer shows fake sample rules; rules are local configuration only (no tunnel is started). Snippets can be created, edited and deleted.
 - Database opens with a 5 s busy timeout and refuses databases written by a newer schema; migration v4 purges orphan tags/aliases.
 - CI runs `cargo fmt --check`, workspace-wide clippy `-D warnings`, all workspace tests, and `svelte-check`; third-party actions are SHA-pinned with least-privilege tokens.
 - Integration tests moved to `crates/cli/tests/` (they were never compiled from the virtual-workspace root).
