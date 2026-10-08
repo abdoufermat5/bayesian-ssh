@@ -2,7 +2,6 @@
   import { onMount } from "svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { listen } from "@tauri-apps/api/event";
-  import { Plus, Search, List, LayoutGrid, OctagonX, Layers, TerminalSquare, X } from "lucide-svelte";
 
   import TitleBar from "$lib/components/TitleBar.svelte";
   import Sidebar from "$lib/components/Sidebar.svelte";
@@ -36,12 +35,12 @@
     getTerminalState,
     initTerminalListeners,
     teardownTerminalListeners,
+    setTerminalsVisible,
     popOutDetachedSession,
     focusPopoutSession,
     terminateDetachedSession,
     terminatePopoutSession,
   } from "$lib/stores/terminal.svelte";
-  import { getWindowState, initWindowState } from "$lib/stores/window.svelte";
   import {
     getKerberosState,
     openKerberosModal,
@@ -51,7 +50,6 @@
   import { appState } from "$lib/stores/appState.svelte";
 
   const terminalState = getTerminalState();
-  const windowState = getWindowState();
   const kerberosState = getKerberosState();
 
   $effect(() => {
@@ -63,16 +61,21 @@
     }
   });
 
+  // Re-query only when the filter actually changes (not on mount — loadData
+  // already fetched the list).
+  let lastFilterKey: string | null = null;
   $effect(() => {
-    appState.searchQuery;
-    appState.selectedTag;
-    appState.searchConnections();
+    const key = `${appState.searchQuery}\u0000${appState.selectedTag ?? ""}`;
+    if (lastFilterKey !== null && key !== lastFilterKey) appState.searchConnections();
+    lastFilterKey = key;
   });
 
+  // Single place that reacts to the Terminals view becoming visible:
+  // resumes output rendering, then fits + focuses the active terminal.
   $effect(() => {
-    if (appState.activeTab === "terminals") {
-      requestAnimationFrame(() => appState.goToTerminals());
-    }
+    const visible = appState.activeTab === "terminals";
+    setTerminalsVisible(visible);
+    if (visible) requestAnimationFrame(() => appState.goToTerminals());
   });
 
   let unlistenConnect: (() => void) | undefined;
@@ -124,11 +127,6 @@
     initTerminalListeners(async () => {
       await appState.loadHistory();
       await appState.loadStats();
-    });
-
-    let teardownWindow = () => {};
-    initWindowState().then((teardown) => {
-      teardownWindow = teardown;
     });
 
     const appWindow = getCurrentWindow();
@@ -183,7 +181,6 @@
       window.removeEventListener("resize", handleWindowResize);
       teardownTerminalListeners();
       stopKerberosMonitoring();
-      teardownWindow();
       unlistenConnect?.();
       unlistenQuitConfirm?.();
       unlistenCloseRequested?.();
@@ -195,7 +192,6 @@
   <AppLoader />
 {:else if appState.showOnboarding}
   <TitleBar
-    activeEnv={appState.activeEnv}
     onOpenAbout={() => (showAboutModal = true)}
     onOpenShortcuts={() => (showShortcutsModal = true)}
   />
@@ -207,18 +203,14 @@
     onComplete={appState.completeOnboarding}
   />
 {:else}
-<div
-  class="app-deck flex flex-col flex-1 w-full h-[100dvh] min-h-0 overflow-hidden"
-  class:is-fullscreen={windowState.isFullscreen}
->
+<div class="app-shell">
   <TitleBar
-    activeEnv={appState.activeEnv}
     onOpenAbout={() => (showAboutModal = true)}
     onOpenShortcuts={() => (showShortcutsModal = true)}
     onOpenCommandPalette={() => (showCommandPalette = true)}
   />
 
-  <div class="app-layer flex flex-1 min-h-0 w-full overflow-hidden">
+  <div class="flex min-h-0 w-full flex-1 overflow-hidden">
     <Sidebar
       activeTab={appState.activeTab}
       onTabChange={appState.handleTabChange}
@@ -226,174 +218,82 @@
       activeEnv={appState.activeEnv}
       onSwitchEnv={appState.switchEnv}
       onShowEnvModal={() => (appState.showEnvModal = true)}
-      stats={appState.stats}
       sidebarCollapsed={appState.sidebarCollapsed}
       onToggleSidebar={() => (appState.sidebarCollapsed = !appState.sidebarCollapsed)}
       terminalCount={terminalState.totalSessionCount}
-      tabCount={terminalState.count}
       externalSessionCount={terminalState.externalSessionCount}
-      allTags={appState.allTags}
-      selectedTag={appState.selectedTag}
-      onTagSelect={(tag) => {
-        appState.selectedTag = tag;
-      }}
       agentActive={appState.agentActive}
       agentKeys={appState.agentKeys}
       onStartAgent={appState.triggerStartAgent}
       onShowAgentModal={() => (appState.showAgentModal = true)}
       kerberosHealth={appState.kerberosHealth}
       kerberosRemainingLabel={appState.kerberosRemainingLabel}
-      kerberosPrincipal={kerberosState.status.principal}
-      kerberosDefaultRealm={kerberosState.status.default_realm}
       onShowKerberosModal={openKerberosModal}
       onShowSessionManager={appState.openSessionManager}
-      onGoToTerminals={appState.goToTerminals}
-      onSearchMostUsed={(name) => (appState.searchQuery = name)}
       onShowSnippetsModal={() => (showSnippetsModal = true)}
       settings={appState.settings}
     />
 
-    <main class="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
-      <!-- Topbar -->
-      <!-- Executive Topbar -->
-      <header class="workspace-topbar">
-        <!-- Left: Context / View Title -->
-        <div class="flex items-center gap-2.5 min-w-0">
-          <h1 class="text-sm font-semibold text-primary tracking-tight capitalize m-0 truncate">
-            {appState.activeTab === "connections" ? "Hosts" : appState.activeTab}
-          </h1>
-          {#if appState.activeTab === "terminals" && terminalState.totalSessionCount > 0}
-            <span class="hidden sm:inline px-2 py-0.5 rounded-full text-2xs font-mono bg-white/10 text-secondary whitespace-nowrap">
-              {terminalState.count} active · {terminalState.externalSessionCount} away
-            </span>
-          {/if}
+    <main class="workspace">
+      {#if appState.activeTab === "connections"}
+        <ConnectionsView
+          connections={appState.connections}
+          bind:viewMode={appState.viewMode}
+          selectedHostIndex={appState.selectedHostIndex}
+          copiedId={appState.copiedId}
+          justDuplicatedId={appState.justDuplicatedId}
+          timezone={appState.settings.timezone}
+          bind:searchQuery={appState.searchQuery}
+          bind:selectedTag={appState.selectedTag}
+          allTags={appState.allTags}
+          onSelectHost={(i) => (appState.selectedHostIndex = i)}
+          onConnect={appState.handleConnect}
+          onEdit={appState.openEditModal}
+          onDelete={appState.deleteConnection}
+          onDuplicate={appState.duplicateConnection}
+          onCopyCommand={appState.copyToClipboard}
+          onAddHost={appState.openAddModal}
+          onImportSshConfig={appState.importSshConfig}
+          onOpenBatchExec={() => (showBatchExecModal = true)}
+        />
+      {:else if appState.activeTab === "history"}
+        <HistoryView history={appState.history} timezone={appState.settings.timezone} />
+      {:else if appState.activeTab === "keys"}
+        <KeysView connections={appState.connections} />
+      {:else if appState.activeTab === "audit"}
+        <AuditView />
+      {:else if appState.activeTab === "settings"}
+        <SettingsView
+          bind:settings={appState.settings}
+          bind:workspace={appState.workspace}
+          environments={appState.environments}
+          onSave={appState.saveSettings}
+          onThemeChange={appState.handleThemeChange}
+          onSaveWorkspace={appState.saveWorkspaceConfig}
+          onSwitchEnv={appState.switchEnv}
+          onManageProfiles={() => (appState.showEnvModal = true)}
+          onBrowseSshConfig={appState.browseSshConfig}
+          onImportSshConfig={appState.importSshConfig}
+        />
+      {:else if appState.activeTab === "sftp" && appState.settings.enable_sftp !== false}
+        <SFTPView connections={appState.connections} />
+      {:else if appState.activeTab === "tunnels" && appState.settings.enable_tunneling !== false}
+        <TunnelStudioView connections={appState.connections} />
+      {/if}
+
+      <!-- Terminals stay mounted while sessions exist so xterm buffers
+           survive tab switches; hidden with display:none (no layout/paint). -->
+      {#if appState.showTerminalsPanel}
+        <div class="view" class:hidden={appState.activeTab !== "terminals"}>
+          <TerminalsView
+            connections={appState.connections}
+            bind:searchQuery={appState.searchQuery}
+            onCloseAll={appState.requestCloseAllSessions}
+            onManageSessions={appState.openSessionManager}
+            onConnect={appState.handleConnect}
+          />
         </div>
-
-        <!-- Center: Spotlight Command Palette Trigger -->
-        <button
-          type="button"
-          class="command-trigger w-36 sm:w-56 md:w-72 max-w-sm"
-          onclick={() => (showCommandPalette = true)}
-          title="Search hosts or commands (⌘K)"
-        >
-          <div class="flex items-center gap-2 min-w-0">
-            <Search size={13} class="text-muted shrink-0" />
-            <span class="text-xs text-muted truncate">Search hosts, commands...</span>
-          </div>
-          <span class="kbd text-[10px] shrink-0">⌘K</span>
-        </button>
-
-        <!-- Right: Actions -->
-        <div class="flex items-center gap-2 shrink-0">
-          {#if appState.activeTab !== "terminals" && terminalState.totalSessionCount > 0}
-            <button
-              type="button"
-              class="toolbar-btn h-8"
-              onclick={appState.goToTerminals}
-              title="Switch to active terminal sessions"
-            >
-              <TerminalSquare size={13} />
-              <span class="hidden sm:inline">Terminals ({terminalState.totalSessionCount})</span>
-              <span class="sm:hidden">({terminalState.totalSessionCount})</span>
-            </button>
-          {/if}
-
-          <button
-            type="button"
-            class="btn btn-primary h-8"
-            onclick={appState.openAddModal}
-          >
-            <Plus size={13} />
-            <span class="hidden sm:inline">New Server</span>
-            <span class="sm:hidden">New</span>
-          </button>
-        </div>
-      </header>
-
-      <!-- Main Body View Panels -->
-      <div class="flex-1 min-h-0 relative overflow-hidden bg-surface/90">
-        {#if appState.activeTab === "connections"}
-          <div class="absolute inset-0 flex flex-col min-h-0 overflow-hidden transition-all duration-200 {appState.activeTab === 'connections' ? 'opacity-100 visible pointer-events-auto z-10' : 'opacity-0 invisible pointer-events-none z-0'}">
-            <ConnectionsView
-              connections={appState.connections}
-              viewMode={appState.viewMode}
-              selectedHostIndex={appState.selectedHostIndex}
-              copiedId={appState.copiedId}
-              justDuplicatedId={appState.justDuplicatedId}
-              timezone={appState.settings.timezone}
-              bind:searchQuery={appState.searchQuery}
-              bind:selectedTag={appState.selectedTag}
-              onSelectHost={(i) => (appState.selectedHostIndex = i)}
-              onConnect={appState.handleConnect}
-              onEdit={appState.openEditModal}
-              onDelete={appState.deleteConnection}
-              onDuplicate={appState.duplicateConnection}
-              onCopyCommand={appState.copyToClipboard}
-              onRefresh={appState.loadConnections}
-              onAddHost={appState.openAddModal}
-              onOpenBatchExec={() => (showBatchExecModal = true)}
-            />
-          </div>
-        {/if}
-
-        {#if appState.activeTab === "history"}
-          <div class="absolute inset-0 flex flex-col min-h-0 overflow-hidden transition-all duration-200 {appState.activeTab === 'history' ? 'opacity-100 visible pointer-events-auto z-10' : 'opacity-0 invisible pointer-events-none z-0'}">
-            <HistoryView history={appState.history} timezone={appState.settings.timezone} />
-          </div>
-        {/if}
-
-        {#if appState.activeTab === "keys"}
-          <div class="absolute inset-0 flex flex-col min-h-0 overflow-hidden transition-all duration-200 {appState.activeTab === 'keys' ? 'opacity-100 visible pointer-events-auto z-10' : 'opacity-0 invisible pointer-events-none z-0'}">
-            <KeysView connections={appState.connections} />
-          </div>
-        {/if}
-
-        {#if appState.activeTab === "audit"}
-          <div class="absolute inset-0 flex flex-col min-h-0 overflow-hidden transition-all duration-200 {appState.activeTab === 'audit' ? 'opacity-100 visible pointer-events-auto z-10' : 'opacity-0 invisible pointer-events-none z-0'}">
-            <AuditView />
-          </div>
-        {/if}
-
-        {#if appState.activeTab === "settings"}
-          <div class="absolute inset-0 flex flex-col min-h-0 overflow-hidden transition-all duration-200 {appState.activeTab === 'settings' ? 'opacity-100 visible pointer-events-auto z-10' : 'opacity-0 invisible pointer-events-none z-0'}">
-            <SettingsView
-              bind:settings={appState.settings}
-              bind:workspace={appState.workspace}
-              environments={appState.environments}
-              onSave={appState.saveSettings}
-              onThemeChange={appState.handleThemeChange}
-              onSaveWorkspace={appState.saveWorkspaceConfig}
-              onSwitchEnv={appState.switchEnv}
-              onManageProfiles={() => (appState.showEnvModal = true)}
-              onBrowseSshConfig={appState.browseSshConfig}
-              onImportSshConfig={appState.importSshConfig}
-            />
-          </div>
-        {/if}
-
-        {#if appState.activeTab === "sftp" && appState.settings.enable_sftp !== false}
-          <div class="absolute inset-0 flex flex-col min-h-0 overflow-hidden transition-all duration-200 {appState.activeTab === 'sftp' ? 'opacity-100 visible pointer-events-auto z-10' : 'opacity-0 invisible pointer-events-none z-0'}">
-            <SFTPView connections={appState.connections} />
-          </div>
-        {/if}
-
-        {#if appState.activeTab === "tunnels" && appState.settings.enable_tunneling !== false}
-          <div class="absolute inset-0 flex flex-col min-h-0 overflow-hidden transition-all duration-200 {appState.activeTab === 'tunnels' ? 'opacity-100 visible pointer-events-auto z-10' : 'opacity-0 invisible pointer-events-none z-0'}">
-            <TunnelStudioView connections={appState.connections} />
-          </div>
-        {/if}
-
-        {#if appState.showTerminalsPanel}
-          <div class="absolute inset-0 flex flex-col min-h-0 overflow-hidden transition-all duration-200 {appState.activeTab === 'terminals' ? 'opacity-100 visible pointer-events-auto z-10' : 'opacity-0 invisible pointer-events-none z-0'}">
-            <TerminalsView
-              connections={appState.connections}
-              bind:searchQuery={appState.searchQuery}
-              onCloseAll={appState.requestCloseAllSessions}
-              onManageSessions={appState.openSessionManager}
-            />
-          </div>
-        {/if}
-      </div>
+      {/if}
     </main>
   </div>
 

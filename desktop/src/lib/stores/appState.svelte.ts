@@ -33,7 +33,6 @@ import {
   getTerminalFontSize,
   registerSettingsGetter,
 } from "$lib/stores/terminal.svelte";
-import { getWindowState } from "$lib/stores/window.svelte";
 import {
   acquireKerberosTicket,
   closeKerberosModal,
@@ -49,18 +48,24 @@ import {
 } from "$lib/stores/kerberos.svelte";
 
 const terminalState = getTerminalState();
-const windowState = getWindowState();
 const kerberosState = getKerberosState();
+
+/** Rebuild the tray menu in the background; never blocks the UI flow. */
+function refreshTray() {
+  invoke("refresh_tray_menu").catch((e) => console.error("Failed to refresh tray menu", e));
+}
 
 export class AppStateStore {
   activeTab = $state<AppTab>("connections");
-  environments = $state<EnvInfo[]>([]);
+  // Server data is always replaced wholesale, never mutated in place:
+  // $state.raw skips deep proxying of every host/history row.
+  environments = $state.raw<EnvInfo[]>([]);
   activeEnv = $state("default");
-  connections = $state<Connection[]>([]);
+  connections = $state.raw<Connection[]>([]);
   searchQuery = $state("");
   selectedTag = $state<string | null>(null);
-  stats = $state<ConnectionStats | null>(null);
-  history = $state<SessionHistoryEntry[]>([]);
+  stats = $state.raw<ConnectionStats | null>(null);
+  history = $state.raw<SessionHistoryEntry[]>([]);
 
   viewMode = $state<"list" | "grid">("list");
   sidebarCollapsed = $state(false);
@@ -145,8 +150,10 @@ export class AppStateStore {
     enable_tunneling: true,
   });
 
+  // Tags across the whole profile (stats are unfiltered), so the tag bar
+  // doesn't shrink while a search or tag filter is active.
   allTags = $derived.by(() => {
-    const tagsSet = new Set<string>();
+    const tagsSet = new Set<string>(Object.keys(this.stats?.by_tag ?? {}));
     this.connections.forEach((c) => c.tags.forEach((t) => tagsSet.add(t)));
     return Array.from(tagsSet).sort();
   });
@@ -186,19 +193,21 @@ export class AppStateStore {
 
   loadData = async () => {
     try {
-      this.activeEnv = await invoke("get_active_env");
-      this.environments = await invoke("list_environments");
-      await this.loadWorkspace();
-      await this.loadConnections();
-      await this.loadStats();
-      await this.loadHistory();
-      await this.loadSettings();
-      await this.loadAgentStatus();
-      try {
-        await invoke("refresh_tray_menu");
-      } catch (e) {
-        console.error("Failed to refresh tray menu", e);
+      // Independent reads run concurrently; the agent auto-start decision
+      // needs both settings and the current agent status.
+      await Promise.all([
+        invoke<EnvInfo[]>("list_environments").then((envs) => (this.environments = envs)),
+        this.loadWorkspace(),
+        this.loadConnections(),
+        this.loadStats(),
+        this.loadHistory(),
+        this.loadSettings(),
+        this.loadAgentStatus(),
+      ]);
+      if (this.settings.auto_start_agent && !this.agentActive) {
+        await this.triggerStartAgent();
       }
+      refreshTray();
     } catch (e: unknown) {
       notify(String(e), "error");
     }
@@ -267,11 +276,7 @@ export class AppStateStore {
       });
       await this.loadConnections();
       await this.loadStats();
-      try {
-        await invoke("refresh_tray_menu");
-      } catch (e) {
-        console.error(e);
-      }
+      refreshTray();
       notify(
         count > 0 ? `Imported ${count} host${count === 1 ? "" : "s"} from OpenSSH config` : "No new hosts to import",
         count > 0 ? "success" : "info",
@@ -326,10 +331,6 @@ export class AppStateStore {
       };
       applyTheme(this.settings.theme);
       applyThemeToAllTerminals(this.settings);
-
-      if (this.settings.auto_start_agent && !this.agentActive) {
-        await this.triggerStartAgent();
-      }
 
       if (this.settings.monitor_kerberos) {
         startKerberosMonitoring({
@@ -576,11 +577,7 @@ export class AppStateStore {
 
       await this.reloadConnectionsAfterMutation();
       await this.loadStats();
-      try {
-        await invoke("refresh_tray_menu");
-      } catch (e) {
-        console.error(e);
-      }
+      refreshTray();
 
       const newIdx = this.connections.findIndex((c) => c.name === copyName && c.host === conn.host);
       if (newIdx !== -1) {
@@ -756,11 +753,7 @@ export class AppStateStore {
       this.showModal = false;
       await this.reloadConnectionsAfterMutation();
       await this.loadStats();
-      try {
-        await invoke("refresh_tray_menu");
-      } catch (e) {
-        console.error(e);
-      }
+      refreshTray();
     } catch (e: unknown) {
       notify(String(e), "error");
     }
@@ -772,11 +765,7 @@ export class AppStateStore {
       notify(`'${conn.name}' removed`, "success");
       await this.loadConnections();
       await this.loadStats();
-      try {
-        await invoke("refresh_tray_menu");
-      } catch (e) {
-        console.error(e);
-      }
+      refreshTray();
     });
   }
 
@@ -793,9 +782,6 @@ export class AppStateStore {
 
   handleTabChange = (tab: AppTab) => {
     this.activeTab = tab;
-    if (tab === "terminals") {
-      requestAnimationFrame(() => fitActiveTerminal());
-    }
     if (tab === "history") {
       void this.loadHistory();
     }
