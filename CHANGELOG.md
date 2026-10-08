@@ -7,11 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-10-08
+
 ### Added
 - **Desktop end-to-end tests**: a Playwright suite (`desktop/e2e`, run with `npm run e2e` or `make e2e`) boots the SvelteKit SPA against a stubbed Tauri IPC layer and covers the shell and shortcuts, hosts (list, filtering, sort, keyboard, row actions, ping, batch entry), the host modal, terminals, SFTP, tunnels, keys, audit, history, settings, modals, command palette, batch execution, snippets, toasts, onboarding, themes, accessibility (axe) plus a 2,000-host performance smoke. CI installs the chromium browser and runs it in the `test-desktop` job.
+- **In-app updates**: the desktop app checks **Settings → Updates** for signed releases and installs the `.AppImage` and `bayesian-ssh-desktop` `.deb`/`.rpm` from GitHub in place (open sessions are closed and the app restarts; the artifact signature is verified against the minisign key baked into the build). The snap, `install.sh` binaries, the unified packages and source builds report how they are updated instead.
+- **Snap Store package**: an amd64 + arm64 snap (`bayesian-ssh` CLI and `bayesian-ssh.gui`), published to the Snap Store from the `snap` job in releases on a `core24` base.
+- **Signed releases**: keyless `cosign` signing of `SHA256SUMS` (`SHA256SUMS.sigstore.json`) plus Sigstore build-provenance attestations for every release asset.
+- **`install.sh` verifies the cosign signature** of `SHA256SUMS` when `cosign` is installed, in addition to the checksum check it always performs.
+- **Desktop `.rpm` and updater signatures** (`.sig`) are now published in GitHub releases alongside the `.deb` and `.AppImage`.
 
 ### Removed
 - **Terminal UI (`bssh tui` / `bssh ui`)**: The ratatui dashboard has been removed. Use the CLI commands or the desktop GUI (`bssh desktop`) instead. The `ratatui` dependency is dropped and `tui.log` is no longer written.
+- **`packaging.yml` workflow**: removed; unified package building is folded into the release workflow's `packages` job.
 
 ### Security
 - **Option injection blocked everywhere**: Host/user/bastion values starting with `-` (e.g. `-oProxyCommand=…`) or containing shell metacharacters are rejected at the database write boundary for CLI, GUI and imports; every ssh/sftp/scp argv now puts `--` before the destination, and ProxyCommand fields are shell-quoted and `%`-escaped.
@@ -47,6 +55,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Database opens with a 5 s busy timeout and refuses databases written by a newer schema; migration v4 purges orphan tags/aliases.
 - CI runs `cargo fmt --check`, workspace-wide clippy `-D warnings`, all workspace tests, and `svelte-check`; third-party actions are SHA-pinned with least-privilege tokens.
 - Integration tests moved to `crates/cli/tests/` (they were never compiled from the virtual-workspace root).
+- **Release pipeline**: builds now run on pinned `ubuntu-24.04` / `ubuntu-24.04-arm` runners, and the unified CLI+GUI `.deb`/`.rpm` (previously built by the separate `packaging.yml` workflow) are built by the release's `packages` job so `SHA256SUMS` covers them.
+- **Snap**: rebuilt from the published release assets (CLI tarball + desktop `.deb`) on a `core24` base for amd64 and arm64.
 
 ## [2.5.2] - 2026-09-06
 

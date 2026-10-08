@@ -38,6 +38,7 @@
 # Reference
 
 - [Technical Architecture](./reference/architecture.md)
+- [Distribution](./reference/distribution.md)
 - [Diagnostics & Troubleshooting](./reference/troubleshooting.md)
 - [Changelog](./reference/changelog.md)
 

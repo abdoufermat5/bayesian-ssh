@@ -44,13 +44,25 @@ Download pre-built packages from [Releases](https://github.com/abdoufermat5/baye
 
 ```bash
 # Debian / Ubuntu / Linux Mint / Pop!_OS (.deb)
-sudo apt install ./bayesian-ssh_2.5.2_amd64.deb
+sudo apt install ./bayesian-ssh_2.6.0_amd64.deb
 
 # Fedora / RHEL / CentOS / openSUSE (.rpm)
-sudo dnf install ./bayesian-ssh-2.5.2-1.x86_64.rpm
+sudo dnf install ./bayesian-ssh-2.6.0-1.x86_64.rpm
 ```
 
-#### Option 3: Build from Source
+#### Option 3: Snap Store
+```bash
+sudo snap install bayesian-ssh
+sudo snap connect bayesian-ssh:ssh-keys   # read-only ~/.ssh and /etc/ssh
+sudo snap alias bayesian-ssh bssh         # optional short alias
+```
+
+The snap includes the CLI and the desktop app. Strict confinement means `~/.ssh`
+is read-only and config lives under `~/snap/bayesian-ssh/current/`; see
+[docs/src/reference/distribution.md](docs/src/reference/distribution.md#snap-store)
+for the full list of limits.
+
+#### Option 4: Build from Source
 ```bash
 git clone https://github.com/abdoufermat5/bayesian-ssh.git
 cd bayesian-ssh
@@ -61,6 +73,28 @@ make release && make install
 # Package .deb and .rpm locally
 make package
 ```
+
+#### Verify a release
+Release assets are signed. With `cosign` and the `gh` CLI installed:
+
+```bash
+cosign verify-blob --bundle SHA256SUMS.sigstore.json \
+  --certificate-identity-regexp '^https://github\.com/abdoufermat5/bayesian-ssh/\.github/workflows/release\.yml@refs/(tags/v.+|heads/main)$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS
+
+sha256sum --ignore-missing -c SHA256SUMS
+
+gh attestation verify bayesian-ssh-linux-x86_64.tar.gz --repo abdoufermat5/bayesian-ssh
+```
+
+`install.sh` verifies the `cosign` signature automatically when `cosign` is
+installed, and always verifies `SHA256SUMS`.
+
+#### In-app updates
+The desktop `.AppImage` and the `bayesian-ssh-desktop` `.deb`/`.rpm` from the
+GitHub release update themselves from **Settings → Updates**. The snap, the
+`install.sh` binaries, the unified `bayesian-ssh` packages and source builds are
+updated the way they were installed.
 
 ### First Connection
 ```bash
