@@ -93,11 +93,49 @@ fn build_ls_argv(conn: &Connection, path: &str, shkc: &str) -> (Vec<String>, boo
     (argv, is_interactive_bastion)
 }
 
+/// `command` bypasses shell aliases (interactive bastion shells often alias
+/// `ls` to `ls --color=auto`, which colors output on their pty) and
+/// `--color=never` overrides `LS_COLORS`/defaults on GNU ls. The fallback
+/// covers non-GNU `ls` (BusyBox/BSD), which rejects the GNU-only flags.
 fn build_ls_command(path: &str) -> String {
     let escaped = path.replace('\'', "'\"'\"'");
     format!(
-        "LC_ALL=C ls -la --time-style=long-iso -- '{escaped}' 2>/dev/null || LC_ALL=C ls -la -- '{escaped}'"
+        "LC_ALL=C command ls -la --color=never --time-style=long-iso -- '{escaped}' 2>/dev/null || LC_ALL=C command ls -la -- '{escaped}'"
     )
+}
+
+/// Remove ANSI escape sequences (CSI such as `\x1b[01;34m`, charset
+/// designators such as `\x1b(B`, and other two-byte escapes) that a
+/// colorizing remote `ls` may still emit.
+fn strip_ansi(line: &str) -> std::borrow::Cow<'_, str> {
+    if !line.contains('\x1b') {
+        return std::borrow::Cow::Borrowed(line);
+    }
+    let mut out = String::with_capacity(line.len());
+    let mut chars = line.chars();
+    while let Some(c) = chars.next() {
+        if c != '\x1b' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            // CSI: parameters/intermediates up to a final byte in '@'..='~'.
+            Some('[') => {
+                for c in chars.by_ref() {
+                    if ('@'..='~').contains(&c) {
+                        break;
+                    }
+                }
+            }
+            // Charset designator: ESC ( X / ESC ) X.
+            Some('(' | ')') => {
+                chars.next();
+            }
+            // Other two-byte escapes (ESC =, ESC >, ...).
+            Some(_) | None => {}
+        }
+    }
+    std::borrow::Cow::Owned(out)
 }
 
 /// Run ls on an interactive bastion (kerberos+bastion) using the marker technique.
@@ -266,8 +304,9 @@ fn parse_sftp_output(output: &Output, path: &str) -> Result<Vec<RemoteFileEntry>
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut entries = Vec::new();
 
-    for line in stdout.lines() {
-        let line = line.trim();
+    for raw_line in stdout.lines() {
+        let clean = strip_ansi(raw_line);
+        let line = clean.trim();
         if line.starts_with("total ") || line.is_empty() {
             continue;
         }
@@ -281,7 +320,9 @@ fn parse_sftp_output(output: &Output, path: &str) -> Result<Vec<RemoteFileEntry>
         let is_dir = permissions.starts_with('d');
         let size = parts[4].parse::<u64>().unwrap_or(0);
 
-        let (modified, name_parts_start) = if parts.len() >= 9 && parts[5].contains('-') {
+        // `--time-style=long-iso`: `YYYY-MM-DD HH:MM name` (name at index 7).
+        // Classic format: `Mon DD HH:MM|YYYY name` (name at index 8).
+        let (modified, name_parts_start) = if parts[5].contains('-') {
             (format!("{} {}", parts[5], parts[6]), 7)
         } else if parts.len() >= 9 {
             (format!("{} {} {}", parts[5], parts[6], parts[7]), 8)
@@ -368,4 +409,46 @@ pub fn list_remote_directory(
     };
 
     parse_sftp_output(&output, &path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_sftp_output;
+    use std::os::unix::process::ExitStatusExt;
+    use std::process::{ExitStatus, Output};
+
+    fn ok_output(stdout: &str) -> Output {
+        Output {
+            status: ExitStatus::from_raw(0),
+            stdout: stdout.as_bytes().to_vec(),
+            stderr: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn colored_long_iso_listing_parses_clean_names_and_dates() {
+        let out = ok_output(
+            "total 64\n\
+             drwxr-xr-x  18 root root 4096 2026-10-01 12:00 \x1b[01;34m.\x1b[0m\n\
+             drwxr-xr-x  18 root root 4096 2026-10-01 12:00 \x1b[01;34m..\x1b[0m\n\
+             drwxr-xr-x   4 root root 4096 2026-09-30 08:15 \x1b[01;34mboot\x1b[0m\n\
+             -rw-r--r--   1 root root  120 2026-09-29 07:00 \x1b[00mmy file.txt\x1b[0m\x1b(B\n",
+        );
+        let entries = parse_sftp_output(&out, "/").expect("parses");
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, ["boot", "my file.txt"]);
+        assert_eq!(entries[0].path, "/boot");
+        assert!(entries[0].is_dir);
+        assert_eq!(entries[0].modified, "2026-09-30 08:15");
+        assert_eq!(entries[1].size, 120);
+    }
+
+    #[test]
+    fn classic_date_format_still_parses() {
+        let out = ok_output("-rw-r--r-- 1 me me 42 Oct  1 12:00 notes.md\n");
+        let entries = parse_sftp_output(&out, "/home/me").expect("parses");
+        assert_eq!(entries[0].name, "notes.md");
+        assert_eq!(entries[0].modified, "Oct 1 12:00");
+        assert_eq!(entries[0].path, "/home/me/notes.md");
+    }
 }

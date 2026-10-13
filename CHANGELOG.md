@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - `install.sh` installs the desktop app by default: the one-liner now installs the CLI (`bayesian-ssh` + `bssh`) and the desktop app (`bayesian-ssh-desktop`, menu entry and icon), as the README describes; `--no-gui` installs the CLI only. The old `--desktop` flag (desktop app without the CLI) is removed, the interactive menu offers CLI + desktop or CLI only, every download is verified before anything is installed, the menu entry no longer fails on systems without `/usr/share/applications`, and a missing WebKitGTK 4.1 runtime is reported.
 - Recursive uploads reported the size of the current file instead of the whole tree as the progress total (the percentage jumped around and could exceed 100%); progress is now cumulative across the tree and advances per chunk.
+- **Desktop Files view showed raw color codes** (`[01;34mboot[0m`) and `..` entries on hosts whose shell aliases `ls` to a colorized version (typical behind interactive bastions): the listing now bypasses aliases with `command ls --color=never` and strips any remaining ANSI escapes. Modification dates in `--time-style=long-iso` listings, previously shown as "Unknown", are parsed again.
 
 ## [2.6.0] - 2026-10-08
 
