@@ -9,6 +9,7 @@ pub mod sftp_shared;
 pub mod ssh;
 pub mod transfer;
 pub mod transport;
+pub mod upload;
 
 pub use crypto::*;
 pub use ssh::*;

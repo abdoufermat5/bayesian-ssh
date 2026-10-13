@@ -19,10 +19,12 @@
     Pencil,
     RefreshCw,
     Search,
+    Upload,
     X,
   } from "lucide-svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import type { Connection } from "$lib/types";
+  import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+  import type { Connection, UploadFinishedPayload } from "$lib/types";
   import CustomSelect from "$lib/components/ui/CustomSelect.svelte";
   import { appState } from "$lib/stores/appState.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
@@ -39,9 +41,11 @@
 
   interface Props {
     connections: Connection[];
+    /** Open the upload modal with this connection and directory preselected. */
+    onOpenUpload: (connectionId: string | null, remoteDir: string) => void;
   }
 
-  let { connections }: Props = $props();
+  let { connections, onOpenUpload }: Props = $props();
 
   let selectedConnectionId = $state<string | null>(null);
   let currentPath = $state<string>(appState.settings.sftp_default_remote_path || "/");
@@ -169,6 +173,31 @@
     editingPath = false;
     entries = [];
   }
+
+  // Refresh the listing when an upload lands on the host this view shows.
+  $effect(() => {
+    let disposed = false;
+    let unlisten: UnlistenFn | null = null;
+
+    listen<UploadFinishedPayload>("upload-finished", (event) => {
+      if (disposed || !isConnected) return;
+      const connectionId = selectedConnection?.id;
+      const touched = (event.payload.results ?? []).some((entry) =>
+        entry.hosts.some((host) => host.connectionId === connectionId && host.ok),
+      );
+      if (touched) loadDirectory(currentPath);
+    })
+      .then((un) => {
+        if (disposed) un();
+        else unlisten = un;
+      })
+      .catch(() => {});
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  });
 
   function handleConnectClick() {
     if (isConnected) {
@@ -332,6 +361,16 @@
         title="Refresh"
       >
         <RefreshCw size={14} class={loading ? "animate-spin" : ""} />
+      </button>
+      <button
+        type="button"
+        class="btn btn-secondary btn-sm shrink-0"
+        disabled={!selectedConnection}
+        title="Upload files to this host"
+        onclick={() => onOpenUpload(selectedConnection?.id ?? null, currentPath)}
+      >
+        <Upload size={14} />
+        Upload
       </button>
 
       {#if editingPath}

@@ -4,7 +4,9 @@
 //! Callers supply a `ProgressFn` closure that receives `(bytes_done, total_bytes)`
 //! on each chunk; pass `None` to skip progress reporting.
 
+use std::future::Future;
 use std::path::Path;
+use std::pin::Pin;
 
 use anyhow::{Context, Result};
 use tokio::fs;
@@ -13,7 +15,6 @@ use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
 use crate::config::AppConfig;
-use crate::database::Database;
 use crate::models::Connection;
 use crate::services::transport::scp_impl;
 use crate::services::transport::{pick_kind, TransportKind};
@@ -23,16 +24,19 @@ const CHANNEL_CAP: usize = 16; // outstanding chunks in flight
 
 pub type ProgressFn = Box<dyn Fn(u64, Option<u64>) + Send + Sync + 'static>;
 
+/// A progress callback that can be shared across per-file `on_chunk` closures.
+type SharedProgress = std::sync::Arc<dyn Fn(u64, Option<u64>) + Send + Sync>;
+
+/// A boxed, `Send` future with a borrowed lifetime.
+type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
 pub struct TransferService {
     config: AppConfig,
-    #[allow(dead_code)]
-    database: Database,
 }
 
 impl TransferService {
     pub fn new(config: AppConfig) -> Result<Self> {
-        let database = Database::new(&config)?;
-        Ok(Self { config, database })
+        Ok(Self { config })
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -52,6 +56,35 @@ impl TransferService {
         mode: u32,
         progress: Option<ProgressFn>,
     ) -> Result<u64> {
+        let sftp = self.open_sftp(connection).await?;
+        self.upload_on(
+            &*sftp,
+            connection,
+            local_path,
+            remote_path,
+            offset,
+            mode,
+            progress,
+        )
+        .await
+    }
+
+    /// Upload over an already-open SFTP session.
+    ///
+    /// `connection` is used only for logging. Callers that must resolve the
+    /// remote destination (e.g. `stat` it) reuse their session here instead of
+    /// paying for a second handshake.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn upload_on(
+        &self,
+        sftp: &dyn crate::services::transport::types::SftpSession,
+        connection: &Connection,
+        local_path: &Path,
+        remote_path: &str,
+        offset: u64,
+        mode: u32,
+        progress: Option<ProgressFn>,
+    ) -> Result<u64> {
         let total = fs::metadata(local_path)
             .await
             .with_context(|| format!("stat {}", local_path.display()))?
@@ -64,8 +97,6 @@ impl TransferService {
             remote_path,
             total,
         );
-
-        let sftp = self.open_sftp(connection).await?;
 
         let (tx, rx) = mpsc::channel::<Vec<u8>>(CHANNEL_CAP);
 
@@ -237,17 +268,40 @@ impl TransferService {
         local_dir: &Path,
         remote_dir: &str,
         mode: u32,
-        progress: Option<&ProgressFn>,
+        progress: Option<ProgressFn>,
     ) -> Result<(u64, u64)> {
         let sftp = self.open_sftp(connection).await?;
+        let expected = dir_total_bytes(local_dir).await?;
+        self.upload_recursive_on(&*sftp, local_dir, remote_dir, mode, progress, expected)
+            .await
+    }
+
+    /// Recursively upload over an already-open SFTP session.
+    ///
+    /// `expected` is the total byte size of the local tree, precomputed by the
+    /// caller so whole-tree progress can be reported without walking the tree
+    /// a second time. `bytes_done` is cumulative across the whole tree.
+    pub(crate) async fn upload_recursive_on(
+        &self,
+        sftp: &dyn crate::services::transport::types::SftpSession,
+        local_dir: &Path,
+        remote_dir: &str,
+        mode: u32,
+        progress: Option<ProgressFn>,
+        expected: u64,
+    ) -> Result<(u64, u64)> {
+        let shared: Option<SharedProgress> = progress.map(std::sync::Arc::from);
+        let done = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
         let mut file_count = 0u64;
         let mut total_bytes = 0u64;
         Self::upload_dir_inner(
-            &*sftp,
+            sftp,
             local_dir,
             remote_dir,
             mode,
-            progress,
+            shared.as_ref(),
+            &done,
+            expected,
             &mut file_count,
             &mut total_bytes,
         )
@@ -255,15 +309,18 @@ impl TransferService {
         Ok((file_count, total_bytes))
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn upload_dir_inner<'a>(
         sftp: &'a dyn crate::services::transport::types::SftpSession,
         local_dir: &'a Path,
         remote_dir: &'a str,
         mode: u32,
-        progress: Option<&'a ProgressFn>,
+        progress: Option<&'a SharedProgress>,
+        done: &'a std::sync::Arc<std::sync::atomic::AtomicU64>,
+        expected: u64,
         file_count: &'a mut u64,
         total_bytes: &'a mut u64,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send + 'a>> {
+    ) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
             // Create the remote directory (ignore "already exists" errors)
             match sftp.mkdir(remote_dir, 0o755).await {
@@ -292,14 +349,14 @@ impl TransferService {
                         &remote_child,
                         mode,
                         progress,
+                        done,
+                        expected,
                         file_count,
                         total_bytes,
                     )
                     .await?;
                 } else if file_type.is_file() {
                     info!("uploading {} → {remote_child}", local_child.display());
-
-                    let file_size = entry.metadata().await?.len();
 
                     let (tx, rx) = mpsc::channel::<Vec<u8>>(CHANNEL_CAP);
                     let local_owned = local_child.clone();
@@ -318,8 +375,22 @@ impl TransferService {
                         Ok::<(), anyhow::Error>(())
                     });
 
+                    // Report progress per chunk, cumulative across the whole
+                    // tree, so the bar advances smoothly instead of jumping
+                    // once per file.
+                    let on_chunk: Option<Box<dyn Fn(usize) + Send + Sync>> = progress.map(|cb| {
+                        let cb = std::sync::Arc::clone(cb);
+                        let done = std::sync::Arc::clone(done);
+                        Box::new(move |n: usize| {
+                            let now = done
+                                .fetch_add(n as u64, std::sync::atomic::Ordering::Relaxed)
+                                + n as u64;
+                            cb(now, Some(expected));
+                        }) as Box<dyn Fn(usize) + Send + Sync>
+                    });
+
                     let written = sftp
-                        .write_all(&remote_child, 0, rx, mode, None)
+                        .write_all(&remote_child, 0, rx, mode, on_chunk)
                         .await
                         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
@@ -327,10 +398,6 @@ impl TransferService {
 
                     *file_count += 1;
                     *total_bytes += written;
-
-                    if let Some(ref cb) = progress {
-                        cb(*total_bytes, Some(file_size));
-                    }
                 } else if file_type.is_symlink() {
                     warn!("skipping symlink: {}", local_child.display());
                 }
@@ -375,7 +442,7 @@ impl TransferService {
         progress: Option<&'a ProgressFn>,
         file_count: &'a mut u64,
         total_bytes: &'a mut u64,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send + 'a>> {
+    ) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
             // Create local directory
             fs::create_dir_all(local_dir)
@@ -527,7 +594,7 @@ impl TransferService {
     // Internal: resolve transport and open SFTP session
     // ──────────────────────────────────────────────────────────────────────
 
-    async fn open_sftp(
+    pub(crate) async fn open_sftp(
         &self,
         connection: &Connection,
     ) -> Result<Box<dyn crate::services::transport::types::SftpSession>> {
@@ -544,6 +611,29 @@ impl TransferService {
 // ─────────────────────────────────────────────────────────────────────────────
 // Path-traversal guard + symlink-safe local open
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Total size in bytes of every regular file under `dir`, recursively.
+///
+/// Symlinks and special files are skipped (they are not uploaded either), so
+/// the result is exactly what `upload_dir_inner` will transfer and can be
+/// reported as the progress total.
+fn dir_total_bytes(dir: &Path) -> BoxFuture<'_, Result<u64>> {
+    Box::pin(async move {
+        let mut total = 0u64;
+        let mut entries = fs::read_dir(dir)
+            .await
+            .with_context(|| format!("read local dir {}", dir.display()))?;
+        while let Some(entry) = entries.next_entry().await? {
+            let file_type = entry.file_type().await?;
+            if file_type.is_dir() {
+                total += dir_total_bytes(&entry.path()).await?;
+            } else if file_type.is_file() {
+                total += entry.metadata().await?.len();
+            }
+        }
+        Ok(total)
+    })
+}
 
 /// Reject paths whose segments include `..`. We don't try to canonicalize
 /// the path (which would defeat relative paths) — we only forbid the

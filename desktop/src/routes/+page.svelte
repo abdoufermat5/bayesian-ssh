@@ -24,6 +24,7 @@
   import ShortcutsModal from "$lib/components/modals/ShortcutsModal.svelte";
   import AboutModal from "$lib/components/modals/AboutModal.svelte";
   import BatchExecModal from "$lib/components/modals/BatchExecModal.svelte";
+  import UploadModal from "$lib/components/modals/UploadModal.svelte";
   import QuitConfirmModal from "$lib/components/modals/QuitConfirmModal.svelte";
   import AppLoader from "$lib/components/AppLoader.svelte";
   import CommandPalette from "$lib/components/CommandPalette.svelte";
@@ -85,9 +86,19 @@
   let showShortcutsModal = $state(false);
   let showAboutModal = $state(false);
   let showBatchExecModal = $state(false);
+  let showUploadModal = $state(false);
+  let uploadConnectionIds = $state<string[] | undefined>(undefined);
+  let uploadRemoteDir = $state<string | null>(null);
   let showQuitConfirmModal = $state(false);
   let showSnippetsModal = $state(false);
   let showCommandPalette = $state(false);
+
+  /** Open the upload modal, optionally preselecting a host and destination. */
+  function openUploadModal(connectionIds?: string[], remoteDir?: string | null) {
+    uploadConnectionIds = connectionIds;
+    uploadRemoteDir = remoteDir ?? null;
+    showUploadModal = true;
+  }
 
   function handleKeydownWithHelp(e: KeyboardEvent) {
     const isEditingInput =
@@ -256,6 +267,7 @@
           onAddHost={appState.openAddModal}
           onImportSshConfig={appState.importSshConfig}
           onOpenBatchExec={() => (showBatchExecModal = true)}
+          onOpenUpload={() => openUploadModal([])}
         />
       {:else if appState.activeTab === "history"}
         <HistoryView history={appState.history} timezone={appState.settings.timezone} />
@@ -277,7 +289,11 @@
           onImportSshConfig={appState.importSshConfig}
         />
       {:else if appState.activeTab === "sftp" && appState.settings.enable_sftp !== false}
-        <SFTPView connections={appState.connections} />
+        <SFTPView
+          connections={appState.connections}
+          onOpenUpload={(connectionId, remoteDir) =>
+            openUploadModal(connectionId ? [connectionId] : [], remoteDir)}
+        />
       {:else if appState.activeTab === "tunnels" && appState.settings.enable_tunneling !== false}
         <TunnelStudioView connections={appState.connections} />
       {/if}
@@ -400,6 +416,14 @@
   onClose={() => (showBatchExecModal = false)}
 />
 
+<UploadModal
+  show={showUploadModal}
+  connections={appState.connections}
+  initialConnectionIds={uploadConnectionIds}
+  initialRemoteDir={uploadRemoteDir}
+  onClose={() => (showUploadModal = false)}
+/>
+
 {#if showQuitConfirmModal}
   <QuitConfirmModal
     activeCount={terminalState.count + terminalState.externalSessionCount}
@@ -467,6 +491,7 @@
   onConnectHost={appState.handleConnect}
   onOpenAddModal={appState.openAddModal}
   onOpenBatchExec={() => (showBatchExecModal = true)}
+  onOpenUpload={() => openUploadModal(undefined)}
   onPingAll={() => {
     invoke<Array<{ success: boolean }>>("ping_all_connections")
       .then((results) => {

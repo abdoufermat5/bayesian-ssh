@@ -5,15 +5,16 @@ mod updater;
 
 use bayesian_ssh::services::agent;
 use commands::{
-    add_connection, add_key_to_agent, check_popout_main_overlap, claim_popout_session,
-    close_all_ptys, close_pty, complete_onboarding, count_active_sessions, create_environment,
-    detach_pty, dock_popout_session, edit_connection, focus_terminal_window, force_quit_app,
-    get_active_env, get_agent_status, get_connections, get_history, get_stats, get_workspace_info,
-    import_ssh_config, list_detached_sessions, list_environments, list_popout_sessions,
-    load_desktop_settings, needs_onboarding, open_terminal_window, pick_key_file,
-    pick_ssh_config_file, quit_app, reattach_pty, remove_connection, remove_environment,
-    resize_pty, save_desktop_settings, save_workspace_config, seal_session_ui, set_active_env,
-    spawn_pty, start_agent, write_pty, PtyState,
+    add_connection, add_key_to_agent, cancel_upload, check_popout_main_overlap,
+    claim_popout_session, close_all_ptys, close_pty, complete_onboarding, count_active_sessions,
+    create_environment, detach_pty, dock_popout_session, edit_connection, focus_terminal_window,
+    force_quit_app, get_active_env, get_agent_status, get_connections, get_history, get_stats,
+    get_workspace_info, import_ssh_config, list_detached_sessions, list_environments,
+    list_popout_sessions, load_desktop_settings, needs_onboarding, open_terminal_window,
+    pick_key_file, pick_ssh_config_file, pick_upload_files, pick_upload_folder, quit_app,
+    reattach_pty, remove_connection, remove_environment, resize_pty, save_desktop_settings,
+    save_workspace_config, seal_session_ui, set_active_env, spawn_pty, start_agent, start_upload,
+    write_pty, PtyState, UploadState,
 };
 use kerberos::{acquire_kerberos_ticket, get_kerberos_status, renew_kerberos_ticket};
 use std::collections::HashMap;
@@ -43,6 +44,7 @@ pub fn run() {
         .manage(PtyState {
             sessions: Arc::new(Mutex::new(HashMap::new())),
         })
+        .manage(UploadState::default())
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_background_color(Some(tauri::window::Color(9, 9, 11, 255)));
@@ -117,6 +119,10 @@ pub fn run() {
             commands::run_batch_command,
             commands::get_app_version,
             commands::list_remote_directory,
+            pick_upload_files,
+            pick_upload_folder,
+            start_upload,
+            cancel_upload,
             tray::refresh_tray_menu,
             tray::send_desktop_notification,
             commands::get_env_status,

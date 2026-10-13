@@ -36,6 +36,26 @@ pub fn truncate_display(s: &str, max_chars: usize) -> String {
     out
 }
 
+/// Format a byte count as a human-readable string (B/KiB/MiB/GiB/TiB).
+pub fn format_bytes(bytes: u64) -> String {
+    const KIB: f64 = 1024.0;
+    const MIB: f64 = KIB * 1024.0;
+    const GIB: f64 = MIB * 1024.0;
+    const TIB: f64 = GIB * 1024.0;
+    let b = bytes as f64;
+    if b >= TIB {
+        format!("{:.1} TiB", b / TIB)
+    } else if b >= GIB {
+        format!("{:.1} GiB", b / GIB)
+    } else if b >= MIB {
+        format!("{:.1} MiB", b / MIB)
+    } else if b >= KIB {
+        format!("{:.1} KiB", b / KIB)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
 /// Format an elapsed duration compactly (e.g. "42s", "3m 5s", "2h 10m").
 pub fn format_elapsed(duration: chrono::Duration) -> String {
     let secs = duration.num_seconds();

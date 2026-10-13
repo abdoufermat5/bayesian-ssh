@@ -470,26 +470,37 @@ pub enum Commands {
         command: Vec<String>,
     },
 
-    /// Upload a file or directory to a remote host (SFTP or SCP fallback)
+    /// Upload a file or directory to one or many remote hosts in parallel
     #[command(
-        long_about = "Transfer a local file or directory to the remote host.\n\
+        override_usage = "bssh upload [OPTIONS] [TARGETS] <LOCAL> <REMOTE>",
+        long_about = "Transfer a local file or directory to one or more hosts, in parallel.\n\
             Uses SFTP for native connections and falls back to SCP automatically\n\
             when connecting through an interactive bastion.\n\n\
+            Targets are comma-separated names/aliases/hosts, e.g. `web1,web2,db1`.\n\
+            Use --all or -t/--tag to select many hosts without listing them.\n\n\
             Examples:\n\
-              bssh upload web-prod ./deploy.tar.gz /opt/releases/deploy.tar.gz\n\
-              bssh upload web-prod -r ./config/ /etc/myapp/ --mode 0o600\n\
-              bssh upload db01 dump.sql /tmp/dump.sql --offset 1048576"
+              bssh upload web1,web2 ./app.tar.gz /opt/app/\n\
+              bssh upload -t prod ./app.tar.gz /opt/app/\n\
+              bssh upload --all --dry-run ./app.tar.gz /opt/app/\n\
+              bssh upload web-prod -r ./config/ /etc/myapp/ --mode 0o600"
     )]
     Upload {
-        /// Connection name, alias, or hostname
-        target: String,
-        /// Local file or directory to upload
-        #[arg(value_name = "LOCAL")]
-        local: std::path::PathBuf,
-        /// Destination path on the remote host
-        #[arg(value_name = "REMOTE")]
-        remote: String,
-        /// Resume an interrupted upload starting at this byte offset
+        /// Targets, local path and remote path: [TARGETS] LOCAL REMOTE
+        #[arg(value_names = ["TARGETS", "LOCAL", "REMOTE"], num_args = 1..=3)]
+        args: Vec<String>,
+        /// Upload to all saved connections in parallel
+        #[arg(short = 'a', long, conflicts_with = "tag")]
+        all: bool,
+        /// Upload to connections matching this tag
+        #[arg(short = 't', long, value_name = "TAG", conflicts_with = "all")]
+        tag: Option<String>,
+        /// Preview target hosts and resolved remote paths without connecting
+        #[arg(long)]
+        dry_run: bool,
+        /// Maximum number of hosts to upload to concurrently
+        #[arg(short = 'j', long, value_name = "N", default_value_t = crate::cli::utils::MAX_PARALLEL_HOSTS)]
+        parallel: usize,
+        /// Resume an interrupted upload starting at this byte offset (single host only)
         #[arg(long, default_value = "0", value_name = "BYTES")]
         offset: u64,
         /// Set file permissions on the remote side (octal, e.g. 0o644)

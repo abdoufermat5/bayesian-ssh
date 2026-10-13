@@ -129,8 +129,8 @@ The Files view browses a remote directory over SFTP. Pick a host and press
 - List and grid layouts are available; each entry shows its type icon, size,
   permissions and modification time, and its remote path can be copied.
 
-The browser is read-only: it lists directories and reports errors, but it does not
-upload or download files.
+The browser is read-only for its own navigation: it lists directories and reports
+errors. The desktop app can also upload a file to several hosts at once.
 
 ### Tunnels
 

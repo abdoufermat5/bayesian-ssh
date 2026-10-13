@@ -69,3 +69,6 @@ zeroize = { version = "1.7", features = ["zeroize_derive"] }
 crossterm = "0.28"
 toml = "1.0.3"
 tempfile = "3"
+
+# Progress bars for transfer commands
+indicatif = "0.17"

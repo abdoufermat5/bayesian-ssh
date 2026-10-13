@@ -177,15 +177,17 @@ impl Cli {
                 command,
             } => commands::exec::execute(target, all, tag, dry_run, command, config).await,
             Commands::Upload {
-                target,
-                local,
-                remote,
+                args,
+                all,
+                tag,
+                dry_run,
+                parallel,
                 offset,
                 mode,
                 recursive,
             } => {
                 commands::transfer::execute_upload(
-                    target, local, remote, offset, mode, recursive, config,
+                    args, all, tag, dry_run, parallel, offset, mode, recursive, config,
                 )
                 .await
             }

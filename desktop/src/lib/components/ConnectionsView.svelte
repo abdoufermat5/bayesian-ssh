@@ -13,6 +13,7 @@
     Server,
     SquareTerminal,
     Trash2,
+    Upload,
     X,
   } from "lucide-svelte";
   import { invoke } from "@tauri-apps/api/core";
@@ -41,6 +42,7 @@
     onAddHost: () => void;
     onImportSshConfig: () => void;
     onOpenBatchExec: () => void;
+    onOpenUpload: () => void;
   }
 
   let {
@@ -62,6 +64,7 @@
     onAddHost,
     onImportSshConfig,
     onOpenBatchExec,
+    onOpenUpload,
   }: Props = $props();
 
   type SortKey = "bayesian" | "name" | "recent" | "host";
@@ -403,6 +406,16 @@
       >
         <SquareTerminal size={14} />
         Batch run
+      </button>
+      <button
+        type="button"
+        class="btn btn-ghost"
+        onclick={onOpenUpload}
+        disabled={connections.length === 0}
+        title="Upload files to several hosts"
+      >
+        <Upload size={14} />
+        Upload files
       </button>
       <button type="button" class="btn btn-primary" onclick={onAddHost} title="New host (N)">
         <Plus size={15} />

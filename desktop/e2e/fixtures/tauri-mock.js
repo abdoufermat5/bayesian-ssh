@@ -22,6 +22,17 @@
  *   window.__SFTP_DELAY     - ms delay for `list_remote_directory`.
  *   window.__AUDIT_DELAY    - ms delay for `run_security_audit`.
  *   window.__BATCH_DELAY    - ms delay for `run_batch_command` (default 300).
+ *   window.__UPLOAD_DELAY   - ms delay per upload progress step (default 20).
+ *   window.__UPLOAD_SCP_HOSTS  - host names that report `viaScp` (default
+ *                             ["homelab-nas"]).
+ *   window.__UPLOAD_FAIL_HOSTS - host names whose upload fails (default
+ *                             ["build-runner"]).
+ *
+ * ## Simulating backend events
+ *   window.__MOCK_EMIT(event, payload) delivers `payload` to every listener
+ *   registered for `event` (e.g. `__MOCK_EMIT("tauri://drag-drop", {paths})`).
+ *   The upload handlers below use it to stream `upload-event` /
+ *   `upload-finished` exactly like the Rust side does.
  *
  * ## Command overrides
  *   window.__MOCK_OVERRIDES = { [cmd]: (args) => value }
@@ -136,6 +147,84 @@
 
   let newId = 100;
   const findConn = (idOrName) => conns.find((c) => c.id === idOrName || c.name === idOrName);
+
+  // ── Upload simulation ──────────────────────────────────────────────────────
+  // Mirrors `start_upload` in `crates/gui/src/commands/upload.rs`: progress and
+  // completion arrive as Tauri events, not as the invoke's return value.
+  const uploadJobs = new Map();
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  async function simulateUpload(jobId, state, ids, paths, remoteDir) {
+    const delay = window.__UPLOAD_DELAY != null ? window.__UPLOAD_DELAY : 20;
+    const scpHosts = window.__UPLOAD_SCP_HOSTS || ["homelab-nas"];
+    const failHosts = window.__UPLOAD_FAIL_HOSTS || ["build-runner"];
+    const total = 1024 * 1024;
+    const results = [];
+    const hostOf = (id) => conns.find((x) => x.id === id) || conns[0];
+
+    const cancelIfAsked = () => {
+      if (!state.cancelled) return false;
+      uploadJobs.delete(jobId);
+      window.__MOCK_EMIT("upload-finished", { jobId, cancelled: true, results: [], error: null });
+      return true;
+    };
+
+    for (const localPath of paths) {
+      const base = localPath.split("/").filter(Boolean).pop() || "file";
+      const dir = remoteDir.endsWith("/") ? remoteDir : remoteDir + "/";
+      const remotePath = dir + base;
+      const emitEvent = (event) => window.__MOCK_EMIT("upload-event", { jobId, localPath, event });
+      const hosts = [];
+
+      for (const id of ids) {
+        const c = hostOf(id);
+        emitEvent({ kind: "started", connectionId: c.id, name: c.name, host: c.host });
+      }
+
+      const steps = 4;
+      for (let s = 1; s <= steps; s++) {
+        await sleep(delay);
+        if (cancelIfAsked()) return;
+        for (const id of ids) {
+          const c = hostOf(id);
+          if (scpHosts.includes(c.name)) continue;
+          emitEvent({
+            kind: "progress",
+            connectionId: c.id,
+            bytesDone: Math.round((total * s) / steps),
+            bytesTotal: total,
+          });
+        }
+      }
+
+      await sleep(delay);
+      if (cancelIfAsked()) return;
+
+      for (const id of ids) {
+        const c = hostOf(id);
+        const fail = failHosts.includes(c.name);
+        const host = {
+          connectionId: c.id,
+          name: c.name,
+          host: c.host,
+          ok: !fail,
+          error: fail ? `ssh: connect to host ${c.host} port 22: Connection timed out` : null,
+          files: 1,
+          bytes: fail ? 0 : total,
+          viaScp: scpHosts.includes(c.name),
+          remotePath,
+          elapsedMs: fail ? 320 : 120 + delay * steps,
+        };
+        hosts.push(host);
+        emitEvent({ kind: "finished", result: host });
+      }
+
+      results.push({ localPath, hosts });
+    }
+
+    uploadJobs.delete(jobId);
+    window.__MOCK_EMIT("upload-finished", { jobId, cancelled: false, results, error: null });
+  }
 
   const handlers = {
     needs_onboarding: () => !!window.__ONBOARD && !onboardingComplete,
@@ -346,6 +435,26 @@
       };
     },
     fix_security_permissions: () => 1,
+    pick_upload_files: () => ["/home/me/notes.md"],
+    pick_upload_folder: () => "/home/me/project",
+    start_upload: async (a) => {
+      const jobId = "job-" + newId++;
+      const ids = (a && (a.connectionIds || a.connection_ids)) || [];
+      const paths = (a && (a.localPaths || a.local_paths)) || [];
+      const remoteDir = (a && (a.remoteDir || a.remote_dir)) || "/";
+      const state = { cancelled: false };
+      uploadJobs.set(jobId, state);
+      setTimeout(() => {
+        void simulateUpload(jobId, state, ids, paths, remoteDir);
+      }, 0);
+      return jobId;
+    },
+    cancel_upload: (a) => {
+      const jobId = a && (a.jobId || a.job_id);
+      const state = uploadJobs.get(jobId);
+      if (state) state.cancelled = true;
+      return null;
+    },
     get_kerberos_status: () => kerberosStatus(),
     renew_kerberos_ticket: () => kerberosStatus(),
     acquire_kerberos_ticket: () => kerberosStatus(),
@@ -382,6 +491,20 @@
     window.__IPC_LOG.length = 0;
   };
 
+  // Tauri event delivery: `listen()` hands the backend a callback id, and
+  // emitting replays the event through `runCallback`. `__MOCK_EMIT` stands in
+  // for a Rust `emit` so tests (and the upload simulation) can push events.
+  const eventListeners = Object.create(null);
+  window.__MOCK_EMIT = (event, payload) => {
+    for (const listener of eventListeners[event] || []) {
+      window.__TAURI_INTERNALS__.runCallback(listener.handlerId, {
+        event,
+        id: listener.eventId,
+        payload,
+      });
+    }
+  };
+
   let cbId = 1;
   window.__TAURI_INTERNALS__ = {
     metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main", windowLabel: "main" } },
@@ -391,9 +514,33 @@
       return id;
     },
     unregisterCallback: () => {},
+    runCallback: (id, data) => {
+      const cb = window["_" + id];
+      if (typeof cb === "function") cb(data);
+    },
     convertFileSrc: (p) => p,
     invoke: async (cmd, args) => {
       window.__IPC_LOG.push({ cmd, args: args === undefined ? null : args });
+      if (cmd === "plugin:event|listen") {
+        const event = args && args.event;
+        const handler = args && args.handler;
+        const eventId = cbId++;
+        if (event != null && handler != null) {
+          (eventListeners[event] || (eventListeners[event] = [])).push({
+            eventId,
+            handlerId: handler,
+          });
+        }
+        return eventId;
+      }
+      if (cmd === "plugin:event|unlisten") {
+        const list = eventListeners[args && args.event];
+        if (list) {
+          const i = list.findIndex((l) => l.eventId === (args && args.eventId));
+          if (i >= 0) list.splice(i, 1);
+        }
+        return null;
+      }
       if (cmd.startsWith("plugin:event|")) return cbId++;
       if (cmd.startsWith("plugin:window|is_")) return false;
       if (cmd.startsWith("plugin:")) return null;

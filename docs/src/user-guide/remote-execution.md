@@ -27,19 +27,40 @@ The remote process’s stdout and stderr are streamed back, and `bayesian-ssh` e
 
 When a connection has both Kerberos and an interactive bastion configured, `exec` can’t pass the command as SSH arguments (the bastion would treat them as a target name). Instead, it opens a PTY shell, drains the bastion banner/MOTD, brackets the command with unique `BSSH_<id>_START` / `BSSH_<id>_END` markers, and extracts the clean output between them. The PTY is widened to 200 columns so column-aware tools (`ls -l`, `ps`, etc.) don’t wrap or pad to 80 columns.
 
-## `upload` — Send Files to a Remote Host
+## `upload` — Send Files to One or Many Hosts
 
 ```bash
-bayesian-ssh upload <host> <local-path> <remote-path> [--recursive]
+bayesian-ssh upload <targets> <local-path> <remote-path> [--recursive]
 ```
 
+`<targets>` is a comma-separated list of connection names, aliases or hostnames.
+Every target receives the same file or directory, in parallel. Use `--all` or
+`-t/--tag <tag>` to select hosts without listing them:
+
 ```bash
-# Single file
+# One or many hosts (comma-separated)
 bayesian-ssh upload web-prod ./config.yml /etc/myapp/config.yml
+bayesian-ssh upload web1,web2,db1 ./app.tar.gz /opt/app/
 
-# Whole directory
-bayesian-ssh upload web-prod ./dist /var/www/app --recursive
+# By tag or all hosts
+bayesian-ssh upload -t prod ./app.tar.gz /opt/app/
+bayesian-ssh upload --all ./app.tar.gz /opt/app/
+
+# Preview the targets and resolved paths without connecting
+bayesian-ssh upload --all --dry-run ./app.tar.gz /opt/app/
+
+# Whole directory (single host)
+bayesian-ssh upload web-prod -r ./dist /var/www/app
 ```
+
+A destination ending in `/` (or an existing remote directory) receives the file
+under its local basename: `upload web1,web2 ./app.tar.gz /opt/app/` writes
+`/opt/app/app.tar.gz`. A local directory tree is copied into the destination as-is.
+
+By default up to `--parallel` hosts (default 16) transfer at once; `-j/--parallel N`
+adjusts the limit. `--offset` resumes a single file on a single host. Progress bars
+show per-host bytes, throughput and ETA on a terminal, followed by a summary; the
+command exits non-zero when any host fails.
 
 Uses native SFTP via `russh-sftp` when available and falls back to `scp` for transports that don’t support it.
 

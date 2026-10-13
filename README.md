@@ -132,6 +132,21 @@ bayesian-ssh import
 bayesian-ssh-desktop                      # Launches the desktop GUI client
 ```
 
+### File Transfer
+```bash
+# Upload the same file to several hosts in parallel
+bayesian-ssh upload web1,web2 ./app.tar.gz /opt/app/
+bayesian-ssh upload -t prod ./app.tar.gz /opt/app/     # every host tagged "prod"
+bayesian-ssh upload --all --dry-run ./app.tar.gz /opt/ # preview targets first
+
+# Upload a directory tree to one host
+bayesian-ssh upload web-prod -r ./dist /var/www/app --mode 0o755
+
+# Download a file or directory from a host
+bayesian-ssh download db-prod /var/log/postgres.log ./postgres.log
+bayesian-ssh download db-prod -r /var/backups ./backups
+```
+
 ### Session Management
 ```bash
 # View session history with stats

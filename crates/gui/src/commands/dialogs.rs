@@ -44,6 +44,46 @@ pub fn pick_ssh_config_file(window: tauri::WebviewWindow) -> Result<Option<Strin
 }
 
 #[tauri::command]
+pub fn pick_upload_files(window: tauri::WebviewWindow) -> Result<Vec<String>, String> {
+    let mut dialog = rfd::FileDialog::new()
+        .set_title("Select Files to Upload")
+        .set_parent(&window);
+
+    if let Some(home) = dirs::home_dir() {
+        dialog = dialog.set_directory(home);
+    }
+
+    let _ = window.minimize();
+    let files = dialog.pick_files();
+    let _ = window.unminimize();
+    let _ = window.set_focus();
+
+    Ok(files
+        .unwrap_or_default()
+        .into_iter()
+        .map(|p| p.to_string_lossy().to_string())
+        .collect())
+}
+
+#[tauri::command]
+pub fn pick_upload_folder(window: tauri::WebviewWindow) -> Result<Option<String>, String> {
+    let mut dialog = rfd::FileDialog::new()
+        .set_title("Select Folder to Upload")
+        .set_parent(&window);
+
+    if let Some(home) = dirs::home_dir() {
+        dialog = dialog.set_directory(home);
+    }
+
+    let _ = window.minimize();
+    let folder = dialog.pick_folder();
+    let _ = window.unminimize();
+    let _ = window.set_focus();
+
+    Ok(folder.map(|p| p.to_string_lossy().to_string()))
+}
+
+#[tauri::command]
 pub fn save_backup_file(window: tauri::WebviewWindow) -> Result<Option<String>, String> {
     let mut dialog = rfd::FileDialog::new()
         .set_title("Export Bayesian SSH Backup")

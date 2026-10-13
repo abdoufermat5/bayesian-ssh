@@ -13,6 +13,7 @@
     ShieldCheck,
     Terminal,
     TerminalSquare,
+    Upload,
     Wrench,
     X,
   } from "lucide-svelte";
@@ -29,6 +30,7 @@
     onConnectHost: (conn: Connection) => void;
     onOpenAddModal: () => void;
     onOpenBatchExec: () => void;
+    onOpenUpload: () => void;
     onPingAll: () => void;
     onFixPermissions: () => void;
     onOpenKeys: () => void;
@@ -46,6 +48,7 @@
     onConnectHost,
     onOpenAddModal,
     onOpenBatchExec,
+    onOpenUpload,
     onPingAll,
     onFixPermissions,
     onOpenKeys,
@@ -129,6 +132,15 @@
         category: "Actions",
         icon: Terminal,
         action: () => run(onOpenBatchExec),
+      },
+      {
+        id: "act-upload-files",
+        title: "Upload files…",
+        subtitle: "Copy files or folders to several hosts",
+        keywords: "upload scp sftp transfer multi",
+        category: "Actions",
+        icon: Upload,
+        action: () => run(onOpenUpload),
       },
       {
         id: "act-ping-all",

@@ -7,8 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Multi-host `upload`**: `bssh upload` now takes a comma-separated target list (`web1,web2,db1`) or the same `--all` / `-t/--tag` selectors as `exec`, and transfers to every host in parallel (`-j/--parallel`, default 16). New `--dry-run` previews the resolved remote paths without connecting. A destination ending in `/` (or an existing remote directory) receives the file under its local basename. A shared `bayesian_ssh::services::upload` service exposes the upload to the desktop GUI.
+- **Transfer progress bars**: `upload` and `download` show `indicatif` progress (per-host bars with bytes done/total, throughput and ETA) when stderr is a terminal, and a per-host line plus a summary (bytes, duration, failures) otherwise. `upload` exits non-zero when any host fails.
+
+### Changed
+- `transfer` command progress now uses human-readable sizes (KiB/MiB/GiB) and a single shared upload path across the CLI and GUI.
+
 ### Fixed
-- **`install.sh` installs the desktop app by default**: the one-liner now installs the CLI (`bayesian-ssh` + `bssh`) and the desktop app (`bayesian-ssh-desktop`, menu entry and icon), as the README describes; `--no-gui` installs the CLI only. The old `--desktop` flag (desktop app without the CLI) is removed, the interactive menu offers CLI + desktop or CLI only, every download is verified before anything is installed, the menu entry no longer fails on systems without `/usr/share/applications`, and a missing WebKitGTK 4.1 runtime is reported.
+- `install.sh` installs the desktop app by default: the one-liner now installs the CLI (`bayesian-ssh` + `bssh`) and the desktop app (`bayesian-ssh-desktop`, menu entry and icon), as the README describes; `--no-gui` installs the CLI only. The old `--desktop` flag (desktop app without the CLI) is removed, the interactive menu offers CLI + desktop or CLI only, every download is verified before anything is installed, the menu entry no longer fails on systems without `/usr/share/applications`, and a missing WebKitGTK 4.1 runtime is reported.
+- Recursive uploads reported the size of the current file instead of the whole tree as the progress total (the percentage jumped around and could exceed 100%); progress is now cumulative across the tree and advances per chunk.
 
 ## [2.6.0] - 2026-10-08
 

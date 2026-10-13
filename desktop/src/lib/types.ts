@@ -140,3 +140,39 @@ export interface UpdateInfo {
  * was installed. `null`: the in-app updater applies.
  */
 export type UpdateChannel = "snap" | "manual";
+
+/** Outcome of one local file/directory upload to one host. */
+export interface HostUploadResult {
+  connectionId: string;
+  name: string;
+  host: string;
+  ok: boolean;
+  error?: string | null;
+  files: number;
+  bytes: number;
+  viaScp: boolean;
+  /** Final remote path the upload resolved to. */
+  remotePath: string;
+  elapsedMs: number;
+}
+
+/** Streaming event emitted by `upload-event` (tagged by `kind`). */
+export type UploadEvent =
+  | { kind: "started"; connectionId: string; name: string; host: string }
+  | { kind: "progress"; connectionId: string; bytesDone: number; bytesTotal?: number | null }
+  | { kind: "finished"; result: HostUploadResult };
+
+/** Payload of the `upload-event` Tauri event. */
+export interface UploadEventPayload {
+  jobId: string;
+  localPath: string;
+  event: UploadEvent;
+}
+
+/** Payload of the `upload-finished` Tauri event. */
+export interface UploadFinishedPayload {
+  jobId: string;
+  cancelled: boolean;
+  results: Array<{ localPath: string; hosts: HostUploadResult[] }>;
+  error?: string | null;
+}
