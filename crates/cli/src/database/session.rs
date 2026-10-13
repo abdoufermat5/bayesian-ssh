@@ -185,19 +185,6 @@ impl Database {
         Ok(sessions)
     }
 
-    pub fn get_session_id_by_pid(&self, pid: u32) -> Result<Option<String>> {
-        let result = self.conn.query_row(
-            "SELECT id FROM sessions WHERE pid = ? AND ended_at IS NULL",
-            params![pid],
-            |row| row.get(0),
-        );
-        match result {
-            Ok(id) => Ok(Some(id)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(e.into()),
-        }
-    }
-
     pub fn mark_session_terminated(&self, session_id: &str, exit_code: i32) -> Result<()> {
         self.conn.execute(
             "UPDATE sessions SET ended_at = ?, status = ?, status_kind = ?, exit_code = ? WHERE id = ?",
@@ -224,5 +211,67 @@ impl Database {
             ],
         )?;
         Ok(())
+    }
+
+    /// Close sessions still recorded as open whose process is gone: the app
+    /// or terminal was killed, crashed, or quit before the exit was written.
+    /// The exit code is unknown, so it is left NULL. Returns the connection
+    /// name and PID of every session closed.
+    pub fn close_stale_sessions(&self) -> Result<Vec<(String, Option<u32>)>> {
+        let open: Vec<(String, String, Option<u32>)> = {
+            let mut stmt = self.conn.prepare(
+                "SELECT s.id, c.name, s.pid
+                 FROM sessions s
+                 JOIN connections c ON s.connection_id = c.id
+                 WHERE s.ended_at IS NULL",
+            )?;
+            let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
+            rows.collect::<rusqlite::Result<_>>()?
+        };
+
+        let mut closed = Vec::new();
+        for (id, name, pid) in open {
+            if pid.and_then(live_pid).is_some() {
+                continue;
+            }
+            self.conn.execute(
+                "UPDATE sessions SET ended_at = ?, status = ?, status_kind = ?
+                 WHERE id = ? AND ended_at IS NULL",
+                params![
+                    chrono::Utc::now().to_rfc3339(),
+                    serde_json::to_string(&crate::models::SessionStatus::Terminated)?,
+                    SessionStatusKind::Terminated.as_str(),
+                    id
+                ],
+            )?;
+            closed.push((name, pid));
+        }
+        Ok(closed)
+    }
+}
+
+/// Return the PID if it is a plausible session process that is still alive.
+///
+/// PIDs come from the database, so guard the `u32 → i32` conversion:
+/// 0 would signal our own process group, values above `i32::MAX` wrap to
+/// negative (signalling a whole process group), and 1 is init.
+pub fn live_pid(pid: u32) -> Option<nix::unistd::Pid> {
+    let raw = i32::try_from(pid).ok().filter(|&p| p > 1)?;
+    let target = nix::unistd::Pid::from_raw(raw);
+    // Signal 0 performs only the existence/permission check.
+    nix::sys::signal::kill(target, None).ok().map(|_| target)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::live_pid;
+
+    #[test]
+    fn live_pid_rejects_dangerous_values() {
+        assert!(live_pid(0).is_none());
+        assert!(live_pid(1).is_none());
+        assert!(live_pid(u32::MAX).is_none());
+        assert!(live_pid(i32::MAX as u32 + 1).is_none());
+        assert!(live_pid(std::process::id()).is_some());
     }
 }

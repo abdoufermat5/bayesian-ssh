@@ -2,10 +2,9 @@
 
 use crate::cli::utils::{confirm, format_elapsed, truncate_display};
 use crate::config::AppConfig;
-use crate::database::Database;
+use crate::database::{live_pid, Database};
 use anyhow::Result;
 use nix::sys::signal::{kill, Signal};
-use nix::unistd::Pid;
 
 /// Execute the close command
 pub async fn execute(
@@ -178,52 +177,19 @@ fn close_all_sessions(db: &Database, force: bool) -> Result<()> {
 
 /// Clean up stale sessions (PIDs no longer running)
 fn cleanup_stale_sessions(db: &Database) -> Result<()> {
-    let sessions = db.get_active_sessions()?;
-    let mut cleaned = 0;
-
-    for (conn_name, pid, _) in &sessions {
-        if let Some(p) = pid {
-            if live_pid(*p).is_none() {
-                if let Some(session_id) = db.get_session_id_by_pid(*p)? {
-                    db.mark_session_terminated(&session_id, -1)?;
-                    cleaned += 1;
-                    println!("🧹 Cleaned stale session: {} (PID {})", conn_name, p);
-                }
-            }
+    let cleaned = db.close_stale_sessions()?;
+    for (conn_name, pid) in &cleaned {
+        match pid {
+            Some(p) => println!("🧹 Cleaned stale session: {} (PID {})", conn_name, p),
+            None => println!("🧹 Cleaned stale session: {}", conn_name),
         }
     }
 
-    if cleaned == 0 {
+    if cleaned.is_empty() {
         println!("✨ No stale sessions found.");
     } else {
-        println!("\n✅ Cleaned {} stale session(s)", cleaned);
+        println!("\n✅ Cleaned {} stale session(s)", cleaned.len());
     }
 
     Ok(())
-}
-
-/// Return the PID if it is a plausible session process that is still alive.
-///
-/// PIDs come from the database, so guard the `u32 → i32` conversion:
-/// 0 would signal our own process group, values above `i32::MAX` wrap to
-/// negative (signalling a whole process group), and 1 is init.
-fn live_pid(pid: u32) -> Option<Pid> {
-    let raw = i32::try_from(pid).ok().filter(|&p| p > 1)?;
-    let target = Pid::from_raw(raw);
-    // Signal 0 performs only the existence/permission check.
-    kill(target, None).ok().map(|_| target)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::live_pid;
-
-    #[test]
-    fn live_pid_rejects_dangerous_values() {
-        assert!(live_pid(0).is_none());
-        assert!(live_pid(1).is_none());
-        assert!(live_pid(u32::MAX).is_none());
-        assert!(live_pid(i32::MAX as u32 + 1).is_none());
-        assert!(live_pid(std::process::id()).is_some());
-    }
 }

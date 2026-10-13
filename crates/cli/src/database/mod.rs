@@ -17,6 +17,7 @@ mod session;
 mod tag;
 
 pub use search::SearchField;
+pub use session::live_pid;
 
 const SCHEMA_VERSION: i32 = 4;
 
@@ -334,7 +335,7 @@ impl Database {
             "CREATE INDEX IF NOT EXISTS idx_connection_tags_tag ON connection_tags(tag)",
             [],
         )?;
-        // `get_session_id_by_pid` (stale-session cleanup) filters on pid.
+        // Index on sessions.pid; existing databases already carry it.
         self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_sessions_pid ON sessions(pid)",
             [],
@@ -432,6 +433,43 @@ mod tests {
         assert_eq!(escape_like("a_b"), "a\\_b");
         assert_eq!(escape_like("a\\b"), "a\\\\b");
         assert_eq!(escape_like("plain"), "plain");
+    }
+
+    #[test]
+    fn close_stale_sessions_ends_only_sessions_whose_process_is_gone() {
+        use crate::models::{Session, SessionStatus};
+
+        let dir = tempdir().unwrap();
+        let db = open(dir.path());
+        let conn = sample("web");
+        db.add_connection(&conn).unwrap();
+
+        // A pid that existed and has been reaped, so it is no longer alive.
+        let mut child = std::process::Command::new("true").spawn().unwrap();
+        let dead_pid = child.id();
+        child.wait().unwrap();
+
+        let mut live = Session::new(conn.clone());
+        live.mark_active(std::process::id());
+        db.add_session(&live).unwrap();
+        let mut dead = Session::new(conn.clone());
+        dead.mark_active(dead_pid);
+        db.add_session(&dead).unwrap();
+        let mut finished = Session::new(conn);
+        finished.mark_terminated(0);
+        db.add_session(&finished).unwrap();
+
+        let closed = db.close_stale_sessions().unwrap();
+        assert_eq!(closed, vec![("web".to_string(), Some(dead_pid))]);
+
+        let history = db.get_session_history(None, 10, None, false).unwrap();
+        let open: Vec<_> = history.iter().filter(|e| e.ended_at.is_none()).collect();
+        assert_eq!(open.len(), 1, "only the live session stays open");
+        assert!(matches!(open[0].status, SessionStatus::Active));
+        // Unknown exit: the reconciled session must not be reported as failed.
+        assert!(history
+            .iter()
+            .all(|e| e.ended_at.is_none() || e.exit_code.is_none_or(|c| c == 0)));
     }
 
     #[test]

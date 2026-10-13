@@ -17,6 +17,9 @@ pub async fn execute(
 ) -> Result<()> {
     let db = Database::new(&config)?;
 
+    // Sessions whose process is gone would otherwise be listed as active.
+    db.close_stale_sessions()?;
+
     // Get session history with filters
     let sessions = db.get_session_history(connection.as_deref(), limit, days, show_failed)?;
 

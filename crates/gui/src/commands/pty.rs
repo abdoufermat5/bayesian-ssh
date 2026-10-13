@@ -130,10 +130,11 @@ fn finalize_db_session(db_session_id: Option<Uuid>, exit_code: i32) {
     }
 }
 
-/// Wait for a removed session's child (so it is not left as a zombie) and
-/// record its exit in the history database. Blocks until the child exits, so
-/// callers run it off the main thread.
-fn reap_session(session: PtySession) {
+/// Wait for a removed session's child (so it is not left as a zombie), record
+/// its exit in the history database, then emit `history-updated` so the UI
+/// reloads history only once the end is persisted. Blocks until the child
+/// exits, so callers run it off the main thread.
+fn reap_session(session: PtySession, app: &AppHandle) {
     let PtySession {
         mut child,
         db_session_id,
@@ -149,7 +150,10 @@ fn reap_session(session: PtySession) {
         .wait()
         .map(|status| status.exit_code() as i32)
         .unwrap_or(-1);
-    finalize_db_session(db_session_id, exit_code);
+    if db_session_id.is_some() {
+        finalize_db_session(db_session_id, exit_code);
+        let _ = app.emit("history-updated", ());
+    }
 }
 
 // Opens the database and forks ssh: keep it off the main/UI thread.
@@ -267,7 +271,8 @@ pub fn spawn_pty(
                 let mut session = session;
                 session.cancelled.store(true, Ordering::SeqCst);
                 let _ = session.child.kill();
-                std::thread::spawn(move || reap_session(session));
+                let app = app.clone();
+                std::thread::spawn(move || reap_session(session, &app));
                 return Err(format!("PTY session '{session_id}' already exists"));
             }
         }
@@ -338,7 +343,7 @@ pub fn spawn_pty(
             let _ = app_handle.emit_to(MAIN_WINDOW_LABEL, "pty-exit", &session_id_clone);
 
             if let Some(session) = finished {
-                reap_session(session);
+                reap_session(session, &app_handle);
                 let _ = app_handle.emit("session-closed", session_id_clone);
             }
         }
@@ -675,7 +680,8 @@ pub fn close_pty(
         }
 
         let _ = session.child.kill();
-        std::thread::spawn(move || reap_session(session));
+        let reap_app = app.clone();
+        std::thread::spawn(move || reap_session(session, &reap_app));
 
         let _ = app.emit("session-closed", session_id);
     }

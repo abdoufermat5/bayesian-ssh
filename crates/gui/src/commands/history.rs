@@ -12,6 +12,10 @@ pub fn get_stats() -> Result<ConnectionStats, String> {
 pub fn get_history(limit: Option<usize>) -> Result<Vec<SessionHistoryEntry>, String> {
     let (db, config) = get_db_and_config()?;
 
+    // Sessions whose process is gone (app quit/crash, killed terminal) would
+    // otherwise stay "Running" forever.
+    db.close_stale_sessions().map_err(|e| e.to_string())?;
+
     let effective_limit = limit.unwrap_or(config.max_history_size.max(1));
     db.get_session_history(None, effective_limit, None, false)
         .map_err(|e| e.to_string())

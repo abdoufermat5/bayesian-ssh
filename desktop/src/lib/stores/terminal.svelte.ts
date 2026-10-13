@@ -196,10 +196,16 @@ let unlistenOutput: UnlistenFn | null = null;
 let unlistenExit: UnlistenFn | null = null;
 let unlistenSessionClosed: UnlistenFn | null = null;
 let unlistenSessionDocked: UnlistenFn | null = null;
+let unlistenHistoryUpdated: UnlistenFn | null = null;
 
-type ExitCallback = (sessionId: string) => void | Promise<void>;
+type HistoryCallback = () => void | Promise<void>;
 
-let onSessionExit: ExitCallback | null = null;
+/**
+ * Called on `history-updated`, which the backend emits only after a session's
+ * end has been written to the database. Reloading on `pty-exit` instead raced
+ * that write and left closed sessions displayed as "Running".
+ */
+let onHistoryUpdated: HistoryCallback | null = null;
 
 function findTab(tabId: string): TabState | undefined {
   return tabs.find((t) => t.id === tabId);
@@ -574,7 +580,7 @@ async function syncActiveSessionCount() {
   }
 }
 
-export async function initTerminalListeners(onExit?: ExitCallback) {
+export async function initTerminalListeners(onHistoryChanged?: HistoryCallback) {
   if (listenersReady) return;
   if (listenersInFlight) {
     // Registration already in progress — wait for it to finish.
@@ -582,7 +588,7 @@ export async function initTerminalListeners(onExit?: ExitCallback) {
     if (listenersReady) return;
   }
 
-  onSessionExit = onExit ?? null;
+  onHistoryUpdated = onHistoryChanged ?? null;
 
   const registration = (async () => {
     initThemeSyncForTerminals();
@@ -603,13 +609,11 @@ export async function initTerminalListeners(onExit?: ExitCallback) {
 
       if (findDetachedSession(sessionId)) {
         removeDetachedSession(sessionId);
-        onSessionExit?.(sessionId);
         return;
       }
 
       if (popoutSessions.some((s) => s.id === sessionId)) {
         removePopoutSession(sessionId);
-        onSessionExit?.(sessionId);
         return;
       }
 
@@ -626,8 +630,6 @@ export async function initTerminalListeners(onExit?: ExitCallback) {
       setTimeout(() => {
         cleanupTabUi(sessionId);
       }, 800);
-
-      onSessionExit?.(sessionId);
     });
 
     unlistenSessionClosed = await listen("session-closed", async () => {
@@ -648,6 +650,10 @@ export async function initTerminalListeners(onExit?: ExitCallback) {
       await syncActiveSessionCount();
     });
 
+    unlistenHistoryUpdated = await listen("history-updated", () => {
+      void onHistoryUpdated?.();
+    });
+
     listenersReady = true;
     listenersInFlight = null;
   })();
@@ -666,10 +672,12 @@ export async function teardownTerminalListeners() {
   unlistenExit?.();
   unlistenSessionClosed?.();
   unlistenSessionDocked?.();
+  unlistenHistoryUpdated?.();
   unlistenOutput = null;
   unlistenExit = null;
   unlistenSessionClosed = null;
   unlistenSessionDocked = null;
+  unlistenHistoryUpdated = null;
   listenersReady = false;
   listenersInFlight = null;
 }
