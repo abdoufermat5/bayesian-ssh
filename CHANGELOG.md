@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-10-13
+
 ### Added
 - **Multi-host `upload`**: `bssh upload` now takes a comma-separated target list (`web1,web2,db1`) or the same `--all` / `-t/--tag` selectors as `exec`, and transfers to every host in parallel (`-j/--parallel`, default 16). New `--dry-run` previews the resolved remote paths without connecting. A destination ending in `/` (or an existing remote directory) receives the file under its local basename. A shared `bayesian_ssh::services::upload` service exposes the upload to the desktop GUI.
 - **Transfer progress bars**: `upload` and `download` show `indicatif` progress (per-host bars with bytes done/total, throughput and ETA) when stderr is a terminal, and a per-host line plus a summary (bytes, duration, failures) otherwise. `upload` exits non-zero when any host fails.
