@@ -206,6 +206,7 @@ pub fn spawn_pty(
     if config.auto_save_history {
         let mut session = Session::new(connection.clone());
         session.transport = Some("subprocess".to_string());
+        session.context = bayesian_ssh::services::context::capture_without_cwd(&db);
         if let Err(e) = db.add_session(&session) {
             eprintln!("Failed to record session start: {e}");
         } else {
