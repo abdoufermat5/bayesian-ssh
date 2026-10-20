@@ -107,8 +107,13 @@ pub fn plan(
                 || updated.user != existing.user
                 || updated.key_path != existing.key_path
                 || updated.tags != existing.tags;
+            // Provider values reach the ssh argv, so an update must pass the
+            // same validation as a new host.
             if changed {
-                plan.update.push((existing.clone(), host.clone()));
+                match updated.validate() {
+                    Ok(()) => plan.update.push((existing.clone(), host.clone())),
+                    Err(reason) => plan.invalid.push((existing.name.clone(), reason)),
+                }
             }
             if existing.stale_since.is_some() {
                 let mut refreshed = existing.clone();

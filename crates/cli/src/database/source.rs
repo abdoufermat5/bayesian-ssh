@@ -141,7 +141,10 @@ impl Database {
         error: Option<&str>,
     ) -> Result<()> {
         self.conn.execute(
-            "UPDATE sources SET last_sync_at = ?2, last_sync_error = ?3 WHERE id = ?1",
+            "UPDATE sources
+             SET last_sync_at = CASE WHEN ?3 IS NULL THEN ?2 ELSE last_sync_at END,
+                 last_sync_error = ?3
+             WHERE id = ?1",
             params![id.to_string(), at.to_rfc3339(), error],
         )?;
         Ok(())
