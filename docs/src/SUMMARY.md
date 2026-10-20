@@ -22,6 +22,7 @@
 - [Environments](./user-guide/environments.md)
 - [Desktop GUI Mode](./user-guide/desktop.md)
 - [Import & Export](./user-guide/import-export.md)
+- [Predictive Connect](./user-guide/predictive-connect.md)
 
 ---
 
