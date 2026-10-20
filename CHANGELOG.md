@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Recorded sessions you can search**: opt-in recording of interactive session *output* (never keystrokes) as asciicast v2 files, from the CLI and the desktop app (`bssh config --recording on`, optionally `--recording-tags prod,db`; per session `bssh connect --record/--no-record`). Recordings live next to the database in `recordings/`, created `0600`, capped at 50 MiB each and pruned after 90 days. The plain text is indexed with SQLite FTS5: `bssh history --grep "systemctl restart nginx"` finds which host and when, `bssh history` shows a session id and a recorded marker, and `bssh replay <id> [--speed] [--idle-cap]` plays it back. The desktop History view gains a recorded marker, a search box over recorded output and a replay player.
+- **Predictive connect**: ranking now weighs the context a session is started from — the git repository you run `bssh` in, the hour of day, and the host you connected to just before — as smoothed likelihood ratios multiplied into the Bayesian score (clamped to ×0.25–×8, only with enough evidence). `bssh` with no arguments suggests the top 3 connections with a reason and connects on Enter; `bssh why <host>` prints the score factor by factor. The desktop app shows the suggestions in the Connections view and the command palette. Capture can be limited with `bssh config --capture-cwd off` or disabled with `--prediction off`.
+- **Live inventory sync**: `bssh source add|list|sync|remove` keeps connections in sync with an ssh config, an Ansible inventory, a Tailscale tailnet, AWS EC2 or GCP Compute (through each tool's own CLI, never a shell). Hosts are matched on their id inside the source, so IP changes update the same connection and keep its history; hosts that disappear are marked stale and only deleted with `--prune`; `--dry-run` previews a sync. `bssh list` and `bssh connect` flag stale hosts, and the desktop Settings gain an "Inventory sources" panel.
+
+### Changed
+- Database schema v7 (applied automatically): `sessions` gains `recording_path` and launch-context columns, a `session_text` FTS5 index and a `sources` table are added, and `connections` gains `source_id`, `external_id` and `stale_since`.
+- Bayesian search scores are now the plain product of their factors (the former `×100` scale is gone); ordering is unchanged.
+
 ## [2.7.0] - 2026-10-13
 
 ### Added
