@@ -8,6 +8,7 @@ use std::sync::Mutex;
 
 pub struct Database {
     pub(crate) conn: SqliteConnection,
+    pub(crate) window_days: u32,
 }
 
 mod alias;
@@ -17,7 +18,7 @@ mod session;
 mod source;
 mod tag;
 
-pub use search::SearchField;
+pub use search::{Prediction, RankContext, ScoreBreakdown, SearchField};
 pub use session::live_pid;
 pub use source::SourceSummary;
 
@@ -76,7 +77,10 @@ impl Database {
     fn open(config: &AppConfig) -> Result<Self> {
         let conn = SqliteConnection::open(&config.database_path)?;
         conn.busy_timeout(BUSY_TIMEOUT)?;
-        Ok(Database { conn })
+        Ok(Database {
+            conn,
+            window_days: config.prediction.window_days,
+        })
     }
 
     fn init(&self) -> Result<()> {

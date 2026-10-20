@@ -34,6 +34,20 @@ pub fn get_connections(
 }
 
 #[tauri::command(async)]
+pub fn predict_connections(
+    limit: Option<usize>,
+) -> Result<Vec<bayesian_ssh::database::Prediction>, String> {
+    let (db, config) = get_db_and_config()?;
+    let ctx = if config.prediction.enabled {
+        bayesian_ssh::database::RankContext::current_without_cwd(&db)
+    } else {
+        bayesian_ssh::database::RankContext::default()
+    };
+    db.predict(&ctx, limit.unwrap_or(3))
+        .map_err(friendly_db_error)
+}
+
+#[tauri::command(async)]
 #[allow(clippy::too_many_arguments)]
 pub fn add_connection(
     name: String,

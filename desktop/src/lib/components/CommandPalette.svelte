@@ -17,8 +17,10 @@
     Wrench,
     X,
   } from "lucide-svelte";
+  import { invoke } from "@tauri-apps/api/core";
   import { tick } from "svelte";
-  import type { AppTab, Connection, DesktopSettings } from "$lib/types";
+  import type { AppTab, Connection, DesktopSettings, Prediction } from "$lib/types";
+  import { formatRelative } from "$lib/utils/timezone";
 
   interface Props {
     open: boolean;
@@ -56,8 +58,8 @@
     onSelectTheme,
   }: Props = $props();
 
-  type Category = "Hosts" | "Actions" | "Navigation" | "Themes";
-  const CATEGORY_ORDER: Category[] = ["Hosts", "Actions", "Navigation", "Themes"];
+  type Category = "Suggested" | "Hosts" | "Actions" | "Navigation" | "Themes";
+  const CATEGORY_ORDER: Category[] = ["Suggested", "Hosts", "Actions", "Navigation", "Themes"];
 
   interface CommandItem {
     id: string;
@@ -92,6 +94,31 @@
   let selectedIndex = $state(0);
   let inputElement = $state<HTMLInputElement | null>(null);
   let listElement = $state<HTMLElement | null>(null);
+  let suggestions = $state.raw<Prediction[]>([]);
+
+  function suggestionReason(p: Prediction): string {
+    const b = p.breakdown;
+    const candidates: Array<{ key: "repo" | "after_prev" | "hour"; lr: number }> = [];
+    if (b.repo && b.repo > 1 && b.repo_hits > 0) candidates.push({ key: "repo", lr: b.repo });
+    if (b.after_prev && b.after_prev > 1 && b.after_prev_hits > 0)
+      candidates.push({ key: "after_prev", lr: b.after_prev });
+    if (b.hour && b.hour > 1 && b.hour_hits > 0) candidates.push({ key: "hour", lr: b.hour });
+    candidates.sort((a, c) => c.lr - a.lr);
+
+    if (candidates.length > 0) {
+      const top = candidates[0].key;
+      if (top === "repo") return `${b.repo_hits}/${b.total_w} from repo`;
+      if (top === "after_prev") return "Usually opened after recent session";
+      if (top === "hour") return `Used often around ${String(new Date().getHours()).padStart(2, "0")}:00`;
+    }
+    if (b.total_w > 0 && p.connection.last_used) {
+      return `Used ${b.total_w}× · last ${formatRelative(p.connection.last_used)}`;
+    }
+    if (b.total_w > 0) {
+      return `Used ${b.total_w}×`;
+    }
+    return p.connection.last_used ? `Last ${formatRelative(p.connection.last_used)}` : "Suggested";
+  }
 
   function run(fn: () => void) {
     fn();
@@ -207,12 +234,33 @@
     ),
   );
 
+  const suggestedItems = $derived(
+    suggestions.map(
+      (pred): CommandItem => ({
+        id: `suggested-${pred.connection.id}`,
+        title: pred.connection.name,
+        subtitle: suggestionReason(pred),
+        category: "Suggested",
+        icon: Server,
+        badge: pred.connection.use_kerberos ? "krb5" : undefined,
+        action: () => run(() => onConnectHost(pred.connection)),
+      }),
+    ),
+  );
+
   const groups = $derived.by((): CommandGroup[] => {
     const q = query.trim().toLowerCase();
-    const buckets: Record<Category, CommandItem[]> = { Hosts: [], Actions: [], Navigation: [], Themes: [] };
+    const buckets: Record<Category, CommandItem[]> = {
+      Suggested: [],
+      Hosts: [],
+      Actions: [],
+      Navigation: [],
+      Themes: [],
+    };
 
     if (!q) {
-      // Default view: top-ranked hosts, then actions and navigation.
+      // Default view: suggested hosts, top-ranked hosts, then actions and navigation.
+      buckets.Suggested = suggestedItems;
       buckets.Hosts = hostItems.slice(0, 5);
       for (const item of staticItems) {
         if (item.category !== "Themes") buckets[item.category].push(item);
@@ -250,8 +298,19 @@
     previousFocus = document.activeElement as HTMLElement | null;
     query = "";
     selectedIndex = 0;
+    let cancelled = false;
+    invoke<Prediction[]>("predict_connections", { limit: 3 })
+      .then((list) => {
+        if (!cancelled) {
+          suggestions = list.filter((p) => p.breakdown.total_w > 0 || Boolean(p.connection.last_used));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) suggestions = [];
+      });
     const raf = requestAnimationFrame(() => inputElement?.focus());
     return () => {
+      cancelled = true;
       cancelAnimationFrame(raf);
       previousFocus?.focus();
     };
@@ -372,7 +431,7 @@
                   {#if item.badge}
                     <span class="badge badge-neutral">{item.badge}</span>
                   {/if}
-                  {#if item.category === "Hosts" && active}
+                  {#if (item.category === "Hosts" || item.category === "Suggested") && active}
                     <span class="text-xs text-muted">Connect</span>
                     <kbd class="kbd">↵</kbd>
                   {:else if item.keys}

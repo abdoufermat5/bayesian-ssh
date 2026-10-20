@@ -25,7 +25,7 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     // Check if this is a completions command (don't log for completions)
-    let is_completions = matches!(&cli.command, Commands::Completions { .. });
+    let is_completions = matches!(&cli.command, Some(Commands::Completions { .. }));
 
     // Load configuration first (before initializing logging)
     let config = AppConfig::load(cli.env.clone())?;

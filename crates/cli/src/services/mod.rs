@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod auth;
+pub mod context;
 pub mod crypto;
 pub mod inventory;
 pub mod kerberos;

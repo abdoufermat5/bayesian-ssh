@@ -254,6 +254,7 @@ pub fn spawn_pty(
                 }
             }
         }
+        session.context = bayesian_ssh::services::context::capture_without_cwd(&db);
         if let Err(e) = db.add_session(&session) {
             eprintln!("Failed to record session start: {e}");
             recorder = None;

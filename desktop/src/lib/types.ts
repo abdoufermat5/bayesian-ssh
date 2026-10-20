@@ -216,3 +216,24 @@ export interface UploadFinishedPayload {
   results: Array<{ localPath: string; hosts: HostUploadResult[] }>;
   error?: string | null;
 }
+
+export interface ScoreBreakdown {
+  prior: number;
+  likelihood: number;
+  recency: number;
+  success: number;
+  repo?: number | null;
+  hour?: number | null;
+  after_prev?: number | null;
+  context_factor: number;
+  repo_hits: number;
+  hour_hits: number;
+  after_prev_hits: number;
+  total_w: number;
+}
+
+export interface Prediction {
+  connection: Connection;
+  score: number;
+  breakdown: ScoreBreakdown;
+}

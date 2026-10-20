@@ -20,7 +20,7 @@ pub struct Cli {
     pub env: Option<String>,
 
     #[command(subcommand)]
-    pub command: Commands,
+    pub command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
@@ -274,6 +274,12 @@ pub enum Commands {
         /// Record only connections carrying these comma-separated tags (empty string clears)
         #[arg(long, value_name = "TAGS")]
         recording_tags: Option<String>,
+        /// Enable or disable context-aware predictive ranking ("on" or "off")
+        #[arg(long, value_parser = ["on", "off"], value_name = "STATE")]
+        prediction: Option<String>,
+        /// Enable or disable capturing working directory and git root ("on" or "off")
+        #[arg(long, value_parser = ["on", "off"], value_name = "STATE")]
+        capture_cwd: Option<String>,
     },
 
     /// Show usage statistics (total connections, sessions, top hosts)
@@ -661,6 +667,19 @@ pub enum Commands {
         #[arg(short = 'f', long)]
         force: bool,
     },
+
+    /// Explain the predictive ranking score of a connection in the current context
+    #[command(
+        long_about = "Break down the Bayesian ranking score of a saved connection factor by factor.\n\
+            Shows frequency prior, recency, success rate, and context likelihood ratios\n\
+            (repository, hour of day, and previous connection).\n\n\
+            Example:\n\
+              bssh why web-prod"
+    )]
+    Why {
+        /// Connection name, alias, or ID
+        target: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -785,7 +804,7 @@ mod tests {
         // A clap default here would silently override the saved port.
         let cli = Cli::try_parse_from(["bssh", "connect", "db01"]).unwrap();
         match cli.command {
-            Commands::Connect { port, .. } => assert_eq!(port, None),
+            Some(Commands::Connect { port, .. }) => assert_eq!(port, None),
             _ => unreachable!(),
         }
     }

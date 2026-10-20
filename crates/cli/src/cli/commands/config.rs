@@ -14,6 +14,8 @@ pub async fn execute(
     search_mode: Option<String>,
     recording: Option<String>,
     recording_tags: Option<String>,
+    prediction: Option<String>,
+    capture_cwd: Option<String>,
     mut config: AppConfig,
 ) -> Result<()> {
     info!("Updating application configuration");
@@ -53,6 +55,8 @@ pub async fn execute(
         search_mode,
         recording_enabled,
         recording_tags,
+        prediction_enabled: prediction.as_deref().map(|v| v == "on"),
+        capture_cwd: capture_cwd.as_deref().map(|v| v == "on"),
     };
 
     config.update(updates)?;
@@ -100,6 +104,22 @@ pub async fn execute(
             config.recording.tags.join(", ")
         },
         config.recording.retention_days
+    );
+    println!(
+        "  Prediction: {}",
+        if config.prediction.enabled {
+            "on"
+        } else {
+            "off"
+        }
+    );
+    println!(
+        "  Capture cwd: {}",
+        if config.prediction.capture_cwd {
+            "on"
+        } else {
+            "off"
+        }
     );
 
     Ok(())

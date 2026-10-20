@@ -17,7 +17,7 @@
     X,
   } from "lucide-svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import type { Connection } from "$lib/types";
+  import type { Connection, Prediction } from "$lib/types";
   import { toSshCommand } from "$lib/utils/sshCommand";
   import { formatDateTime, formatRelative } from "$lib/utils/timezone";
   import { notify } from "$lib/stores/notifications.svelte";
@@ -81,6 +81,7 @@
   let pingResults = $state.raw<Record<string, PingResult>>({});
   let connectingHostId = $state<string | null>(null);
   let sortBy = $state<SortKey>("bayesian");
+  let suggestions = $state.raw<Prediction[]>([]);
   // Re-render relative timestamps once a minute, not per frame.
   let now = $state(Date.now());
 
@@ -88,6 +89,48 @@
     const timer = setInterval(() => (now = Date.now()), 60_000);
     return () => clearInterval(timer);
   });
+
+  $effect(() => {
+    void connections;
+    let cancelled = false;
+    invoke<Prediction[]>("predict_connections", { limit: 3 })
+      .then((list) => {
+        if (!cancelled) {
+          suggestions = list.filter((p) => p.breakdown.total_w > 0 || Boolean(p.connection.last_used));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) suggestions = [];
+      });
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  function suggestionReason(p: Prediction): string {
+    void now;
+    const b = p.breakdown;
+    const candidates: Array<{ key: "repo" | "after_prev" | "hour"; lr: number }> = [];
+    if (b.repo && b.repo > 1 && b.repo_hits > 0) candidates.push({ key: "repo", lr: b.repo });
+    if (b.after_prev && b.after_prev > 1 && b.after_prev_hits > 0)
+      candidates.push({ key: "after_prev", lr: b.after_prev });
+    if (b.hour && b.hour > 1 && b.hour_hits > 0) candidates.push({ key: "hour", lr: b.hour });
+    candidates.sort((a, c) => c.lr - a.lr);
+
+    if (candidates.length > 0) {
+      const top = candidates[0].key;
+      if (top === "repo") return `${b.repo_hits}/${b.total_w} from repo`;
+      if (top === "after_prev") return "After recent session";
+      if (top === "hour") return `Around ${String(new Date().getHours()).padStart(2, "0")}:00`;
+    }
+    if (b.total_w > 0 && p.connection.last_used) {
+      return `Used ${b.total_w}× · ${formatRelative(p.connection.last_used)}`;
+    }
+    if (b.total_w > 0) {
+      return `Used ${b.total_w}×`;
+    }
+    return p.connection.last_used ? formatRelative(p.connection.last_used) : "Suggested";
+  }
 
   async function handleConnectHost(conn: Connection) {
     connectingHostId = conn.id;
@@ -513,6 +556,25 @@
       </div>
     </div>
   </div>
+
+  {#if !hasFilters && suggestions.length > 0}
+    <div class="flex shrink-0 flex-wrap items-center gap-2 px-6 pb-3" role="region" aria-label="Suggested connections">
+      <span class="section-label mr-1">Suggested</span>
+      {#each suggestions as item (item.connection.id)}
+        <button
+          type="button"
+          class="btn btn-secondary btn-sm"
+          onclick={() => handleConnectHost(item.connection)}
+          disabled={connectingHostId !== null}
+          title={`Connect to ${item.connection.name} (${item.connection.user}@${item.connection.host})`}
+        >
+          <SquareTerminal size={12} class="text-muted" />
+          <span class="font-medium text-primary">{item.connection.name}</span>
+          <span class="text-muted">· {suggestionReason(item)}</span>
+        </button>
+      {/each}
+    </div>
+  {/if}
 
   <div class="view-body" bind:this={bodyEl} onscroll={onBodyScroll}>
     {#if rows.length === 0}

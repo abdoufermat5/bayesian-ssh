@@ -134,7 +134,8 @@ pub fn run() {
             commands::search_session_text,
             updater::check_update,
             updater::install_update,
-            updater::update_managed_by
+            updater::update_managed_by,
+            commands::predict_connections
         ])
         .run(context)
         .expect("error while running tauri application");
