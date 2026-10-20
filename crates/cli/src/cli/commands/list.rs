@@ -15,8 +15,13 @@ pub async fn execute(
         tag, recent, detailed
     );
 
-    let ssh_service = SshService::new(config)?;
+    let ssh_service = SshService::new(config.clone())?;
     let connections = ssh_service.list_connections(tag.as_deref(), recent).await?;
+    let source_names: std::collections::HashMap<_, _> = crate::database::Database::new(&config)?
+        .list_sources()?
+        .into_iter()
+        .map(|summary| (summary.source.id, summary.source.name))
+        .collect();
 
     if connections.is_empty() {
         println!("📭 No connections found.");
@@ -65,6 +70,14 @@ pub async fn execute(
                 println!("│  tags: {}", conn.tags.join(", "));
             }
 
+            if let Some(source) = conn.source_id.and_then(|id| source_names.get(&id)) {
+                println!("│  source: {}", source);
+            }
+
+            if let Some(stale_since) = conn.stale_since {
+                println!("│  stale since: {}", format_duration(stale_since));
+            }
+
             if let Some(last_used) = conn.last_used {
                 println!("│  last: {}", format_duration(last_used));
             }
@@ -97,11 +110,20 @@ pub async fn execute(
             let info = format!("{} {} {}", icons, last_used, tags)
                 .trim()
                 .to_string();
+            let info = match conn.source_id.and_then(|id| source_names.get(&id)) {
+                Some(source) => format!("[{}] {}", source, info),
+                None => info,
+            };
+            let name = if conn.stale_since.is_some() {
+                format!("{} (stale)", truncate_display(&conn.name, 11))
+            } else {
+                conn.name.clone()
+            };
 
             println!(
                 "{:<3} {:<20} {:<25} {:<8} {}",
                 i + 1,
-                truncate_display(&conn.name, 19),
+                truncate_display(&name, 19),
                 format!(
                     "{}@{}",
                     truncate_display(&conn.user, 8),
