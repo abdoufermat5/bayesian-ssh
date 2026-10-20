@@ -126,6 +126,10 @@ pub fn run() {
             tray::refresh_tray_menu,
             tray::send_desktop_notification,
             commands::get_env_status,
+            commands::list_sources,
+            commands::add_source,
+            commands::remove_source,
+            commands::sync_source,
             updater::check_update,
             updater::install_update,
             updater::update_managed_by

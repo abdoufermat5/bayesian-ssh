@@ -5,6 +5,7 @@
     Layers,
     Palette,
     RefreshCw,
+    Server,
     ShieldCheck,
     Sliders,
     TerminalSquare,
@@ -17,6 +18,7 @@
   import LogsSettings from "./settings/LogsSettings.svelte";
   import AppearanceSettings from "./settings/AppearanceSettings.svelte";
   import FeaturesSettings from "./settings/FeaturesSettings.svelte";
+  import SourcesSettings from "./settings/SourcesSettings.svelte";
   import UpdatesSettings from "./settings/UpdatesSettings.svelte";
 
   interface Props {
@@ -55,6 +57,7 @@
     { id: "logs", label: "History", icon: History },
     { id: "appearance", label: "Appearance", icon: Palette },
     { id: "features", label: "Features", icon: Sliders },
+    { id: "sources", label: "Inventory sources", icon: Server },
     { id: "updates", label: "Updates", icon: RefreshCw },
   ];
 </script>
@@ -108,6 +111,8 @@
       <AppearanceSettings bind:settings {onSave} {onThemeChange} />
     {:else if activeCategory === "features"}
       <FeaturesSettings bind:settings {onSave} />
+    {:else if activeCategory === "sources"}
+      <SourcesSettings />
     {:else if activeCategory === "updates"}
       <UpdatesSettings />
     {/if}
