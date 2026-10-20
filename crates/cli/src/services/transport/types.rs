@@ -156,7 +156,11 @@ pub trait SshTransport: Send + Sync {
     ) -> Result<ForwardHandle, TransportError>;
 
     /// Drive an interactive shell session directly on the calling terminal.
-    async fn run_interactive(&self, conn: &Connection) -> Result<i32, TransportError>;
+    async fn run_interactive(
+        &self,
+        conn: &Connection,
+        recorder: Option<crate::services::recording::SharedRecorder>,
+    ) -> Result<i32, TransportError>;
 
     fn name(&self) -> &'static str;
 }

@@ -102,6 +102,12 @@ pub enum Commands {
         /// Path to an SSH private key to use
         #[arg(short = 'i', long, value_name = "FILE")]
         key: Option<String>,
+        /// Record this session's output (overrides config)
+        #[arg(long, conflicts_with = "no_record")]
+        record: bool,
+        /// Do not record this session's output (overrides config)
+        #[arg(long, conflicts_with = "record")]
+        no_record: bool,
     },
 
     /// Save a new SSH connection
@@ -262,6 +268,12 @@ pub enum Commands {
         /// Connection search algorithm: "bayesian" (usage-ranked) or "fuzzy" (substring)
         #[arg(long, value_parser = ["bayesian", "fuzzy"], value_name = "MODE")]
         search_mode: Option<String>,
+        /// Enable or disable session output recording ("on" or "off")
+        #[arg(long, value_parser = ["on", "off"], value_name = "STATE")]
+        recording: Option<String>,
+        /// Record only connections carrying these comma-separated tags (empty string clears)
+        #[arg(long, value_name = "TAGS")]
+        recording_tags: Option<String>,
     },
 
     /// Show usage statistics (total connections, sessions, top hosts)
@@ -432,6 +444,28 @@ pub enum Commands {
         /// Show only sessions that exited with an error
         #[arg(short = 'f', long)]
         failed: bool,
+        /// Search recorded session output for a text phrase
+        #[arg(short = 'g', long, value_name = "TEXT")]
+        grep: Option<String>,
+    },
+
+    /// Replay a recorded SSH session in the terminal
+    #[command(
+        long_about = "Play back a recorded asciicast v2 session in the terminal.\n\
+            Find session IDs with `bssh history` or `bssh history --grep <text>`.\n\n\
+            Examples:\n\
+              bssh replay 3f2a91c0\n\
+              bssh replay 3f2a91c0 --speed 2.0 --idle-cap 1.0"
+    )]
+    Replay {
+        /// Session ID or unique prefix (at least 6 characters)
+        session: String,
+        /// Playback speed multiplier
+        #[arg(short = 's', long, default_value_t = 1.0, value_name = "FACTOR")]
+        speed: f64,
+        /// Cap idle pauses to at most this many seconds
+        #[arg(long, default_value_t = 2.0, value_name = "SECONDS")]
+        idle_cap: f64,
     },
 
     /// Launch the Tauri desktop GUI (runs detached in the background)

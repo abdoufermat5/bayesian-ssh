@@ -539,7 +539,11 @@ impl SshTransport for RusshTransport {
         ))
     }
 
-    async fn run_interactive(&self, conn: &Connection) -> Result<i32, TransportError> {
+    async fn run_interactive(
+        &self,
+        conn: &Connection,
+        recorder: Option<crate::services::recording::SharedRecorder>,
+    ) -> Result<i32, TransportError> {
         use crossterm::terminal::{disable_raw_mode, enable_raw_mode, size};
         use tokio::io::AsyncWriteExt;
 
@@ -576,6 +580,11 @@ impl SshTransport for RusshTransport {
         let mut buf = [0u8; 4096];
         let mut stdin_closed = false;
         let mut exit_code = 0i32;
+        let mut carry = crate::services::pty::Utf8Carry::default();
+        let mut dec_buf = String::new();
+        #[cfg(unix)]
+        let mut sigwinch =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::window_change()).ok();
 
         loop {
             tokio::select! {
@@ -585,12 +594,40 @@ impl SshTransport for RusshTransport {
                         Ok(n) => { let _ = channel.data(&buf[..n]).await; }
                     }
                 }
+                _ = async {
+                    #[cfg(unix)]
+                    if let Some(ref mut sig) = sigwinch {
+                        let _ = sig.recv().await;
+                    } else {
+                        std::future::pending::<()>().await;
+                    }
+                    #[cfg(not(unix))]
+                    std::future::pending::<()>().await;
+                } => {
+                    if let Ok((c, r)) = size() {
+                        let _ = channel.window_change(c as u32, r as u32, 0, 0).await;
+                        if let Some(ref rec) = recorder {
+                            if let Ok(mut g) = rec.lock() {
+                                g.resize(c, r);
+                            }
+                        }
+                    }
+                }
                 msg = channel.wait() => {
                     match msg {
                         None => break,
                         Some(ChannelMsg::Data { ref data }) => {
                             let _ = stdout.write_all(data).await;
                             let _ = stdout.flush().await;
+                            if let Some(ref rec) = recorder {
+                                dec_buf.clear();
+                                carry.decode_into(data, &mut dec_buf);
+                                if !dec_buf.is_empty() {
+                                    if let Ok(mut g) = rec.lock() {
+                                        g.output(&dec_buf);
+                                    }
+                                }
+                            }
                         }
                         Some(ChannelMsg::ExitStatus { exit_status }) => {
                             exit_code = exit_status as i32;
@@ -600,6 +637,16 @@ impl SshTransport for RusshTransport {
                         Some(ChannelMsg::Close) => break,
                         _ => {}
                     }
+                }
+            }
+        }
+
+        if let Some(ref rec) = recorder {
+            dec_buf.clear();
+            carry.finish_into(&mut dec_buf);
+            if !dec_buf.is_empty() {
+                if let Ok(mut g) = rec.lock() {
+                    g.output(&dec_buf);
                 }
             }
         }
