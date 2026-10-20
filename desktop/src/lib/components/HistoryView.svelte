@@ -110,7 +110,7 @@
       invoke<SessionTextHit[]>("search_session_text", { query: q, limit: 50 })
         .then((hits) => {
           if (!cancelled) {
-            outputHits = hits;
+            outputHits = hits ?? [];
           }
         })
         .catch((err) => {
@@ -512,18 +512,7 @@
                 {@const outcome = OUTCOME[row.outcome]}
                 <tr>
                   <td>
-                    <div class="flex min-w-0 items-center gap-2">
-                      <span class="block truncate font-medium text-primary" title={row.name}>{row.name}</span>
-                      {#if row.recorded}
-                        <span
-                          class="badge badge-neutral shrink-0"
-                          title="Session output recorded ({row.sessionId.slice(0, 8)})"
-                        >
-                          <span class="status-dot status-dot-sm status-dot-success" title="Recorded"></span>
-                          Recorded
-                        </span>
-                      {/if}
-                    </div>
+                    <span class="block truncate font-medium text-primary" title={row.name}>{row.name}</span>
                   </td>
                   <td>
                     <span class="text-xs text-secondary" title={row.absolute}>{row.relative}</span>

@@ -35,12 +35,45 @@
     { value: "gcp", label: "Google Cloud", description: "Running Compute Engine instances" },
   ];
 
+  const awsAddressOptions = [
+    { value: "private", label: "Private IP", description: "Default" },
+    { value: "public", label: "Public IP" },
+    { value: "dns", label: "Public DNS name" },
+  ];
+  const gcpAddressOptions = [
+    { value: "internal", label: "Internal IP", description: "Default" },
+    { value: "external", label: "External IP" },
+  ];
+
+  const kindLabel = (k: SourceKind) => kindOptions.find((o) => o.value === k)?.label ?? k;
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+  // Required fields per kind, so "Add source" can't create a source that
+  // fails on its first sync.
+  const canAdd = $derived(
+    name.trim() !== "" &&
+      (kind !== "ansible" || inventory.trim() !== "") &&
+      (kind !== "gcp" || project.trim() !== ""),
+  );
+
+  function reportChips(report: SyncReport): Array<{ label: string; cls: string }> {
+    const chips = [
+      { n: report.added, label: `${report.added} new`, cls: "badge-success" },
+      { n: report.updated, label: `${report.updated} updated`, cls: "badge-accent" },
+      { n: report.unstaled, label: `${report.unstaled} back`, cls: "badge-success" },
+      { n: report.stale, label: `${report.stale} missing → stale`, cls: "badge-warning" },
+      { n: report.pruned, label: `${report.pruned} pruned`, cls: "badge-error" },
+      { n: report.skipped_invalid, label: `${report.skipped_invalid} skipped (invalid)`, cls: "badge-neutral" },
+    ];
+    return chips.filter((c) => c.n > 0);
+  }
+
   onMount(load);
 
   async function load() {
     loading = true;
     try {
-      sources = await invoke<Source[]>("list_sources");
+      sources = (await invoke<Source[] | null>("list_sources")) ?? [];
     } catch (error) {
       notify(`Failed to list sources: ${error}`, "error");
     } finally {
@@ -217,10 +250,16 @@
         <div class="setting-row">
           <div class="setting-row-main">
             <span class="setting-title">Address</span>
-            <span class="setting-meta">private (default), public or dns.</span>
+            <span class="setting-meta">Which address of each instance to connect to.</span>
           </div>
           <div class="setting-control">
-            <input type="text" class="input w-56" bind:value={address} placeholder="private" />
+            <CustomSelect
+              class="w-56"
+              size="md"
+              options={awsAddressOptions}
+              value={address || "private"}
+              onChange={(value) => (address = value)}
+            />
           </div>
         </div>
       {:else if kind === "gcp"}
@@ -236,10 +275,16 @@
         <div class="setting-row">
           <div class="setting-row-main">
             <span class="setting-title">Address</span>
-            <span class="setting-meta">internal (default) or external.</span>
+            <span class="setting-meta">Which address of each instance to connect to.</span>
           </div>
           <div class="setting-control">
-            <input type="text" class="input w-56" bind:value={address} placeholder="internal" />
+            <CustomSelect
+              class="w-56"
+              size="md"
+              options={gcpAddressOptions}
+              value={address || "internal"}
+              onChange={(value) => (address = value)}
+            />
           </div>
         </div>
       {/if}
@@ -268,7 +313,7 @@
       <div class="setting-row">
         <span class="setting-row-main"></span>
         <div class="setting-control">
-          <button type="button" class="btn btn-primary" onclick={addSource} disabled={!name.trim()}>
+          <button type="button" class="btn btn-primary" onclick={addSource} disabled={!canAdd}>
             <Plus size={14} />
             Add source
           </button>
@@ -295,29 +340,42 @@
           <div class="setting-row-main">
             <span class="setting-title">
               {source.name}
-              <span class="badge badge-neutral">{source.kind}</span>
+              <span class="badge badge-neutral">{kindLabel(source.kind)}</span>
               {#if (source.stale ?? 0) > 0}
                 <span class="badge badge-warning">{source.stale} stale</span>
               {/if}
             </span>
             <span class="setting-meta">
-              {source.hosts ?? 0} host(s) · last sync:
-              {source.last_sync_at ? formatRelative(source.last_sync_at) : "never"}
+              {plural(source.hosts ?? 0, "host")} ·
+              {source.last_sync_at ? `synced ${formatRelative(source.last_sync_at)}` : "never synced"}
             </span>
             {#if source.last_sync_error}
-              <span class="text-xs text-error">{source.last_sync_error}</span>
+              <span class="text-xs text-error">Last sync failed: {source.last_sync_error}</span>
             {/if}
             {#if reports[source.name]}
               {@const report = reports[source.name]}
-              <span class="text-xs text-muted">
-                {report.dry_run ? "Preview:" : "Result:"}
-                +{report.added} added, ~{report.updated} updated, -{report.stale} stale,
-                ↺{report.unstaled} back{#if report.pruned}, {report.pruned} pruned{/if}{#if report.skipped_invalid},
-                  {report.skipped_invalid} invalid{/if}
-              </span>
+              {@const chips = reportChips(report)}
+              <div class="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
+                <span class="text-muted">{report.dry_run ? "Preview (nothing written yet):" : "Synced:"}</span>
+                {#each chips as chip (chip.label)}
+                  <span class="badge {chip.cls}">{chip.label}</span>
+                {:else}
+                  <span class="text-muted">no changes</span>
+                {/each}
+                {#if report.dry_run && chips.length > 0}
+                  <button
+                    type="button"
+                    class="btn btn-primary btn-sm"
+                    disabled={busy === source.name}
+                    onclick={() => syncSource(source, false)}
+                  >
+                    Apply
+                  </button>
+                {/if}
+              </div>
               {#if report.renamed.length > 0}
                 <span class="text-xs text-muted">
-                  renamed: {report.renamed.map(([from, to]) => `${from} → ${to}`).join(", ")}
+                  Name taken, added as: {report.renamed.map(([from, to]) => `${from} → ${to}`).join(", ")}
                 </span>
               {/if}
             {/if}
@@ -361,7 +419,7 @@
               <span class="setting-title">Remove {source.name}?</span>
               <label class="setting-meta cursor-pointer">
                 <input type="checkbox" bind:checked={deleteHosts} />
-                Also delete the {source.hosts ?? 0} connection(s) it owns
+                Also delete the {plural(source.hosts ?? 0, "connection")} it owns (otherwise they stay as manual hosts)
               </label>
             </div>
             <div class="setting-control">

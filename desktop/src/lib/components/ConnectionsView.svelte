@@ -17,7 +17,8 @@
     X,
   } from "lucide-svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import type { Connection, Prediction } from "$lib/types";
+  import type { Connection, Prediction, Source } from "$lib/types";
+  import { predictionDetail, predictionReason } from "$lib/utils/prediction";
   import { toSshCommand } from "$lib/utils/sshCommand";
   import { formatDateTime, formatRelative } from "$lib/utils/timezone";
   import { notify } from "$lib/stores/notifications.svelte";
@@ -107,30 +108,23 @@
     };
   });
 
-  function suggestionReason(p: Prediction): string {
-    void now;
-    const b = p.breakdown;
-    const candidates: Array<{ key: "repo" | "after_prev" | "hour"; lr: number }> = [];
-    if (b.repo && b.repo > 1 && b.repo_hits > 0) candidates.push({ key: "repo", lr: b.repo });
-    if (b.after_prev && b.after_prev > 1 && b.after_prev_hits > 0)
-      candidates.push({ key: "after_prev", lr: b.after_prev });
-    if (b.hour && b.hour > 1 && b.hour_hits > 0) candidates.push({ key: "hour", lr: b.hour });
-    candidates.sort((a, c) => c.lr - a.lr);
+  // Source names for the badges on synced hosts; only fetched when some host
+  // actually comes from an inventory source.
+  let sourceNames = $state.raw<Record<string, string>>({});
+  const hasSyncedHosts = $derived(connections.some((c) => c.source_id));
 
-    if (candidates.length > 0) {
-      const top = candidates[0].key;
-      if (top === "repo") return `${b.repo_hits}/${b.total_w} from repo`;
-      if (top === "after_prev") return "After recent session";
-      if (top === "hour") return `Around ${String(new Date().getHours()).padStart(2, "0")}:00`;
-    }
-    if (b.total_w > 0 && p.connection.last_used) {
-      return `Used ${b.total_w}× · ${formatRelative(p.connection.last_used)}`;
-    }
-    if (b.total_w > 0) {
-      return `Used ${b.total_w}×`;
-    }
-    return p.connection.last_used ? formatRelative(p.connection.last_used) : "Suggested";
-  }
+  $effect(() => {
+    if (!hasSyncedHosts) return;
+    let cancelled = false;
+    invoke<Source[]>("list_sources")
+      .then((list) => {
+        if (!cancelled) sourceNames = Object.fromEntries((list ?? []).map((s) => [s.id, s.name]));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  });
 
   async function handleConnectHost(conn: Connection) {
     connectingHostId = conn.id;
@@ -416,10 +410,21 @@
     </span>
   {/if}
   {#if conn.source_id}
-    <span class="badge badge-accent" title="Managed by an inventory source">Synced</span>
+    {@const sourceName = sourceNames[conn.source_id]}
+    <span
+      class="badge badge-accent"
+      title={`Synced from ${sourceName ?? "an inventory source"}${conn.external_id ? ` · id ${conn.external_id}` : ""}`}
+    >
+      {sourceName ?? "Synced"}
+    </span>
   {/if}
   {#if conn.stale_since}
-    <span class="badge badge-warning" title={`Not seen in the last sync since ${conn.stale_since}`}>Stale</span>
+    <span
+      class="badge badge-warning"
+      title={`Missing from syncs since ${formatDateTime(conn.stale_since, timezone)}. Deleted only by a sync with --prune.`}
+    >
+      Stale · {formatRelative(conn.stale_since, now)}
+    </span>
   {/if}
 {/snippet}
 
@@ -566,11 +571,11 @@
           class="btn btn-secondary btn-sm"
           onclick={() => handleConnectHost(item.connection)}
           disabled={connectingHostId !== null}
-          title={`Connect to ${item.connection.name} (${item.connection.user}@${item.connection.host})`}
+          title={`Connect · ${predictionDetail(item)}`}
         >
           <SquareTerminal size={12} class="text-muted" />
           <span class="font-medium text-primary">{item.connection.name}</span>
-          <span class="text-muted">· {suggestionReason(item)}</span>
+          <span class="text-muted">· {predictionReason(item, now)}</span>
         </button>
       {/each}
     </div>

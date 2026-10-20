@@ -20,7 +20,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { tick } from "svelte";
   import type { AppTab, Connection, DesktopSettings, Prediction } from "$lib/types";
-  import { formatRelative } from "$lib/utils/timezone";
+  import { predictionReason } from "$lib/utils/prediction";
 
   interface Props {
     open: boolean;
@@ -95,30 +95,6 @@
   let inputElement = $state<HTMLInputElement | null>(null);
   let listElement = $state<HTMLElement | null>(null);
   let suggestions = $state.raw<Prediction[]>([]);
-
-  function suggestionReason(p: Prediction): string {
-    const b = p.breakdown;
-    const candidates: Array<{ key: "repo" | "after_prev" | "hour"; lr: number }> = [];
-    if (b.repo && b.repo > 1 && b.repo_hits > 0) candidates.push({ key: "repo", lr: b.repo });
-    if (b.after_prev && b.after_prev > 1 && b.after_prev_hits > 0)
-      candidates.push({ key: "after_prev", lr: b.after_prev });
-    if (b.hour && b.hour > 1 && b.hour_hits > 0) candidates.push({ key: "hour", lr: b.hour });
-    candidates.sort((a, c) => c.lr - a.lr);
-
-    if (candidates.length > 0) {
-      const top = candidates[0].key;
-      if (top === "repo") return `${b.repo_hits}/${b.total_w} from repo`;
-      if (top === "after_prev") return "Usually opened after recent session";
-      if (top === "hour") return `Used often around ${String(new Date().getHours()).padStart(2, "0")}:00`;
-    }
-    if (b.total_w > 0 && p.connection.last_used) {
-      return `Used ${b.total_w}× · last ${formatRelative(p.connection.last_used)}`;
-    }
-    if (b.total_w > 0) {
-      return `Used ${b.total_w}×`;
-    }
-    return p.connection.last_used ? `Last ${formatRelative(p.connection.last_used)}` : "Suggested";
-  }
 
   function run(fn: () => void) {
     fn();
@@ -239,7 +215,7 @@
       (pred): CommandItem => ({
         id: `suggested-${pred.connection.id}`,
         title: pred.connection.name,
-        subtitle: suggestionReason(pred),
+        subtitle: predictionReason(pred),
         category: "Suggested",
         icon: Server,
         badge: pred.connection.use_kerberos ? "krb5" : undefined,

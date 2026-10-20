@@ -68,7 +68,10 @@
       <label class="setting-row cursor-pointer">
         <span class="setting-row-main">
           <span class="setting-title">Record sessions</span>
-          <span class="setting-meta">Save terminal output as asciicast v2 files and index plain text for search.</span>
+          <span class="setting-meta">
+            Save what the remote prints so you can search and replay it from History. Keystrokes are
+            never recorded; output can still contain secrets, so files are private to your user.
+          </span>
         </span>
         <input
           type="checkbox"
@@ -80,7 +83,7 @@
           }}
         />
       </label>
-      <div class="setting-row">
+      <div class="setting-row" class:opacity-50={!settings.record_sessions}>
         <div class="setting-row-main">
           <label class="setting-title" for="settings-record-tags">Only for tags</label>
           <span class="setting-meta">Comma-separated tags to record; leave empty to record all hosts.</span>
@@ -92,6 +95,7 @@
             placeholder="prod, critical"
             bind:value={tagsInput}
             onchange={commitTags}
+            disabled={!settings.record_sessions}
             spellcheck="false"
             autocomplete="off"
             class="input w-56"
