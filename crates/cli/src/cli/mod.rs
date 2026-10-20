@@ -9,7 +9,10 @@ pub use parser::{AliasSubcommand, Cli, Commands, EnvCommands};
 
 impl Cli {
     pub async fn execute(self, config: AppConfig) -> Result<()> {
-        match self.command {
+        let Some(command) = self.command else {
+            return commands::predict::execute(config).await;
+        };
+        match command {
             Commands::Connect {
                 target,
                 user,
@@ -109,6 +112,8 @@ impl Cli {
                 log_level,
                 clear_bastion,
                 search_mode,
+                prediction,
+                capture_cwd,
             } => {
                 commands::config::execute(
                     default_user,
@@ -119,6 +124,8 @@ impl Cli {
                     log_level,
                     clear_bastion,
                     search_mode,
+                    prediction,
+                    capture_cwd,
                     config,
                 )
                 .await
@@ -227,6 +234,7 @@ impl Cli {
                 cleanup,
                 force,
             } => commands::close::execute(target, all, cleanup, force, config).await,
+            Commands::Why { target } => commands::why::execute(target, config).await,
         }
     }
 }

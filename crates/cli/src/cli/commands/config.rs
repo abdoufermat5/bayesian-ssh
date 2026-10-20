@@ -12,6 +12,8 @@ pub async fn execute(
     log_level: Option<String>,
     clear_bastion: bool,
     search_mode: Option<String>,
+    prediction: Option<String>,
+    capture_cwd: Option<String>,
     mut config: AppConfig,
 ) -> Result<()> {
     info!("Updating application configuration");
@@ -42,6 +44,8 @@ pub async fn execute(
         auto_save_history: None,
         max_history_size: None,
         search_mode,
+        prediction_enabled: prediction.as_deref().map(|v| v == "on"),
+        capture_cwd: capture_cwd.as_deref().map(|v| v == "on"),
     };
 
     config.update(updates)?;
@@ -74,6 +78,22 @@ pub async fn execute(
             "(smart ranking with frequency/recency)"
         } else {
             "(simple pattern matching)"
+        }
+    );
+    println!(
+        "  Prediction: {}",
+        if config.prediction.enabled {
+            "on"
+        } else {
+            "off"
+        }
+    );
+    println!(
+        "  Capture cwd: {}",
+        if config.prediction.capture_cwd {
+            "on"
+        } else {
+            "off"
         }
     );
 
