@@ -1,6 +1,8 @@
 <script lang="ts">
-  import { Clock, Download, Search, X } from "lucide-svelte";
-  import type { SessionHistoryEntry } from "$lib/types";
+  import { invoke } from "@tauri-apps/api/core";
+  import { Clock, Download, FileText, Play, Search, X } from "lucide-svelte";
+  import ReplayModal from "$lib/components/modals/ReplayModal.svelte";
+  import type { SessionHistoryEntry, SessionTextHit } from "$lib/types";
   import { formatDate, formatDateTime, formatRelative, resolveTimeZone } from "$lib/utils/timezone";
 
   interface Props {
@@ -15,6 +17,8 @@
 
   interface Row {
     key: string;
+    sessionId: string;
+    recorded: boolean;
     name: string;
     search: string;
     startedAt: string;
@@ -31,6 +35,11 @@
     exitCode: number | undefined;
   }
 
+  interface SnippetPart {
+    text: string;
+    highlight: boolean;
+  }
+
   const OUTCOME: Record<Outcome, { label: string; badge: string }> = {
     success: { label: "Succeeded", badge: "badge-success" },
     failed: { label: "Failed", badge: "badge-error" },
@@ -39,6 +48,89 @@
 
   let filterQuery = $state("");
   let statusFilter = $state<Filter>("all");
+
+  let outputQuery = $state("");
+  let outputHits = $state.raw<SessionTextHit[]>([]);
+  let outputSearching = $state(false);
+  let outputError = $state<string | null>(null);
+
+  let replayTarget = $state<{
+    sessionId: string;
+    connectionName: string;
+    startedLabel: string;
+  } | null>(null);
+
+  function openReplay(sessionId: string, connectionName: string, startedLabel: string) {
+    if (!sessionId) return;
+    replayTarget = { sessionId, connectionName, startedLabel };
+  }
+
+  /**
+   * Split an FTS5 `snippet(session_text, 1, '[', ']', '…', 12)` string into
+   * plain and highlighted runs so `[`…`]` markers render as `<mark>` elements
+   * without `{@html}` on untrusted terminal output.
+   */
+  function parseSnippetParts(snippet: string): SnippetPart[] {
+    const parts: SnippetPart[] = [];
+    let rest = snippet;
+    while (rest.length > 0) {
+      const openIdx = rest.indexOf("[");
+      if (openIdx === -1) {
+        parts.push({ text: rest, highlight: false });
+        break;
+      }
+      const closeIdx = rest.indexOf("]", openIdx + 1);
+      if (closeIdx === -1) {
+        parts.push({ text: rest, highlight: false });
+        break;
+      }
+      if (openIdx > 0) {
+        parts.push({ text: rest.slice(0, openIdx), highlight: false });
+      }
+      parts.push({ text: rest.slice(openIdx + 1, closeIdx), highlight: true });
+      rest = rest.slice(closeIdx + 1);
+    }
+    return parts;
+  }
+
+  $effect(() => {
+    const q = outputQuery.trim();
+    if (!q) {
+      outputHits = [];
+      outputSearching = false;
+      outputError = null;
+      return;
+    }
+
+    let cancelled = false;
+    outputSearching = true;
+    outputError = null;
+
+    const timer = setTimeout(() => {
+      invoke<SessionTextHit[]>("search_session_text", { query: q, limit: 50 })
+        .then((hits) => {
+          if (!cancelled) {
+            outputHits = hits;
+          }
+        })
+        .catch((err) => {
+          if (!cancelled) {
+            outputError = String(err);
+            outputHits = [];
+          }
+        })
+        .finally(() => {
+          if (!cancelled) {
+            outputSearching = false;
+          }
+        });
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  });
 
   /**
    * `status` is the serde form of the Rust `SessionStatus` enum: a bare
@@ -105,10 +197,13 @@
       const error = typeof entry.status === "object" && entry.status !== null ? detail : null;
       const startedMs = Date.parse(entry.started_at);
       const outcome = outcomeOf(entry);
+      const sessionId = entry.session_id ?? "";
       return {
-        key: `${entry.started_at}|${entry.connection_name}|${i}`,
+        key: `${sessionId}|${entry.started_at}|${entry.connection_name}|${i}`,
+        sessionId,
+        recorded: Boolean(entry.recording_path),
         name: entry.connection_name,
-        search: `${entry.connection_name}\n${detail}`.toLowerCase(),
+        search: `${entry.connection_name}\n${detail}\n${sessionId}`.toLowerCase(),
         startedAt: entry.started_at,
         startedMs: Number.isNaN(startedMs) ? 0 : startedMs,
         relative: formatRelative(entry.started_at, now),
@@ -165,6 +260,7 @@
   });
 
   const hasFilters = $derived(filterQuery.trim() !== "" || statusFilter !== "all");
+  const isOutputSearchActive = $derived(outputQuery.trim() !== "");
 
   function clearFilters() {
     filterQuery = "";
@@ -207,7 +303,13 @@
     <div class="flex min-w-0 items-baseline gap-2.5">
       <h1 class="view-title">History</h1>
       <span class="text-sm tabular-nums text-muted">
-        {#if hasFilters}{filteredRows.length} of {rows.length}{:else}{rows.length}{/if}
+        {#if isOutputSearchActive}
+          {outputHits.length} {outputHits.length === 1 ? "match" : "matches"}
+        {:else if hasFilters}
+          {filteredRows.length} of {rows.length}
+        {:else}
+          {rows.length}
+        {/if}
       </span>
     </div>
     <div class="view-actions">
@@ -224,9 +326,9 @@
     </div>
   </header>
 
-  {#if rows.length > 0}
-    <div class="view-toolbar">
-      <label class="search-box w-64 lg:w-80">
+  {#if rows.length > 0 || isOutputSearchActive}
+    <div class="view-toolbar flex-wrap gap-2">
+      <label class="search-box w-56 lg:w-64">
         <Search size={14} class="shrink-0" />
         <input
           type="text"
@@ -248,28 +350,129 @@
         {/if}
       </label>
 
-      <div class="flex items-center gap-1.5" role="group" aria-label="Filter by status">
-        {#each [
-          { id: "all", label: "All", count: counts.all },
-          { id: "success", label: "Succeeded", count: counts.success },
-          { id: "failed", label: "Failed", count: counts.failed },
-        ] as chip (chip.id)}
+      <label class="search-box w-64 lg:w-80">
+        <FileText size={14} class="shrink-0" />
+        <input
+          type="text"
+          placeholder="Search recorded output…"
+          bind:value={outputQuery}
+          spellcheck="false"
+          autocomplete="off"
+          aria-label="Search recorded output"
+        />
+        {#if outputQuery}
           <button
             type="button"
-            class="chip {statusFilter === chip.id ? 'chip-active' : ''}"
-            onclick={() => (statusFilter = chip.id as Filter)}
-            aria-pressed={statusFilter === chip.id}
+            class="btn-icon btn-icon-sm -mr-1"
+            onclick={() => (outputQuery = "")}
+            aria-label="Clear recorded output search"
           >
-            {chip.label}
-            <span class="tabular-nums text-muted">{chip.count}</span>
+            <X size={13} />
           </button>
-        {/each}
-      </div>
+        {/if}
+      </label>
+
+      {#if !isOutputSearchActive}
+        <div class="flex items-center gap-1.5" role="group" aria-label="Filter by status">
+          {#each [
+            { id: "all", label: "All", count: counts.all },
+            { id: "success", label: "Succeeded", count: counts.success },
+            { id: "failed", label: "Failed", count: counts.failed },
+          ] as chip (chip.id)}
+            <button
+              type="button"
+              class="chip {statusFilter === chip.id ? 'chip-active' : ''}"
+              onclick={() => (statusFilter = chip.id as Filter)}
+              aria-pressed={statusFilter === chip.id}
+            >
+              {chip.label}
+              <span class="tabular-nums text-muted">{chip.count}</span>
+            </button>
+          {/each}
+        </div>
+      {/if}
     </div>
   {/if}
 
   <div class="view-body">
-    {#if rows.length === 0}
+    {#if isOutputSearchActive}
+      {#if outputSearching}
+        <div class="empty-state h-full">
+          <span class="spinner" aria-hidden="true"></span>
+          <div class="empty-state-title">Searching recorded output…</div>
+        </div>
+      {:else if outputError}
+        <div class="alert alert-error">
+          <div class="alert-title">Search failed</div>
+          <p class="m-0 text-xs">{outputError}</p>
+        </div>
+      {:else if outputHits.length === 0}
+        <div class="empty-state h-full">
+          <div class="empty-state-icon"><Search size={18} /></div>
+          <div class="empty-state-title">No recorded output matches</div>
+          <p class="empty-state-desc">No recorded session contained "{outputQuery.trim()}".</p>
+          <div class="empty-state-action">
+            <button type="button" class="btn btn-secondary" onclick={() => (outputQuery = "")}>
+              Clear search
+            </button>
+          </div>
+        </div>
+      {:else}
+        <div class="table-wrap">
+          <table class="data-table table-fixed">
+            <thead>
+              <tr>
+                <th class="w-[180px]">Host</th>
+                <th class="w-[148px]">Started</th>
+                <th class="w-[96px]">Session</th>
+                <th>Snippet</th>
+                <th class="w-[100px] text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each outputHits as hit (hit.session_id)}
+                {@const abs = formatDateTime(hit.started_at, timezone)}
+                {@const rel = formatRelative(hit.started_at, Date.now())}
+                <tr>
+                  <td>
+                    <span class="block truncate font-medium text-primary" title={hit.connection_name}>
+                      {hit.connection_name}
+                    </span>
+                  </td>
+                  <td>
+                    <span class="text-xs text-secondary" title={abs}>{rel}</span>
+                  </td>
+                  <td class="font-mono text-xs text-muted">
+                    {hit.session_id.slice(0, 8)}
+                  </td>
+                  <td class="font-mono text-xs text-secondary">
+                    <div class="truncate">
+                      {#each parseSnippetParts(hit.snippet) as part, idx (idx)}
+                        {#if part.highlight}
+                          <mark class="rounded-sm bg-accent-muted px-1 text-primary">{part.text}</mark>
+                        {:else}
+                          {part.text}
+                        {/if}
+                      {/each}
+                    </div>
+                  </td>
+                  <td class="text-right">
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-sm"
+                      onclick={() => openReplay(hit.session_id, hit.connection_name, abs)}
+                    >
+                      <Play size={13} />
+                      Replay
+                    </button>
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {/if}
+    {:else if rows.length === 0}
       <div class="empty-state h-full">
         <div class="empty-state-icon"><Clock size={18} /></div>
         <div class="empty-state-title">No sessions yet</div>
@@ -292,14 +495,15 @@
               <th>Host</th>
               <th class="w-[148px]">Started</th>
               <th class="w-[104px] text-right">Duration</th>
-              <th class="w-[34%]">Status</th>
-              <th class="w-[96px] text-right">Exit code</th>
+              <th class="w-[30%]">Status</th>
+              <th class="w-[88px] text-right">Exit code</th>
+              <th class="w-[104px] text-right">Recording</th>
             </tr>
           </thead>
           {#each groups as group, gi (group.key)}
             <tbody>
               <tr class="hover:bg-transparent {gi > 0 ? 'border-t border-border' : ''}">
-                <td colspan="5" class="h-8 bg-surface/60">
+                <td colspan="6" class="h-8 bg-surface/60">
                   <span class="section-label">{group.label}</span>
                   <span class="ml-1.5 text-2xs tabular-nums text-muted">{group.rows.length}</span>
                 </td>
@@ -308,7 +512,18 @@
                 {@const outcome = OUTCOME[row.outcome]}
                 <tr>
                   <td>
-                    <span class="block truncate font-medium text-primary" title={row.name}>{row.name}</span>
+                    <div class="flex min-w-0 items-center gap-2">
+                      <span class="block truncate font-medium text-primary" title={row.name}>{row.name}</span>
+                      {#if row.recorded}
+                        <span
+                          class="badge badge-neutral shrink-0"
+                          title="Session output recorded ({row.sessionId.slice(0, 8)})"
+                        >
+                          <span class="status-dot status-dot-sm status-dot-success" title="Recorded"></span>
+                          Recorded
+                        </span>
+                      {/if}
+                    </div>
                   </td>
                   <td>
                     <span class="text-xs text-secondary" title={row.absolute}>{row.relative}</span>
@@ -340,6 +555,21 @@
                   >
                     {row.exitCode ?? "—"}
                   </td>
+                  <td class="text-right">
+                    {#if row.recorded && row.sessionId}
+                      <button
+                        type="button"
+                        class="btn btn-ghost btn-sm"
+                        onclick={() => openReplay(row.sessionId, row.name, row.absolute)}
+                        title="Replay recorded session ({row.sessionId.slice(0, 8)})"
+                      >
+                        <Play size={13} />
+                        Replay
+                      </button>
+                    {:else}
+                      <span class="text-xs text-muted">—</span>
+                    {/if}
+                  </td>
                 </tr>
               {/each}
             </tbody>
@@ -349,3 +579,11 @@
     {/if}
   </div>
 </div>
+
+<ReplayModal
+  open={replayTarget !== null}
+  sessionId={replayTarget?.sessionId ?? null}
+  connectionName={replayTarget?.connectionName ?? ""}
+  startedLabel={replayTarget?.startedLabel ?? ""}
+  onClose={() => (replayTarget = null)}
+/>

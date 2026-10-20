@@ -14,6 +14,7 @@ pub async fn execute(
     no_bastion: bool,
     bastion_user: Option<String>,
     key: Option<String>,
+    record: Option<bool>,
     config: AppConfig,
 ) -> Result<()> {
     info!("Connecting to target: {}", target);
@@ -65,6 +66,7 @@ pub async fn execute(
             no_bastion,
             bastion_user,
             key,
+            record,
         )
         .await
 }

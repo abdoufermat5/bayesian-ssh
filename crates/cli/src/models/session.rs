@@ -152,6 +152,8 @@ impl Session {
 /// Session history entry for display purposes
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionHistoryEntry {
+    #[serde(default)]
+    pub session_id: String,
     pub connection_name: String,
     pub started_at: DateTime<Utc>,
     #[allow(dead_code)]
@@ -159,4 +161,15 @@ pub struct SessionHistoryEntry {
     pub status: SessionStatus,
     pub exit_code: Option<i32>,
     pub duration: Option<chrono::Duration>,
+    #[serde(default)]
+    pub recording_path: Option<String>,
+}
+
+/// Full-text search hit across recorded session output.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionTextHit {
+    pub session_id: String,
+    pub connection_name: String,
+    pub started_at: DateTime<Utc>,
+    pub snippet: String,
 }

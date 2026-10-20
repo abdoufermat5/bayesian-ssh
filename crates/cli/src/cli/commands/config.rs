@@ -12,6 +12,8 @@ pub async fn execute(
     log_level: Option<String>,
     clear_bastion: bool,
     search_mode: Option<String>,
+    recording: Option<String>,
+    recording_tags: Option<String>,
     mut config: AppConfig,
 ) -> Result<()> {
     info!("Updating application configuration");
@@ -32,6 +34,13 @@ pub async fn execute(
         default_bastion_user.map(Some)
     };
 
+    let recording_enabled = recording.as_deref().map(|s| s == "on");
+    let recording_tags = recording_tags.map(|s| {
+        s.split(',')
+            .filter_map(crate::models::Connection::normalize_tag)
+            .collect()
+    });
+
     let updates = AppConfigUpdates {
         default_user,
         default_bastion: bastion_update,
@@ -42,6 +51,8 @@ pub async fn execute(
         auto_save_history: None,
         max_history_size: None,
         search_mode,
+        recording_enabled,
+        recording_tags,
     };
 
     config.update(updates)?;
@@ -75,6 +86,20 @@ pub async fn execute(
         } else {
             "(simple pattern matching)"
         }
+    );
+    println!(
+        "  Session recording: {} (tags: {}, retention: {}d)",
+        if config.recording.enabled {
+            "on"
+        } else {
+            "off"
+        },
+        if config.recording.tags.is_empty() {
+            "all".to_string()
+        } else {
+            config.recording.tags.join(", ")
+        },
+        config.recording.retention_days
     );
 
     Ok(())

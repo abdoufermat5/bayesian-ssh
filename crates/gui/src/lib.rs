@@ -130,6 +130,8 @@ pub fn run() {
             commands::add_source,
             commands::remove_source,
             commands::sync_source,
+            commands::read_recording,
+            commands::search_session_text,
             updater::check_update,
             updater::install_update,
             updater::update_managed_by

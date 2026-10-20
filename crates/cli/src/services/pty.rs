@@ -151,12 +151,12 @@ pub fn read_loop(reader: &mut (dyn Read + Send), mut on_data: impl FnMut(String)
 /// Incremental UTF-8 decoder holding back the incomplete trailing bytes of
 /// a character (at most 3) until the next chunk arrives.
 #[derive(Default)]
-struct Utf8Carry {
+pub(crate) struct Utf8Carry {
     tail: Vec<u8>,
 }
 
 impl Utf8Carry {
-    fn decode_into(&mut self, chunk: &[u8], out: &mut String) {
+    pub(crate) fn decode_into(&mut self, chunk: &[u8], out: &mut String) {
         let joined;
         let mut bytes = if self.tail.is_empty() {
             chunk
@@ -193,7 +193,7 @@ impl Utf8Carry {
         }
     }
 
-    fn finish_into(&mut self, out: &mut String) {
+    pub(crate) fn finish_into(&mut self, out: &mut String) {
         if !self.tail.is_empty() {
             out.push_str(&String::from_utf8_lossy(&self.tail));
             self.tail.clear();

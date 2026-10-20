@@ -28,6 +28,7 @@ impl SshService {
         no_bastion: bool,
         bastion_user: Option<String>,
         key: Option<String>,
+        record: Option<bool>,
     ) -> Result<()> {
         // Try to find connection in database first (also checks aliases)
         if let Some(mut connection) = self.database.get_connection_or_alias(target)? {
@@ -61,7 +62,7 @@ impl SshService {
             connection.update_last_used();
             self.database.touch_connection(&connection)?;
 
-            return self.execute_ssh(&connection).await;
+            return self.execute_ssh(&connection, record).await;
         }
 
         // If not found, try to connect directly
@@ -81,10 +82,10 @@ impl SshService {
             key,
         );
 
-        self.execute_ssh(&connection).await
+        self.execute_ssh(&connection, record).await
     }
 
-    async fn execute_ssh(&self, connection: &Connection) -> Result<()> {
+    async fn execute_ssh(&self, connection: &Connection, record: Option<bool>) -> Result<()> {
         info!("Executing SSH connection to {}", connection.host);
 
         // Check and create Kerberos ticket if needed
@@ -102,38 +103,112 @@ impl SshService {
         let mut session = Session::new(connection.clone());
         session.transport = Some(format!("{kind:?}").to_lowercase());
         session.mark_active(std::process::id());
+
+        let recorder = if crate::services::recording::should_record(
+            connection,
+            &self.config.recording,
+            record,
+        ) {
+            let path = crate::services::recording::recording_path(&self.config, session.id);
+            let (cols, rows) = crossterm::terminal::size().unwrap_or((
+                crate::services::pty::DEFAULT_COLS,
+                crate::services::pty::DEFAULT_ROWS,
+            ));
+            match crate::services::recording::Recorder::create(
+                &path,
+                cols,
+                rows,
+                &connection.name,
+                self.config.recording.max_bytes_per_session,
+            ) {
+                Ok(rec) => {
+                    session.recording_path = Some(path.to_string_lossy().to_string());
+                    Some(std::sync::Arc::new(std::sync::Mutex::new(rec)))
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to start session recorder at '{}': {e}",
+                        path.display()
+                    );
+                    session.recording_path = None;
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         self.database.add_session(&session)?;
 
         let conn = connection.clone();
+        let rec_for_transport = recorder.clone();
         let result = crate::services::transport::execute_with_fallback(
             connection,
             &self.config,
             |transport| {
                 let conn_clone = conn.clone();
-                Box::pin(async move { transport.run_interactive(&conn_clone).await })
+                let rec_clone = rec_for_transport.clone();
+                Box::pin(async move { transport.run_interactive(&conn_clone, rec_clone).await })
             },
         )
         .await;
+        drop(rec_for_transport);
 
-        match result {
+        if let Some(rec_arc) = recorder {
+            let text = match std::sync::Arc::try_unwrap(rec_arc) {
+                Ok(mutex) => mutex
+                    .into_inner()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .finish(),
+                Err(arc) => arc
+                    .lock()
+                    .map(|mut g| g.finish_in_place())
+                    .unwrap_or_default(),
+            };
+            if let Err(e) = self.database.index_session_text(session.id, &text) {
+                warn!("Failed to index recorded session text: {e}");
+            }
+        }
+
+        let outcome = match result {
             Ok(0) => {
                 info!("SSH session completed successfully");
                 session.mark_terminated(0);
+                Ok(())
             }
             Ok(code) => {
                 warn!("SSH session exited with code {code}");
                 session.mark_terminated(code);
+                Ok(())
             }
             Err(e) => {
                 error!("SSH transport error: {e}");
                 session.mark_error(format!("{e}"));
-                self.database.update_session(&session)?;
-                return Err(anyhow::anyhow!("{}", e));
+                Err(anyhow::anyhow!("{}", e))
+            }
+        };
+
+        self.database.update_session(&session)?;
+
+        if self.config.recording.retention_days > 0 {
+            match self
+                .database
+                .prune_recordings(self.config.recording.retention_days)
+            {
+                Ok(paths) => {
+                    for p in paths {
+                        if let Err(e) = std::fs::remove_file(&p) {
+                            if e.kind() != std::io::ErrorKind::NotFound {
+                                warn!("Failed to remove expired recording '{p}': {e}");
+                            }
+                        }
+                    }
+                }
+                Err(e) => warn!("Failed to prune old recordings: {e}"),
             }
         }
 
-        self.database.update_session(&session)?;
-        Ok(())
+        outcome
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -288,6 +363,7 @@ impl SshService {
         no_bastion: bool,
         bastion_user: Option<String>,
         key: Option<String>,
+        record: Option<bool>,
     ) -> Result<()> {
         info!("Connecting to connection: {}", connection.name);
 
@@ -327,6 +403,6 @@ impl SshService {
         self.database.touch_connection(&conn)?;
 
         // Execute the connection
-        self.execute_ssh(&conn).await
+        self.execute_ssh(&conn, record).await
     }
 }

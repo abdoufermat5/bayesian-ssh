@@ -116,6 +116,7 @@ pub struct PtySession {
     pub output_buffer: Arc<Mutex<String>>,
     pub replay_offset: Arc<Mutex<usize>>,
     pub popout_window: PopoutOwner,
+    pub recorder: Option<bayesian_ssh::services::recording::SharedRecorder>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -201,6 +202,10 @@ pub struct DesktopSettings {
     pub enable_sftp: bool,
     #[serde(default = "default_enable_tunneling")]
     pub enable_tunneling: bool,
+    #[serde(default)]
+    pub record_sessions: bool,
+    #[serde(default)]
+    pub record_tags: Vec<String>,
 }
 
 pub fn default_sftp_show_hidden_files() -> bool {
@@ -297,6 +302,8 @@ impl Default for DesktopSettings {
             confirm_snippet_execution: default_confirm_snippet_execution(),
             enable_sftp: default_enable_sftp(),
             enable_tunneling: default_enable_tunneling(),
+            record_sessions: false,
+            record_tags: Vec::new(),
         }
     }
 }

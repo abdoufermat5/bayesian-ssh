@@ -48,6 +48,7 @@ export interface EnvInfo {
 }
 
 export interface SessionHistoryEntry {
+  session_id: string;
   connection_name: string;
   started_at: string;
   ended_at?: string;
@@ -55,6 +56,14 @@ export interface SessionHistoryEntry {
   exit_code?: number;
   /** chrono::Duration serializes as [seconds, nanoseconds]. */
   duration?: [number, number] | number;
+  recording_path?: string;
+}
+
+export interface SessionTextHit {
+  session_id: string;
+  connection_name: string;
+  started_at: string;
+  snippet: string;
 }
 
 export interface ConnectionStats {
@@ -88,6 +97,8 @@ export interface DesktopSettings {
   confirm_snippet_execution?: boolean;
   enable_sftp?: boolean;
   enable_tunneling?: boolean;
+  record_sessions?: boolean;
+  record_tags?: string[];
 }
 
 export interface WorkspaceInfo {

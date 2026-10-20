@@ -143,7 +143,7 @@ pub fn load_desktop_settings() -> Result<DesktopSettings, String> {
         .join("bayesian-ssh")
         .join("desktop_settings.json");
 
-    if settings_file.exists() {
+    let mut settings = if settings_file.exists() {
         let content = std::fs::read_to_string(&settings_file).map_err(|e| e.to_string())?;
         let mut settings: DesktopSettings =
             serde_json::from_str(&content).map_err(|e| e.to_string())?;
@@ -164,13 +164,20 @@ pub fn load_desktop_settings() -> Result<DesktopSettings, String> {
                 .filter(|s| !s.is_empty());
         }
 
-        Ok(settings)
+        settings
     } else {
-        Ok(DesktopSettings {
+        DesktopSettings {
             onboarding_complete: false,
             ..DesktopSettings::default()
-        })
+        }
+    };
+
+    if let Ok(config) = AppConfig::load(None) {
+        settings.record_sessions = config.recording.enabled;
+        settings.record_tags = config.recording.tags;
     }
+
+    Ok(settings)
 }
 
 #[tauri::command(async)]
@@ -187,9 +194,15 @@ pub fn save_desktop_settings(settings: DesktopSettings) -> Result<(), String> {
     // writes could otherwise leave a torn settings file.
     bayesian_ssh::config::atomic_write(&settings_file, &content).map_err(|e| e.to_string())?;
 
-    // Keep workspace search mode aligned with desktop fuzzy preference
+    // Keep workspace search mode and recording settings aligned with desktop preferences
     if let Ok(mut config) = AppConfig::load(None) {
         config.search_mode = sync_search_mode_to_config(settings.fuzzy_search);
+        config.recording.enabled = settings.record_sessions;
+        config.recording.tags = settings
+            .record_tags
+            .iter()
+            .filter_map(|t| bayesian_ssh::models::Connection::normalize_tag(t))
+            .collect();
         let _ = config.save();
     }
 

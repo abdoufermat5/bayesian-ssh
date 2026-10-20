@@ -13,12 +13,45 @@ pub async fn execute(
     limit: usize,
     days: Option<u32>,
     show_failed: bool,
+    grep: Option<String>,
     config: AppConfig,
 ) -> Result<()> {
     let db = Database::new(&config)?;
 
     // Sessions whose process is gone would otherwise be listed as active.
     db.close_stale_sessions()?;
+
+    if let Some(query) = grep {
+        let hits = db.search_session_text(&query, connection.as_deref(), days, limit)?;
+        if hits.is_empty() {
+            println!("📋 No recorded session output matched {:?}.", query);
+            return Ok(());
+        }
+
+        println!(
+            "{:<20} {:<20} {:<10} SNIPPET",
+            "CONNECTION", "STARTED", "SESSION"
+        );
+        println!("{}", "─".repeat(88));
+        for hit in &hits {
+            let short_id: String = hit.session_id.chars().take(8).collect();
+            let snippet_line = hit
+                .snippet
+                .replace(['\r', '\n', '\t'], " ")
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ");
+            println!(
+                "{:<20} {:<20} {:<10} {}",
+                truncate_display(&hit.connection_name, 19),
+                hit.started_at.format("%Y-%m-%d %H:%M:%S"),
+                short_id,
+                snippet_line
+            );
+        }
+        println!();
+        return Ok(());
+    }
 
     // Get session history with filters
     let sessions = db.get_session_history(connection.as_deref(), limit, days, show_failed)?;
@@ -36,7 +69,7 @@ pub async fn execute(
 
     // Print header
     println!("📋 Session History\n");
-    println!("{}", "─".repeat(80));
+    println!("{}", "─".repeat(88));
 
     // Print statistics summary
     println!(
@@ -47,17 +80,23 @@ pub async fn execute(
         stats.failed,
         format_elapsed(stats.avg_duration)
     );
-    println!("{}", "─".repeat(80));
+    println!("{}", "─".repeat(88));
     println!();
 
     // Print session entries
     println!(
-        "{:<20} {:<25} {:<12} {:<15} EXIT CODE",
-        "CONNECTION", "STARTED", "DURATION", "STATUS"
+        "{:<10} {:<20} {:<20} {:<12} {:<15} EXIT CODE",
+        "SESSION", "CONNECTION", "STARTED", "DURATION", "STATUS"
     );
-    println!("{}", "─".repeat(80));
+    println!("{}", "─".repeat(88));
 
     for session in &sessions {
+        let short_id: String = session.session_id.chars().take(8).collect();
+        let rec_marker = if session.recording_path.is_some() {
+            "●"
+        } else {
+            " "
+        };
         let status_str = format_status(&session.status);
         let duration_str = session
             .duration
@@ -69,7 +108,9 @@ pub async fn execute(
             .unwrap_or_else(|| "-".to_string());
 
         println!(
-            "{:<20} {:<25} {:<12} {:<15} {}",
+            "{:<8} {} {:<20} {:<20} {:<12} {:<15} {}",
+            short_id,
+            rec_marker,
             truncate_display(&session.connection_name, 19),
             session.started_at.format("%Y-%m-%d %H:%M:%S"),
             duration_str,

@@ -17,7 +17,7 @@ pub async fn execute(
     let db = Database::new(&config)?;
 
     if cleanup {
-        return cleanup_stale_sessions(&db);
+        return cleanup_stale_sessions(&db, &config);
     }
 
     if all {
@@ -176,7 +176,7 @@ fn close_all_sessions(db: &Database, force: bool) -> Result<()> {
 }
 
 /// Clean up stale sessions (PIDs no longer running)
-fn cleanup_stale_sessions(db: &Database) -> Result<()> {
+fn cleanup_stale_sessions(db: &Database, config: &AppConfig) -> Result<()> {
     let cleaned = db.close_stale_sessions()?;
     for (conn_name, pid) in &cleaned {
         match pid {
@@ -189,6 +189,24 @@ fn cleanup_stale_sessions(db: &Database) -> Result<()> {
         println!("✨ No stale sessions found.");
     } else {
         println!("\n✅ Cleaned {} stale session(s)", cleaned.len());
+    }
+
+    if config.recording.retention_days > 0 {
+        let pruned = db.prune_recordings(config.recording.retention_days)?;
+        for path in &pruned {
+            if let Err(e) = std::fs::remove_file(path) {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    tracing::warn!("Failed to delete expired recording '{path}': {e}");
+                }
+            }
+        }
+        if !pruned.is_empty() {
+            println!(
+                "🗑️  Pruned {} expired recording(s) (older than {} days)",
+                pruned.len(),
+                config.recording.retention_days
+            );
+        }
     }
 
     Ok(())

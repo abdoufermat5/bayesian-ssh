@@ -19,7 +19,16 @@ impl Cli {
                 no_bastion,
                 bastion_user,
                 key,
+                record,
+                no_record,
             } => {
+                let record_override = if record {
+                    Some(true)
+                } else if no_record {
+                    Some(false)
+                } else {
+                    None
+                };
                 commands::connect::execute(
                     target,
                     user,
@@ -29,6 +38,7 @@ impl Cli {
                     no_bastion,
                     bastion_user,
                     key,
+                    record_override,
                     config,
                 )
                 .await
@@ -109,6 +119,8 @@ impl Cli {
                 log_level,
                 clear_bastion,
                 search_mode,
+                recording,
+                recording_tags,
             } => {
                 commands::config::execute(
                     default_user,
@@ -119,6 +131,8 @@ impl Cli {
                     log_level,
                     clear_bastion,
                     search_mode,
+                    recording,
+                    recording_tags,
                     config,
                 )
                 .await
@@ -168,7 +182,13 @@ impl Cli {
                 limit,
                 days,
                 failed,
-            } => commands::history::execute(connection, limit, days, failed, config).await,
+                grep,
+            } => commands::history::execute(connection, limit, days, failed, grep, config).await,
+            Commands::Replay {
+                session,
+                speed,
+                idle_cap,
+            } => commands::replay::execute(session, speed, idle_cap, config).await,
             Commands::Desktop => commands::desktop::execute(config).await,
             Commands::Exec {
                 target,

@@ -148,6 +148,8 @@ export class AppStateStore {
     confirm_snippet_execution: true,
     enable_sftp: true,
     enable_tunneling: true,
+    record_sessions: false,
+    record_tags: [],
   });
 
   // Tags across the whole profile (stats are unfiltered), so the tag bar
@@ -332,6 +334,8 @@ export class AppStateStore {
         confirm_snippet_execution: loaded.confirm_snippet_execution !== false,
         enable_sftp: loaded.enable_sftp !== false,
         enable_tunneling: loaded.enable_tunneling !== false,
+        record_sessions: Boolean(loaded.record_sessions),
+        record_tags: Array.isArray(loaded.record_tags) ? (loaded.record_tags as string[]) : [],
       };
       applyTheme(this.settings.theme);
       applyThemeToAllTerminals(this.settings);
