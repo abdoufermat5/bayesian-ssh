@@ -43,6 +43,24 @@ impl Default for TransportConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PredictionConfig {
+    pub enabled: bool,
+    pub capture_cwd: bool,
+    pub window_days: u32,
+}
+
+impl Default for PredictionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            capture_cwd: true,
+            window_days: 180,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(skip, default = "default_environment")]
     pub environment: String,
@@ -62,6 +80,8 @@ pub struct AppConfig {
     pub transport: TransportConfig,
     #[serde(default)]
     pub auth: AuthConfig,
+    #[serde(default)]
+    pub prediction: PredictionConfig,
 }
 
 fn default_search_mode() -> String {
@@ -219,6 +239,7 @@ impl AppConfig {
             search_mode: "bayesian".to_string(),
             transport: TransportConfig::default(),
             auth: AuthConfig::default(),
+            prediction: PredictionConfig::default(),
         }
     }
 
@@ -275,6 +296,12 @@ impl AppConfig {
                 self.search_mode = search_mode;
             }
         }
+        if let Some(prediction_enabled) = updates.prediction_enabled {
+            self.prediction.enabled = prediction_enabled;
+        }
+        if let Some(capture_cwd) = updates.capture_cwd {
+            self.prediction.capture_cwd = capture_cwd;
+        }
 
         self.save()
     }
@@ -291,6 +318,8 @@ pub struct AppConfigUpdates {
     pub auto_save_history: Option<bool>,
     pub max_history_size: Option<usize>,
     pub search_mode: Option<String>,
+    pub prediction_enabled: Option<bool>,
+    pub capture_cwd: Option<bool>,
 }
 
 pub fn enforce_secure_dir(path: &std::path::Path) {

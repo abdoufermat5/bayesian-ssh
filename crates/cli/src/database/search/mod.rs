@@ -8,6 +8,7 @@ mod query;
 mod scoring;
 
 pub use query::SearchField;
+pub use scoring::{Prediction, RankContext, ScoreBreakdown};
 
 #[cfg(test)]
 mod tests {

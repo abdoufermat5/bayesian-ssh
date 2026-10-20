@@ -1,3 +1,4 @@
+use crate::database::search::RankContext;
 use crate::database::{escape_like, Database};
 use crate::models::Connection;
 use anyhow::Result;
@@ -45,6 +46,16 @@ impl Database {
         query: &str,
         limit: usize,
         mode: &str,
+    ) -> Result<Vec<Connection>> {
+        self.search_connections_ctx(query, limit, mode, None)
+    }
+
+    pub fn search_connections_ctx(
+        &self,
+        query: &str,
+        limit: usize,
+        mode: &str,
+        ctx: Option<&RankContext>,
     ) -> Result<Vec<Connection>> {
         let mut all_matches = Vec::new();
         let mut normalized_query = query.trim().to_lowercase();
@@ -99,7 +110,7 @@ impl Database {
             }
         }
 
-        self.deduplicate_and_rank(&mut all_matches, &normalized_query, mode);
+        self.deduplicate_and_rank(&mut all_matches, &normalized_query, mode, ctx);
         all_matches.truncate(limit);
         Ok(all_matches)
     }

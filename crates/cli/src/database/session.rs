@@ -54,6 +54,26 @@ impl Database {
         Ok(())
     }
 
+    /// Return the connection ID of the most recent session started at or after `cutoff`.
+    pub fn last_connection_since(
+        &self,
+        cutoff: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Option<uuid::Uuid>> {
+        use rusqlite::OptionalExtension;
+        let conn_id_str: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT connection_id FROM sessions
+                 WHERE started_at >= ?
+                 ORDER BY started_at DESC
+                 LIMIT 1",
+                params![cutoff.to_rfc3339()],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(conn_id_str.and_then(|s| uuid::Uuid::parse_str(&s).ok()))
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // Session history retrieval
     // ──────────────────────────────────────────────────────────────────────────

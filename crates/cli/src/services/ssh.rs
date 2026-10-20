@@ -101,6 +101,7 @@ impl SshService {
         // insert of the Starting state followed by an update to Active).
         let mut session = Session::new(connection.clone());
         session.transport = Some(format!("{kind:?}").to_lowercase());
+        session.context = crate::services::context::capture(&self.database, &self.config);
         session.mark_active(std::process::id());
         self.database.add_session(&session)?;
 
@@ -265,7 +266,16 @@ impl SshService {
 
     // Search with configurable mode (bayesian or fuzzy)
     pub async fn search(&self, query: &str, limit: usize, mode: &str) -> Result<Vec<Connection>> {
-        self.database.search_connections(query, limit, mode)
+        let ctx = if self.config.prediction.enabled {
+            Some(crate::database::RankContext::current(
+                &self.database,
+                &self.config,
+            ))
+        } else {
+            None
+        };
+        self.database
+            .search_connections_ctx(query, limit, mode, ctx.as_ref())
     }
 
     pub async fn get_recent_connections(&self, limit: usize) -> Result<Vec<Connection>> {
