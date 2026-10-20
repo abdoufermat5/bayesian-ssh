@@ -16,6 +16,7 @@
 
 - [Connection Management](./user-guide/connection-management.md)
 - [Session Management](./user-guide/session-management.md)
+- [Session Recording & Search](./user-guide/session-recording.md)
 - [Aliases](./user-guide/aliases.md)
 - [Bastion Hosts](./user-guide/bastion-hosts.md)
 - [Remote Execution & Transfer](./user-guide/remote-execution.md)
