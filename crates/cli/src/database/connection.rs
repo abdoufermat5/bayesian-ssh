@@ -36,8 +36,9 @@ impl Database {
 
         tx.execute(
             "INSERT INTO connections
-             (id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used, tags)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             (id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used, tags,
+              source_id, external_id, stale_since)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 host = excluded.host,
@@ -48,7 +49,10 @@ impl Database {
                 use_kerberos = excluded.use_kerberos,
                 key_path = excluded.key_path,
                 last_used = excluded.last_used,
-                tags = excluded.tags",
+                tags = excluded.tags,
+                source_id = excluded.source_id,
+                external_id = excluded.external_id,
+                stale_since = excluded.stale_since",
             params![
                 connection.id.to_string(),
                 connection.name,
@@ -62,6 +66,9 @@ impl Database {
                 connection.created_at.to_rfc3339(),
                 connection.last_used.map(|d| d.to_rfc3339()),
                 serde_json::to_string(&connection.tags)?,
+                connection.source_id.map(|id| id.to_string()),
+                connection.external_id,
+                connection.stale_since.map(|d| d.to_rfc3339()),
             ],
         )?;
 
@@ -86,7 +93,7 @@ impl Database {
 
     pub fn get_connection(&self, name_or_id: &str) -> Result<Option<Connection>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used
+            "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used, source_id, external_id, stale_since
              FROM connections
              WHERE id = ? OR name = ?",
         )?;
@@ -110,7 +117,7 @@ impl Database {
         recent_only: bool,
     ) -> Result<Vec<Connection>> {
         let mut query = String::from(
-            "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used
+            "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used, source_id, external_id, stale_since
              FROM connections",
         );
 
@@ -191,7 +198,8 @@ impl Database {
         let rows = tx.execute(
             "UPDATE connections SET
              name = ?, host = ?, user = ?, port = ?, bastion = ?, bastion_user = ?,
-             use_kerberos = ?, key_path = ?, last_used = ?, tags = ?
+             use_kerberos = ?, key_path = ?, last_used = ?, tags = ?,
+             source_id = ?, external_id = ?, stale_since = ?
              WHERE id = ?",
             params![
                 connection.name,
@@ -204,6 +212,9 @@ impl Database {
                 connection.key_path,
                 connection.last_used.map(|d| d.to_rfc3339()),
                 serde_json::to_string(&connection.tags)?,
+                connection.source_id.map(|id| id.to_string()),
+                connection.external_id,
+                connection.stale_since.map(|d| d.to_rfc3339()),
                 connection.id.to_string(),
             ],
         )?;
@@ -318,6 +329,15 @@ impl Database {
                     .map(|dt| dt.with_timezone(&chrono::Utc))
             }),
             tags: Vec::new(),
+            source_id: row
+                .get::<_, Option<String>>(11)?
+                .and_then(|s| uuid::Uuid::parse_str(&s).ok()),
+            external_id: row.get(12)?,
+            stale_since: row.get::<_, Option<String>>(13)?.and_then(|s| {
+                chrono::DateTime::parse_from_rfc3339(&s)
+                    .ok()
+                    .map(|dt| dt.with_timezone(&chrono::Utc))
+            }),
         })
     }
 
@@ -341,7 +361,7 @@ impl Database {
         let most_used = self
             .conn
             .query_row(
-                "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used
+                "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used, source_id, external_id, stale_since
                  FROM connections
                  WHERE last_used IS NOT NULL
                  ORDER BY last_used DESC
@@ -353,7 +373,7 @@ impl Database {
 
         // Single query for the ten most-recently-used.
         let mut recent_stmt = self.conn.prepare(
-            "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used
+            "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used, source_id, external_id, stale_since
              FROM connections
              WHERE last_used IS NOT NULL
              ORDER BY last_used DESC

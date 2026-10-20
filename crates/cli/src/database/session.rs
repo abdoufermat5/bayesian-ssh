@@ -10,8 +10,9 @@ impl Database {
 
     pub fn add_session(&self, session: &Session) -> Result<()> {
         self.conn.execute(
-            "INSERT INTO sessions (id, connection_id, started_at, ended_at, status, status_kind, pid, exit_code, transport)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO sessions (id, connection_id, started_at, ended_at, status, status_kind, pid, exit_code, transport,
+                                   recording_path, cwd, git_root, prev_connection_id, local_hour, local_weekday)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 session.id.to_string(),
                 session.connection.id.to_string(),
@@ -22,6 +23,12 @@ impl Database {
                 session.pid,
                 session.exit_code,
                 session.transport.as_deref(),
+                session.recording_path.as_deref(),
+                session.context.cwd.as_deref(),
+                session.context.git_root.as_deref(),
+                session.context.prev_connection_id.map(|id| id.to_string()),
+                session.context.local_hour,
+                session.context.local_weekday,
             ],
         )?;
         Ok(())
@@ -30,7 +37,8 @@ impl Database {
     pub fn update_session(&self, session: &Session) -> Result<()> {
         self.conn.execute(
             "UPDATE sessions SET
-             ended_at = ?, status = ?, status_kind = ?, pid = ?, exit_code = ?, transport = ?
+             ended_at = ?, status = ?, status_kind = ?, pid = ?, exit_code = ?, transport = ?,
+             recording_path = ?
              WHERE id = ?",
             params![
                 session.ended_at.map(|d| d.to_rfc3339()),
@@ -39,6 +47,7 @@ impl Database {
                 session.pid,
                 session.exit_code,
                 session.transport.as_deref(),
+                session.recording_path.as_deref(),
                 session.id.to_string(),
             ],
         )?;

@@ -118,7 +118,7 @@ impl Database {
     ) -> Result<Vec<Connection>> {
         let column = field.column();
         let sql = format!(
-            "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used
+            "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used, source_id, external_id, stale_since
              FROM connections
              WHERE {column} LIKE ? ESCAPE '\\' COLLATE NOCASE
              ORDER BY last_used DESC NULLS LAST, name ASC
@@ -141,7 +141,7 @@ impl Database {
     }
 
     fn enhanced_fuzzy_search(&self, query: &str, limit: usize) -> Result<Vec<Connection>> {
-        let sql = "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used
+        let sql = "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used, source_id, external_id, stale_since
                    FROM connections
                    ORDER BY last_used DESC NULLS LAST, name ASC";
         let mut stmt = self.conn.prepare(sql)?;
@@ -164,7 +164,8 @@ impl Database {
     /// Replaces the old JSON-LIKE query that produced false positives.
     pub(super) fn search_in_tags(&self, query: &str, limit: usize) -> Result<Vec<Connection>> {
         let sql = "SELECT c.id, c.name, c.host, c.user, c.port, c.bastion, c.bastion_user,
-                          c.use_kerberos, c.key_path, c.created_at, c.last_used
+                          c.use_kerberos, c.key_path, c.created_at, c.last_used,
+                          c.source_id, c.external_id, c.stale_since
                    FROM connections c
                    JOIN connection_tags ct ON c.id = ct.connection_id
                    WHERE ct.tag = ?

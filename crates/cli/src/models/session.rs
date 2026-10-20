@@ -14,6 +14,28 @@ pub struct Session {
     pub status: SessionStatus,
     pub pid: Option<u32>,
     pub exit_code: Option<i32>,
+    /// Asciicast v2 file holding the recorded output, when recording is on.
+    #[serde(default)]
+    pub recording_path: Option<String>,
+    /// Where and when the session was started, used for predictive ranking.
+    #[serde(default)]
+    pub context: SessionContext,
+}
+
+/// Launch context captured at connect time. Every field is optional: the
+/// desktop app has no working directory, and old rows predate the columns.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SessionContext {
+    /// Working directory the CLI was invoked from.
+    pub cwd: Option<String>,
+    /// Top-level directory of the git repository containing `cwd`.
+    pub git_root: Option<String>,
+    /// Connection of the previous session started within the lookback window.
+    pub prev_connection_id: Option<Uuid>,
+    /// Local hour of day (0-23) at session start.
+    pub local_hour: Option<u8>,
+    /// Local weekday at session start, Monday = 0.
+    pub local_weekday: Option<u8>,
 }
 
 /// Stable, lower-case discriminator stored in the `sessions.status_kind`
@@ -87,6 +109,8 @@ impl Session {
             status: SessionStatus::Starting,
             pid: None,
             exit_code: None,
+            recording_path: None,
+            context: SessionContext::default(),
         }
     }
 

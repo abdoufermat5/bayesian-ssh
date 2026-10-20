@@ -116,6 +116,9 @@ pub fn edit_connection(
         last_used: existing.last_used,
         tags: Vec::new(),
         aliases: existing.aliases,
+        source_id: existing.source_id,
+        external_id: existing.external_id,
+        stale_since: existing.stale_since,
     };
 
     for tag in tags {
@@ -309,6 +312,8 @@ pub async fn run_batch_command(
                 status: SessionStatus::Terminated,
                 pid: None,
                 exit_code: Some(res.exit_code),
+                recording_path: None,
+                context: Default::default(),
             };
             let _ = db.add_session(&session);
         }

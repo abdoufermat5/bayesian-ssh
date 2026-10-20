@@ -19,7 +19,7 @@ mod tag;
 pub use search::SearchField;
 pub use session::live_pid;
 
-const SCHEMA_VERSION: i32 = 4;
+const SCHEMA_VERSION: i32 = 7;
 
 /// How long a statement waits on a lock held by another process (the CLI
 /// and the desktop app share the same database file) before failing with
@@ -140,6 +140,18 @@ impl Database {
         if current < 4 {
             self.migrate_v4_purge_orphans()?;
             self.set_schema_version(4)?;
+        }
+        if current < 5 {
+            self.migrate_v5_session_recordings()?;
+            self.set_schema_version(5)?;
+        }
+        if current < 6 {
+            self.migrate_v6_session_context()?;
+            self.set_schema_version(6)?;
+        }
+        if current < 7 {
+            self.migrate_v7_inventory_sources()?;
+            self.set_schema_version(7)?;
         }
         Ok(())
     }
@@ -294,6 +306,49 @@ impl Database {
         Ok(())
     }
 
+    /// v5: recorded sessions. `session_text` is an FTS5 index over the
+    /// ANSI-stripped output of each recording, for `history --grep`.
+    fn migrate_v5_session_recordings(&self) -> Result<()> {
+        self.conn.execute_batch(
+            "ALTER TABLE sessions ADD COLUMN recording_path TEXT;
+             CREATE VIRTUAL TABLE IF NOT EXISTS session_text
+                 USING fts5(session_id UNINDEXED, content, tokenize = 'unicode61');",
+        )?;
+        Ok(())
+    }
+
+    /// v6: launch context of each session, for predictive ranking.
+    fn migrate_v6_session_context(&self) -> Result<()> {
+        self.conn.execute_batch(
+            "ALTER TABLE sessions ADD COLUMN cwd TEXT;
+             ALTER TABLE sessions ADD COLUMN git_root TEXT;
+             ALTER TABLE sessions ADD COLUMN prev_connection_id TEXT;
+             ALTER TABLE sessions ADD COLUMN local_hour INTEGER;
+             ALTER TABLE sessions ADD COLUMN local_weekday INTEGER;",
+        )?;
+        Ok(())
+    }
+
+    /// v7: inventory sources. Connections pulled from a source carry its id
+    /// and the host's stable id inside it, so a resync updates the same row.
+    fn migrate_v7_inventory_sources(&self) -> Result<()> {
+        self.conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS sources (
+                 id TEXT PRIMARY KEY,
+                 name TEXT NOT NULL UNIQUE,
+                 kind TEXT NOT NULL,
+                 config TEXT NOT NULL DEFAULT '{}',
+                 created_at TEXT NOT NULL,
+                 last_sync_at TEXT,
+                 last_sync_error TEXT
+             );
+             ALTER TABLE connections ADD COLUMN source_id TEXT;
+             ALTER TABLE connections ADD COLUMN external_id TEXT;
+             ALTER TABLE connections ADD COLUMN stale_since TEXT;",
+        )?;
+        Ok(())
+    }
+
     fn create_indexes(&self) -> Result<()> {
         self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_connections_name ON connections(name)",
@@ -333,6 +388,15 @@ impl Database {
         )?;
         self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_connection_tags_tag ON connection_tags(tag)",
+            [],
+        )?;
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sessions_git_root ON sessions(git_root)",
+            [],
+        )?;
+        self.conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_connections_source_external
+                 ON connections(source_id, external_id) WHERE source_id IS NOT NULL",
             [],
         )?;
         // Index on sessions.pid; existing databases already carry it.

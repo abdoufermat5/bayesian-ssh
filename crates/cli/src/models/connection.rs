@@ -19,6 +19,16 @@ pub struct Connection {
     /// Aliases for this connection (not stored in main table, loaded separately)
     #[serde(default)]
     pub aliases: Vec<String>,
+    /// Inventory source that owns this connection (`sources.id`); `None` for
+    /// connections added by hand.
+    #[serde(default)]
+    pub source_id: Option<Uuid>,
+    /// Stable id of the host inside its source (e.g. an EC2 instance id).
+    #[serde(default)]
+    pub external_id: Option<String>,
+    /// Set when the last sync of `source_id` no longer listed this host.
+    #[serde(default)]
+    pub stale_since: Option<DateTime<Utc>>,
 }
 
 impl Connection {
@@ -47,6 +57,9 @@ impl Connection {
             last_used: None,
             tags: Vec::new(),
             aliases: Vec::new(),
+            source_id: None,
+            external_id: None,
+            stale_since: None,
         }
     }
 
