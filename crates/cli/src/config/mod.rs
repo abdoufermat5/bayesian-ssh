@@ -106,6 +106,7 @@ pub struct AppConfig {
     pub auth: AuthConfig,
     #[serde(default)]
     pub recording: RecordingConfig,
+    #[serde(default)]
     pub prediction: PredictionConfig,
 }
 
