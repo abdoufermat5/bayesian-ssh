@@ -14,10 +14,12 @@ mod alias;
 mod connection;
 mod search;
 mod session;
+mod source;
 mod tag;
 
 pub use search::SearchField;
 pub use session::live_pid;
+pub use source::SourceSummary;
 
 const SCHEMA_VERSION: i32 = 7;
 

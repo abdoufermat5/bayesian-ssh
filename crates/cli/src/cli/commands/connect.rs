@@ -41,6 +41,20 @@ pub async fn execute(
             }
         };
 
+    if let Some(stale_since) = connection.stale_since {
+        let source_name = crate::database::Database::new(&config)?
+            .list_sources()?
+            .into_iter()
+            .find(|summary| Some(summary.source.id) == connection.source_id)
+            .map(|summary| summary.source.name)
+            .unwrap_or_else(|| "its source".to_string());
+        eprintln!(
+            "⚠️  not seen in the last sync of {} (since {})",
+            source_name,
+            stale_since.format("%Y-%m-%d")
+        );
+    }
+
     ssh_service
         .connect_to_connection(
             &connection,

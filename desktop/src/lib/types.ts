@@ -11,6 +11,35 @@ export interface Connection {
   created_at: string;
   last_used?: string;
   tags: string[];
+  source_id?: string;
+  external_id?: string;
+  stale_since?: string;
+}
+
+export type SourceKind = "ssh-config" | "ansible" | "tailscale" | "aws" | "gcp";
+
+export interface Source {
+  id: string;
+  name: string;
+  kind: SourceKind;
+  config: Record<string, unknown>;
+  created_at: string;
+  last_sync_at?: string;
+  last_sync_error?: string;
+  hosts?: number;
+  stale?: number;
+}
+
+export interface SyncReport {
+  added: number;
+  updated: number;
+  stale: number;
+  unstaled: number;
+  pruned: number;
+  skipped_invalid: number;
+  renamed: [string, string][];
+  duplicates: string[];
+  dry_run: boolean;
 }
 
 export interface EnvInfo {

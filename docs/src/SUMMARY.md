@@ -22,6 +22,7 @@
 - [Environments](./user-guide/environments.md)
 - [Desktop GUI Mode](./user-guide/desktop.md)
 - [Import & Export](./user-guide/import-export.md)
+- [Inventory Sources](./user-guide/inventory-sources.md)
 
 ---
 

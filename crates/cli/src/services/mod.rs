@@ -1,6 +1,7 @@
 pub mod agent;
 pub mod auth;
 pub mod crypto;
+pub mod inventory;
 pub mod kerberos;
 pub mod known_hosts;
 pub mod pty;

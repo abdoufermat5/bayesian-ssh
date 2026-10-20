@@ -24,5 +24,6 @@ pub mod proxy;
 pub mod remove;
 pub mod restore;
 pub mod show;
+pub mod source;
 pub mod stats;
 pub mod transfer;

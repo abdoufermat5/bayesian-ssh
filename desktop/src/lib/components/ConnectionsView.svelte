@@ -372,6 +372,12 @@
       Jump
     </span>
   {/if}
+  {#if conn.source_id}
+    <span class="badge badge-accent" title="Managed by an inventory source">Synced</span>
+  {/if}
+  {#if conn.stale_since}
+    <span class="badge badge-warning" title={`Not seen in the last sync since ${conn.stale_since}`}>Stale</span>
+  {/if}
 {/snippet}
 
 <div class="view select-none">
@@ -566,7 +572,7 @@
                 <td>
                   <div class="flex min-w-0 items-center gap-2.5">
                     <span class="status-dot {status.cls}" title={status.label}></span>
-                    <span class="truncate font-medium text-primary" title={conn.name}>{conn.name}</span>
+                    <span class="truncate font-medium {conn.stale_since ? 'text-muted' : 'text-primary'}" title={conn.name}>{conn.name}</span>
                     {@render hostBadges(conn)}
                   </div>
                 </td>
@@ -630,7 +636,7 @@
               <div class="flex min-w-0 flex-col gap-1">
                 <div class="flex min-w-0 items-center gap-2">
                   <span class="status-dot {status.cls}" title={status.label}></span>
-                  <span class="truncate font-medium text-primary" title={conn.name}>{conn.name}</span>
+                  <span class="truncate font-medium {conn.stale_since ? 'text-muted' : 'text-primary'}" title={conn.name}>{conn.name}</span>
                 </div>
                 <span class="truncate font-mono text-xs text-muted" title={`${conn.user}@${conn.host}:${conn.port}`}>
                   {conn.user}@{conn.host}{conn.port !== 22 ? `:${conn.port}` : ""}
