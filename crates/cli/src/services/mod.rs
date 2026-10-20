@@ -4,6 +4,7 @@ pub mod crypto;
 pub mod kerberos;
 pub mod known_hosts;
 pub mod pty;
+pub mod recording;
 pub mod security;
 pub mod sftp_shared;
 pub mod ssh;

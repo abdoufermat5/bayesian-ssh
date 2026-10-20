@@ -43,6 +43,30 @@ impl Default for TransportConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RecordingConfig {
+    /// Master switch.
+    pub enabled: bool,
+    /// Record only connections carrying one of these tags; empty = all connections.
+    pub tags: Vec<String>,
+    /// Stop writing events once a recording reaches this size.
+    pub max_bytes_per_session: u64,
+    /// Recordings older than this are deleted (file, recording_path and text index). 0 = keep forever.
+    pub retention_days: u32,
+}
+
+impl Default for RecordingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            tags: Vec::new(),
+            max_bytes_per_session: 50 * 1024 * 1024,
+            retention_days: 90,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(skip, default = "default_environment")]
     pub environment: String,
@@ -62,6 +86,8 @@ pub struct AppConfig {
     pub transport: TransportConfig,
     #[serde(default)]
     pub auth: AuthConfig,
+    #[serde(default)]
+    pub recording: RecordingConfig,
 }
 
 fn default_search_mode() -> String {
@@ -219,6 +245,7 @@ impl AppConfig {
             search_mode: "bayesian".to_string(),
             transport: TransportConfig::default(),
             auth: AuthConfig::default(),
+            recording: RecordingConfig::default(),
         }
     }
 
@@ -275,6 +302,12 @@ impl AppConfig {
                 self.search_mode = search_mode;
             }
         }
+        if let Some(enabled) = updates.recording_enabled {
+            self.recording.enabled = enabled;
+        }
+        if let Some(tags) = updates.recording_tags {
+            self.recording.tags = tags;
+        }
 
         self.save()
     }
@@ -291,6 +324,8 @@ pub struct AppConfigUpdates {
     pub auto_save_history: Option<bool>,
     pub max_history_size: Option<usize>,
     pub search_mode: Option<String>,
+    pub recording_enabled: Option<bool>,
+    pub recording_tags: Option<Vec<String>>,
 }
 
 pub fn enforce_secure_dir(path: &std::path::Path) {
