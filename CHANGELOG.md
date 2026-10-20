@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-10-20
+
 ### Added
 - **Recorded sessions you can search**: opt-in recording of interactive session *output* (never keystrokes) as asciicast v2 files, from the CLI and the desktop app (`bssh config --recording on`, optionally `--recording-tags prod,db`; per session `bssh connect --record/--no-record`). Recordings live next to the database in `recordings/`, created `0600`, capped at 50 MiB each and pruned after 90 days. The plain text is indexed with SQLite FTS5: `bssh history --grep "systemctl restart nginx"` finds which host and when, `bssh history` shows a session id and a recorded marker, and `bssh replay <id> [--speed] [--idle-cap]` plays it back. The desktop History view gains a recorded marker, a search box over recorded output and a replay player.
 - **Predictive connect**: ranking now weighs the context a session is started from — the git repository you run `bssh` in, the hour of day, and the host you connected to just before — as smoothed likelihood ratios multiplied into the Bayesian score (clamped to ×0.25–×8, only with enough evidence). `bssh` with no arguments suggests the top 3 connections with a reason and connects on Enter; `bssh why <host>` prints the score factor by factor. The desktop app shows the suggestions in the Connections view and the command palette. Capture can be limited with `bssh config --capture-cwd off` or disabled with `--prediction off`.
