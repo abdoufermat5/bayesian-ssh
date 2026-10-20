@@ -19,11 +19,7 @@ const TRUNCATED_MARKER: &str = "\r\n[bssh: recording truncated]\r\n";
 pub type SharedRecorder = Arc<Mutex<Recorder>>;
 
 /// Decide whether a session to `conn` should be recorded.
-pub fn should_record(
-    conn: &Connection,
-    cfg: &RecordingConfig,
-    cli_override: Option<bool>,
-) -> bool {
+pub fn should_record(conn: &Connection, cfg: &RecordingConfig, cli_override: Option<bool>) -> bool {
     if let Some(override_flag) = cli_override {
         return override_flag;
     }

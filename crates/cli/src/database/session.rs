@@ -299,10 +299,8 @@ impl Database {
 
         let mut paths = Vec::with_capacity(expired.len());
         for (id, path) in expired {
-            self.conn.execute(
-                "DELETE FROM session_text WHERE session_id = ?",
-                params![id],
-            )?;
+            self.conn
+                .execute("DELETE FROM session_text WHERE session_id = ?", params![id])?;
             self.conn.execute(
                 "UPDATE sessions SET recording_path = NULL WHERE id = ?",
                 params![id],

@@ -8,12 +8,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use std::time::Duration;
 
-pub async fn execute(
-    session: String,
-    speed: f64,
-    idle_cap: f64,
-    config: AppConfig,
-) -> Result<()> {
+pub async fn execute(session: String, speed: f64, idle_cap: f64, config: AppConfig) -> Result<()> {
     if !speed.is_finite() || speed <= 0.0 {
         anyhow::bail!("--speed must be a positive number (got {speed})");
     }

@@ -118,14 +118,39 @@ fn seal_replay_offset(session: &PtySession) {
     }
 }
 
-fn finalize_db_session(db_session_id: Option<Uuid>, exit_code: i32) {
+fn finalize_db_session(
+    db_session_id: Option<Uuid>,
+    exit_code: i32,
+    recorder: Option<bayesian_ssh::services::recording::SharedRecorder>,
+) {
+    let recorded_text = recorder.map(|rec_arc| match Arc::try_unwrap(rec_arc) {
+        Ok(mutex) => mutex
+            .into_inner()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .finish(),
+        Err(arc) => arc
+            .lock()
+            .map(|mut g| g.finish_in_place())
+            .unwrap_or_default(),
+    });
+
     let Some(session_id) = db_session_id else {
         return;
     };
 
     if let Ok(config) = AppConfig::load(None) {
         if let Ok(db) = Database::new(&config) {
+            if let Some(ref text) = recorded_text {
+                let _ = db.index_session_text(session_id, text);
+            }
             let _ = db.mark_session_terminated(&session_id.to_string(), exit_code);
+            if config.recording.retention_days > 0 {
+                if let Ok(paths) = db.prune_recordings(config.recording.retention_days) {
+                    for p in paths {
+                        let _ = std::fs::remove_file(&p);
+                    }
+                }
+            }
         }
     }
 }
@@ -140,6 +165,7 @@ fn reap_session(session: PtySession, app: &AppHandle) {
         db_session_id,
         input,
         _master,
+        recorder,
         ..
     } = session;
     // Release our PTY ends first so the child sees the hangup before we block
@@ -150,8 +176,8 @@ fn reap_session(session: PtySession, app: &AppHandle) {
         .wait()
         .map(|status| status.exit_code() as i32)
         .unwrap_or(-1);
-    if db_session_id.is_some() {
-        finalize_db_session(db_session_id, exit_code);
+    if db_session_id.is_some() || recorder.is_some() {
+        finalize_db_session(db_session_id, exit_code, recorder);
         let _ = app.emit("history-updated", ());
     }
 }
@@ -202,12 +228,35 @@ pub fn spawn_pty(
 
     let child = spawned.child;
 
+    let want_record =
+        bayesian_ssh::services::recording::should_record(&connection, &config.recording, None);
     let mut db_session_id: Option<Uuid> = None;
-    if config.auto_save_history {
+    let mut recorder: Option<bayesian_ssh::services::recording::SharedRecorder> = None;
+    if config.auto_save_history || want_record {
         let mut session = Session::new(connection.clone());
         session.transport = Some("subprocess".to_string());
+        if want_record {
+            let path = bayesian_ssh::services::recording::recording_path(&config, session.id);
+            match bayesian_ssh::services::recording::Recorder::create(
+                &path,
+                bayesian_ssh::services::pty::DEFAULT_COLS,
+                bayesian_ssh::services::pty::DEFAULT_ROWS,
+                &connection.name,
+                config.recording.max_bytes_per_session,
+            ) {
+                Ok(rec) => {
+                    session.recording_path = Some(path.to_string_lossy().to_string());
+                    recorder = Some(Arc::new(Mutex::new(rec)));
+                }
+                Err(e) => {
+                    eprintln!("Failed to start session recorder: {e}");
+                    session.recording_path = None;
+                }
+            }
+        }
         if let Err(e) = db.add_session(&session) {
             eprintln!("Failed to record session start: {e}");
+            recorder = None;
         } else {
             db_session_id = Some(session.id);
             if let Some(pid) = child.process_id() {
@@ -243,6 +292,7 @@ pub fn spawn_pty(
     let replay_offset_clone = Arc::clone(&replay_offset);
     let popout_window = PopoutOwner::default();
     let popout_window_clone = popout_window.clone();
+    let recorder_clone = recorder.clone();
 
     let session = PtySession {
         input,
@@ -255,6 +305,7 @@ pub fn spawn_pty(
         output_buffer,
         replay_offset,
         popout_window,
+        recorder,
     };
 
     // Store in global state — _master keeps the PTY master fd alive for the
@@ -289,6 +340,12 @@ pub fn spawn_pty(
         let popout_output_event = format!("pty-output:{session_id_clone}");
 
         bayesian_ssh::services::pty::read_loop(&mut reader, |str_data| {
+            if let Some(ref rec) = recorder_clone {
+                if let Ok(mut g) = rec.lock() {
+                    g.output(&str_data);
+                }
+            }
+
             append_to_output_buffer(&output_buffer_clone, &replay_offset_clone, &str_data);
 
             if detached_clone.load(Ordering::SeqCst) {
@@ -314,6 +371,7 @@ pub fn spawn_pty(
                 }
             });
         });
+        drop(recorder_clone);
 
         // Only emit pty-exit if this was NOT a manual close (avoids ghost events)
         if !cancelled_clone.load(Ordering::SeqCst) {
@@ -384,6 +442,11 @@ pub fn resize_pty(
         .get(&session_id)
         .ok_or_else(|| format!("PTY session '{}' not found", session_id))?;
     bayesian_ssh::services::pty::resize(session._master.as_ref(), cols, rows)?;
+    if let Some(ref rec) = session.recorder {
+        if let Ok(mut g) = rec.lock() {
+            g.resize(cols, rows);
+        }
+    }
     Ok(())
 }
 
