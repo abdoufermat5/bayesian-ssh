@@ -189,7 +189,13 @@ impl Recorder {
             crate::config::enforce_secure_dir(parent);
         }
 
-        let file = File::create(path)?;
+        // Create the file 0600 up front: recordings can hold secrets, so they
+        // must never exist with umask permissions, even briefly.
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+        let file: File = options.open(path)?;
         crate::config::enforce_secure_file(path);
         let mut writer = BufWriter::new(file);
 
