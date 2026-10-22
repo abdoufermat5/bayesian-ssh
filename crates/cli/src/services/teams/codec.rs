@@ -6,6 +6,7 @@ use anyhow::{anyhow, Result};
 use bssh_teams_proto::api::{AuditEvent, EncryptedEntry, VaultPayload, WrappedKey};
 use bssh_teams_proto::wire::PublicKey32;
 use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 use uuid::Uuid;
 
 /// What the sync engine and local reads need from the crypto layer.
@@ -40,7 +41,8 @@ pub trait VaultCodec {
 pub struct CryptoCodec {
     team_id: Uuid,
     device_id: Uuid,
-    device_keys: DeviceKeys,
+    /// Shared with the HTTP client, which signs auth challenges with it.
+    device_keys: Arc<DeviceKeys>,
     team_keys: BTreeMap<u32, TeamKey>,
     /// Author device id -> Ed25519 public key. Includes this device and former
     /// members' devices, so their old entries stay verifiable.
@@ -51,10 +53,11 @@ impl CryptoCodec {
     pub fn new(
         team_id: Uuid,
         device_id: Uuid,
-        device_keys: DeviceKeys,
+        device_keys: impl Into<Arc<DeviceKeys>>,
         team_keys: Vec<TeamKey>,
         author_keys: HashMap<Uuid, PublicKey32>,
     ) -> Result<Self> {
+        let device_keys = device_keys.into();
         if team_keys.is_empty() {
             return Err(anyhow!("no team key available for this device"));
         }

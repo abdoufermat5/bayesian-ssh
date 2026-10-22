@@ -13,6 +13,8 @@ pub enum SourceKind {
     Tailscale,
     Aws,
     Gcp,
+    /// A bssh Teams vault; synced by `bssh teams sync`, not `bssh source sync`.
+    Team,
 }
 
 impl SourceKind {
@@ -23,6 +25,7 @@ impl SourceKind {
             Self::Tailscale => "tailscale",
             Self::Aws => "aws",
             Self::Gcp => "gcp",
+            Self::Team => "team",
         }
     }
 }
@@ -43,6 +46,7 @@ impl FromStr for SourceKind {
             "tailscale" => Ok(Self::Tailscale),
             "aws" => Ok(Self::Aws),
             "gcp" => Ok(Self::Gcp),
+            "team" => Ok(Self::Team),
             other => Err(format!(
                 "unknown source kind '{}' (expected ssh-config, ansible, tailscale, aws or gcp)",
                 other
@@ -79,7 +83,7 @@ impl Source {
 
 /// One host as reported by an inventory provider, before it is matched
 /// against the connections already stored for the source.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DiscoveredHost {
     /// Stable identifier inside the source (EC2 instance id, ssh alias, ...).
     pub external_id: String,
@@ -89,4 +93,8 @@ pub struct DiscoveredHost {
     pub port: Option<u16>,
     pub key_path: Option<String>,
     pub tags: Vec<String>,
+    /// Per-host jump host. `None` falls back to the source's `bastion`.
+    pub bastion: Option<String>,
+    pub bastion_user: Option<String>,
+    pub use_kerberos: bool,
 }

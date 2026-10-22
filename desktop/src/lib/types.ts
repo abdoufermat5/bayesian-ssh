@@ -16,7 +16,8 @@ export interface Connection {
   stale_since?: string;
 }
 
-export type SourceKind = "ssh-config" | "ansible" | "tailscale" | "aws" | "gcp";
+// "team" sources are bssh Teams vaults: created and synced by `bssh teams`, never added here.
+export type SourceKind = "ssh-config" | "ansible" | "tailscale" | "aws" | "gcp" | "team";
 
 export interface Source {
   id: string;

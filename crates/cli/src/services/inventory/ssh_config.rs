@@ -25,6 +25,7 @@ impl InventoryProvider for SshConfigProvider {
                 port: host.port,
                 key_path: host.identity_file,
                 tags: vec!["ssh-config".to_string()],
+                ..Default::default()
             })
             .collect())
     }

@@ -104,6 +104,7 @@ fn parse_inventory(root: &Value) -> Vec<DiscoveredHost> {
                     .and_then(|key| key.as_str())
                     .map(|key| key.to_string()),
                 tags,
+                ..Default::default()
             }
         })
         .collect()

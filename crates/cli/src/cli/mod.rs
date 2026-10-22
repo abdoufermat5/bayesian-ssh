@@ -5,7 +5,7 @@ pub mod commands;
 pub mod parser;
 pub mod utils;
 
-pub use parser::{AliasSubcommand, Cli, Commands, EnvCommands, SourceCommands};
+pub use parser::{AliasSubcommand, Cli, Commands, EnvCommands, SourceCommands, TeamsCommands};
 
 impl Cli {
     pub async fn execute(self, config: AppConfig) -> Result<()> {
@@ -183,6 +183,7 @@ impl Cli {
                 passphrase,
             } => commands::import::execute(file, no_bastion, passphrase, config).await,
             Commands::Source { command } => commands::source::execute(command, config).await,
+            Commands::Teams { command } => commands::teams::execute(command, config).await,
             Commands::Completions { shell } => commands::completions::execute(shell, config).await,
             Commands::History {
                 connection,

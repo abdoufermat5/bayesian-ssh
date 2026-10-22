@@ -429,6 +429,28 @@ pub enum Commands {
         command: SourceCommands,
     },
 
+    /// Share connections with your team through an end-to-end encrypted vault
+    #[command(
+        long_about = "bssh Teams: shared connections, encrypted on your devices.\n\n\
+            The sync server stores only ciphertext. Team connections appear in\n\
+            `bssh list` and `bssh connect` like any other host, and connecting to one\n\
+            is recorded in the team's signed audit log at the next sync.\n\n\
+            Your device keys are protected by a passphrase (prompted, or read from\n\
+            BSSH_TEAMS_PASSPHRASE for scripts).",
+        after_help = "Examples:\n\
+          bssh teams init --server https://teams.example.com --email you@example.com\n\
+          bssh teams create platform\n\
+          bssh teams share db-prod --team platform\n\
+          bssh teams invite platform ana@example.com\n\
+          bssh teams join <TOKEN> --fingerprint SHA256:...      (on Ana's machine)\n\
+          bssh teams grant platform --fingerprint SHA256:...    (admin, Ana's device)\n\
+          bssh teams sync"
+    )]
+    Teams {
+        #[command(subcommand)]
+        command: TeamsCommands,
+    },
+
     /// Manage multi-environment profiles (separate connection databases)
     Env {
         #[command(subcommand)]
@@ -815,4 +837,77 @@ mod tests {
         assert!(Cli::try_parse_from(["bssh", "connect", "db01", "-p", "0"]).is_err());
         assert!(Cli::try_parse_from(["bssh", "add", "n", "h", "-p", "0"]).is_err());
     }
+}
+
+#[derive(Subcommand)]
+pub enum TeamsCommands {
+    /// Set up this machine: create your account and this device's keys
+    Init {
+        /// Sync server URL (https; http only for localhost)
+        #[arg(long, value_name = "URL")]
+        server: String,
+        /// Your email address (invites are sent to it)
+        #[arg(long, value_name = "EMAIL")]
+        email: String,
+        /// Name for this device, shown to team admins (default: hostname)
+        #[arg(long, value_name = "NAME")]
+        device_name: Option<String>,
+    },
+    /// Show this machine's account, device and fingerprint
+    Whoami,
+    /// Create a team; you become its admin
+    Create {
+        /// Team name, also used as its source name in `bssh list`
+        name: String,
+    },
+    /// List the teams on this machine
+    List,
+    /// Invite someone by email (admin)
+    Invite {
+        team: String,
+        email: String,
+        /// Make them an admin instead of a member
+        #[arg(long)]
+        admin: bool,
+    },
+    /// Join a team with an invite token and the admin's device fingerprint
+    Join {
+        /// Invite token (single use)
+        #[arg(required_unless_present = "team")]
+        token: Option<String>,
+        /// Finish a join whose fingerprint check failed, by team id
+        #[arg(long, value_name = "TEAM_ID", conflicts_with = "token")]
+        team: Option<uuid::Uuid>,
+        /// The admin's fingerprint, received with the invite
+        #[arg(long, value_name = "SHA256:...")]
+        fingerprint: String,
+    },
+    /// Give the team key to a waiting device (admin); lists them without --fingerprint
+    Grant {
+        team: String,
+        /// Fingerprint the member sent you after joining
+        #[arg(long, value_name = "SHA256:...")]
+        fingerprint: Option<String>,
+    },
+    /// Sync a team, or every team
+    Sync {
+        /// Team to sync (default: all)
+        team: Option<String>,
+    },
+    /// Share a saved connection with a team (or push your edits to a team connection)
+    Share {
+        /// Connection name or alias
+        connection: String,
+        #[arg(long)]
+        team: String,
+    },
+    /// Delete a team connection for everyone in the team
+    Unshare {
+        /// Connection name or alias
+        connection: String,
+    },
+    /// List a team's members and their devices
+    Members { team: String },
+    /// Remove a member and rotate the team key (admin)
+    Remove { team: String, email: String },
 }

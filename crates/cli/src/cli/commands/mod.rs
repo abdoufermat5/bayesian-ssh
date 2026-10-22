@@ -28,5 +28,6 @@ pub mod restore;
 pub mod show;
 pub mod source;
 pub mod stats;
+pub mod teams;
 pub mod transfer;
 pub mod why;

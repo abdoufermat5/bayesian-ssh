@@ -45,7 +45,8 @@
     { value: "external", label: "External IP" },
   ];
 
-  const kindLabel = (k: SourceKind) => kindOptions.find((o) => o.value === k)?.label ?? k;
+  const kindLabel = (k: SourceKind) =>
+    k === "team" ? "Team" : (kindOptions.find((o) => o.value === k)?.label ?? k);
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
   // Required fields per kind, so "Add source" can't create a source that
@@ -381,24 +382,29 @@
             {/if}
           </div>
           <div class="setting-control">
-            <button
-              type="button"
-              class="btn btn-ghost"
-              disabled={busy === source.name}
-              onclick={() => syncSource(source, true)}
-            >
-              <Eye size={14} />
-              Preview
-            </button>
-            <button
-              type="button"
-              class="btn btn-secondary"
-              disabled={busy === source.name}
-              onclick={() => syncSource(source, false)}
-            >
-              <RefreshCw size={14} />
-              Sync
-            </button>
+            {#if source.kind === "team"}
+              <!-- Team vaults need the device passphrase and are synced by the CLI. -->
+              <span class="setting-meta">Synced with <code>bssh teams sync</code></span>
+            {:else}
+              <button
+                type="button"
+                class="btn btn-ghost"
+                disabled={busy === source.name}
+                onclick={() => syncSource(source, true)}
+              >
+                <Eye size={14} />
+                Preview
+              </button>
+              <button
+                type="button"
+                class="btn btn-secondary"
+                disabled={busy === source.name}
+                onclick={() => syncSource(source, false)}
+              >
+                <RefreshCw size={14} />
+                Sync
+              </button>
+            {/if}
             <button
               type="button"
               class="btn btn-ghost"

@@ -56,6 +56,16 @@ pub async fn execute(
         );
     }
 
+    // Team connections go into the team's audit log at the next `bssh teams
+    // sync`. Best-effort: auditing must never stand between you and a host.
+    if connection.source_id.is_some() {
+        let recorded = crate::database::Database::new(&config)
+            .and_then(|db| crate::services::teams::session::record_session_start(&db, &connection));
+        if let Err(e) = recorded {
+            tracing::warn!("couldn't queue the team audit event: {e:#}");
+        }
+    }
+
     ssh_service
         .connect_to_connection(
             &connection,
