@@ -78,6 +78,9 @@ fn add(options: AddOptions, config: &AppConfig) -> Result<()> {
         bail!("Source name cannot be empty.");
     }
     let kind: SourceKind = options.kind.parse().map_err(anyhow::Error::msg)?;
+    if kind == SourceKind::Team {
+        bail!("team sources are created by `bssh teams create` or `bssh teams join`");
+    }
 
     ensure_flags_allowed(kind, &options)?;
 
@@ -126,6 +129,7 @@ fn add(options: AddOptions, config: &AppConfig) -> Result<()> {
             source_config.insert("project".into(), json!(project));
             source_config.insert("address".into(), json!(address));
         }
+        SourceKind::Team => unreachable!("rejected above"),
     }
     if let Some(user) = &options.user {
         source_config.insert("user".into(), json!(user));
@@ -167,6 +171,7 @@ fn ensure_flags_allowed(kind: SourceKind, options: &AddOptions) -> Result<()> {
         ("include-offline", options.include_offline),
     ];
     let allowed: &[&str] = match kind {
+        SourceKind::Team => &[],
         SourceKind::SshConfig => &["path"],
         SourceKind::Ansible => &["inventory"],
         SourceKind::Tailscale => &["include-offline"],

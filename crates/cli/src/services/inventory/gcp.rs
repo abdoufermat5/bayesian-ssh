@@ -123,6 +123,7 @@ fn parse_instances(
             port: None,
             key_path: None,
             tags,
+            ..Default::default()
         });
     }
 

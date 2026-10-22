@@ -75,6 +75,7 @@ fn parse_status(root: &Value, include_offline: bool) -> Vec<DiscoveredHost> {
                 port: None,
                 key_path: None,
                 tags,
+                ..Default::default()
             })
         })
         .collect()

@@ -1,7 +1,7 @@
 use super::config_str;
 use crate::config::AppConfig;
 use crate::database::Database;
-use crate::models::{Connection, DiscoveredHost, Source};
+use crate::models::{Connection, DiscoveredHost, Source, SourceKind};
 use anyhow::Result;
 use chrono::{Duration, Utc};
 use rusqlite::{params, Transaction};
@@ -216,9 +216,9 @@ pub fn apply(
                 .or_else(|| source_user.clone())
                 .unwrap_or_else(|| config.default_user.clone()),
             host.port.unwrap_or(config.default_port),
-            bastion.clone(),
-            bastion_user.clone(),
-            false,
+            host.bastion.clone().or_else(|| bastion.clone()),
+            host.bastion_user.clone().or_else(|| bastion_user.clone()),
+            host.use_kerberos,
             host.key_path.clone(),
         );
         connection.source_id = Some(source.id);
@@ -246,7 +246,16 @@ pub fn apply(
                 }
             }
         }
-        if bastion.is_some() {
+        if source.kind == SourceKind::Team {
+            // A team vault is authoritative for routing: a removed bastion or
+            // a Kerberos change must propagate, not just additions.
+            updated.bastion = host.bastion.clone();
+            updated.bastion_user = host.bastion_user.clone();
+            updated.use_kerberos = host.use_kerberos;
+        } else if host.bastion.is_some() {
+            updated.bastion = host.bastion.clone();
+            updated.bastion_user = host.bastion_user.clone();
+        } else if bastion.is_some() {
             updated.bastion = bastion.clone();
             updated.bastion_user = bastion_user.clone();
         }
@@ -397,6 +406,7 @@ mod tests {
             port: None,
             key_path: None,
             tags: host_tag.map(|tag| vec![tag.into()]).unwrap_or_default(),
+            ..Default::default()
         }
     }
 

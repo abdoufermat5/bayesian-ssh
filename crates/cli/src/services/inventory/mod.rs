@@ -27,6 +27,20 @@ pub fn provider_for(kind: SourceKind) -> Box<dyn InventoryProvider> {
         SourceKind::Tailscale => Box::new(tailscale::TailscaleProvider),
         SourceKind::Aws => Box::new(aws::AwsProvider),
         SourceKind::Gcp => Box::new(gcp::GcpProvider),
+        SourceKind::Team => Box::new(TeamProvider),
+    }
+}
+
+/// Team vaults are decrypted and applied by `bssh teams sync`, which needs
+/// the device passphrase and the network; there is nothing to fetch here.
+struct TeamProvider;
+
+impl InventoryProvider for TeamProvider {
+    fn fetch(&self, source: &Source) -> Result<Vec<DiscoveredHost>> {
+        bail!(
+            "'{}' is a team vault; sync it with `bssh teams sync`",
+            source.name
+        )
     }
 }
 
