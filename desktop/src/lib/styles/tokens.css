@@ -17,7 +17,9 @@
      chrome           — title bar + sidebar (frames the workspace)
      surface          — workspace background (views)
      panel            — cards, tables, grouped settings
-     surface-raised   — popovers, menus, modals, toasts
+     surface-raised   — floating layers: palette, menus, modals, toasts, popovers
+                        (a clear step above panel; pair with border-floating
+                        and the inset highlight baked into --shadow-lg/xl)
      surface-input    — input & select fills
      surface-hover    — hover fill for rows / icon buttons
      surface-active   — selected row / pressed state
@@ -26,8 +28,8 @@
   --color-surface: #101114;
   --color-panel: #15161a;
   --color-surface-card: #15161a;
-  --color-surface-raised: #1a1b20;
-  --color-surface-elevated: #1a1b20;
+  --color-surface-raised: #202127;
+  --color-surface-elevated: #202127;
   --color-surface-input: #0d0e11;
   --color-surface-subtle: #131417;
   --color-surface-hover: #1c1d22;
@@ -40,6 +42,12 @@
   --color-border-hover: #2e3038;
   --color-border-strong: #383a43;
   --color-border-focus: #7b88ff;
+  /* Control boundary (WCAG 1.4.11, ≥ 3:1 vs the surface it sits on):
+     inputs, selects, secondary buttons, switch off-track, checkboxes.
+     --color-border stays subtle and is for decorative panel edges only. */
+  --color-border-control: #70737e;
+  /* Edge of floating layers (surface-raised) */
+  --color-border-floating: #3d3f4a;
 
   /* ---- Text ------------------------------------------------------
      primary   — default foreground
@@ -48,7 +56,7 @@
      faint     — decorative / disabled                              */
   --color-primary: #ededf0;
   --color-secondary: #a3a4ad;
-  --color-muted: #8a8c96; /* ≥ 4.5:1 on every surface incl. selected rows (WCAG AA) */
+  --color-muted: #9496a0; /* ≥ 4.5:1 on every surface incl. selected rows and floating layers (WCAG AA) */
   --color-faint: #4a4c55;
 
   /* ---- Accent (brand / interactive) ----------------------------- */
@@ -56,14 +64,25 @@
   --color-accent-hover: #929dff;
   --color-accent-strong: #5e6ad2;
   --color-accent-muted: rgba(123, 136, 255, 0.14);
+  --color-selected: rgba(123, 136, 255, 0.1); /* selected row / palette item tint (+ 2px accent rail) */
   --color-on-accent: #ffffff;
+  --color-accent-strong-hover: #525ec4; /* primary button hover (≥ 4.5:1 with on-accent) */
+  /* Danger button: fill + text are ≥ 4.5:1; --color-danger stays the
+     lighter text/icon red for use on dark surfaces. */
+  --color-danger-strong: #c73e47;
+  --color-danger-strong-hover: #b3333c;
+  --color-on-danger: #ffffff;
+  /* Disabled text: legible (≥ 3:1) but visibly dimmer than --color-muted */
+  --color-disabled-fg: #70727c;
+  /* Hover fill for items inside floating layers (lighter than surface-raised) */
+  --color-hover-on-floating: rgba(255, 255, 255, 0.06);
 
   /* ---- Feedback / state ----------------------------------------- */
   --color-success: #3fb97f;
   --color-running: #3fb97f;
   --color-warning: #e5a93b;
-  --color-error: #ec5f67;
-  --color-danger: #ec5f67;
+  --color-error: #f47c83;
+  --color-danger: #f47c83;
 
   /* ---- Overlay (modal backdrop) --------------------------------- */
   --color-overlay: rgba(4, 5, 7, 0.66);
@@ -106,9 +125,11 @@
   --shadow-xs: 0 1px 0 rgba(0, 0, 0, 0.25);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 6px 16px -4px rgba(0, 0, 0, 0.45);
-  --shadow-lg: 0 16px 40px -8px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.04);
-  --shadow-xl: 0 24px 64px -12px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.05);
-  --shadow-2xl: 0 24px 64px -12px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  /* Floating layers carry an inset top highlight: shadows vanish on
+     near-black, the highlight + border-floating keep the edge visible. */
+  --shadow-lg: 0 16px 40px -8px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  --shadow-xl: 0 24px 64px -12px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  --shadow-2xl: 0 24px 64px -12px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.07);
 
   /* ---- Motion ------------------------------------------------------ */
   --default-transition-duration: 120ms;
@@ -152,8 +173,8 @@ html.theme-cyberpunk {
   --color-surface: #0a101c;
   --color-panel: #0f1725;
   --color-surface-card: #0f1725;
-  --color-surface-raised: #131d2e;
-  --color-surface-elevated: #131d2e;
+  --color-surface-raised: #1a2740;
+  --color-surface-elevated: #1a2740;
   --color-surface-input: #080d18;
   --color-surface-subtle: #0d1422;
   --color-surface-hover: #152033;
@@ -165,17 +186,22 @@ html.theme-cyberpunk {
   --color-border-hover: #243350;
   --color-border-strong: #2d3f60;
   --color-border-focus: #4cc9f0;
+  --color-border-control: #5f7599;
+  --color-border-floating: #36496e;
 
   --color-primary: #e6f1ff;
   --color-secondary: #93a8c7;
-  --color-muted: #7a8fb0;
+  --color-muted: #8fa3c2;
   --color-faint: #3b4b66;
 
   --color-accent: #4cc9f0;
   --color-accent-hover: #72d6f5;
   --color-accent-strong: #1fa6d4;
   --color-accent-muted: rgba(76, 201, 240, 0.14);
+  --color-selected: rgba(76, 201, 240, 0.1); /* selected row / palette item tint (+ 2px accent rail) */
   --color-on-accent: #04121c;
+  --color-accent-strong-hover: #3bb4de;
+  --color-disabled-fg: #667a9c;
 
   --bg-terminal: #070b14;
   --accent-cyan: #4cc9f0;
@@ -198,8 +224,8 @@ html.theme-oled {
   --color-surface: #000000;
   --color-panel: #0a0a0b;
   --color-surface-card: #0a0a0b;
-  --color-surface-raised: #121214;
-  --color-surface-elevated: #121214;
+  --color-surface-raised: #1a1a1d;
+  --color-surface-elevated: #1a1a1d;
   --color-surface-input: #050506;
   --color-surface-subtle: #08080a;
   --color-surface-hover: #141416;
@@ -211,17 +237,22 @@ html.theme-oled {
   --color-border-hover: #2a2a2e;
   --color-border-strong: #36363b;
   --color-border-focus: #e8e8ea;
+  --color-border-control: #6e6e76;
+  --color-border-floating: #3c3c42;
 
   --color-primary: #f4f4f5;
   --color-secondary: #a1a1aa;
-  --color-muted: #85858e;
+  --color-muted: #96969f;
   --color-faint: #3f3f45;
 
   --color-accent: #e8e8ea;
   --color-accent-hover: #ffffff;
   --color-accent-strong: #d4d4d8;
   --color-accent-muted: rgba(255, 255, 255, 0.1);
+  --color-selected: rgba(255, 255, 255, 0.08); /* selected row / palette item tint (+ 2px accent rail) */
   --color-on-accent: #000000;
+  --color-accent-strong-hover: #e6e6e9;
+  --color-disabled-fg: #6e6e77;
 
   --bg-terminal: #000000;
   --accent-cyan: #67e8f9;
@@ -244,8 +275,8 @@ html.theme-slate {
   --color-surface: #0f1520;
   --color-panel: #141b28;
   --color-surface-card: #141b28;
-  --color-surface-raised: #19212f;
-  --color-surface-elevated: #19212f;
+  --color-surface-raised: #1f2a3c;
+  --color-surface-elevated: #1f2a3c;
   --color-surface-input: #0b1019;
   --color-surface-subtle: #121926;
   --color-surface-hover: #1b2433;
@@ -257,17 +288,22 @@ html.theme-slate {
   --color-border-hover: #2b384d;
   --color-border-strong: #364560;
   --color-border-focus: #38bdf8;
+  --color-border-control: #66768e;
+  --color-border-floating: #3b4b68;
 
   --color-primary: #eef2f7;
   --color-secondary: #9aa8bc;
-  --color-muted: #8593a8;
+  --color-muted: #97a5ba;
   --color-faint: #435066;
 
   --color-accent: #38bdf8;
   --color-accent-hover: #7dd3fc;
   --color-accent-strong: #0ea5e9;
   --color-accent-muted: rgba(56, 189, 248, 0.14);
+  --color-selected: rgba(56, 189, 248, 0.1); /* selected row / palette item tint (+ 2px accent rail) */
   --color-on-accent: #04131d;
+  --color-accent-strong-hover: #3cb3ef;
+  --color-disabled-fg: #6b7a91;
 
   --bg-terminal: #0c111a;
   --accent-cyan: #38bdf8;

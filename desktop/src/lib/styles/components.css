@@ -13,21 +13,21 @@
      lg 36px. Icon buttons are square and always need aria-label.
      ================================================================ */
   .btn {
-    @apply inline-flex h-8 shrink-0 cursor-pointer select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-transparent px-3 text-sm font-medium leading-none transition-colors duration-fast disabled:pointer-events-none disabled:opacity-45;
+    @apply inline-flex h-8 shrink-0 cursor-pointer select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-transparent px-3 text-sm font-medium leading-none transition-colors duration-fast disabled:cursor-not-allowed;
   }
   /* Filled with accent-strong so on-accent text meets 4.5:1 in every theme. */
   .btn-primary {
-    @apply bg-accent-strong text-on-accent hover:brightness-110;
+    @apply bg-accent-strong text-on-accent hover:bg-accent-strong-hover;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 1px 2px rgba(0, 0, 0, 0.3);
   }
   .btn-secondary {
-    @apply border-border bg-panel text-primary hover:border-border-hover hover:bg-surface-hover;
+    @apply border-border-control bg-panel text-primary hover:border-border-strong hover:bg-surface-hover;
   }
   .btn-ghost {
     @apply bg-transparent text-secondary hover:bg-surface-hover hover:text-primary;
   }
   .btn-danger {
-    @apply bg-error text-white hover:brightness-110;
+    @apply bg-danger-strong text-on-danger hover:bg-danger-strong-hover;
   }
   .btn-danger-ghost {
     @apply bg-transparent text-error hover:bg-error/12;
@@ -42,7 +42,7 @@
     @apply w-full;
   }
   .btn-icon {
-    @apply inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted transition-colors duration-fast hover:bg-surface-hover hover:text-primary disabled:pointer-events-none disabled:opacity-40;
+    @apply inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted transition-colors duration-fast hover:bg-surface-hover hover:text-primary disabled:cursor-not-allowed;
   }
   .btn-icon-sm {
     @apply size-6 rounded-sm;
@@ -55,7 +55,7 @@
      FORM CONTROLS
      ================================================================ */
   .input {
-    @apply h-8 w-full min-w-0 rounded-md border border-border bg-surface-input px-2.5 text-sm text-primary outline-none transition-[border-color,box-shadow] duration-fast placeholder:text-muted hover:border-border-hover focus:border-border-focus disabled:opacity-50;
+    @apply h-8 w-full min-w-0 rounded-md border border-border-control bg-surface-input px-2.5 text-sm text-primary outline-none transition-[border-color,box-shadow] duration-fast placeholder:text-muted hover:border-border-strong focus:border-border-focus disabled:cursor-not-allowed;
   }
   .input:focus {
     box-shadow: 0 0 0 3px var(--color-accent-muted);
@@ -70,7 +70,7 @@
     @apply border-error/60 focus:border-error;
   }
   .search-box {
-    @apply flex h-8 min-w-0 items-center gap-2 rounded-md border border-border bg-surface-input px-2.5 text-muted transition-[border-color,box-shadow] duration-fast hover:border-border-hover focus-within:border-border-focus;
+    @apply flex h-8 min-w-0 items-center gap-2 rounded-md border border-border-control bg-surface-input px-2.5 text-muted transition-[border-color,box-shadow] duration-fast hover:border-border-strong focus-within:border-border-focus;
   }
   .search-box:focus-within {
     box-shadow: 0 0 0 3px var(--color-accent-muted);
@@ -94,7 +94,7 @@
 
   /* Toggle switch: <input type="checkbox" class="switch"> */
   .switch {
-    @apply relative h-[18px] w-8 shrink-0 cursor-pointer appearance-none rounded-full border border-border-hover bg-surface-active transition-colors duration-base disabled:cursor-not-allowed disabled:opacity-45;
+    @apply relative h-[18px] w-8 shrink-0 cursor-pointer appearance-none rounded-full border border-border-control bg-surface-active transition-colors duration-base disabled:cursor-not-allowed;
   }
   .switch::after {
     content: "";
@@ -109,10 +109,17 @@
 
   /* Checkbox: <input type="checkbox" class="checkbox"> */
   .checkbox {
-    @apply relative size-4 shrink-0 cursor-pointer appearance-none rounded-xs border border-border-strong bg-surface-input transition-colors duration-fast;
+    @apply relative size-4 shrink-0 cursor-pointer appearance-none rounded-xs border border-border-control bg-surface-input transition-colors duration-fast disabled:cursor-not-allowed;
   }
   .checkbox:checked {
     @apply border-accent bg-accent;
+  }
+  /* Hit areas ≥ 24 px (WCAG 2.5.8) without changing the drawn size. */
+  .switch::before,
+  .checkbox::before {
+    content: "";
+    position: absolute;
+    inset: -4px;
   }
   .checkbox:checked::after {
     content: "";
@@ -154,8 +161,10 @@
     @apply inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-surface-active px-1.5 font-mono text-2xs font-medium text-secondary;
   }
 
+  /* .tag = static label (read-only metadata): flat filled rectangle, no border.
+     .chip = interactive filter: pill with a control border (see below). */
   .tag {
-    @apply inline-flex h-5 shrink-0 select-none items-center rounded-sm border border-border px-1.5 text-2xs text-secondary;
+    @apply inline-flex h-5 shrink-0 select-none items-center rounded-xs bg-surface-active px-1.5 text-2xs text-secondary;
   }
 
   .kbd {
@@ -226,6 +235,7 @@
   }
   .nav-item-active {
     @apply bg-surface-active text-primary;
+    box-shadow: inset 2px 0 0 var(--color-accent);
   }
   .nav-item-collapsed {
     @apply justify-center px-0;
@@ -286,7 +296,8 @@
     @apply cursor-pointer hover:border-border-hover hover:bg-surface-hover;
   }
   .card-selected {
-    @apply border-accent/50 bg-accent/6;
+    @apply border-accent bg-accent/8;
+    box-shadow: inset 2px 0 0 var(--color-accent);
   }
   .divider {
     @apply h-px w-full shrink-0 border-0 bg-border;
@@ -327,7 +338,11 @@
     @apply bg-surface-hover;
   }
   .data-table tbody tr.is-selected {
-    @apply bg-surface-active;
+    @apply bg-panel;
+    background-image: linear-gradient(var(--color-selected), var(--color-selected));
+  }
+  .data-table tbody tr.is-selected td:first-child {
+    box-shadow: inset 2px 0 0 var(--color-accent);
   }
   .data-table th:first-child,
   .data-table td:first-child {
@@ -363,10 +378,16 @@
   }
 
   .chip {
-    @apply inline-flex h-7 shrink-0 cursor-pointer select-none items-center gap-1 whitespace-nowrap rounded-full border border-border px-2.5 text-xs text-secondary transition-colors duration-fast hover:border-border-hover hover:text-primary;
+    @apply inline-flex h-7 shrink-0 cursor-pointer select-none items-center gap-1 whitespace-nowrap rounded-full border border-border-control px-2.5 text-xs text-secondary transition-colors duration-fast hover:border-border-strong hover:text-primary;
   }
+  /* Active filter: tint + accent border + check mark (never color alone). */
   .chip-active {
-    @apply border-accent/45 bg-accent/12 text-accent hover:text-accent;
+    @apply border-accent bg-accent/12 font-medium text-accent hover:border-accent hover:text-accent;
+  }
+  .chip-active::before {
+    content: "✓";
+    font-size: 0.6875rem;
+    line-height: 1;
   }
 
   .tabs {
@@ -383,14 +404,23 @@
      MENUS / POPOVERS
      ================================================================ */
   .popover {
-    @apply z-50 rounded-lg border border-border-hover bg-surface-raised p-1 shadow-lg;
+    @apply z-50 rounded-lg border border-border-floating bg-surface-raised p-1 shadow-lg;
     animation: popover-enter 120ms var(--ease-out);
   }
   .menu-item {
-    @apply flex h-8 w-full cursor-pointer items-center gap-2 rounded-sm px-2 text-left text-sm text-secondary transition-colors duration-fast hover:bg-surface-hover hover:text-primary;
+    @apply flex h-8 w-full cursor-pointer items-center gap-2 rounded-sm px-2 text-left text-sm text-secondary transition-colors duration-fast hover:text-primary;
   }
-  .menu-item-active {
-    @apply bg-surface-hover text-primary;
+  /* Menus sit on surface-raised (lighter than surface-hover), so hover is
+     a light overlay and the keyboard/active item gets tint + accent rail. */
+  .menu-item:hover {
+    background-color: var(--color-hover-on-floating);
+  }
+  .menu-item-active,
+  .menu-item-active:hover {
+    @apply text-primary;
+    background-color: var(--color-hover-on-floating);
+    background-image: linear-gradient(var(--color-selected), var(--color-selected));
+    box-shadow: inset 2px 0 0 var(--color-accent);
   }
   .menu-item-danger {
     @apply text-error hover:bg-error/12 hover:text-error;
@@ -470,7 +500,7 @@
      TOAST
      ================================================================ */
   .toast {
-    @apply pointer-events-auto flex min-w-[260px] max-w-[420px] items-start gap-2.5 rounded-lg border border-border-hover bg-surface-raised px-3.5 py-3 text-sm text-primary shadow-lg;
+    @apply pointer-events-auto flex min-w-[260px] max-w-[420px] items-start gap-2.5 rounded-lg border border-border-floating bg-surface-raised px-3.5 py-3 text-sm text-primary shadow-lg;
     animation: toast-enter 220ms var(--ease-out);
   }
 
@@ -482,7 +512,7 @@
     animation: fade-in 120ms ease-out;
   }
   .modal-panel {
-    @apply relative flex max-h-[calc(100dvh-48px)] w-full flex-col overflow-hidden rounded-xl border border-border-hover bg-surface-raised shadow-xl;
+    @apply relative flex max-h-[calc(100dvh-48px)] w-full flex-col overflow-hidden rounded-xl border border-border-floating bg-surface-raised shadow-xl;
     animation: modal-enter 160ms var(--ease-out);
   }
   .modal-header {
@@ -518,6 +548,7 @@
   }
   .settings-nav-item-active {
     @apply bg-surface-active text-primary;
+    box-shadow: inset 2px 0 0 var(--color-accent);
   }
   .settings-content {
     @apply min-h-0 flex-1 overflow-y-auto overscroll-contain px-8 py-6;
@@ -584,4 +615,77 @@
   &::-webkit-scrollbar {
     display: none;
   }
+}
+
+/* ================================================================
+   STATE OVERRIDES (unlayered on purpose: they must beat Tailwind
+   utilities applied inline in markup, e.g. the command palette).
+   ================================================================ */
+
+/* ---- Disabled ------------------------------------------------------
+   Legible (--color-disabled-fg ≥ 3:1) but plainly inert: flat fill, no
+   shadow, dashed edge on fields, not-allowed cursor. Opacity is never
+   the only cue. Pointer events stay on so a title="reason" can show. */
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  background-color: var(--color-surface-active);
+  background-image: none;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--color-disabled-fg);
+}
+.btn-ghost:disabled,
+.btn-danger-ghost:disabled {
+  background-color: transparent;
+}
+.btn-secondary:disabled {
+  background-color: transparent;
+  border-color: var(--color-border);
+  border-style: dashed;
+}
+.btn-icon:disabled {
+  background-color: transparent;
+  color: var(--color-disabled-fg);
+}
+.input:disabled,
+.search-box:has(> input:disabled) {
+  background-color: var(--color-surface-subtle);
+  border-color: var(--color-border);
+  border-style: dashed;
+  color: var(--color-disabled-fg);
+  box-shadow: none;
+}
+.search-box > input:disabled {
+  color: var(--color-disabled-fg);
+}
+.switch:disabled,
+.checkbox:disabled {
+  background-color: var(--color-surface-subtle);
+  border-color: var(--color-border);
+  border-style: dashed;
+}
+.switch:disabled::after {
+  background-color: var(--color-disabled-fg);
+}
+.switch:disabled:checked::after {
+  background-color: var(--color-disabled-fg);
+}
+.checkbox:disabled:checked::after {
+  border-color: var(--color-disabled-fg);
+}
+
+/* ---- Selection in list-like role="option" widgets (command palette,
+   launcher): tint + 2px accent rail, in addition to the .is-selected /
+   .menu-item-active / .nav-item-active classes above. -------------- */
+[role="option"][aria-selected="true"]:not(.menu-item) {
+  background-color: var(--color-surface-raised);
+  background-image: linear-gradient(var(--color-selected), var(--color-selected));
+  box-shadow: inset 2px 0 0 var(--color-accent);
+  color: var(--color-primary);
+}
+
+/* ---- Floating layers built from raw utilities (command palette):
+   same edge as .popover / .modal-panel / .toast. ------------------- */
+.border-border-hover.bg-surface-raised {
+  border-color: var(--color-border-floating);
 }

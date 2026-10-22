@@ -126,6 +126,9 @@ jobs:
     - name: Build frontend
       run: cd desktop && npm run build
 
+    - name: Check design-token contrast
+      run: cd desktop && npm run check:contrast
+
     - name: Install Playwright browser
       run: cd desktop && npx playwright install --with-deps chromium
 
