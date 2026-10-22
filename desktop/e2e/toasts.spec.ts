@@ -32,7 +32,7 @@ test.describe("failing action", () => {
     },
   });
 
-  test("IPC error shows an error toast that auto-dismisses", async ({ app, page }) => {
+  test("IPC error shows an error toast that stays until dismissed", async ({ app, page }) => {
     await app.gotoApp();
 
     await page.keyboard.press("n");
@@ -49,6 +49,11 @@ test.describe("failing action", () => {
     const toast = page.getByRole("alert").filter({ hasText: "boom" });
     await expect(toast).toBeVisible();
 
+    // Errors never time out (WCAG 2.2.1): still there well past the 4 s
+    // success/info timeout, until the user closes it.
+    await page.waitForTimeout(5000);
+    await expect(toast).toBeVisible();
+    await toast.getByRole("button", { name: "Dismiss notification" }).click();
     await expect(toast).toHaveCount(0);
   });
 });

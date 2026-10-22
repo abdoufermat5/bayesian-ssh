@@ -385,7 +385,8 @@
     @apply border-accent bg-accent/12 font-medium text-accent hover:border-accent hover:text-accent;
   }
   .chip-active::before {
-    content: "✓";
+    /* Empty alt text: a visual cue only; aria-pressed already says "pressed". */
+    content: "✓" / "";
     font-size: 0.6875rem;
     line-height: 1;
   }

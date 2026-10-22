@@ -69,7 +69,7 @@ test.describe("app shell", () => {
 
   test("titlebar search opens the command palette", async ({ app, page }) => {
     await app.gotoApp();
-    await page.getByRole("button", { name: "Open command palette" }).click();
+    await page.getByRole("button", { name: "Jump to…" }).click();
     await expect(page.getByRole("dialog", { name: "Command palette" })).toBeVisible();
   });
 

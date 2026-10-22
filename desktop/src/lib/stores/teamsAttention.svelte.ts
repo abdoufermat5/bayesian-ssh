@@ -68,13 +68,13 @@ function apply(attention: TeamAttention[], names: Map<string, string>) {
 
 const raisedTeams = new Set<string>();
 
-/** One poll round. Never throws; failures go to the console. */
+/** One poll round. Never throws; failures go to the console as warnings. */
 export async function refreshTeamsAttention(force = false): Promise<void> {
   if (busy) return;
   busy = true;
   try {
     const status = await invoke<TeamsStatus>("teams_status");
-    if (!status.unlocked) {
+    if (!status?.unlocked) {
       if (wasUnlocked || raisedTeams.size > 0) {
         resolveAttentionPrefix("teams:pending:");
         resolveAttentionPrefix("teams:waiting-key:");
@@ -102,7 +102,8 @@ export async function refreshTeamsAttention(force = false): Promise<void> {
       raisedTeams.delete(t);
     }
   } catch (e) {
-    console.error("teams attention poll failed", e);
+    // A background check: being offline or locked is not an app error.
+    console.warn("teams attention poll failed", e);
   } finally {
     busy = false;
   }

@@ -150,7 +150,13 @@ export const test = base.extend<Fixtures>({
         }
       },
       async nav(label) {
-        await page.locator(".sidebar").getByLabel(label, { exact: true }).first().click();
+        // A badge extends the accessible name ("Teams, 1 item needs attention").
+        const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        await page
+          .locator(".sidebar")
+          .getByLabel(new RegExp(`^${escaped}(,.*)?$`))
+          .first()
+          .click();
       },
       async ipcCalls(cmd) {
         return page.evaluate((c) => (window as unknown as MockWindow).__IPC_CALLS(c), cmd);
