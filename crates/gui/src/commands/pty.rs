@@ -22,6 +22,14 @@ struct PtyPayload<'a> {
     data: &'a str,
 }
 
+/// Exit status of a session's child, sent just before `pty-exit` so the UI can
+/// tell ssh's own failures (exit 255) from a normal logout.
+#[derive(Clone, Serialize)]
+struct PtyExitStatus<'a> {
+    session_id: &'a str,
+    exit_code: i32,
+}
+
 struct WindowRect {
     x: i32,
     y: i32,
@@ -380,7 +388,7 @@ pub fn spawn_pty(
             // its UI on pty-exit and never calls close_pty, so release the
             // PTY, the replay buffer and the child process here. The pointer
             // check guards against removing a newer session reusing the id.
-            let finished = {
+            let mut finished = {
                 let mut sessions = sessions_map
                     .lock()
                     .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -393,6 +401,24 @@ pub fn spawn_pty(
                     None
                 }
             };
+
+            // The read loop ended, so the child has exited or is about to;
+            // `reap_session` would wait for it anyway and the status is cached.
+            if let Some(session) = finished.as_mut() {
+                let exit_code = session
+                    .child
+                    .wait()
+                    .map(|status| status.exit_code() as i32)
+                    .unwrap_or(-1);
+                let _ = app_handle.emit_to(
+                    MAIN_WINDOW_LABEL,
+                    "pty-exit-status",
+                    PtyExitStatus {
+                        session_id: &session_id_clone,
+                        exit_code,
+                    },
+                );
+            }
 
             // A pop-out window shows the disconnect via `pty-exit:{id}`; the
             // main window tracks every session's exit via `pty-exit`.

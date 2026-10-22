@@ -18,6 +18,7 @@ import {
   createOutputCoalescer,
   safeWrite,
   syncPtySize,
+  terminalShortcutId,
   waitForTerminalFont,
   type OutputCoalescer,
 } from "$lib/utils/terminal-xterm";
@@ -55,6 +56,17 @@ export function buildTerminalOptions(settings?: DesktopSettings): Record<string,
 
 export type TerminalTabStatus = "connecting" | "connected" | "exited" | "error";
 
+/** Why a connection attempt ended, in plain words, plus ssh's own last lines. */
+export interface ConnectFailure {
+  title: string;
+  hint: string;
+  detail: string;
+}
+
+/** ssh exits with 255 for its own errors; one that ends this soon never connected. */
+const SSH_ERROR_EXIT = 255;
+const CONNECT_WINDOW_MS = 30_000;
+
 /** Reactive tab metadata. The xterm runtime lives outside reactivity. */
 export interface TerminalTab {
   readonly id: string;
@@ -63,6 +75,12 @@ export interface TerminalTab {
   /** In-terminal search bar open. */
   showSearch: boolean;
   status: TerminalTabStatus;
+  /** Host this tab connects to; absent for re-attached sessions. */
+  readonly conn: Connection | undefined;
+  /** When the current connection attempt started (ms since epoch). */
+  connectStartedAt: number;
+  /** Set when status is "error". */
+  failure: ConnectFailure | null;
   /** xterm instance mounted and usable. */
   ready: boolean;
   /** Live xterm instance (non-reactive lookup; check `ready` in templates). */
@@ -83,6 +101,8 @@ interface TabRuntime {
   fitRaf: number | null;
   /** Cursor blink turned off while the Terminals view is hidden. */
   blinkSuspended: boolean;
+  /** Plain-text tail of ssh's output, kept to explain a failed connect. */
+  recentOutput: string;
 }
 
 const runtimes = new Map<string, TabRuntime>();
@@ -94,12 +114,16 @@ class TabState implements TerminalTab {
   showSearch = $state(false);
   status = $state<TerminalTabStatus>("connecting");
   ready = $state(false);
+  readonly conn: Connection | undefined;
+  connectStartedAt = $state(Date.now());
+  failure = $state.raw<ConnectFailure | null>(null);
 
-  constructor(id: string, name: string, connectionName: string, status: TerminalTabStatus) {
+  constructor(id: string, name: string, connectionName: string, status: TerminalTabStatus, conn?: Connection) {
     this.id = id;
     this.name = name;
     this.connectionName = connectionName;
     this.status = status;
+    this.conn = conn;
   }
 
   get term(): Terminal | undefined {
@@ -131,6 +155,8 @@ interface ReattachSessionPayload {
 }
 
 let terminalFontSize = $state(13);
+/** Size from Settings; zoom changes `terminalFontSize` and, below, the settings object. */
+let configuredFontSize: number | null = null;
 let themeSyncInitialized = false;
 
 export function initThemeSyncForTerminals() {
@@ -148,6 +174,7 @@ export function applyThemeToAllTerminals(settings?: DesktopSettings) {
   if (settings?.terminal_font_size) {
     // Keep keyboard/wheel zoom relative to the saved size, not the default.
     terminalFontSize = settings.terminal_font_size;
+    configuredFontSize = settings.terminal_font_size;
   }
   for (const rt of runtimes.values()) {
     const term = rt.term;
@@ -173,6 +200,7 @@ export function getTerminalFontSize(): number {
 export function updateTerminalFontSize(newSize: number) {
   terminalFontSize = Math.max(8, Math.min(32, newSize));
   const settings = getTerminalSettings();
+  configuredFontSize ??= settings?.terminal_font_size ?? 13;
   if (settings && settings.terminal_font_size !== terminalFontSize) {
     settings.terminal_font_size = terminalFontSize;
   }
@@ -194,6 +222,9 @@ let listenersReady = false;
 let listenersInFlight: Promise<void> | null = null;
 let unlistenOutput: UnlistenFn | null = null;
 let unlistenExit: UnlistenFn | null = null;
+let unlistenExitStatus: UnlistenFn | null = null;
+/** Exit code of a finished session; arrives just before its `pty-exit`. */
+const exitCodes = new Map<string, number>();
 let unlistenSessionClosed: UnlistenFn | null = null;
 let unlistenSessionDocked: UnlistenFn | null = null;
 let unlistenHistoryUpdated: UnlistenFn | null = null;
@@ -289,6 +320,14 @@ function deliverPtyOutput(sessionId: string, data: string) {
   const rt = runtimes.get(sessionId);
   if (!rt) return;
 
+  // ssh's first output (banner, password prompt, remote prompt) means it is
+  // past connecting; its text also explains a failure.
+  const tab = findTab(sessionId);
+  if (tab?.status === "connecting") tab.status = "connected";
+  if (tab && Date.now() - tab.connectStartedAt < CONNECT_WINDOW_MS) {
+    rt.recentOutput = (rt.recentOutput + stripTerminalControls(data)).slice(-4000);
+  }
+
   if (terminalsVisible && sessionId === activeTabId && rt.coalescer) {
     // Anything buffered while the tab was hidden must land before new output.
     if (rt.pending.length > 0) flushRuntime(rt);
@@ -359,6 +398,7 @@ function createRuntime(tabId: string): TabRuntime {
     cleanups: [],
     fitRaf: null,
     blinkSuspended: false,
+    recentOutput: "",
   };
   runtimes.set(tabId, rt);
   return rt;
@@ -445,9 +485,13 @@ async function openTerminalInstance(
     container.removeEventListener("wheel", onWheel);
   });
 
-  attachXtermKeyHandler(term, () => {
-    toggleTerminalSearch(tabId);
-  });
+  attachXtermKeyHandler(
+    term,
+    () => {
+      toggleTerminalSearch(tabId);
+    },
+    runTerminalShortcut,
+  );
 
   if (!terminalsVisible) setBlinkSuspended(rt, true);
 
@@ -604,8 +648,15 @@ export async function initTerminalListeners(onHistoryChanged?: HistoryCallback) 
       deliverPtyOutput(sessionId, payload.data);
     });
 
+    unlistenExitStatus = await listen("pty-exit-status", (event) => {
+      const payload = event.payload as { session_id: string; exit_code: number };
+      exitCodes.set(payload.session_id, payload.exit_code);
+    });
+
     unlistenExit = await listen("pty-exit", (event) => {
       const sessionId = event.payload as string;
+      const exitCode = exitCodes.get(sessionId);
+      exitCodes.delete(sessionId);
 
       if (findDetachedSession(sessionId)) {
         removeDetachedSession(sessionId);
@@ -618,8 +669,23 @@ export async function initTerminalListeners(onHistoryChanged?: HistoryCallback) 
       }
 
       const tab = findTab(sessionId);
-      if (tab) tab.status = "exited";
       const rt = runtimes.get(sessionId);
+      if (
+        tab &&
+        exitCode === SSH_ERROR_EXIT &&
+        tab.status !== "exited" &&
+        Date.now() - tab.connectStartedAt < CONNECT_WINDOW_MS
+      ) {
+        // ssh gave up while connecting: keep the tab and explain, don't close it.
+        if (rt) {
+          flushRuntime(rt);
+          rt.coalescer?.flush();
+        }
+        failConnect(tab, describeConnectFailure(rt?.recentOutput ?? ""));
+        void syncActiveSessionCount();
+        return;
+      }
+      if (tab) tab.status = "exited";
       if (rt) {
         // Flush pending output first so the disconnect notice lands after it.
         flushRuntime(rt);
@@ -670,11 +736,13 @@ export async function teardownTerminalListeners() {
   }
   unlistenOutput?.();
   unlistenExit?.();
+  unlistenExitStatus?.();
   unlistenSessionClosed?.();
   unlistenSessionDocked?.();
   unlistenHistoryUpdated?.();
   unlistenOutput = null;
   unlistenExit = null;
+  unlistenExitStatus = null;
   unlistenSessionClosed = null;
   unlistenSessionDocked = null;
   unlistenHistoryUpdated = null;
@@ -710,37 +778,209 @@ async function mountTerminalTab(
   return openTerminalInstance(tab.id, container, options);
 }
 
+const ANSI_PATTERN = new RegExp(
+  String.raw`\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]`,
+  "g",
+);
+
+function stripTerminalControls(data: string): string {
+  return data.replace(ANSI_PATTERN, "").replace(/\r/g, "");
+}
+
+/** Plain-words explanation of the last ssh output; the raw lines stay as detail. */
+function describeConnectFailure(output: string): ConnectFailure {
+  const detail = output
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(-6)
+    .join("\n");
+  const has = (re: RegExp) => re.test(detail);
+  if (has(/REMOTE HOST IDENTIFICATION HAS CHANGED/i)) {
+    return {
+      title: "The host's identity changed",
+      hint: "Its host key no longer matches the one saved earlier. Don't connect until you know why: it can mean a reinstall, or someone in the middle.",
+      detail,
+    };
+  }
+  if (has(/host key verification failed/i)) {
+    return {
+      title: "The host key wasn't accepted",
+      hint: "ssh couldn't verify this host's key. Check it with the host's owner, then add it to known_hosts.",
+      detail,
+    };
+  }
+  if (has(/permission denied|too many authentication failures|no supported authentication/i)) {
+    return {
+      title: "The host rejected your credentials",
+      hint: "Check the user name and the key or password. Edit the host to change them.",
+      detail,
+    };
+  }
+  if (has(/could not resolve hostname|name or service not known|nodename nor servname/i)) {
+    return {
+      title: "That host name can't be found",
+      hint: "Check the address for typos, and that your network or VPN is up.",
+      detail,
+    };
+  }
+  if (has(/connection refused/i)) {
+    return {
+      title: "The host refused the connection",
+      hint: "Nothing accepted the connection on that port. Check the port, and that the SSH service is running.",
+      detail,
+    };
+  }
+  if (has(/timed out|no route to host|network is unreachable/i)) {
+    return {
+      title: "The host didn't answer",
+      hint: "It may be offline, firewalled, or only reachable through a VPN or bastion.",
+      detail,
+    };
+  }
+  if (has(/connection closed|connection reset|broken pipe|kex_exchange_identification/i)) {
+    return {
+      title: "The host closed the connection",
+      hint: "It hung up before login finished. A firewall, a connection limit or a bastion setting may be the cause.",
+      detail,
+    };
+  }
+  return {
+    title: "ssh couldn't connect",
+    hint: detail ? "ssh reported:" : "ssh stopped without saying why.",
+    detail,
+  };
+}
+
+function failConnect(tab: TabState, failure: ConnectFailure) {
+  tab.failure = failure;
+  tab.status = "error";
+}
+
+/** Closed-tab history for "Reopen closed tab", newest last. */
+const closedTabs: Connection[] = [];
+const MAX_CLOSED_TABS = 10;
+
+async function startSession(tab: TabState, conn: Connection): Promise<void> {
+  tab.failure = null;
+  tab.status = "connecting";
+  tab.connectStartedAt = Date.now();
+  const rt = runtimes.get(tab.id);
+  if (rt) rt.recentOutput = "";
+  try {
+    await invoke("spawn_pty", { sessionId: tab.id, connectionName: conn.name });
+    if (!findTab(tab.id)) {
+      // Cancelled or closed while spawning.
+      await invoke("close_pty", { sessionId: tab.id }).catch(() => {});
+      return;
+    }
+    // The tab stays "connecting" until ssh prints something (see deliverPtyOutput):
+    // spawn_pty only means the process started, not that the host answered.
+    // Resizes during spawn were sent before the PTY existed.
+    const live = runtimes.get(tab.id)?.term;
+    if (live) syncPtySize(tab.id, live);
+    await syncActiveSessionCount();
+  } catch (e: unknown) {
+    if (!findTab(tab.id)) return;
+    const message = String(e);
+    failConnect(tab, {
+      title: `Couldn't start the session to ${conn.name}`,
+      hint: "The app couldn't start ssh for this host:",
+      detail: message,
+    });
+  }
+}
+
 export async function connectSSH(conn: Connection): Promise<void> {
   const allowed = await ensureKerberosForConnection(conn);
   if (!allowed) return;
 
   const tabId = crypto.randomUUID().replace(/-/g, "").slice(0, 12);
-  const newTab = new TabState(tabId, conn.name, conn.name, "connecting");
+  const newTab = new TabState(tabId, conn.name, conn.name, "connecting", conn);
 
-  const term = await mountTerminalTab(newTab, {
-    banner: `\x1b[1;36mInitializing Bayesian-SSH Shell Session to ${conn.name}... \x1b[0m`,
-  });
+  const term = await mountTerminalTab(newTab);
   // Closed before the terminal finished mounting.
   if (!term) return;
 
+  await startSession(newTab, conn);
+}
+
+/** Try the same host again in the same tab, after a failed connect. */
+export async function retryConnect(tabId: string): Promise<void> {
+  const tab = findTab(tabId);
+  if (!tab?.conn || tab.status !== "error") return;
+  const allowed = await ensureKerberosForConnection(tab.conn);
+  if (!allowed) return;
+  runtimes.get(tabId)?.term?.reset();
+  await startSession(tab, tab.conn);
+  runtimes.get(tabId)?.term?.focus();
+}
+
+/** Abort a connection that is still in progress and close its tab. */
+export async function cancelConnect(tabId: string): Promise<void> {
+  const tab = findTab(tabId);
+  if (!tab || tab.status !== "connecting") return;
+  cleanupTabUi(tabId);
   try {
-    await invoke("spawn_pty", { sessionId: tabId, connectionName: conn.name });
-    if (newTab.status === "connecting") newTab.status = "connected";
-    // Resizes during spawn were sent before the PTY existed.
-    const live = runtimes.get(tabId)?.term;
-    if (live) syncPtySize(tabId, live);
-    await syncActiveSessionCount();
-  } catch (e: unknown) {
-    newTab.status = "error";
-    const message = String(e);
-    safeWrite(term, `\n\x1b[1;31mFailed to start session: ${message}\x1b[0m\r\n`);
-    // Keep the tab open so the user can read the error; auto-close it after
-    // a few seconds unless they interact with it.
-    setTimeout(() => {
-      if (findTab(tabId)?.id === tabId) {
-        cleanupTabUi(tabId);
-      }
-    }, 8000);
+    await invoke("close_pty", { sessionId: tabId });
+  } catch {
+    // Not spawned yet; startSession closes it when spawn_pty returns.
+  }
+  await syncActiveSessionCount();
+}
+
+/** Reopen the most recently closed tab's host in a new tab. */
+export async function reopenClosedTab(): Promise<void> {
+  const conn = closedTabs.pop();
+  if (!conn) {
+    notify("No closed tab to reopen", "info");
+    return;
+  }
+  await connectSSH(conn);
+}
+
+function cycleTab(step: 1 | -1) {
+  if (tabs.length < 2) return;
+  const index = tabs.findIndex((t) => t.id === activeTabId);
+  const next = tabs[(index + step + tabs.length) % tabs.length];
+  setActiveTab(next.id);
+}
+
+/**
+ * Run a TERMINAL_SHORTCUTS action. Returns false when it does not apply, so
+ * the key reaches the shell (Esc with nothing connecting).
+ */
+export function runTerminalShortcut(id: string): boolean {
+  switch (id) {
+    case "term-next-tab":
+      cycleTab(1);
+      return true;
+    case "term-prev-tab":
+      cycleTab(-1);
+      return true;
+    case "term-close-tab":
+      if (activeTabId) void disconnectTab(activeTabId);
+      return true;
+    case "term-reopen-tab":
+      void reopenClosedTab();
+      return true;
+    case "term-zoom-in":
+      updateTerminalFontSize(terminalFontSize + 1);
+      return true;
+    case "term-zoom-out":
+      updateTerminalFontSize(terminalFontSize - 1);
+      return true;
+    case "term-zoom-reset":
+      updateTerminalFontSize(configuredFontSize ?? 13);
+      return true;
+    case "term-cancel": {
+      const tab = activeTabId ? findTab(activeTabId) : undefined;
+      if (tab?.status !== "connecting") return false;
+      void cancelConnect(tab.id);
+      return true;
+    }
+    default:
+      return false;
   }
 }
 
@@ -873,6 +1113,11 @@ export async function terminateDetachedSession(sessionId: string): Promise<void>
 }
 
 export async function disconnectTab(tabId: string): Promise<void> {
+  const conn = findTab(tabId)?.conn;
+  if (conn) {
+    closedTabs.push(conn);
+    if (closedTabs.length > MAX_CLOSED_TABS) closedTabs.shift();
+  }
   try {
     await invoke("close_pty", { sessionId: tabId });
   } catch {

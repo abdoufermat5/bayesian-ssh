@@ -22,8 +22,9 @@ test("stepper drives to completion and submits the exact onboarding payload", as
   const setup = page.getByRole(SETUP.role, { name: SETUP.name });
   await expect(page.locator(".app-shell")).toHaveCount(0);
 
-  // Step 1 — Welcome.
+  // Step 1 — Welcome: "Set up this machine" is the default choice.
   await expect(page.getByRole("heading", { name: "Welcome to Bayesian SSH" })).toBeVisible();
+  await expect(page.getByRole("radio", { name: /Set up this machine/ })).toBeChecked();
   await page.getByRole("button", { name: "Get started" }).click();
 
   // Step 2 — Profile and defaults.
@@ -42,12 +43,12 @@ test("stepper drives to completion and submits the exact onboarding payload", as
 
   // Step 4 — Appearance.
   await expect(page.getByRole("heading", { name: "Appearance" })).toBeVisible();
-  await page.getByRole("radio", { name: "OLED" }).click();
+  await page.getByRole("radio", { name: /OLED/ }).click();
   await page.locator("#ob-fuzzy").check();
   await page.getByRole("button", { name: "Continue" }).click();
 
-  // Step 5 — Done. Submit the form via the primary action.
-  await expect(page.getByRole("heading", { name: "You're all set" })).toBeVisible();
+  // Step 5 — First connect. Submit the form via the primary action.
+  await expect(page.getByRole("heading", { name: "Connect to your first host" })).toBeVisible();
   await page.getByRole("button", { name: "Open Bayesian SSH" }).click();
 
   await app.waitForIpc("complete_onboarding", 1);
