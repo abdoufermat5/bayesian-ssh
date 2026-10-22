@@ -6,6 +6,7 @@
     ChevronDown,
     ChevronRight,
     Copy,
+    FileCheck,
     KeyRound,
     Lock,
     LogIn,
@@ -18,6 +19,7 @@
   } from "lucide-svelte";
   import type {
     Connection,
+    TeamAudit,
     TeamInvite,
     TeamJoin,
     TeamMember,
@@ -69,6 +71,20 @@
   let confirmUnshare = $state<string | null>(null);
   let confirmRemove = $state<string | null>(null);
   let copied = $state<string | null>(null);
+  let audits = $state.raw<Record<string, TeamAudit>>({});
+
+  const EVENT_LABEL: Record<TeamAudit["lines"][number]["kind"], string> = {
+    session_start: "Session start",
+    session_end: "Session end",
+    vault_read: "Vault read",
+    vault_write: "Vault write",
+  };
+  const CHECK_LABEL: Record<TeamAudit["lines"][number]["check"], string> = {
+    valid: "✓",
+    bad_signature: "Bad signature",
+    unknown_device: "Unknown device",
+    wrong_team: "Other team",
+  };
 
   const teamSourceIds = $derived(new Set((status?.teams ?? []).map((t) => t.source_id)));
   const localConnections = $derived(
@@ -124,7 +140,14 @@
     if (report.rejected.length > 0) {
       notify(`${report.rejected.length} entries failed integrity checks and were ignored`, "error");
     }
-    for (const e of report.errors) notify(e, "error");
+    for (const e of report.errors) {
+      notify(
+        e.includes("AuditChainBroken")
+          ? "The server's copy of your audit log is missing events this device uploaded before; they may have been deleted on the server. Tell your team admin."
+          : e,
+        "error",
+      );
+    }
   }
 
   async function setUp() {
@@ -306,6 +329,14 @@
       notify(`Granted the ${team.name} key to ${result.email}`, "success");
       grantInput = { ...grantInput, [device.device.fingerprint]: "" };
       await loadPending(team);
+    }
+  }
+
+  async function loadAudit(team: TeamSummary) {
+    const log = await run(`audit:${team.team_id}`, () => invoke<TeamAudit>("teams_audit", { team: team.team_id }), "Couldn't load the audit log");
+    if (log) {
+      audits = { ...audits, [team.team_id]: log };
+      if (!log.clean) notify(`The ${team.name} audit log failed verification`, "error");
     }
   }
 
@@ -608,6 +639,61 @@
                       {pending[team.team_id] ? "No device is waiting." : "Admins: check here after someone joins."}
                     </span>
                   {/each}
+                </section>
+
+                <!-- Audit log -->
+                <section class="flex flex-col gap-2">
+                  <div class="flex items-center justify-between gap-2">
+                    <h3 class="flex items-center gap-1.5 text-sm font-semibold"><FileCheck size={14} /> Audit log</h3>
+                    <button type="button" class="btn btn-ghost btn-sm" onclick={() => loadAudit(team)} disabled={busy !== null}>
+                      <RefreshCw size={14} class={busy === `audit:${team.team_id}` ? "animate-spin" : ""} />
+                      {audits[team.team_id] ? "Refresh" : "Load"}
+                    </button>
+                  </div>
+                  {#if audits[team.team_id]}
+                    {@const log = audits[team.team_id]}
+                    {#if log.clean}
+                      <div class="text-xs text-success" role="status">
+                        Verified on this device: {log.lines.length} signature(s) valid, {log.chains} device chain(s) intact{log.from_genesis && log.complete ? ", complete" : ""}.
+                      </div>
+                    {:else}
+                      <div class="rounded-md border border-error p-2 text-xs text-error" role="alert">
+                        <strong>Verification failed:</strong> {log.invalid_events} invalid event(s), {log.problems.length} chain problem(s).
+                        Treat this as tampering.
+                        {#each log.problems as problem (problem)}
+                          <div>· {problem}</div>
+                        {/each}
+                      </div>
+                    {/if}
+                    {#if log.lines.length === 0}
+                      <span class="text-xs text-muted">No events yet. Connections show up here after members sync.</span>
+                    {:else}
+                      <div class="overflow-x-auto">
+                        <table class="w-full text-left text-xs">
+                          <thead class="text-muted">
+                            <tr><th class="py-1 pr-3">When</th><th class="pr-3">Who</th><th class="pr-3">Event</th><th class="pr-3">Host</th><th class="pr-3">From</th><th>Check</th></tr>
+                          </thead>
+                          <tbody>
+                            {#each log.lines as line, i (i)}
+                              <tr class={line.check === "valid" ? "" : "text-error"}>
+                                <td class="py-0.5 pr-3 tabular-nums">{new Date(line.occurred_at).toLocaleString()}</td>
+                                <td class="pr-3">{line.who}{line.device_name ? ` (${line.device_name})` : ""}</td>
+                                <td class="pr-3">{EVENT_LABEL[line.kind]}</td>
+                                <td class="pr-3">{line.host ?? "–"}</td>
+                                <td class="pr-3 tabular-nums">{line.client_ip ?? "–"}</td>
+                                <td>{CHECK_LABEL[line.check]}</td>
+                              </tr>
+                            {/each}
+                          </tbody>
+                        </table>
+                      </div>
+                      {#if !log.complete}
+                        <span class="text-xs text-muted">Showing the newest 1000 events.</span>
+                      {/if}
+                    {/if}
+                  {:else}
+                    <span class="text-xs text-muted">Admins: who connected to which host, and when. Every event is verified here, not trusted from the server.</span>
+                  {/if}
                 </section>
               </div>
             {/if}

@@ -1,7 +1,10 @@
 use crate::cli::utils::confirm;
 use crate::cli::TeamsCommands;
 use crate::config::AppConfig;
-use crate::services::teams::session::{self, JoinWith, PendingDevice, Session, TeamSync};
+use crate::services::teams::audit::EventCheck;
+use crate::services::teams::session::{
+    self, AuditQuery, JoinWith, PendingDevice, Session, TeamAudit, TeamSync,
+};
 use crate::services::teams::TeamsStore;
 use anyhow::{anyhow, bail, Result};
 use bssh_teams_proto::api::Role;
@@ -293,6 +296,37 @@ async fn run(command: TeamsCommands, store: &TeamsStore, config: &AppConfig) -> 
             }
         }
 
+        TeamsCommands::Audit {
+            team,
+            host,
+            member,
+            since,
+            limit,
+        } => {
+            let (team_id, source) = session::resolve_team(db, &team)?;
+            let since = since.as_deref().map(parse_since).transpose()?;
+            let s = Session::open(store, config, &passphrase(false)?)?;
+            let entry_id = host
+                .as_deref()
+                .map(|h| s.entry_for_connection(team_id, h))
+                .transpose()?;
+            let log = s
+                .audit(
+                    team_id,
+                    AuditQuery {
+                        entry_id,
+                        email: member,
+                        since,
+                        limit,
+                    },
+                )
+                .await?;
+            print_audit(&source.name, &log);
+            if !log.is_clean() {
+                bail!("the audit log failed verification");
+            }
+        }
+
         TeamsCommands::Remove { team, email } => {
             let (team_id, source) = session::resolve_team(db, &team)?;
             if !confirm(
@@ -316,6 +350,90 @@ async fn run(command: TeamsCommands, store: &TeamsStore, config: &AppConfig) -> 
         }
     }
     Ok(())
+}
+
+fn parse_since(s: &str) -> Result<chrono::DateTime<chrono::Utc>> {
+    use chrono::{NaiveDate, TimeZone, Utc};
+    if let Ok(t) = chrono::DateTime::parse_from_rfc3339(s) {
+        return Ok(t.with_timezone(&Utc));
+    }
+    let day = NaiveDate::parse_from_str(s, "%Y-%m-%d")
+        .map_err(|_| anyhow!("--since must be YYYY-MM-DD or an RFC 3339 time, not '{s}'"))?;
+    Ok(Utc.from_utc_datetime(&day.and_hms_opt(0, 0, 0).expect("midnight exists")))
+}
+
+fn print_audit(team: &str, log: &TeamAudit) {
+    use bssh_teams_proto::api::AuditKind;
+    println!("🧾 Audit log for '{team}' ({} event(s))", log.lines.len());
+    if log.lines.is_empty() {
+        println!("   No events yet. Team members' connections appear here after they sync.");
+    } else {
+        println!(
+            "{:<17} {:<28} {:<14} {:<22} {:<16} OK",
+            "WHEN", "WHO", "EVENT", "HOST", "FROM"
+        );
+        for l in &log.lines {
+            let when = l
+                .occurred_at
+                .with_timezone(&chrono::Local)
+                .format("%Y-%m-%d %H:%M");
+            let event = match l.kind {
+                AuditKind::SessionStart => "session start",
+                AuditKind::SessionEnd => "session end",
+                AuditKind::VaultRead => "vault read",
+                AuditKind::VaultWrite => "vault write",
+            };
+            let ok = match l.check {
+                EventCheck::Valid => "✓",
+                EventCheck::BadSignature => "✗ bad signature",
+                EventCheck::UnknownDevice => "? unknown device",
+                EventCheck::WrongTeam => "✗ other team",
+            };
+            let who = if l.device_name.is_empty() {
+                l.who.clone()
+            } else {
+                format!("{} ({})", l.who, l.device_name)
+            };
+            println!(
+                "{:<17} {:<28} {:<14} {:<22} {:<16} {}",
+                when,
+                crate::cli::utils::truncate_display(&who, 28),
+                event,
+                crate::cli::utils::truncate_display(l.host.as_deref().unwrap_or("-"), 22),
+                l.client_ip.as_deref().unwrap_or("-"),
+                ok
+            );
+        }
+    }
+    println!();
+    if log.is_clean() {
+        let from_start = log.chains.iter().all(|c| c.from_genesis());
+        println!(
+            "✅ Verified on this machine: {} signature(s) valid, {} device chain(s) intact{}.",
+            log.lines.len(),
+            log.chains.len(),
+            if from_start && log.complete {
+                ", complete from each device's first event"
+            } else {
+                ""
+            }
+        );
+    } else {
+        println!(
+            "🚨 Verification FAILED: {} event(s) invalid, {} chain problem(s).",
+            log.invalid_events,
+            log.problems.len()
+        );
+        for p in &log.problems {
+            println!("   - {p}");
+        }
+        println!("   Events can't be edited, reordered or removed without this showing; treat it as tampering.");
+    }
+    if !log.complete {
+        println!(
+            "   Showing the newest events only; narrow with --since or --host to see older ones."
+        );
+    }
 }
 
 fn print_pending(p: &PendingDevice) {
@@ -378,5 +496,11 @@ fn print_sync(name: &str, sync: &TeamSync) {
     }
     for e in &r.errors {
         println!("   ❌ {e}");
+        if e.contains("AuditChainBroken") {
+            println!(
+                "      The server's copy of your audit log is missing events this device uploaded \
+                 before. That can mean they were deleted on the server: tell your team admin."
+            );
+        }
     }
 }

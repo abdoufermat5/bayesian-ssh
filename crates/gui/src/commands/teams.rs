@@ -6,9 +6,11 @@
 //! sync engine's futures hold the SQLite connection and aren't `Send`.
 
 use bayesian_ssh::config::AppConfig;
+use bayesian_ssh::services::teams::audit::EventCheck;
 use bayesian_ssh::services::teams::crypto::{fingerprint, DeviceKeys};
-use bayesian_ssh::services::teams::session::{self, JoinWith, Session, TeamSync};
+use bayesian_ssh::services::teams::session::{self, AuditQuery, JoinWith, Session, TeamSync};
 use bayesian_ssh::services::teams::TeamsStore;
+use bssh_teams_proto::api::AuditKind;
 use bssh_teams_proto::api::Role;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
@@ -204,6 +206,30 @@ pub struct MemberDto {
     email: String,
     role: &'static str,
     devices: Vec<DeviceDto>,
+}
+
+#[derive(Serialize)]
+pub struct AuditLineDto {
+    occurred_at: DateTime<Utc>,
+    received_at: DateTime<Utc>,
+    kind: &'static str,
+    who: String,
+    device_name: String,
+    host: Option<String>,
+    client_ip: Option<String>,
+    /// "valid", "bad_signature", "unknown_device" or "wrong_team".
+    check: &'static str,
+}
+
+#[derive(Serialize)]
+pub struct TeamAuditDto {
+    lines: Vec<AuditLineDto>,
+    chains: usize,
+    from_genesis: bool,
+    problems: Vec<String>,
+    invalid_events: usize,
+    complete: bool,
+    clean: bool,
 }
 
 // ── Commands ────────────────────────────────────────────────────────────────
@@ -519,6 +545,67 @@ pub fn teams_remove(
         Box::pin(async move {
             let team_id = resolve(&team)?;
             Ok(TeamSyncDto::from(&s.remove(team_id, &email).await?))
+        })
+    })
+}
+
+#[tauri::command(async)]
+pub fn teams_audit(
+    state: State<'_, TeamsState>,
+    team: String,
+    host: Option<String>,
+    member: Option<String>,
+) -> Result<TeamAuditDto, String> {
+    with_session(state.unlocked()?, move |s| {
+        Box::pin(async move {
+            let team_id = resolve(&team)?;
+            let entry_id = host
+                .as_deref()
+                .filter(|h| !h.trim().is_empty())
+                .map(|h| s.entry_for_connection(team_id, h))
+                .transpose()?;
+            let log = s
+                .audit(
+                    team_id,
+                    AuditQuery {
+                        entry_id,
+                        email: member.filter(|m| !m.trim().is_empty()),
+                        ..Default::default()
+                    },
+                )
+                .await?;
+            Ok(TeamAuditDto {
+                clean: log.is_clean(),
+                chains: log.chains.len(),
+                from_genesis: log.chains.iter().all(|c| c.from_genesis()),
+                problems: log.problems.clone(),
+                invalid_events: log.invalid_events,
+                complete: log.complete,
+                lines: log
+                    .lines
+                    .into_iter()
+                    .map(|l| AuditLineDto {
+                        occurred_at: l.occurred_at,
+                        received_at: l.received_at,
+                        kind: match l.kind {
+                            AuditKind::SessionStart => "session_start",
+                            AuditKind::SessionEnd => "session_end",
+                            AuditKind::VaultRead => "vault_read",
+                            AuditKind::VaultWrite => "vault_write",
+                        },
+                        who: l.who,
+                        device_name: l.device_name,
+                        host: l.host,
+                        client_ip: l.client_ip,
+                        check: match l.check {
+                            EventCheck::Valid => "valid",
+                            EventCheck::BadSignature => "bad_signature",
+                            EventCheck::UnknownDevice => "unknown_device",
+                            EventCheck::WrongTeam => "wrong_team",
+                        },
+                    })
+                    .collect(),
+            })
         })
     })
 }

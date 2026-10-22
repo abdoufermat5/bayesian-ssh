@@ -8,7 +8,8 @@
 //! devices this machine approved. A server that lists an extra device makes
 //! the rotation fail instead of leaking the key.
 
-use super::client::{validate_server_url, TeamsClient, TeamsError};
+use super::audit::{self as audit_log, ChainSummary, EventCheck};
+use super::client::{validate_server_url, AuditFilter, TeamsClient, TeamsError};
 use super::codec::{unwrap_all, CryptoCodec};
 use super::crypto::{self, fingerprint, DeviceKeys, TeamKey};
 use super::store::{TeamLocal, TeamsStore};
@@ -106,6 +107,48 @@ pub struct TeamSync {
 pub enum JoinWith<'a> {
     Token(&'a str),
     Team(Uuid),
+}
+
+/// Which part of the audit log to fetch. `email` narrows client-side.
+#[derive(Debug, Clone, Default)]
+pub struct AuditQuery {
+    pub entry_id: Option<Uuid>,
+    pub email: Option<String>,
+    pub since: Option<DateTime<Utc>>,
+    pub limit: Option<u32>,
+}
+
+/// One audit event, verified and with names resolved.
+#[derive(Debug, Clone)]
+pub struct AuditLine {
+    pub occurred_at: DateTime<Utc>,
+    pub received_at: DateTime<Utc>,
+    pub kind: AuditKind,
+    /// Member email, or a placeholder for a device this machine can't name.
+    pub who: String,
+    pub device_name: String,
+    /// The connection's name, decrypted locally; `None` if the event names no host.
+    pub host: Option<String>,
+    pub client_ip: Option<String>,
+    pub check: EventCheck,
+}
+
+/// A team's audit log as checked by this client.
+#[derive(Debug, Clone)]
+pub struct TeamAudit {
+    /// Newest first.
+    pub lines: Vec<AuditLine>,
+    pub chains: Vec<ChainSummary>,
+    pub problems: Vec<String>,
+    pub invalid_events: usize,
+    /// The server returned fewer events than the limit: nothing was cut off.
+    pub complete: bool,
+}
+
+impl TeamAudit {
+    pub fn is_clean(&self) -> bool {
+        self.invalid_events == 0 && self.problems.is_empty()
+    }
 }
 
 /// A device waiting for a team key, for `bssh teams grant` to show.
@@ -941,6 +984,103 @@ impl<'a> Session<'a> {
         let (team_id, entry_id) = team_of_connection(self.db(), connection)?
             .ok_or_else(|| anyhow!("'{}' is not a team connection", connection.name))?;
         self.sync_team(team_id, vec![Edit::Delete(entry_id)]).await
+    }
+
+    /// The entry id of a team connection by its local name or alias.
+    pub fn entry_for_connection(&self, team_id: Uuid, name: &str) -> Result<Uuid> {
+        let conn = self
+            .db()
+            .get_connection_or_alias(name)?
+            .ok_or_else(|| anyhow!("no connection named '{name}'"))?;
+        match team_of_connection(self.db(), &conn)? {
+            Some((t, entry)) if t == team_id => Ok(entry),
+            _ => bail!("'{name}' is not a connection of this team"),
+        }
+    }
+
+    /// Download the audit log (admins only) and verify it here: signatures
+    /// against device keys this machine knows, and each device's hash chain.
+    pub async fn audit(&self, team_id: Uuid, query: AuditQuery) -> Result<TeamAudit> {
+        let info = self.require_admin(team_id).await?;
+        let members = self.client.list_members(team_id).await?;
+        self.remember_authors(team_id, &members)?;
+
+        let limit = query.limit.unwrap_or(1000).clamp(1, 1000);
+        let records = self
+            .client
+            .list_audit(
+                team_id,
+                &AuditFilter {
+                    entry_id: query.entry_id,
+                    since: query.since,
+                    limit: Some(limit),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        let complete = records.len() < limit as usize;
+        let filtered = query.entry_id.is_some() || query.since.is_some() || query.email.is_some();
+        let verified = audit_log::verify(team_id, records, &self.authors(team_id)?, filtered);
+
+        // Names: current members first, then devices this admin approved
+        // (which covers members removed since).
+        let mut names: HashMap<Uuid, (String, String)> = HashMap::new();
+        for (device, (email, _, _)) in self.approved_devices(team_id)? {
+            names.insert(device, (email, String::new()));
+        }
+        for m in &members {
+            for d in &m.devices {
+                names.insert(d.device_id, (m.email.clone(), d.name.clone()));
+            }
+        }
+        let hosts: HashMap<Uuid, String> =
+            match self.codec(team_id, info.current_key_version).await? {
+                Some(codec) => read_vault(self.store, &codec, team_id)?
+                    .connections
+                    .into_iter()
+                    .map(|c| (c.entry_id, c.record.name))
+                    .collect(),
+                None => HashMap::new(),
+            };
+
+        let email_filter = query.email.map(|e| e.trim().to_lowercase());
+        let lines = verified
+            .records
+            .iter()
+            .filter_map(|r| {
+                let e = &r.record.event;
+                let (who, device_name) = names
+                    .get(&e.device_id)
+                    .cloned()
+                    .unwrap_or_else(|| (format!("unknown device {}", e.device_id), String::new()));
+                if email_filter.as_deref().is_some_and(|f| f != who) {
+                    return None;
+                }
+                Some(AuditLine {
+                    occurred_at: e.occurred_at,
+                    received_at: r.record.received_at,
+                    kind: e.kind,
+                    who,
+                    device_name,
+                    host: e.entry_id.map(|id| {
+                        hosts
+                            .get(&id)
+                            .cloned()
+                            .unwrap_or_else(|| "(deleted host)".to_string())
+                    }),
+                    client_ip: r.record.client_ip.clone(),
+                    check: r.check,
+                })
+            })
+            .collect();
+
+        Ok(TeamAudit {
+            lines,
+            invalid_events: verified.invalid_events(),
+            problems: verified.problems.iter().map(|p| p.to_string()).collect(),
+            chains: verified.chains,
+            complete,
+        })
     }
 }
 

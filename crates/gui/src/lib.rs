@@ -150,7 +150,8 @@ pub fn run() {
             commands::teams_pending,
             commands::teams_grant,
             commands::teams_members,
-            commands::teams_remove
+            commands::teams_remove,
+            commands::teams_audit
         ])
         .run(context)
         .expect("error while running tauri application");

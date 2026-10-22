@@ -123,8 +123,19 @@ Each device keeps one hash chain per team: `seq` from 0, `prev_hash` =
 `layout::audit_event_hash(previous)`, genesis `AUDIT_GENESIS`. Events are written
 locally first and uploaded in `seq` order. The server verifies each signature against
 the device's Ed25519 key and that the batch continues the stored chain, then stores
-the events with `received_at` and `client_ip`. `bssh audit verify` re-checks a
-downloaded log offline.
+the events with `received_at` and `client_ip`. `bssh teams audit` downloads the log
+and re-checks every signature and chain on the admin's machine.
+
+What the chain guarantees, against a server that edits its database:
+
+- *Edited* events fail their signature.
+- *Reordered*, *forked* or *duplicated* events break the `prev_hash` links.
+- A *deleted* event is visible as a gap once a later event from the same device is
+  stored; and while it's missing, that device's uploads are refused
+  (`AuditChainBroken`), which its owner sees at every sync.
+- Not detectable from the log alone: *truncation*, i.e. dropping a device's newest
+  events before it uploads anything after them. The device notices on its next upload.
+  Closing this needs devices to publish signed chain heads elsewhere (future work).
 
 ## Server-side checks (non-exhaustive)
 
