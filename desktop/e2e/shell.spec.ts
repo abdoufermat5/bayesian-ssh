@@ -6,7 +6,7 @@ const VIEWS: Array<{ nav: string; title: string }> = [
   { nav: "Files", title: "Files" },
   { nav: "Tunnels", title: "Tunnels" },
   { nav: "Keys", title: "Keys" },
-  { nav: "Audit", title: "Security audit" },
+  { nav: "Security check", title: "Security check" },
   { nav: "History", title: "History" },
   { nav: "Settings", title: "Settings" },
 ];
@@ -69,7 +69,7 @@ test.describe("app shell", () => {
 
   test("titlebar search opens the command palette", async ({ app, page }) => {
     await app.gotoApp();
-    await page.getByRole("button", { name: "Open command palette" }).click();
+    await page.getByRole("button", { name: "Jump to…" }).click();
     await expect(page.getByRole("dialog", { name: "Command palette" })).toBeVisible();
   });
 

@@ -354,6 +354,8 @@
     update_managed_by: () => null,
     check_update: () => null,
     install_update: () => null,
+    // A fresh install: Teams not set up. Tests override this per describe.
+    teams_status: () => ({ identity: null, unlocked: false, fingerprint: null, teams: [] }),
     get_env_status: () => ({
       ssh_agent_available: !window.__BATCH_ENV_WARN,
       ssh_auth_sock: window.__BATCH_ENV_WARN ? null : "/run/user/1000/ssh-agent.sock",

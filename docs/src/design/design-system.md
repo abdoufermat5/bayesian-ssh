@@ -73,14 +73,21 @@ All colors are semantic `--color-*` tokens, which generate Tailwind utilities (`
 | `chrome` | Title bar and sidebar: the frame around the workspace |
 | `surface` | Workspace / view background |
 | `panel` | Cards, tables, settings groups |
-| `surface-raised` | Popovers, menus, modals, toasts |
+| `surface-raised` | Floating layers: command palette, popovers, menus, modals, toasts. A visible step above `panel` in every theme |
 | `surface-input` | Inputs, selects, search boxes |
-| `surface-hover` / `surface-active` | Row hover / selected row, active nav item |
+| `surface-hover` / `surface-active` | Row hover / pressed state, active nav item |
+| `selected` | Tint for the selected row or palette item; always paired with a 2 px `accent` left rail |
+| `hover-on-floating` | Hover fill for items inside floating layers (they are lighter than `surface-hover`) |
 | `surface-terminal` | xterm background |
-| `border` / `border-subtle` / `border-hover` / `border-strong` | Hairlines, from quietest to strongest |
+| `border` / `border-subtle` / `border-hover` / `border-strong` | Decorative hairlines (panels, dividers, table rules), from quietest to strongest. Not for controls |
+| `border-control` | Boundary of inputs, selects, secondary buttons, chips, switch off-track, checkboxes. ≥ 3:1 on the surface behind it |
+| `border-floating` | Edge of floating layers (`.popover`, `.modal-panel`, `.toast`, command palette) |
 | `border-focus` | Focused control border and focus ring |
 | `primary` / `secondary` / `muted` / `faint` | Text, from content down to disabled/decorative |
 | `accent` / `accent-hover` / `accent-muted` / `on-accent` | Primary action, selection, focus; text on accent fills |
+| `accent-strong` / `accent-strong-hover` | Primary button fill / hover fill. Hover is a real token, not `brightness()`, so it stays ≥ 4.5:1 with `on-accent` |
+| `danger-strong` / `danger-strong-hover` / `on-danger` | Danger button fill / hover / text (≥ 4.5:1). `error`/`danger` are the lighter red for text and icons |
+| `disabled-fg` | Text of disabled controls: ≥ 3:1 yet dimmer than `muted` |
 | `success` / `warning` / `error` (`running`, `danger` aliases) | State only: never decoration |
 | `overlay` | Modal backdrop |
 
@@ -92,6 +99,33 @@ The default theme sets these in the `@theme` block. Each `html.theme-*` class ov
 | `cyberpunk` | Midnight | Deep navy, cyan accent |
 | `oled` | OLED black | True black, white accent |
 | `slate` | Slate | Cool blue-grey, sky accent |
+
+### Contrast rules (WCAG 2.2 AA)
+
+Checked per theme by `desktop/scripts/check-contrast.mjs`, which parses `tokens.css` (the `@theme` block plus each `html.theme-*` override):
+
+| Pair | Minimum |
+| --- | --- |
+| `primary`, `secondary`, `muted` on every surface (`surface`, `panel`, `surface-raised`, `surface-input`, `surface-hover`, `surface-active`, `chrome`), on selected rows/palette items and on menu hover | 4.5:1 |
+| `accent`, `success`, `warning`, `error` text on `panel` | 4.5:1 |
+| `error` on a floating layer and on its danger-menu hover | 4.5:1 |
+| `on-accent` on `accent-strong` and `accent-strong-hover` (primary button, normal and hover) | 4.5:1 |
+| `on-danger` on `danger-strong` and `danger-strong-hover` (danger button, normal and hover) | 4.5:1 |
+| `border-control` on `surface`, `panel`, `surface-raised`, `surface-input`, `surface-active` | 3:1 |
+| `border-focus` on `surface`, `surface-raised` | 3:1 |
+| `disabled-fg` on `panel`, `surface-input`, `surface-active`, `surface-subtle` | 3:1 |
+| `surface-raised` vs `surface` / `border-floating` vs `surface-raised` | 1.1:1 / 1.5:1 (elevation must be visible) |
+
+Run it with `cd desktop && npm run check:contrast`; it prints one row per check and exits 1 on any failure. CI runs it in the *Test Desktop* job. When you change a color token, run it before committing.
+
+**State rules**
+
+- Use `border-control` (never `border`) for anything the user must locate and operate. Keep `border` for panel edges.
+- Floating layers = `surface-raised` + `border-floating` + `shadow-lg`/`shadow-xl`, whose inset top highlight keeps the edge visible on near-black themes where drop shadows vanish.
+- Selected rows and options: `selected` tint plus a 2 px accent left rail (`tr.is-selected`, `.menu-item-active`, `.nav-item-active`, `.settings-nav-item-active`, `.card-selected`, `[role=option][aria-selected=true]`). The rail is a shape, so the state does not depend on color alone.
+- Disabled controls keep `disabled-fg` text on a flat fill, drop shadows, show a dashed edge on fields and use `cursor-not-allowed`. They are not dimmed with opacity. Disabled buttons keep pointer events so a `title` can explain why.
+- `.tag` is a static label (flat filled rectangle, no border). `.chip` is an interactive filter (pill, `border-control`, 28 px high; `.chip-active` adds accent border, tint and a ✓). Don't use one for the other.
+- Class-based hit areas are ≥ 24 px: `.btn-icon-sm` is 24 px, `.switch` and `.checkbox` extend their hit box with a transparent `::before`.
 
 **Type scale** (Inter; JetBrains Mono for data): `2xs` 11px for badges and kbd · `xs` 12px for meta · `sm` 13px for body/default · `base` 14px for view titles · `lg` 16px for modal/settings titles · `xl` 20px for figures. Weights are 400/500/600 only. Arbitrary sizes (`text-[10px]`) are not allowed. Use `tabular-nums` (or `.tabular`) for numbers that line up.
 
@@ -110,7 +144,7 @@ The default theme sets these in the `@theme` block. Each `html.theme-*` class ov
 | Fields | `.field` `.field-label` `.field-hint` `.field-error` | Validation messages sit inline under the control |
 | Toggles | `input.switch` (on/off settings), `input.checkbox` (selection) | Native checkboxes, restyled |
 | Select | `CustomSelect` component (`label`, `size="sm"\|"md"`) | Keyboard navigable listbox |
-| Badges | `.badge` + `-neutral` `-accent` `-success` `-warning` `-error`, `.badge-mono`; `.count`; `.tag`; `.kbd` | Badges are 20px, rounded-sm, never pills |
+| Badges | `.badge` + `-neutral` `-accent` `-success` `-warning` `-error`, `.badge-mono`; `.count`; `.tag` (static label); `.kbd` | Badges are 20px, rounded-sm, never pills |
 | Status | `.status-dot` + `-success` `-warning` `-error` `-offline` `-running`, `-sm`, `.status-dot-live` | |
 | Text | `.section-label`, `.link`, `.mono`, `.code-block` | |
 | Containers | `.panel` (+ `-header` `-title` `-body`), `.card` `.card-interactive` `.card-selected`, `.stat` (+ `-label` `-value`), `.divider` | |

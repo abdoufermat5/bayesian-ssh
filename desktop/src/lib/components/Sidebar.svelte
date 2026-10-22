@@ -17,6 +17,7 @@
     TerminalSquare,
     Users,
   } from "lucide-svelte";
+  import { attentionCount } from "$lib/stores/attention.svelte";
   import type { AppTab, DesktopSettings, EnvInfo } from "$lib/types";
 
   type KerberosHealth = "missing" | "expired" | "warning" | "valid" | "unavailable";
@@ -68,7 +69,7 @@
     settings,
   }: Props = $props();
 
-  type NavItem = { tab: AppTab; icon: typeof Server; label: string; badge?: number; key?: string };
+  type NavItem = { tab: AppTab; icon: typeof Server; label: string; badge?: number; attention?: number; key?: string };
 
   const sections = $derived<{ label: string | null; items: NavItem[] }[]>([
     {
@@ -84,7 +85,7 @@
       label: "Security",
       items: [
         { tab: "keys", icon: KeyRound, label: "Keys", key: "3" },
-        { tab: "audit", icon: ShieldCheck, label: "Audit", key: "4" },
+        { tab: "audit", icon: ShieldCheck, label: "Security check", key: "4" },
       ],
     },
     {
@@ -93,7 +94,7 @@
     },
     {
       label: "Team",
-      items: [{ tab: "teams", icon: Users, label: "Teams" }],
+      items: [{ tab: "teams", icon: Users, label: "Teams", attention: attentionCount("teams") }],
     },
   ]);
 
@@ -220,15 +221,21 @@
             class="nav-item {active ? 'nav-item-active' : ''} {sidebarCollapsed ? 'nav-item-collapsed' : ''}"
             onclick={() => onTabChange(item.tab)}
             title={sidebarCollapsed ? item.label : item.key ? `${item.label} (${item.key})` : undefined}
-            aria-label={item.label}
+            aria-label={item.attention
+              ? `${item.label}, ${item.attention} ${item.attention === 1 ? "item needs" : "items need"} attention`
+              : item.label}
             aria-current={active ? "page" : undefined}
           >
             <item.icon size={16} strokeWidth={1.75} class={active ? "text-primary" : "text-muted"} />
             {#if !sidebarCollapsed}
               <span class="truncate">{item.label}</span>
-              {#if item.badge}
+              {#if item.attention}
+                <span class="count ml-auto bg-warning/15 text-warning" aria-hidden="true">{item.attention}</span>
+              {:else if item.badge}
                 <span class="count ml-auto {active ? 'bg-accent/15 text-accent' : ''}">{item.badge}</span>
               {/if}
+            {:else if item.attention}
+              <span class="absolute right-1.5 top-1.5 size-2 rounded-full bg-warning ring-2 ring-chrome" aria-hidden="true"></span>
             {:else if item.badge}
               <span class="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-accent"></span>
             {/if}

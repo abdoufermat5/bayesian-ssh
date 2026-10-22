@@ -1,95 +1,62 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import {
-    Check,
-    ChevronDown,
-    ChevronRight,
-    Copy,
-    FileCheck,
-    KeyRound,
-    Lock,
-    LogIn,
-    Plus,
-    RefreshCw,
-    Share2,
-    Trash2,
-    UserPlus,
-    Users,
-  } from "lucide-svelte";
+  import { Lock, LogIn, Plus, RefreshCw, Users } from "lucide-svelte";
   import type {
     Connection,
-    TeamAudit,
-    TeamInvite,
+    TeamAttention,
     TeamJoin,
-    TeamMember,
-    TeamPendingDevice,
     TeamsStatus,
     TeamSummary,
     TeamSyncReport,
     TeamSyncResult,
   } from "$lib/types";
   import { notify } from "$lib/stores/notifications.svelte";
-  import { copyTextWithFallback } from "$lib/utils/terminal-xterm";
+  import {
+    getAttention,
+    pendingTeamFocus,
+    raiseAttention,
+    resolveAttention,
+    takeTeamFocus,
+    TEAM_ATTENTION,
+  } from "$lib/stores/attention.svelte";
+  import TeamsSetup from "./teams/TeamsSetup.svelte";
+  import TeamsUnlock from "./teams/TeamsUnlock.svelte";
+  import TeamsHome from "./teams/TeamsHome.svelte";
+  import TeamPage from "./teams/TeamPage.svelte";
+  import CreateTeamModal from "./teams/CreateTeamModal.svelte";
+  import JoinTeamModal from "./teams/JoinTeamModal.svelte";
+  import { plural, type ParsedInvite, type TeamTab } from "./teams/teams";
 
   let {
     connections,
     onConnectionsChanged,
   }: { connections: Connection[]; onConnectionsChanged: () => void } = $props();
 
+  /** How often `teams_attention` runs while this view is open and unlocked. */
+  const ATTENTION_POLL_MS = 30_000;
+
   let status = $state.raw<TeamsStatus | null>(null);
   let loading = $state(true);
   let loadError = $state<string | null>(null);
-  /** Key of the action in flight, e.g. "sync:<team>"; one at a time. */
-  let busy = $state<string | null>(null);
-
-  // Setup and unlock.
-  let server = $state("");
-  let email = $state("");
-  let deviceName = $state("");
-  let pass1 = $state("");
-  let pass2 = $state("");
-  let unlockPass = $state("");
-
-  // Create and join.
-  let newTeam = $state("");
-  let joinToken = $state("");
-  let joinTeamId = $state("");
-  let joinFingerprint = $state("");
-  let joined = $state.raw<TeamJoin | null>(null);
-
-  // Per-team panels, keyed by team id.
-  let expanded = $state<string | null>(null);
-  let members = $state.raw<Record<string, TeamMember[]>>({});
-  let pending = $state.raw<Record<string, TeamPendingDevice[]>>({});
-  let grantInput = $state<Record<string, string>>({});
-  let inviteEmail = $state<Record<string, string>>({});
-  let inviteAdmin = $state<Record<string, boolean>>({});
-  let invites = $state.raw<Record<string, TeamInvite>>({});
-  let shareChoice = $state<Record<string, string>>({});
+  let attention = $state.raw<Record<string, TeamAttention>>({});
   let lastSync = $state.raw<Record<string, TeamSyncReport>>({});
-  let confirmUnshare = $state<string | null>(null);
-  let confirmRemove = $state<string | null>(null);
-  let copied = $state<string | null>(null);
-  let audits = $state.raw<Record<string, TeamAudit>>({});
+  /** Team id being synced, "all", or null. */
+  let syncing = $state<string | null>(null);
+  let openTeamId = $state<string | null>(null);
+  let openTab = $state<TeamTab>("hosts");
+  let modal = $state<"create" | "join" | null>(null);
+  /** Invite pasted during setup, to pre-fill the join once the device is set up. */
+  let joinSeed = $state.raw<ParsedInvite | null>(null);
 
-  const EVENT_LABEL: Record<TeamAudit["lines"][number]["kind"], string> = {
-    session_start: "Session start",
-    session_end: "Session end",
-    vault_read: "Vault read",
-    vault_write: "Vault write",
-  };
-  const CHECK_LABEL: Record<TeamAudit["lines"][number]["check"], string> = {
-    valid: "✓",
-    bad_signature: "Bad signature",
-    unknown_device: "Unknown device",
-    wrong_team: "Other team",
-  };
+  const teams = $derived(status?.teams ?? []);
+  const openTeam = $derived(teams.find((t) => t.team_id === openTeamId) ?? null);
+  const teamSourceIds = $derived(new Set(teams.map((t) => t.source_id)));
+  const localConnections = $derived(connections.filter((c) => !c.source_id || !teamSourceIds.has(c.source_id)));
 
-  const teamSourceIds = $derived(new Set((status?.teams ?? []).map((t) => t.source_id)));
-  const localConnections = $derived(
-    connections.filter((c) => !c.source_id || !teamSourceIds.has(c.source_id)),
-  );
+  function waitingForKey(teamId: string): boolean {
+    return attention[teamId]?.waiting_for_key ?? lastSync[teamId]?.waiting_for_key ?? false;
+  }
 
   async function refresh() {
     try {
@@ -102,250 +69,218 @@
     }
   }
 
-  /** Run one action, report failures, and keep the buttons disabled meanwhile. */
-  async function run<T>(key: string, action: () => Promise<T>, failure: string): Promise<T | undefined> {
-    busy = key;
-    try {
-      return await action();
-    } catch (err) {
-      notify(`${failure}: ${err}`, "error");
-      return undefined;
-    } finally {
-      busy = null;
+  // ── Attention: what needs a human, per team ──────────────────────────────
+
+  function setWaitingKey(team: TeamSummary, waiting: boolean) {
+    const id = TEAM_ATTENTION.waitingKey(team.team_id);
+    if (!waiting) return resolveAttention(id);
+    raiseAttention({
+      id,
+      severity: "info",
+      title: `${team.name}: waiting for an admin to grant this device the key`,
+      body: "Send them this device's fingerprint from the Teams page.",
+      action: { label: "Show fingerprint", tab: "teams", teamId: team.team_id },
+      dismissible: false,
+    });
+  }
+
+  function applyAttention(list: TeamAttention[]) {
+    const previous = attention;
+    attention = Object.fromEntries(list.map((a) => [a.team_id, a]));
+    for (const a of list) {
+      const team = teams.find((t) => t.team_id === a.team_id);
+      if (!team) continue;
+
+      const pendingId = TEAM_ATTENTION.pending(team.team_id);
+      if (a.role === "admin" && a.pending_devices > 0) {
+        raiseAttention({
+          id: pendingId,
+          severity: "warning",
+          title: `${team.name}: ${plural(a.pending_devices, "device")} waiting for the key`,
+          body: "Check each fingerprint with its owner before granting.",
+          action: { label: "Review", tab: "teams", teamId: team.team_id },
+          dismissible: false,
+        });
+      } else {
+        resolveAttention(pendingId);
+      }
+
+      setWaitingKey(team, a.waiting_for_key && !a.removed);
+
+      const removedId = TEAM_ATTENTION.removed(team.team_id);
+      if (a.removed) {
+        raiseAttention({
+          id: removedId,
+          severity: "warning",
+          title: `You were removed from ${team.name}`,
+          body: "This device can't sync it anymore.",
+          action: { label: "Open team", tab: "teams", teamId: team.team_id },
+          dismissible: false,
+        });
+      } else {
+        resolveAttention(removedId);
+      }
+
+      // The key just arrived: fetch the team's hosts right away.
+      if (previous[a.team_id]?.waiting_for_key && !a.waiting_for_key && !a.removed && syncing === null) {
+        notify(`${team.name}: key received, syncing`, "success");
+        void syncTeam(team);
+      }
     }
   }
 
-  function copy(text: string, id: string) {
-    copyTextWithFallback(text);
-    copied = id;
-    notify("Copied", "success");
-    setTimeout(() => {
-      if (copied === id) copied = null;
-    }, 2000);
+  async function checkAttention() {
+    if (!status?.unlocked || document.visibilityState === "hidden") return;
+    try {
+      applyAttention((await invoke<TeamAttention[] | null>("teams_attention")) ?? []);
+    } catch {
+      // Offline or an older backend: keep the last answer; the next poll retries.
+    }
   }
 
+  /** Sync results carry security events: they become persistent attention items. */
+  function afterSync(team: TeamSummary, report: TeamSyncReport) {
+    lastSync = { ...lastSync, [team.team_id]: report };
+    setWaitingKey(team, report.waiting_for_key);
+
+    const integrityId = TEAM_ATTENTION.integrity(team.team_id);
+    if (report.rejected.length > 0) {
+      raiseAttention({
+        id: integrityId,
+        severity: "error",
+        title: `${team.name}: ${plural(report.rejected.length, "entry", "entries")} failed integrity checks`,
+        body: "They were ignored. A server replaying old versions or an unknown author can cause this; tell your team admin.",
+        action: { label: "Open team", tab: "teams", teamId: team.team_id },
+      });
+    } else {
+      resolveAttention(integrityId);
+    }
+
+    const chainId = TEAM_ATTENTION.chainBroken(team.team_id);
+    const chainBroken = report.errors.some((e) => e.includes("AuditChainBroken"));
+    if (chainBroken) {
+      raiseAttention({
+        id: chainId,
+        severity: "error",
+        title: `${team.name}: the server's audit log is missing your events`,
+        body: "Events this device uploaded before are gone from the server; they may have been deleted there. Tell your team admin.",
+        action: { label: "Open team", tab: "teams", teamId: team.team_id },
+      });
+    } else {
+      resolveAttention(chainId);
+    }
+    for (const e of report.errors) {
+      if (!e.includes("AuditChainBroken")) notify(`${team.name}: ${e}`, "error");
+    }
+  }
+
+  // ── Actions ─────────────────────────────────────────────────────────────
+
   function summarize(r: TeamSyncReport): string {
-    if (r.waiting_for_key) return "Waiting for an admin to grant this device the team key";
+    if (r.waiting_for_key) return "waiting for an admin to grant this device the key";
     const parts = [`pulled ${r.pulled}`, `pushed ${r.pushed}`];
     if (r.hosts_added || r.hosts_updated || r.hosts_stale) {
       parts.push(`hosts +${r.hosts_added} ~${r.hosts_updated} stale ${r.hosts_stale}`);
     }
-    if (r.audit_uploaded) parts.push(`${r.audit_uploaded} audit event(s) uploaded`);
+    if (r.audit_uploaded) parts.push(`${plural(r.audit_uploaded, "audit event")} uploaded`);
     if (r.rotated_to) parts.push(`key rotated to v${r.rotated_to}`);
     return parts.join(" · ");
   }
 
-  function afterSync(teamId: string, report: TeamSyncReport) {
-    lastSync = { ...lastSync, [teamId]: report };
-    if (report.rejected.length > 0) {
-      notify(`${report.rejected.length} entries failed integrity checks and were ignored`, "error");
+  async function runSync(key: string, team: string | null): Promise<TeamSyncResult[] | null> {
+    syncing = key;
+    try {
+      return await invoke<TeamSyncResult[]>("teams_sync", { team });
+    } catch (err) {
+      notify(`Sync failed: ${err}`, "error");
+      return null;
+    } finally {
+      syncing = null;
     }
-    for (const e of report.errors) {
-      notify(
-        e.includes("AuditChainBroken")
-          ? "The server's copy of your audit log is missing events this device uploaded before; they may have been deleted on the server. Tell your team admin."
-          : e,
-        "error",
-      );
-    }
-  }
-
-  async function setUp() {
-    if (pass1 !== pass2) {
-      notify("The passphrases don't match", "error");
-      return;
-    }
-    const next = await run(
-      "setup",
-      () =>
-        invoke<TeamsStatus>("teams_init", {
-          server: server.trim(),
-          email: email.trim(),
-          deviceName: deviceName.trim() || null,
-          passphrase: pass1,
-        }),
-      "Setup failed",
-    );
-    if (next) {
-      status = next;
-      pass1 = pass2 = "";
-      notify("Teams is set up on this device", "success");
-    }
-  }
-
-  async function unlock() {
-    const next = await run("unlock", () => invoke<TeamsStatus>("teams_unlock", { passphrase: unlockPass }), "Couldn't unlock");
-    if (next) {
-      status = next;
-      unlockPass = "";
-    }
-  }
-
-  async function lock() {
-    await invoke("teams_lock");
-    members = {};
-    pending = {};
-    invites = {};
-    await refresh();
   }
 
   async function syncAll() {
-    const results = await run("sync:all", () => invoke<TeamSyncResult[]>("teams_sync", { team: null }), "Sync failed");
+    const results = await runSync("all", null);
     if (!results) return;
     for (const r of results) {
-      if (r.result) afterSync(r.result.team_id, r.result);
+      const team = teams.find((t) => t.team_id === r.result?.team_id || t.name === r.team);
+      if (r.result && team) afterSync(team, r.result);
       if (r.error) notify(`${r.team}: ${r.error}`, "error");
     }
     const ok = results.filter((r) => r.result).length;
-    if (ok) notify(`Synced ${ok} ${ok === 1 ? "team" : "teams"}`, "success");
+    if (ok) notify(`Synced ${plural(ok, "team")}`, "success");
     onConnectionsChanged();
     await refresh();
   }
 
   async function syncTeam(team: TeamSummary) {
-    const results = await run(`sync:${team.team_id}`, () => invoke<TeamSyncResult[]>("teams_sync", { team: team.team_id }), "Sync failed");
-    const r = results?.[0];
+    const r = (await runSync(team.team_id, team.team_id))?.[0];
     if (r?.result) {
-      afterSync(team.team_id, r.result);
-      notify(`${r.result.name ?? team.name}: ${summarize(r.result)}`, "success");
+      afterSync(team, r.result);
+      notify(`${team.name}: ${summarize(r.result)}`, "success");
     }
     if (r?.error) notify(`${team.name}: ${r.error}`, "error");
     onConnectionsChanged();
     await refresh();
   }
 
-  async function createTeam() {
-    const name = newTeam.trim();
-    const report = await run("create", () => invoke<TeamSyncReport>("teams_create", { name }), "Couldn't create the team");
-    if (report) {
-      newTeam = "";
-      notify(`Created team '${name}'; you're its admin`, "success");
-      await refresh();
-      expanded = report.team_id;
-    }
+  /** A share, unshare or remove ran on `team` and returned a sync report. */
+  async function onTeamSynced(team: TeamSummary, report: TeamSyncReport) {
+    afterSync(team, report);
+    onConnectionsChanged();
+    await refresh();
   }
 
-  async function join() {
-    const result = await run(
-      "join",
-      () =>
-        invoke<TeamJoin>("teams_join", {
-          token: joinToken.trim() || null,
-          teamId: joinTeamId.trim() || null,
-          fingerprint: joinFingerprint.trim(),
-        }),
-      "Couldn't join",
-    );
-    if (result) {
-      joined = result;
-      joinToken = joinTeamId = joinFingerprint = "";
-      await refresh();
-    }
+  async function lock() {
+    await invoke("teams_lock");
+    attention = {};
+    openTeamId = null;
+    await refresh();
   }
 
-  async function share(team: TeamSummary) {
-    const connection = shareChoice[team.team_id];
-    if (!connection) return;
-    const report = await run(`share:${team.team_id}`, () => invoke<TeamSyncReport>("teams_share", { connection, team: team.team_id }), "Couldn't share");
-    if (report) {
-      afterSync(team.team_id, report);
-      notify(`Shared '${connection}' with ${team.name}`, "success");
-      shareChoice = { ...shareChoice, [team.team_id]: "" };
-      onConnectionsChanged();
-      await refresh();
-    }
+  function openTeamPage(teamId: string, tab: TeamTab = "hosts") {
+    openTab = tab;
+    openTeamId = teamId;
   }
 
-  async function unshare(team: TeamSummary, connection: Connection) {
-    if (confirmUnshare !== connection.id) {
-      confirmUnshare = connection.id;
-      return;
-    }
-    confirmUnshare = null;
-    const report = await run(`unshare:${connection.id}`, () => invoke<TeamSyncReport>("teams_unshare", { connection: connection.name }), "Couldn't remove it");
-    if (report) {
-      afterSync(team.team_id, report);
-      notify(`Removed '${connection.name}' from ${team.name} for everyone`, "success");
-      onConnectionsChanged();
-      await refresh();
-    }
+  async function onCreated(teamId: string, name: string) {
+    modal = null;
+    notify(`Created team '${name}'; you're its admin`, "success");
+    await refresh();
+    openTeamPage(teamId);
+    void checkAttention();
   }
 
-  async function loadMembers(team: TeamSummary) {
-    const list = await run(`members:${team.team_id}`, () => invoke<TeamMember[]>("teams_members", { team: team.team_id }), "Couldn't load members");
-    if (list) members = { ...members, [team.team_id]: list };
+  async function onJoined(join: TeamJoin) {
+    joinSeed = null;
+    await refresh();
+    const team = status?.teams.find((t) => t.team_id === join.team_id);
+    if (team) setWaitingKey(team, true);
+    void checkAttention();
   }
 
-  async function removeMember(team: TeamSummary, member: TeamMember) {
-    const key = `${team.team_id}:${member.email}`;
-    if (confirmRemove !== key) {
-      confirmRemove = key;
-      return;
-    }
-    confirmRemove = null;
-    const report = await run(`remove:${key}`, () => invoke<TeamSyncReport>("teams_remove", { team: team.team_id, email: member.email }), "Couldn't remove the member");
-    if (report) {
-      afterSync(team.team_id, report);
-      notify(
-        `Removed ${member.email}${report.rotated_to ? `; team key rotated to v${report.rotated_to}` : ""}`,
-        "success",
-      );
-      await loadMembers(team);
-    }
-  }
+  // Poll while the view is open and unlocked (the view unmounts when hidden).
+  $effect(() => {
+    if (!status?.unlocked) return;
+    untrack(() => void checkAttention());
+    const timer = setInterval(() => void checkAttention(), ATTENTION_POLL_MS);
+    return () => clearInterval(timer);
+  });
 
-  async function invite(team: TeamSummary) {
-    const address = (inviteEmail[team.team_id] ?? "").trim();
-    const result = await run(
-      `invite:${team.team_id}`,
-      () => invoke<TeamInvite>("teams_invite", { team: team.team_id, email: address, admin: !!inviteAdmin[team.team_id] }),
-      "Couldn't invite",
-    );
-    if (result) {
-      invites = { ...invites, [team.team_id]: result };
-      inviteEmail = { ...inviteEmail, [team.team_id]: "" };
-    }
-  }
-
-  function inviteText(i: TeamInvite): string {
-    return [
-      `bssh teams init --server ${i.server_url} --email ${i.email}`,
-      `bssh teams join ${i.token} --fingerprint ${i.admin_fingerprint}`,
-    ].join("\n");
-  }
-
-  async function loadPending(team: TeamSummary) {
-    const list = await run(`pending:${team.team_id}`, () => invoke<TeamPendingDevice[]>("teams_pending", { team: team.team_id }), "Couldn't load waiting devices");
-    if (list) pending = { ...pending, [team.team_id]: list };
-  }
-
-  async function grant(team: TeamSummary, device: TeamPendingDevice) {
-    const result = await run(
-      `grant:${device.device.fingerprint}`,
-      () => invoke<TeamPendingDevice>("teams_grant", { team: team.team_id, fingerprint: device.device.fingerprint }),
-      "Couldn't grant the key",
-    );
-    if (result) {
-      notify(`Granted the ${team.name} key to ${result.email}`, "success");
-      grantInput = { ...grantInput, [device.device.fingerprint]: "" };
-      await loadPending(team);
-    }
-  }
-
-  async function loadAudit(team: TeamSummary) {
-    const log = await run(`audit:${team.team_id}`, () => invoke<TeamAudit>("teams_audit", { team: team.team_id }), "Couldn't load the audit log");
-    if (log) {
-      audits = { ...audits, [team.team_id]: log };
-      if (!log.clean) notify(`The ${team.name} audit log failed verification`, "error");
-    }
-  }
-
-  function toggle(team: TeamSummary) {
-    expanded = expanded === team.team_id ? null : team.team_id;
-    if (expanded) {
-      void loadMembers(team);
-    }
-  }
+  // Focus requests from attention actions elsewhere in the app.
+  $effect(() => {
+    if (!pendingTeamFocus() || !status?.unlocked) return;
+    const teamId = takeTeamFocus();
+    if (!teamId || !teams.some((t) => t.team_id === teamId)) return;
+    const raised = new Set(getAttention().map((i) => i.id));
+    const tab: TeamTab = raised.has(TEAM_ATTENTION.auditFailed(teamId))
+      ? "audit"
+      : raised.has(TEAM_ATTENTION.pending(teamId)) || raised.has(TEAM_ATTENTION.rotationBlocked(teamId))
+        ? "members"
+        : "hosts";
+    modal = null;
+    openTeamPage(teamId, tab);
+  });
 
   onMount(() => {
     void refresh();
@@ -357,20 +292,32 @@
     <div class="flex min-w-0 items-baseline gap-2.5">
       <h1 class="view-title">Teams</h1>
       {#if status?.unlocked}
-        <span class="text-sm tabular-nums text-muted">
-          {status.teams.length} {status.teams.length === 1 ? "team" : "teams"}
-        </span>
+        <span class="text-sm tabular-nums text-muted">{plural(teams.length, "team")}</span>
       {/if}
     </div>
     {#if status?.unlocked}
       <div class="view-actions">
-        {#if status.teams.length > 0}
-          <button type="button" class="btn btn-secondary" onclick={syncAll} disabled={busy !== null}>
-            <RefreshCw size={14} class={busy === "sync:all" ? "animate-spin" : ""} />
+        <button type="button" class="btn btn-secondary" onclick={() => (modal = "join")}>
+          <LogIn size={14} />
+          Join with invite
+        </button>
+        <button type="button" class="btn btn-secondary" onclick={() => (modal = "create")}>
+          <Plus size={14} />
+          Create team
+        </button>
+        {#if teams.length > 0}
+          <button type="button" class="btn btn-secondary" onclick={syncAll} disabled={syncing !== null}>
+            <RefreshCw size={14} class={syncing === "all" ? "animate-spin" : ""} />
             Sync all
           </button>
         {/if}
-        <button type="button" class="btn btn-ghost" onclick={lock} disabled={busy !== null} title="Forget the unlocked keys until you unlock again">
+        <button
+          type="button"
+          class="btn btn-ghost"
+          onclick={lock}
+          disabled={syncing !== null}
+          title="Forget the unlocked keys until you unlock again"
+        >
           <Lock size={14} />
           Lock
         </button>
@@ -391,354 +338,67 @@
         <p class="empty-state-desc">{loadError}</p>
       </div>
     {:else if !status.identity}
-      <!-- Not set up yet -->
-      <div class="panel mx-auto flex max-w-xl flex-col gap-3 p-5">
-        <div class="flex items-center gap-2">
-          <Users size={16} />
-          <h2 class="font-semibold">Share connections with your team</h2>
-        </div>
-        <p class="text-sm text-muted">
-          Team connections are encrypted on your devices; the sync server only ever stores ciphertext.
-          Set this device up once, then create a team or join one you were invited to.
-        </p>
-        <label class="flex flex-col gap-1 text-sm">
-          Sync server
-          <input class="input input-mono" bind:value={server} placeholder="https://teams.example.com" />
-        </label>
-        <label class="flex flex-col gap-1 text-sm">
-          Your email
-          <input class="input" type="email" bind:value={email} placeholder="you@example.com" />
-        </label>
-        <label class="flex flex-col gap-1 text-sm">
-          Device name <span class="text-xs text-muted">shown to team admins (default: this machine's name)</span>
-          <input class="input" bind:value={deviceName} placeholder="laptop" />
-        </label>
-        <label class="flex flex-col gap-1 text-sm">
-          Passphrase <span class="text-xs text-muted">protects this device's keys; at least 8 characters</span>
-          <input class="input" type="password" bind:value={pass1} autocomplete="new-password" />
-        </label>
-        <label class="flex flex-col gap-1 text-sm">
-          Repeat passphrase
-          <input class="input" type="password" bind:value={pass2} autocomplete="new-password" />
-        </label>
-        <div>
-          <button
-            type="button"
-            class="btn btn-primary"
-            onclick={setUp}
-            disabled={busy !== null || !server.trim() || !email.trim() || pass1.length < 8 || pass1 !== pass2}
-          >
-            {#if busy === "setup"}<span class="spinner size-3"></span>{/if}
-            Set up this device
-          </button>
-        </div>
-      </div>
+      <TeamsSetup
+        onDone={(next, invite) => {
+          status = next;
+          if (invite) {
+            joinSeed = invite;
+            modal = "join";
+          }
+        }}
+      />
     {:else if !status.unlocked}
-      <!-- Set up, locked -->
-      <div class="panel mx-auto flex max-w-md flex-col gap-3 p-5">
-        <div class="flex items-center gap-2">
-          <Lock size={16} />
-          <h2 class="font-semibold">Unlock Teams</h2>
-        </div>
-        <p class="text-sm text-muted">{status.identity.email} on {status.identity.server_url}</p>
-        <input
-          class="input"
-          type="password"
-          bind:value={unlockPass}
-          placeholder="Teams passphrase"
-          autocomplete="current-password"
-          onkeydown={(e) => e.key === "Enter" && unlockPass && void unlock()}
+      <TeamsUnlock identity={status.identity} onUnlocked={(next) => (status = next)} />
+    {:else if openTeam}
+      {#key openTeam.team_id}
+        <TeamPage
+          team={openTeam}
+          attentionRole={attention[openTeam.team_id]?.role ?? null}
+          pendingDevices={attention[openTeam.team_id]?.pending_devices ?? 0}
+          waitingForKey={waitingForKey(openTeam.team_id)}
+          removed={!!attention[openTeam.team_id]?.removed}
+          myEmail={status.identity.email}
+          myFingerprint={status.fingerprint}
+          teamConnections={connections.filter((c) => c.source_id === openTeam.source_id)}
+          {localConnections}
+          syncing={syncing !== null}
+          initialTab={openTab}
+          onBack={() => (openTeamId = null)}
+          onSync={() => syncTeam(openTeam)}
+          onSynced={(report) => onTeamSynced(openTeam, report)}
+          onPendingChanged={(count) => {
+            const a = attention[openTeam.team_id];
+            if (a && a.role === "admin" && a.pending_devices !== count) {
+              applyAttention(Object.values({ ...attention, [a.team_id]: { ...a, pending_devices: count } }));
+            }
+          }}
         />
-        <div>
-          <button type="button" class="btn btn-primary" onclick={unlock} disabled={busy !== null || !unlockPass}>
-            {#if busy === "unlock"}<span class="spinner size-3"></span>{/if}
-            Unlock
-          </button>
-        </div>
-      </div>
+      {/key}
     {:else}
-      <div class="flex flex-col gap-3">
-        <!-- Identity -->
-        <div class="panel flex flex-wrap items-center justify-between gap-3 p-4">
-          <div class="flex min-w-0 flex-col">
-            <span class="font-medium">{status.identity.email}</span>
-            <span class="truncate text-xs text-muted">{status.identity.server_url}</span>
-          </div>
-          {#if status.fingerprint}
-            <div class="flex items-center gap-2">
-              <span class="text-xs text-muted">This device</span>
-              <code class="text-xs">{status.fingerprint}</code>
-              <button type="button" class="btn btn-ghost btn-sm" onclick={() => copy(status!.fingerprint!, "me")} title="Copy fingerprint">
-                {#if copied === "me"}<Check size={14} />{:else}<Copy size={14} />{/if}
-              </button>
-            </div>
-          {/if}
-        </div>
-
-        {#if joined}
-          <div class="panel flex flex-col gap-2 border-primary p-4">
-            <span class="font-medium">Joined {joined.name}</span>
-            <span class="text-sm text-muted">
-              Send this device's fingerprint to the admin so they can grant you the team key, then sync.
-            </span>
-            <div class="flex items-center gap-2">
-              <code class="text-xs">{joined.my_fingerprint}</code>
-              <button type="button" class="btn btn-ghost btn-sm" onclick={() => copy(joined!.my_fingerprint, "joined")}>
-                {#if copied === "joined"}<Check size={14} />{:else}<Copy size={14} />{/if}
-              </button>
-              <button type="button" class="btn btn-ghost btn-sm" onclick={() => (joined = null)}>Dismiss</button>
-            </div>
-          </div>
-        {/if}
-
-        <!-- Teams -->
-        {#each status.teams as team (team.team_id)}
-          {@const isOpen = expanded === team.team_id}
-          {@const teamConnections = connections.filter((c) => c.source_id === team.source_id)}
-          <div class="panel flex flex-col">
-            <div class="flex flex-wrap items-center justify-between gap-2 p-4">
-              <button type="button" class="flex min-w-0 items-center gap-2 text-left" onclick={() => toggle(team)} aria-expanded={isOpen}>
-                {#if isOpen}<ChevronDown size={14} />{:else}<ChevronRight size={14} />{/if}
-                <span class="font-medium">{team.name}</span>
-                <span class="badge badge-neutral">{team.hosts} {team.hosts === 1 ? "host" : "hosts"}</span>
-                <span class="text-xs text-muted">
-                  {team.last_sync_at ? `synced ${new Date(team.last_sync_at).toLocaleString()}` : "never synced"}
-                </span>
-              </button>
-              <button type="button" class="btn btn-secondary btn-sm" onclick={() => syncTeam(team)} disabled={busy !== null}>
-                <RefreshCw size={14} class={busy === `sync:${team.team_id}` ? "animate-spin" : ""} />
-                Sync
-              </button>
-            </div>
-            {#if lastSync[team.team_id]}
-              <div class="px-4 pb-3 text-xs text-muted">{summarize(lastSync[team.team_id])}</div>
-            {/if}
-
-            {#if isOpen}
-              <div class="flex flex-col gap-4 border-t border-base-300 p-4">
-                <!-- Share -->
-                <section class="flex flex-col gap-2">
-                  <h3 class="flex items-center gap-1.5 text-sm font-semibold"><Share2 size={14} /> Share a connection</h3>
-                  <div class="flex flex-wrap items-center gap-2">
-                    <select class="input w-64" bind:value={shareChoice[team.team_id]}>
-                      <option value="">Choose a connection…</option>
-                      {#each localConnections as c (c.id)}
-                        <option value={c.name}>{c.name} ({c.user}@{c.host})</option>
-                      {/each}
-                    </select>
-                    <button type="button" class="btn btn-primary btn-sm" onclick={() => share(team)} disabled={busy !== null || !shareChoice[team.team_id]}>
-                      Share
-                    </button>
-                  </div>
-                  <p class="text-xs text-muted">Host, user, port, bastion, Kerberos and tags are shared; key paths and passwords never are.</p>
-                </section>
-
-                <!-- Team connections -->
-                <section class="flex flex-col gap-1.5">
-                  <h3 class="text-sm font-semibold">Team connections</h3>
-                  {#each teamConnections as c (c.id)}
-                    <div class="flex items-center justify-between gap-2 text-sm">
-                      <span class="truncate">{c.name} <span class="text-muted">{c.user}@{c.host}:{c.port}</span></span>
-                      <button type="button" class="btn btn-ghost btn-sm" onclick={() => unshare(team, c)} disabled={busy !== null}>
-                        <Trash2 size={14} />
-                        {confirmUnshare === c.id ? "Remove for everyone?" : "Unshare"}
-                      </button>
-                    </div>
-                  {:else}
-                    <span class="text-xs text-muted">None yet. Sync to fetch them, or share one above.</span>
-                  {/each}
-                </section>
-
-                <!-- Members -->
-                <section class="flex flex-col gap-1.5">
-                  <h3 class="flex items-center gap-1.5 text-sm font-semibold"><Users size={14} /> Members</h3>
-                  {#each members[team.team_id] ?? [] as m (m.email)}
-                    <div class="flex flex-col gap-0.5 text-sm">
-                      <div class="flex items-center justify-between gap-2">
-                        <span>{m.email} <span class="badge {m.role === 'admin' ? 'badge-success' : 'badge-neutral'}">{m.role}</span></span>
-                        {#if m.email !== status.identity.email}
-                          <button type="button" class="btn btn-ghost btn-sm" onclick={() => removeMember(team, m)} disabled={busy !== null}>
-                            {confirmRemove === `${team.team_id}:${m.email}` ? "Remove and rotate the key?" : "Remove"}
-                          </button>
-                        {/if}
-                      </div>
-                      {#each m.devices as d (d.fingerprint)}
-                        <span class="pl-3 text-xs text-muted">{d.name || "device"} · <code>{d.fingerprint}</code></span>
-                      {/each}
-                    </div>
-                  {:else}
-                    <span class="text-xs text-muted">{busy === `members:${team.team_id}` ? "Loading…" : "No members loaded."}</span>
-                  {/each}
-                </section>
-
-                <!-- Invite -->
-                <section class="flex flex-col gap-2">
-                  <h3 class="flex items-center gap-1.5 text-sm font-semibold"><UserPlus size={14} /> Invite</h3>
-                  <div class="flex flex-wrap items-center gap-2">
-                    <input class="input w-64" type="email" placeholder="ana@example.com" bind:value={inviteEmail[team.team_id]} />
-                    <label class="flex items-center gap-1.5 text-sm">
-                      <input type="checkbox" bind:checked={inviteAdmin[team.team_id]} /> admin
-                    </label>
-                    <button type="button" class="btn btn-secondary btn-sm" onclick={() => invite(team)} disabled={busy !== null || !(inviteEmail[team.team_id] ?? "").trim()}>
-                      Invite
-                    </button>
-                  </div>
-                  {#if invites[team.team_id]}
-                    {@const inv = invites[team.team_id]}
-                    <div class="flex flex-col gap-1.5 rounded-md bg-base-200 p-3">
-                      <span class="text-xs text-muted">
-                        Send {inv.email} these commands over a channel you trust. The token is shown only once
-                        and expires {new Date(inv.expires_at).toLocaleDateString()}.
-                      </span>
-                      <pre class="overflow-x-auto text-xs select-text">{inviteText(inv)}</pre>
-                      <div>
-                        <button type="button" class="btn btn-ghost btn-sm" onclick={() => copy(inviteText(inv), `invite:${team.team_id}`)}>
-                          {#if copied === `invite:${team.team_id}`}<Check size={14} />{:else}<Copy size={14} />{/if}
-                          Copy
-                        </button>
-                      </div>
-                    </div>
-                  {/if}
-                </section>
-
-                <!-- Waiting devices -->
-                <section class="flex flex-col gap-2">
-                  <div class="flex items-center justify-between gap-2">
-                    <h3 class="flex items-center gap-1.5 text-sm font-semibold"><KeyRound size={14} /> Devices waiting for the key</h3>
-                    <button type="button" class="btn btn-ghost btn-sm" onclick={() => loadPending(team)} disabled={busy !== null}>
-                      <RefreshCw size={14} class={busy === `pending:${team.team_id}` ? "animate-spin" : ""} />
-                      Check
-                    </button>
-                  </div>
-                  {#each pending[team.team_id] ?? [] as p (p.device.fingerprint)}
-                    {@const typed = (grantInput[p.device.fingerprint] ?? "").trim()}
-                    <div class="flex flex-col gap-1.5 text-sm">
-                      <span>{p.email} · {p.device.name || "device"} · <code class="text-xs">{p.device.fingerprint}</code></span>
-                      <div class="flex flex-wrap items-center gap-2">
-                        <input
-                          class="input input-mono w-96 text-xs"
-                          placeholder="Paste the fingerprint {p.email} sent you"
-                          bind:value={grantInput[p.device.fingerprint]}
-                        />
-                        <button
-                          type="button"
-                          class="btn btn-primary btn-sm"
-                          onclick={() => grant(team, p)}
-                          disabled={busy !== null || typed !== p.device.fingerprint}
-                          title="Enabled only when the fingerprint you received matches this device"
-                        >
-                          Grant key
-                        </button>
-                        {#if typed && typed !== p.device.fingerprint}
-                          <span class="text-xs text-error">Doesn't match this device. Don't grant it.</span>
-                        {/if}
-                      </div>
-                    </div>
-                  {:else}
-                    <span class="text-xs text-muted">
-                      {pending[team.team_id] ? "No device is waiting." : "Admins: check here after someone joins."}
-                    </span>
-                  {/each}
-                </section>
-
-                <!-- Audit log -->
-                <section class="flex flex-col gap-2">
-                  <div class="flex items-center justify-between gap-2">
-                    <h3 class="flex items-center gap-1.5 text-sm font-semibold"><FileCheck size={14} /> Audit log</h3>
-                    <button type="button" class="btn btn-ghost btn-sm" onclick={() => loadAudit(team)} disabled={busy !== null}>
-                      <RefreshCw size={14} class={busy === `audit:${team.team_id}` ? "animate-spin" : ""} />
-                      {audits[team.team_id] ? "Refresh" : "Load"}
-                    </button>
-                  </div>
-                  {#if audits[team.team_id]}
-                    {@const log = audits[team.team_id]}
-                    {#if log.clean}
-                      <div class="text-xs text-success" role="status">
-                        Verified on this device: {log.lines.length} signature(s) valid, {log.chains} device chain(s) intact{log.from_genesis && log.complete ? ", complete" : ""}.
-                      </div>
-                    {:else}
-                      <div class="rounded-md border border-error p-2 text-xs text-error" role="alert">
-                        <strong>Verification failed:</strong> {log.invalid_events} invalid event(s), {log.problems.length} chain problem(s).
-                        Treat this as tampering.
-                        {#each log.problems as problem (problem)}
-                          <div>· {problem}</div>
-                        {/each}
-                      </div>
-                    {/if}
-                    {#if log.lines.length === 0}
-                      <span class="text-xs text-muted">No events yet. Connections show up here after members sync.</span>
-                    {:else}
-                      <div class="overflow-x-auto">
-                        <table class="w-full text-left text-xs">
-                          <thead class="text-muted">
-                            <tr><th class="py-1 pr-3">When</th><th class="pr-3">Who</th><th class="pr-3">Event</th><th class="pr-3">Host</th><th class="pr-3">From</th><th>Check</th></tr>
-                          </thead>
-                          <tbody>
-                            {#each log.lines as line, i (i)}
-                              <tr class={line.check === "valid" ? "" : "text-error"}>
-                                <td class="py-0.5 pr-3 tabular-nums">{new Date(line.occurred_at).toLocaleString()}</td>
-                                <td class="pr-3">{line.who}{line.device_name ? ` (${line.device_name})` : ""}</td>
-                                <td class="pr-3">{EVENT_LABEL[line.kind]}</td>
-                                <td class="pr-3">{line.host ?? "–"}</td>
-                                <td class="pr-3 tabular-nums">{line.client_ip ?? "–"}</td>
-                                <td>{CHECK_LABEL[line.check]}</td>
-                              </tr>
-                            {/each}
-                          </tbody>
-                        </table>
-                      </div>
-                      {#if !log.complete}
-                        <span class="text-xs text-muted">Showing the newest 1000 events.</span>
-                      {/if}
-                    {/if}
-                  {:else}
-                    <span class="text-xs text-muted">Admins: who connected to which host, and when. Every event is verified here, not trusted from the server.</span>
-                  {/if}
-                </section>
-              </div>
-            {/if}
-          </div>
-        {/each}
-
-        <!-- Create and join -->
-        <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          <div class="panel flex flex-col gap-2 p-4">
-            <h3 class="flex items-center gap-1.5 text-sm font-semibold"><Plus size={14} /> Create a team</h3>
-            <div class="flex gap-2">
-              <input
-                class="input flex-1"
-                bind:value={newTeam}
-                placeholder="platform"
-                onkeydown={(e) => e.key === "Enter" && newTeam.trim() && void createTeam()}
-              />
-              <button type="button" class="btn btn-primary btn-sm" onclick={createTeam} disabled={busy !== null || !newTeam.trim()}>
-                {#if busy === "create"}<span class="spinner size-3"></span>{/if}
-                Create
-              </button>
-            </div>
-          </div>
-          <div class="panel flex flex-col gap-2 p-4">
-            <h3 class="flex items-center gap-1.5 text-sm font-semibold"><LogIn size={14} /> Join a team</h3>
-            <input class="input input-mono text-xs" bind:value={joinToken} placeholder="Invite token" />
-            <input class="input input-mono text-xs" bind:value={joinFingerprint} placeholder="Admin fingerprint (SHA256:…)" />
-            <details class="text-xs">
-              <summary class="cursor-pointer text-muted">Finishing a join whose fingerprint didn't match?</summary>
-              <input class="input input-mono mt-1.5 w-full text-xs" bind:value={joinTeamId} placeholder="Team id from the error message" />
-            </details>
-            <div>
-              <button
-                type="button"
-                class="btn btn-secondary btn-sm"
-                onclick={join}
-                disabled={busy !== null || !joinFingerprint.trim() || !(joinToken.trim() || joinTeamId.trim())}
-              >
-                {#if busy === "join"}<span class="spinner size-3"></span>{/if}
-                Join
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+      <TeamsHome
+        {status}
+        {attention}
+        {waitingForKey}
+        {syncing}
+        onOpen={(team) => openTeamPage(team.team_id)}
+        onSync={syncTeam}
+        onCreate={() => (modal = "create")}
+        onJoin={() => (modal = "join")}
+      />
     {/if}
   </div>
 </div>
+
+{#if status?.unlocked && status.identity && modal === "create"}
+  <CreateTeamModal onClose={() => (modal = null)} {onCreated} />
+{:else if status?.unlocked && status.identity && modal === "join"}
+  <JoinTeamModal
+    identity={status.identity}
+    initial={joinSeed}
+    onClose={() => {
+      modal = null;
+      joinSeed = null;
+    }}
+    {onJoined}
+  />
+{/if}

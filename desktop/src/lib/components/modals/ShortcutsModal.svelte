@@ -9,14 +9,16 @@
 
   let { show, onClose }: Props = $props();
 
-  const MOD =
-    typeof navigator !== "undefined" && /mac/i.test(navigator.platform || navigator.userAgent) ? "⌘" : "Ctrl";
+  const IS_MAC = typeof navigator !== "undefined" && /mac/i.test(navigator.platform || navigator.userAgent);
+  const MOD = IS_MAC ? "⌘" : "Ctrl";
+  /** App-level terminal shortcuts: plain Ctrl+C/V/F belong to the shell. */
+  const TERM_MOD = IS_MAC ? [MOD] : [MOD, "Shift"];
 
   /** Each shortcut lists alternative key combos; each combo is a list of keys. */
   type Shortcut = { action: string; combos: string[][] };
   type Section = { title: string; note?: string; items: Shortcut[] };
 
-  // Mirrors +page.svelte (palette / help), appState.handleGlobalKeydown
+  // Mirrors +page.svelte (palette / help), terminal-xterm (terminal keys), appState.handleGlobalKeydown
   // (filter, new host, views, terminal font) and ConnectionsView (host list).
   const columns: Section[][] = [
     [
@@ -24,6 +26,7 @@
         title: "General",
         items: [
           { action: "Command palette", combos: [[MOD, "K"]] },
+          ...(IS_MAC ? [] : [{ action: "Command palette, inside a terminal", combos: [[MOD, "Shift", "P"]] }]),
           { action: "Keyboard shortcuts", combos: [["?"], ["F1"], [MOD, "/"]] },
           { action: "Close dialog or clear filter", combos: [["Esc"]] },
         ],
@@ -34,7 +37,7 @@
           { action: "Hosts", combos: [["1"]] },
           { action: "Terminals", combos: [["2"]] },
           { action: "Keys", combos: [["3"]] },
-          { action: "Security audit", combos: [["4"]] },
+          { action: "Security check", combos: [["4"]] },
           { action: "History", combos: [["5"]] },
           { action: "Settings", combos: [["6"]] },
         ],
@@ -53,11 +56,15 @@
       },
       {
         title: "Terminal",
-        note: "In the Terminals view, when the terminal isn't focused.",
+        note: "Plain Ctrl+C, Ctrl+V, Ctrl+F and Ctrl+K go to the shell. Turn on Smart copy in Settings to copy with Ctrl+C while text is selected.",
         items: [
-          { action: "Increase font size", combos: [[MOD, "+"]] },
-          { action: "Decrease font size", combos: [[MOD, "−"]] },
-          { action: "Reset font size", combos: [[MOD, "0"]] },
+          { action: "Copy selection", combos: [[...TERM_MOD, "C"]] },
+          { action: "Paste", combos: [[...TERM_MOD, "V"], ["Shift", "Insert"]] },
+          { action: "Find in terminal", combos: [[...TERM_MOD, "F"]] },
+          { action: "Select all", combos: [[...TERM_MOD, "A"]] },
+          { action: "Increase font size", combos: [[...TERM_MOD, "+"], [MOD, "+"]] },
+          { action: "Decrease font size", combos: [[...TERM_MOD, "−"], [MOD, "−"]] },
+          { action: "Reset font size", combos: [[...TERM_MOD, "0"], [MOD, "0"]] },
         ],
       },
     ],

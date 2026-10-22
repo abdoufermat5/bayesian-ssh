@@ -186,11 +186,13 @@ test.describe("shortcuts modal", () => {
     const dialog = page.getByRole("dialog", { name: "Keyboard shortcuts" });
     await expect(dialog).toBeVisible();
 
-    await expect(dialog.getByText("Command palette")).toBeVisible();
+    await expect(dialog.getByText("Command palette", { exact: true })).toBeVisible();
     await expect(dialog.getByText("Focus filter")).toBeVisible();
     await expect(dialog.getByText("New host")).toBeVisible();
 
-    const row = (name: string) => dialog.locator("li").filter({ hasText: name });
+    // Exact match: "Command palette" is also the start of "Command palette, inside a terminal".
+    const row = (name: string) =>
+      dialog.locator("li").filter({ has: page.getByText(name, { exact: true }) });
 
     await expect(row("Command palette").locator("kbd")).toHaveText(["Ctrl", "K"]);
     await expect(row("Focus filter").locator("kbd")).toHaveText(["/"]);
@@ -200,7 +202,7 @@ test.describe("shortcuts modal", () => {
       ["Hosts", "1"],
       ["Terminals", "2"],
       ["Keys", "3"],
-      ["Security audit", "4"],
+      ["Security check", "4"],
       ["History", "5"],
       ["Settings", "6"],
     ];

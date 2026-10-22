@@ -14,6 +14,7 @@
     Terminal,
     TerminalSquare,
     Upload,
+    Users,
     Wrench,
     X,
   } from "lucide-svelte";
@@ -112,8 +113,9 @@
         ? [{ tab: "tunnels" as AppTab, label: "Go to tunnels", icon: Network }]
         : []),
       { tab: "keys", label: "Go to SSH keys", icon: KeyRound, key: "3" },
-      { tab: "audit", label: "Go to security audit", icon: ShieldCheck, key: "4" },
+      { tab: "audit", label: "Go to security check", icon: ShieldCheck, key: "4" },
       { tab: "history", label: "Go to history", icon: Clock, key: "5" },
+      { tab: "teams", label: "Go to Teams", icon: Users },
       { tab: "settings", label: "Go to settings", icon: Settings, key: "6" },
     ];
 
