@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **bssh Teams** (`bssh teams ...`): share connections with your team through an end-to-end encrypted vault. The sync server stores only ciphertext; all cryptography is client-side and in this repo (`crates/teams-proto`, `services/teams`). `init` creates your account and device keys (sealed with a passphrase, or `BSSH_TEAMS_PASSPHRASE`); `create`, `share`, `unshare`, `invite`, `join`, `grant`, `sync`, `members` and `remove` manage teams. Team connections are an inventory source of kind `team`, so they show in `bssh list` and `bssh connect` (as `name@team` when a local name is taken), and connecting to one is recorded in the team's signed, hash-chained audit log at the next sync. A team key only ever goes to devices an admin approved by fingerprint, and removing a member rotates it. See the Teams page in the docs.
+
+### Changed
+- Database schema v9 (applied automatically): Teams tables for the local vault, outbox and audit chain (v8), and for identity, known author keys, approved devices and pending audit events (v9).
+- Inventory hosts can carry their own bastion and Kerberos settings; for team sources the vault is authoritative for them.
+
 ### Security
 - **Native SSH transport upgraded to russh 0.64** (from 0.44), fixing RUSTSEC-2026-0153 and RUSTSEC-2026-0154 (unbounded allocations from a malicious agent or peer). Connections now negotiate post-quantum hybrid key exchange (`mlkem768x25519-sha256`) with servers that support it, and RSA keys sign with SHA-2 (`rsa-sha2-256/512`) when the server advertises it, which OpenSSH 10 requires. Host certificates are checked like plain host keys against `known_hosts` (their embedded key must match), so a certificate never bypasses host verification.
 
