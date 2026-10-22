@@ -33,7 +33,7 @@ the app's CSP blocks remote fonts, and the UI must look the same offline.
 ├ sidebar (bg-chrome, 224px / 56px collapsed) ┬ workspace (bg-surface, rounded top-left) ┤
 │ profile switcher                            │ .view                                   │
 │ Hosts · Terminals · Files · Tunnels         │   .view-header  title + count │ actions │
-│ Security: Keys · Audit                      │   .view-toolbar search · chips · sort   │
+│ Security: Keys · Security check             │   .view-toolbar search · chips · sort   │
 │ Activity: History · Team: Teams             │   .view-body    scrolling content       │
 │ … agent / Kerberos status · Settings        │                                         │
 └─────────────────────────────────────────────┴─────────────────────────────────────────┘
@@ -58,7 +58,9 @@ Every top-level view uses exactly this skeleton:
 </div>
 ```
 
-Settings keeps the `.view-header` but replaces toolbar and body with `.settings-shell` (its own section nav plus a `.settings-page`).
+Settings sits in a centred `.settings-frame` (960–1040 px), keeps one `.view-header` (title "Settings" plus the current section) and replaces toolbar and body with `.settings-shell`: a rail of the six sections from `stores/settingsNav.svelte.ts` (icons only below 1180 px) and a `.settings-stack` of panels. Other code opens a section with `requestSettingsSection(id)`.
+
+Empty states use one pattern: `.empty-state` > `.empty-state-icon` + `.empty-state-title` (one sentence) + `.empty-state-action` (one primary action). Don't repeat the view header in it.
 
 Long lists are windowed: the Hosts table mounts only the rows in view (spacer rows keep the scroll height) and the grid mounts cards page by page as you scroll. Reuse that approach for any list that can reach hundreds of rows.
 
@@ -97,8 +99,13 @@ The default theme sets these in the `@theme` block. Each `html.theme-*` class ov
 | --- | --- | --- |
 | `zinc` | Graphite | Neutral graphite, periwinkle accent (default) |
 | `cyberpunk` | Midnight | Deep navy, cyan accent |
-| `oled` | OLED black | True black, white accent |
-| `slate` | Slate | Cool blue-grey, sky accent |
+| `oled` | OLED black | True black chrome, near-black workspace, periwinkle accent |
+| `paper` | Paper | Light theme, with its own light terminal palette (`--term-*`) so ANSI yellow, cyan and white stay readable |
+| `system` | Match system | Resolves to `paper` or `zinc` from `prefers-color-scheme` and follows changes live; `<html data-theme="system" data-resolved-theme="…">` |
+
+`THEME_OPTIONS` in `lib/utils/theme.ts` is the one list of pickable themes (onboarding, Appearance and the palette read it). A stored `slate` (removed) loads as `cyberpunk`.
+
+**Density:** `data-density` on `<html>` (`compact` / `comfortable` / `spacious`) sets `--row-height` to 32 / 40 / 48 px. List and table rows use `height: var(--row-height, 40px)`.
 
 ### Contrast rules (WCAG 2.2 AA)
 
@@ -127,7 +134,7 @@ Run it with `cd desktop && npm run check:contrast`; it prints one row per check 
 - `.tag` is a static label (flat filled rectangle, no border). `.chip` is an interactive filter (pill, `border-control`, 28 px high; `.chip-active` adds accent border, tint and a ✓). Don't use one for the other.
 - Class-based hit areas are ≥ 24 px: `.btn-icon-sm` is 24 px, `.switch` and `.checkbox` extend their hit box with a transparent `::before`.
 
-**Type scale** (Inter; JetBrains Mono for data): `2xs` 11px for badges and kbd · `xs` 12px for meta · `sm` 13px for body/default · `base` 14px for view titles · `lg` 16px for modal/settings titles · `xl` 20px for figures. Weights are 400/500/600 only. Arbitrary sizes (`text-[10px]`) are not allowed. Use `tabular-nums` (or `.tabular`) for numbers that line up.
+**Type scale** (Inter; JetBrains Mono for data): five sizes as `--type-*` tokens and classes, each with one job: `.type-title` 20px/600 for view titles · `.type-section` and `.section-heading` 14px/600 for section headings · `.type-body` 13px for body/default · `.type-meta` 12px muted for meta · `.type-caption` 11px/500 for badges, kbd and eyebrows. Weights are 400/500/600 only. Arbitrary sizes (`text-[10px]`) are not allowed. Use `tabular-nums` (or `.tabular`) for numbers that line up.
 
 **Radius:** `md` 6px for controls · `lg` 8px for cards and tables · `xl` 10px for modals.
 

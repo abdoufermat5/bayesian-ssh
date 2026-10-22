@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Command, HelpCircle, Search } from "lucide-svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { GLOBAL_SHORTCUTS } from "$lib/shortcuts";
 
   interface Props {
     onOpenAbout?: () => void;
@@ -10,7 +11,7 @@
 
   let { onOpenAbout, onOpenShortcuts, onOpenCommandPalette }: Props = $props();
 
-  const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform);
+  const paletteKeys = GLOBAL_SHORTCUTS.find((s) => s.id === "palette")?.combos[0] ?? [];
 
   const appWindow = getCurrentWindow();
 
@@ -63,8 +64,7 @@
         <Search size={13} class="shrink-0" />
         <span class="truncate">Jump to…</span>
         <span class="ml-auto flex shrink-0 items-center gap-0.5">
-          <kbd class="kbd">{isMac ? "⌘" : "Ctrl"}</kbd>
-          <kbd class="kbd">K</kbd>
+          {#each paletteKeys as key (key)}<kbd class="kbd">{key}</kbd>{/each}
         </span>
       </button>
     {/if}

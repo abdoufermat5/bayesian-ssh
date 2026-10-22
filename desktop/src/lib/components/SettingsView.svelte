@@ -1,23 +1,20 @@
 <script lang="ts">
-  import {
-    History,
-    KeyRound,
-    Layers,
-    Palette,
-    RefreshCw,
-    Server,
-    ShieldCheck,
-    Sliders,
-    TerminalSquare,
-  } from "lucide-svelte";
+  import { Layers, Lock, Network, Palette, RefreshCw, TerminalSquare } from "lucide-svelte";
   import type { DesktopSettings, EnvInfo, WorkspaceInfo } from "$lib/types";
+  import {
+    SETTINGS_SECTIONS,
+    pendingSettingsSection,
+    takeSettingsSection,
+    type SettingsSectionId,
+  } from "$lib/stores/settingsNav.svelte";
   import ProfilesSettings from "./settings/ProfilesSettings.svelte";
   import AgentSettings from "./settings/AgentSettings.svelte";
   import KerberosSettings from "./settings/KerberosSettings.svelte";
   import TerminalSettings from "./settings/TerminalSettings.svelte";
   import LogsSettings from "./settings/LogsSettings.svelte";
+  import RecordingSettings from "./settings/RecordingSettings.svelte";
   import AppearanceSettings from "./settings/AppearanceSettings.svelte";
-  import FeaturesSettings from "./settings/FeaturesSettings.svelte";
+  import SectionToggles from "./settings/SectionToggles.svelte";
   import SourcesSettings from "./settings/SourcesSettings.svelte";
   import UpdatesSettings from "./settings/UpdatesSettings.svelte";
 
@@ -47,75 +44,105 @@
     onImportSshConfig,
   }: Props = $props();
 
-  let activeCategory = $state("workspace");
+  const ICONS = {
+    workspace: Layers,
+    connection: Network,
+    terminal: TerminalSquare,
+    privacy: Lock,
+    appearance: Palette,
+    sources: RefreshCw,
+  } as const;
 
-  const categories = [
-    { id: "workspace", label: "Profiles & workspace", icon: Layers },
-    { id: "ssh_agent", label: "SSH agent", icon: KeyRound },
-    { id: "kerberos", label: "Kerberos", icon: ShieldCheck },
-    { id: "terminal", label: "Terminal", icon: TerminalSquare },
-    { id: "logs", label: "History", icon: History },
-    { id: "appearance", label: "Appearance", icon: Palette },
-    { id: "features", label: "Features", icon: Sliders },
-    { id: "sources", label: "Inventory sources", icon: Server },
-    { id: "updates", label: "Updates", icon: RefreshCw },
-  ];
+  const LEADS: Record<SettingsSectionId, string> = {
+    workspace: "Environment profiles, host search and where your data lives.",
+    connection: "SSH agent, Kerberos tickets and the values used when a host doesn't set its own.",
+    terminal: "Typography, cursor and behaviour of terminal sessions, file browsing and optional sections.",
+    privacy: "What the app keeps about your sessions, and how much it logs.",
+    appearance: "Theme, density and how dates are displayed.",
+    sources: "Where hosts are imported from, and this installation's version and update channel.",
+  };
+
+  // A request from elsewhere (command palette, a status link) is taken on
+  // mount and whenever a new one arrives while this view is open.
+  let active = $state<SettingsSectionId>(takeSettingsSection() ?? "workspace");
+  let content = $state<HTMLElement>();
+
+  $effect(() => {
+    if (pendingSettingsSection()) {
+      const id = takeSettingsSection();
+      if (id) select(id);
+    }
+  });
+
+  function select(id: SettingsSectionId) {
+    active = id;
+    content?.scrollTo({ top: 0 });
+  }
+
+  const current = $derived(SETTINGS_SECTIONS.find((s) => s.id === active) ?? SETTINGS_SECTIONS[0]);
 </script>
 
 <div class="view">
-  <header class="view-header">
-    <div class="flex min-w-0 items-baseline gap-2.5">
-      <h1 class="view-title">Settings</h1>
+  <div class="settings-frame">
+    <header class="view-header">
+      <div class="flex min-w-0 items-baseline gap-2.5">
+        <h1 class="view-title">Settings</h1>
+        <span class="settings-eyebrow" aria-hidden="true">/ {current.label}</span>
+      </div>
+    </header>
+
+    <div class="settings-shell">
+      <nav class="settings-sidebar" aria-label="Settings sections">
+        {#each SETTINGS_SECTIONS as sec (sec.id)}
+          {@const active_ = active === sec.id}
+          {@const Icon = ICONS[sec.id]}
+          <button
+            type="button"
+            class="settings-nav-item {active_ ? 'settings-nav-item-active' : ''}"
+            onclick={() => select(sec.id)}
+            title={sec.label}
+            aria-label={sec.label}
+            aria-current={active_ ? "page" : undefined}
+          >
+            <Icon size={16} class="shrink-0 {active_ ? 'text-primary' : 'text-muted'}" aria-hidden="true" />
+            <span class="settings-label truncate">{sec.label}</span>
+          </button>
+        {/each}
+      </nav>
+
+      <div class="settings-content" bind:this={content}>
+        <div class="settings-stack">
+          <p class="settings-lead">{LEADS[active]}</p>
+
+          {#if active === "workspace"}
+            <ProfilesSettings
+              bind:settings
+              bind:workspace
+              {environments}
+              {onSave}
+              {onSaveWorkspace}
+              {onSwitchEnv}
+              {onManageProfiles}
+              {onBrowseSshConfig}
+              {onImportSshConfig}
+            />
+          {:else if active === "connection"}
+            <AgentSettings bind:settings bind:workspace {onSave} {onSaveWorkspace} />
+            <KerberosSettings bind:settings {onSave} />
+          {:else if active === "terminal"}
+            <TerminalSettings bind:settings {onSave} />
+            <SectionToggles bind:settings {onSave} />
+          {:else if active === "privacy"}
+            <LogsSettings bind:settings bind:workspace {onSaveWorkspace} />
+            <RecordingSettings bind:settings {onSave} />
+          {:else if active === "appearance"}
+            <AppearanceSettings bind:settings {onSave} {onThemeChange} />
+          {:else if active === "sources"}
+            <SourcesSettings />
+            <UpdatesSettings />
+          {/if}
+        </div>
+      </div>
     </div>
-  </header>
-
-  <div class="settings-shell bg-surface">
-    <nav class="settings-sidebar" aria-label="Settings sections">
-    {#each categories as cat (cat.id)}
-      {@const active = activeCategory === cat.id}
-      <button
-        type="button"
-        class="settings-nav-item {active ? 'settings-nav-item-active' : ''}"
-        onclick={() => (activeCategory = cat.id)}
-        title={cat.label}
-        aria-current={active ? "page" : undefined}
-      >
-        <cat.icon size={16} class="shrink-0 {active ? 'text-primary' : 'text-muted'}" />
-        <span class="settings-label truncate">{cat.label}</span>
-      </button>
-    {/each}
-  </nav>
-
-  <div class="settings-content">
-    {#if activeCategory === "workspace"}
-      <ProfilesSettings
-        bind:settings
-        bind:workspace
-        {environments}
-        {onSave}
-        {onSaveWorkspace}
-        {onSwitchEnv}
-        {onManageProfiles}
-        {onBrowseSshConfig}
-        {onImportSshConfig}
-      />
-    {:else if activeCategory === "ssh_agent"}
-      <AgentSettings bind:settings bind:workspace {onSave} {onSaveWorkspace} />
-    {:else if activeCategory === "kerberos"}
-      <KerberosSettings bind:settings {onSave} />
-    {:else if activeCategory === "terminal"}
-      <TerminalSettings bind:settings {onSave} />
-    {:else if activeCategory === "logs"}
-      <LogsSettings bind:settings bind:workspace {onSaveWorkspace} />
-    {:else if activeCategory === "appearance"}
-      <AppearanceSettings bind:settings {onSave} {onThemeChange} />
-    {:else if activeCategory === "features"}
-      <FeaturesSettings bind:settings {onSave} />
-    {:else if activeCategory === "sources"}
-      <SourcesSettings />
-    {:else if activeCategory === "updates"}
-      <UpdatesSettings />
-    {/if}
-  </div>
   </div>
 </div>

@@ -4,7 +4,12 @@
   import type { OnboardingPayload } from "$lib/types";
   import { invoke } from "@tauri-apps/api/core";
   import { notify } from "$lib/stores/notifications.svelte";
-  import { applyTheme, normalizeTheme, type AppTheme } from "$lib/utils/theme";
+  import { applyTheme, normalizeTheme, THEME_OPTIONS, type AppTheme } from "$lib/utils/theme";
+  import { HOST_SHORTCUTS } from "$lib/shortcuts";
+  import { appState } from "$lib/stores/appState.svelte";
+  import { requestTeamFocus } from "$lib/stores/attention.svelte";
+  import InvitedPath from "$lib/components/onboarding/InvitedPath.svelte";
+  import type { TeamJoin } from "$lib/types";
 
   interface Props {
     defaultUser: string;
@@ -16,17 +21,19 @@
 
   let { defaultUser, defaultSshConfigPath, configRoot, onBrowseSshConfig, onComplete }: Props = $props();
 
-  const STEPS = ["Welcome", "Profile", "OpenSSH import", "Appearance", "Done"] as const;
+  const STEPS = ["Welcome", "Profile", "OpenSSH import", "Appearance", "First connect"] as const;
   const LAST = STEPS.length - 1;
 
-  const THEMES: { id: AppTheme; label: string; desc: string }[] = [
-    { id: "zinc", label: "Graphite", desc: "Neutral gray, blue accent" },
-    { id: "slate", label: "Slate", desc: "Cool blue-gray, sky accent" },
-    { id: "cyberpunk", label: "Midnight", desc: "Deep navy, cyan accent" },
-    { id: "oled", label: "OLED", desc: "True black, white accent" },
-  ];
+  const CONNECT = HOST_SHORTCUTS.find((s) => s.id === "host-connect");
+  const CONNECT_CLI = CONNECT?.cli ?? "bssh connect <host>";
+  const CONNECT_KEY = CONNECT?.combos[0].join("+") ?? "Enter";
 
   let step = $state(0);
+  /** Which welcome choice applies; "invite" swaps the stepper for the invited-member path. */
+  let path = $state<"machine" | "invite">("machine");
+  let inInvitePath = $state(false);
+  /** After setup: open the new-host form instead of landing on the host list. */
+  let addHostAfter = $state(false);
   let busy = $state(false);
 
   // Form fields
@@ -60,6 +67,10 @@
 
   function next() {
     if (step === 1 && portInvalid) return;
+    if (step === 0 && path === "invite") {
+      inInvitePath = true;
+      return;
+    }
     if (step < LAST) step += 1;
   }
 
@@ -91,6 +102,30 @@
         import_ssh_config,
         fuzzy_search,
       });
+      if (!appState.showOnboarding && addHostAfter) appState.openAddModal();
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function finishInvited(join: TeamJoin) {
+    busy = true;
+    try {
+      await onComplete({
+        profile_name: "default",
+        create_profile: false,
+        default_user: default_user.trim() || defaultUser || "root",
+        default_port: 22,
+        ssh_config_path: null,
+        theme,
+        auto_start_agent: false,
+        import_ssh_config: false,
+        fuzzy_search: false,
+      });
+      if (!appState.showOnboarding) {
+        appState.activeTab = "teams";
+        requestTeamFocus(join.team_id);
+      }
     } finally {
       busy = false;
     }
@@ -195,6 +230,9 @@
 
   <!-- Anchored near the top (not centered) so the stepper doesn't jump as step heights change. -->
   <div class="mx-auto mb-10 mt-[14vh] flex h-fit w-full max-w-[520px] flex-col gap-5 px-6">
+    {#if inInvitePath}
+      <InvitedPath {busy} onBack={() => (inInvitePath = false)} onFinish={finishInvited} />
+    {:else}
     <!-- Stepper -->
     <ol class="m-0 grid list-none grid-cols-5 gap-2 p-0" aria-label="Setup progress">
       {#each STEPS as label, i (label)}
@@ -220,11 +258,29 @@
               <div class="flex flex-col gap-1.5">
                 <h1 class="m-0 text-lg font-semibold tracking-[-0.01em] text-primary">Welcome to Bayesian SSH</h1>
                 <p class="m-0 text-sm leading-relaxed text-secondary">
-                  A keyboard-first manager for your SSH hosts. Setup takes under a minute: pick your defaults,
-                  import hosts from OpenSSH and choose a theme.
+                  A keyboard-first manager for your SSH hosts. Which of these applies?
                 </p>
               </div>
             </div>
+            <div class="flex flex-col gap-2" role="radiogroup" aria-label="What brings you here">
+              {#each [{ id: "machine", label: "Set up this machine", desc: "Pick defaults, add or import your hosts, connect." }, { id: "invite", label: "I was invited to a team", desc: "Paste the invite and join your team's shared hosts." }] as opt (opt.id)}
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={path === opt.id}
+                  class="card card-interactive flex items-start justify-between gap-2 px-3 py-2.5 text-left {path === opt.id ? 'card-selected' : ''}"
+                  onclick={() => (path = opt.id as "machine" | "invite")}
+                  data-autofocus={path === opt.id ? true : undefined}
+                >
+                  <span class="flex min-w-0 flex-col gap-0.5">
+                    <span class="text-sm text-primary">{opt.label}</span>
+                    <span class="text-xs text-muted">{opt.desc}</span>
+                  </span>
+                  {#if path === opt.id}<Check size={14} class="mt-0.5 shrink-0 text-accent" />{/if}
+                </button>
+              {/each}
+            </div>
+            {#if path === "machine"}
             <div class="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2.5">
               <span class="flex min-w-0 flex-col gap-0.5">
                 <span class="text-sm text-primary">Moving from another machine?</span>
@@ -234,6 +290,7 @@
                 Restore backup
               </button>
             </div>
+            {/if}
           {:else if step === 1}
             <div class="flex flex-col gap-1">
               <h1 class="m-0 text-lg font-semibold tracking-[-0.01em] text-primary">Profile and defaults</h1>
@@ -327,7 +384,7 @@
               <p class="m-0 text-sm text-muted">You can change the theme later in Settings.</p>
             </div>
             <div class="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Theme">
-              {#each THEMES as t (t.id)}
+              {#each THEME_OPTIONS as t (t.id)}
                 <button
                   type="button"
                   role="radio"
@@ -353,9 +410,27 @@
             </label>
           {:else}
             <div class="flex flex-col gap-1">
-              <h1 class="m-0 text-lg font-semibold tracking-[-0.01em] text-primary">You're all set</h1>
-              <p class="m-0 text-sm text-muted">Review your choices. Everything can be changed in Settings.</p>
+              <h1 class="m-0 text-lg font-semibold tracking-[-0.01em] text-primary">Connect to your first host</h1>
+              <p class="m-0 text-sm text-muted">
+                {#if import_ssh_config}
+                  Hosts from {ssh_config_path.trim() || "~/.ssh/config"} are imported when you finish.
+                {:else}
+                  You skipped the OpenSSH import.
+                {/if}
+                Everything here can be changed in Settings.
+              </p>
             </div>
+            <label for="ob-add-host" class="flex cursor-pointer items-center justify-between gap-4">
+              <span class="flex flex-col gap-0.5">
+                <span class="text-sm text-primary">Add a host now</span>
+                <span class="text-xs text-muted">Opens the new-host form as soon as setup finishes.</span>
+              </span>
+              <input id="ob-add-host" type="checkbox" class="switch" bind:checked={addHostAfter} />
+            </label>
+            <p class="m-0 text-sm text-secondary">
+              To connect, select a host and press <kbd class="kbd">{CONNECT_KEY}</kbd>, or run
+              <code class="select-text">{CONNECT_CLI}</code>.
+            </p>
             <dl class="m-0 grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 rounded-md border border-border px-3 py-2.5 text-sm">
               <dt class="text-muted">Profile</dt>
               <dd class="m-0 truncate text-primary">{profileTrimmed}</dd>
@@ -365,12 +440,8 @@
               </dd>
               <dt class="text-muted">SSH agent</dt>
               <dd class="m-0 text-primary">{auto_start_agent ? "Starts on launch" : "Manual"}</dd>
-              <dt class="text-muted">OpenSSH import</dt>
-              <dd class="m-0 truncate text-primary" title={ssh_config_path}>
-                {import_ssh_config ? (ssh_config_path.trim() || "~/.ssh/config") : "Skipped"}
-              </dd>
               <dt class="text-muted">Theme</dt>
-              <dd class="m-0 text-primary">{THEMES.find((t) => t.id === theme)?.label}</dd>
+              <dd class="m-0 text-primary">{THEME_OPTIONS.find((t) => t.id === theme)?.label}</dd>
             </dl>
           {/if}
         </div>
@@ -391,10 +462,11 @@
           disabled={busy || (step === 1 && portInvalid)}
         >
           {#if busy}<span class="spinner"></span>{/if}
-          {step === 0 ? "Get started" : step === LAST ? "Open Bayesian SSH" : "Continue"}
+          {step === 0 ? (path === "invite" ? "Continue" : "Get started") : step === LAST ? "Open Bayesian SSH" : "Continue"}
         </button>
       </div>
     </form>
+    {/if}
 
     {#if configRoot}
       <p class="m-0 truncate text-center font-mono text-xs text-muted" title={configRoot}>{configRoot}</p>

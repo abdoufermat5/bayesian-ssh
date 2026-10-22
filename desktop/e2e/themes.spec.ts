@@ -4,7 +4,8 @@ const THEMES = [
   { card: "Graphite", cls: "theme-zinc", id: "zinc" },
   { card: "Midnight", cls: "theme-cyberpunk", id: "cyberpunk" },
   { card: "OLED black", cls: "theme-oled", id: "oled" },
-  { card: "Slate", cls: "theme-slate", id: "slate" },
+  { card: "Paper", cls: "theme-paper", id: "paper" },
+  { card: "Match system", cls: "theme-(zinc|paper)", id: "system" },
 ];
 
 test.describe("themes", () => {

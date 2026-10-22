@@ -10,7 +10,7 @@
     initPopoutTerminal,
     type PopoutTerminalHandle,
   } from "$lib/stores/popout-terminal";
-  import { applyTheme } from "$lib/utils/theme";
+  import { applyTheme, applyDensity } from "$lib/utils/theme";
 
   let connectionName = $state("Terminal");
   let loadError = $state<string | null>(null);
@@ -74,10 +74,13 @@
     let cancelled = false;
 
     // Load and apply the theme for the popout window
-    invoke<{ theme?: string } | null>("load_desktop_settings")
+    invoke<{ theme?: string; density?: string } | null>("load_desktop_settings")
       .then((settings) => {
         if (settings?.theme) {
           applyTheme(settings.theme);
+        }
+        if (settings?.density) {
+          applyDensity(settings.density);
         }
       })
       .catch(() => {

@@ -40,8 +40,8 @@
     <Lock size={16} />
     <h2 class="m-0 text-base font-semibold text-primary">Unlock Teams</h2>
   </div>
-  <p class="m-0 text-sm text-secondary">{identity.email} on {identity.server_url}</p>
-  <p class="m-0 text-xs text-muted">
+  <p class="m-0 type-body text-secondary">{identity.email} on {identity.server_url}</p>
+  <p class="m-0 type-meta">
     Team hosts still connect while locked; session events are signed at the next unlock.
   </p>
   <div class="field">
@@ -66,6 +66,6 @@
       {#if busy}<span class="spinner size-3"></span>{/if}
       Unlock
     </button>
-    {#if !passphrase}<span class="text-xs text-muted">Enter your passphrase</span>{/if}
+    {#if !passphrase}<span class="type-meta">Enter your passphrase</span>{/if}
   </div>
 </form>

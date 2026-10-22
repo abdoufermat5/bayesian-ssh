@@ -143,7 +143,7 @@ test.describe("kerberos modal (tools missing)", () => {
     // With Kerberos tools missing the sidebar hides its Kerberos entry, so reach
     // the dialog the way a user would: connecting to a Kerberos host surfaces it.
     const row = page.locator("tr", { hasText: "prod-db-primary" });
-    await row.getByRole("button", { name: "Connect" }).click();
+    await row.getByRole("button", { name: "Connect to prod-db-primary" }).click();
 
     const dialog = page.getByRole("dialog", { name: "Kerberos ticket" });
     await expect(dialog).toBeVisible();
@@ -158,7 +158,12 @@ test.describe("delete confirmation", () => {
     await app.gotoApp();
     const dialog = page.getByRole("dialog", { name: "Delete prod-api-01?" });
 
-    await page.getByRole("button", { name: "Delete prod-api-01" }).click();
+    const openDelete = async () => {
+      await page.getByRole("button", { name: "More actions for prod-api-01" }).click();
+      await page.getByRole("menuitem", { name: "Delete…" }).click();
+    };
+
+    await openDelete();
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText("deploy@10.0.4.12:22")).toBeVisible();
 
@@ -166,7 +171,7 @@ test.describe("delete confirmation", () => {
     await expect(dialog).toBeHidden();
     expect(await app.ipcCalls("remove_connection")).toEqual([]);
 
-    await page.getByRole("button", { name: "Delete prod-api-01" }).click();
+    await openDelete();
     await expect(dialog).toBeVisible();
     await dialog.getByRole("button", { name: "Delete", exact: true }).click();
 
@@ -174,7 +179,7 @@ test.describe("delete confirmation", () => {
       .poll(async () => app.ipcCalls("remove_connection"))
       .toEqual([{ idOrName: "id-0" }]);
     await expect(dialog).toBeHidden();
-    await expect(page.getByRole("button", { name: "Delete prod-api-01" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "More actions for prod-api-01" })).toHaveCount(0);
   });
 });
 
@@ -201,11 +206,14 @@ test.describe("shortcuts modal", () => {
     const views: Array<[string, string]> = [
       ["Hosts", "1"],
       ["Terminals", "2"],
-      ["Keys", "3"],
-      ["Security check", "4"],
-      ["History", "5"],
-      ["Settings", "6"],
+      ["Files", "3"],
+      ["Tunnels", "4"],
+      ["Keys", "5"],
+      ["Security check", "6"],
+      ["History", "7"],
+      ["Teams", "8"],
     ];
+    await expect(row("Settings").locator("kbd")).toHaveText(["Ctrl", ","]);
     for (const [name, key] of views) {
       await expect(row(name).locator("kbd")).toHaveText([key]);
     }

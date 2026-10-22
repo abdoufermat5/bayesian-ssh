@@ -93,7 +93,7 @@
           <Fingerprint value={joined.my_fingerprint} label="your fingerprint" />
         </div>
       </div>
-      <p class="m-0 text-xs text-muted">
+      <p class="m-0 type-meta">
         This page checks every 30 seconds while it's open and syncs as soon as the key arrives.
       </p>
     </div>
@@ -133,7 +133,7 @@
           <label class="field-label" for="teams-join-fp">Admin's fingerprint (from the invite)</label>
           <input
             id="teams-join-fp"
-            class="input input-mono text-sm"
+            class="input input-mono type-body"
             class:input-invalid={error === "mismatch"}
             bind:value={fingerprint}
             placeholder="SHA256:…"
@@ -168,7 +168,7 @@
           <div class="alert alert-error" role="alert">Couldn't join: {error}</div>
         {/if}
 
-        <p class="m-0 text-xs text-muted">
+        <p class="m-0 type-meta">
           CLI:
           <code class="select-text">
             {retryTeamId

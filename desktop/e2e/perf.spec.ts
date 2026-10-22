@@ -30,7 +30,8 @@ test.describe("performance smoke", () => {
 
     await app.gotoApp();
     const table = page.locator("table.data-table");
-    await expect(table).toHaveAttribute("aria-rowcount", "2000", { timeout: 30_000 });
+    // aria-rowcount includes the header row.
+    await expect(table).toHaveAttribute("aria-rowcount", "2001", { timeout: 30_000 });
     const hostRows = page.locator("tbody tr[data-host-row]");
     await expect(hostRows.first()).toBeVisible();
 
@@ -66,7 +67,8 @@ test.describe("performance smoke", () => {
 
     const filterStart = await page.evaluate(() => performance.now());
     await page.locator(".search-input").fill("host-1999");
-    await expect(table).toHaveAttribute("aria-rowcount", "1");
+    // Header row included.
+    await expect(table).toHaveAttribute("aria-rowcount", "2");
     await expect(hostRows).toHaveCount(1);
     const filterMs = (await page.evaluate(() => performance.now())) - filterStart;
 
@@ -81,7 +83,7 @@ test.describe("performance smoke", () => {
 
     // Clearing restores the full list.
     await page.getByRole("button", { name: /clear/i }).first().click();
-    await expect(table).toHaveAttribute("aria-rowcount", "2000", { timeout: 30_000 });
+    await expect(table).toHaveAttribute("aria-rowcount", "2001", { timeout: 30_000 });
   });
 
   test("the terminals panel is display:none while another view is active", async ({ app, page }) => {

@@ -13,13 +13,16 @@
     Plus,
     Search,
     TerminalSquare,
+    TriangleAlert,
     Unlink,
     X,
   } from "lucide-svelte";
   import type { Connection } from "$lib/types";
   import { notify } from "$lib/stores/notifications.svelte";
   import { formatRelative } from "$lib/utils/timezone";
-  import { downloadTerminalScrollback } from "$lib/utils/terminal-xterm";
+  import { downloadTerminalScrollback, terminalShortcutId } from "$lib/utils/terminal-xterm";
+  import { HOST_SHORTCUTS, TERMINAL_SHORTCUTS } from "$lib/shortcuts";
+  import { appState } from "$lib/stores/appState.svelte";
   import { tabPopOutDrag } from "$lib/actions/tabPopOutDrag";
   import {
     encodeSessionDrag,
@@ -36,7 +39,10 @@
     getTerminalFontSize,
     getTerminalState,
     popOutTab,
+    cancelConnect,
     reattachSession,
+    retryConnect,
+    runTerminalShortcut,
     toggleTerminalSearch,
     updateTerminalFontSize,
     type TerminalTab,
@@ -68,6 +74,38 @@
   let launcherIndex = $state(0);
   let showMoreMenu = $state(false);
   let tabStrip = $state<HTMLDivElement | null>(null);
+
+  const CANCEL_KEY = TERMINAL_SHORTCUTS.find((s) => s.id === "term-cancel")?.combos[0].join("+") ?? "Esc";
+  const CONNECT_CLI = HOST_SHORTCUTS.find((s) => s.id === "host-connect")?.cli ?? "bssh connect <host>";
+
+  // Ticks once a second while a connection is in progress, for the elapsed time.
+  let now = $state(Date.now());
+  const anyConnecting = $derived(terminalState.tabs.some((t) => t.status === "connecting"));
+  $effect(() => {
+    if (!anyConnecting) return;
+    now = Date.now();
+    const timer = setInterval(() => (now = Date.now()), 1000);
+    return () => clearInterval(timer);
+  });
+
+  function elapsed(tab: TerminalTab): string {
+    const seconds = Math.max(0, Math.floor((now - tab.connectStartedAt) / 1000));
+    return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  }
+
+  function targetOf(tab: TerminalTab): string {
+    const c = tab.conn;
+    return c ? hostLine(c) : tab.name;
+  }
+
+  function editHost(tab: TerminalTab) {
+    const conn = connections.find((c) => c.name === tab.connectionName) ?? tab.conn;
+    if (conn) appState.openEditModal(conn);
+  }
+
+  function focusOnShow(node: HTMLElement) {
+    requestAnimationFrame(() => node.focus());
+  }
 
   const awaySessions = $derived.by((): SessionDragPayload[] => [
     ...terminalState.popoutSessions.map((session) => ({
@@ -250,7 +288,17 @@
     if (e.key === "Escape" && (showLauncher || showMoreMenu)) {
       e.preventDefault();
       closeMenus();
+      return;
     }
+    // Focus inside the Terminals view but outside xterm (tab strip, failure
+    // panel). xterm handles its own keys and stops them. Zoom is left to the
+    // focused terminal.
+    const target = e.target;
+    if (!(target instanceof HTMLElement) || !target.closest("[data-terminals-view]")) return;
+    const id = terminalShortcutId(e);
+    if (!id || id.startsWith("term-zoom")) return;
+    if (id === "term-cancel" && target instanceof HTMLInputElement) return;
+    if (runTerminalShortcut(id)) e.preventDefault();
   }
 </script>
 
@@ -291,7 +339,7 @@
 {/snippet}
 
 {#if terminalState.tabs.length > 0}
-  <div class="flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-surface-terminal">
+  <div data-terminals-view class="flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-surface-terminal">
     <!-- Keep a page heading for the sessions layout too: the tab strip acts as
          the visual header, so the accessible title is visually hidden. -->
     <h1 class="sr-only">Terminals</h1>
@@ -635,7 +683,66 @@
             </div>
           {/if}
 
-          <div id="terminal-{tab.id}" class="h-full w-full"></div>
+          <div class="flex h-full w-full flex-col">
+            {#if tab.status === "connecting"}
+              <div
+                class="mb-2 flex shrink-0 items-center gap-2 rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-secondary"
+                role="status"
+              >
+                <span class="spinner size-3" aria-hidden="true"></span>
+                <span class="min-w-0 flex-1 truncate">
+                  Connecting to {targetOf(tab)}{tab.conn?.bastion ? ` via ${tab.conn.bastion}` : ""}…
+                  <span class="tabular-nums text-muted">{elapsed(tab)}</span>
+                </span>
+                <button type="button" class="btn btn-ghost btn-sm" onclick={() => cancelConnect(tab.id)}>
+                  Cancel
+                  <kbd class="kbd">{CANCEL_KEY}</kbd>
+                </button>
+              </div>
+            {/if}
+            <div id="terminal-{tab.id}" class="min-h-0 w-full flex-1"></div>
+          </div>
+
+          {#if tab.status === "error" && tab.failure}
+            <div class="absolute inset-0 z-10 flex items-center justify-center overflow-y-auto bg-surface-terminal p-6">
+              <div class="panel flex w-full max-w-lg flex-col gap-4 p-5" role="alert">
+                <div class="flex items-start gap-3">
+                  <TriangleAlert size={18} class="mt-0.5 shrink-0 text-error" aria-hidden="true" />
+                  <div class="flex min-w-0 flex-col gap-1">
+                    <h2 class="m-0 text-base font-semibold text-primary">
+                      {tab.failure.title}
+                    </h2>
+                    <p class="m-0 text-sm text-secondary">
+                      Couldn't connect to {targetOf(tab)}. {tab.failure.hint}
+                    </p>
+                  </div>
+                </div>
+                {#if tab.failure.detail}
+                  <pre
+                    class="m-0 max-h-40 select-text overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-surface p-2.5 font-mono text-xs text-secondary">{tab.failure.detail}</pre>
+                {/if}
+                <div class="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    class="btn btn-primary"
+                    onclick={() => retryConnect(tab.id)}
+                    use:focusOnShow
+                  >
+                    Retry
+                  </button>
+                  <button type="button" class="btn" onclick={() => editHost(tab)} disabled={!tab.conn}>
+                    Edit host
+                  </button>
+                  <button type="button" class="btn btn-ghost ml-auto" onclick={() => disconnectTab(tab.id)}>
+                    Close tab
+                  </button>
+                </div>
+                <p class="m-0 text-xs text-muted">
+                  CLI: <code class="select-text">{CONNECT_CLI.replace("<host>", tab.connectionName)}</code>
+                </p>
+              </div>
+            </div>
+          {/if}
         </div>
       {/each}
     </div>

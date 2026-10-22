@@ -197,6 +197,43 @@
   /* ================================================================
      TEXT HELPERS
      ================================================================ */
+  /* Type contract (tokens.css "Type scale"): title 20, section 14, body 13,
+     meta 12, caption 11. Each size has one job; never pick one ad hoc. */
+  .type-title {
+    font-size: var(--type-title);
+    line-height: var(--type-title-lh);
+    font-weight: var(--type-title-weight);
+    letter-spacing: var(--type-title-tracking);
+    @apply text-primary;
+  }
+  .type-section {
+    font-size: var(--type-section);
+    line-height: var(--type-section-lh);
+    font-weight: var(--type-section-weight);
+    @apply text-primary;
+  }
+  .type-body {
+    font-size: var(--type-body);
+    line-height: var(--type-body-lh);
+  }
+  .type-meta {
+    font-size: var(--type-meta);
+    line-height: var(--type-meta-lh);
+    @apply text-muted;
+  }
+  .type-caption {
+    font-size: var(--type-caption);
+    line-height: var(--type-caption-lh);
+    font-weight: var(--type-caption-weight);
+    @apply text-muted;
+  }
+  /* Title of a group inside a view or panel (h2/h3). */
+  .section-heading {
+    @apply m-0 text-primary;
+    font-size: var(--type-section);
+    line-height: var(--type-section-lh);
+    font-weight: var(--type-section-weight);
+  }
   .section-label {
     @apply select-none text-2xs font-medium uppercase tracking-[0.06em] text-muted;
   }
@@ -259,7 +296,11 @@
     @apply flex h-[var(--header-h)] shrink-0 items-center justify-between gap-4 px-6;
   }
   .view-title {
-    @apply m-0 flex min-w-0 items-center gap-2 truncate text-base font-semibold tracking-[-0.01em] text-primary;
+    @apply m-0 flex min-w-0 items-center gap-2 truncate text-primary;
+    font-size: var(--type-title);
+    line-height: var(--type-title-lh);
+    font-weight: var(--type-title-weight);
+    letter-spacing: var(--type-title-tracking);
   }
   .view-subtitle {
     @apply truncate text-xs text-muted;
@@ -454,6 +495,11 @@
 
   /* ================================================================
      EMPTY STATES
+     One pattern: icon, one sentence (.empty-state-title), one primary
+     action (.empty-state-action). Don't repeat what the view header
+     already offers, and don't stack a description under the sentence;
+     .empty-state-desc is only for a reason that can't fit in it
+     (an error message, a path).
      ================================================================ */
   .empty-state {
     @apply flex flex-col items-center justify-center gap-1 px-6 py-16 text-center;
@@ -462,13 +508,17 @@
     @apply mb-3 flex size-10 items-center justify-center rounded-lg border border-border bg-panel text-muted;
   }
   .empty-state-title {
-    @apply text-sm font-semibold text-primary;
+    @apply max-w-md font-medium text-primary;
+    font-size: var(--type-body);
+    line-height: var(--type-body-lh);
   }
   .empty-state-desc {
-    @apply max-w-sm text-xs leading-relaxed text-muted;
+    @apply max-w-sm text-muted;
+    font-size: var(--type-meta);
+    line-height: var(--type-meta-lh);
   }
   .empty-state-action {
-    @apply mt-4 flex items-center gap-2;
+    @apply mt-4 flex flex-wrap items-center justify-center gap-2;
   }
 
   /* ================================================================
@@ -537,12 +587,25 @@
 
   /* ================================================================
      SETTINGS
+     .settings-frame centres a 960-1040 px column under the view header
+     (the one title). Inside it: a section rail (labels from 1180 px,
+     icons only below) and the content stack.
      ================================================================ */
+  .settings-frame {
+    @apply mx-auto flex min-h-0 w-full max-w-[1040px] flex-1 flex-col;
+  }
+  .settings-eyebrow {
+    @apply select-none text-muted;
+    font-size: var(--type-caption);
+    font-weight: var(--type-caption-weight);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
   .settings-shell {
-    @apply flex min-h-0 w-full flex-1 overflow-hidden;
+    @apply flex min-h-0 w-full flex-1 gap-6 overflow-hidden px-6;
   }
   .settings-sidebar {
-    @apply flex w-[208px] shrink-0 flex-col gap-px overflow-y-auto border-r border-border px-3 py-4;
+    @apply flex w-[200px] shrink-0 flex-col gap-px overflow-y-auto py-2;
   }
   .settings-nav-item {
     @apply flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-left text-sm text-secondary transition-colors duration-fast hover:bg-surface-hover hover:text-primary;
@@ -552,26 +615,47 @@
     box-shadow: inset 2px 0 0 var(--color-accent);
   }
   .settings-content {
-    @apply min-h-0 flex-1 overflow-y-auto overscroll-contain px-8 py-6;
+    @apply min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain py-2 pb-8;
+  }
+  /* Vertical stack of the panels of one section. */
+  .settings-stack {
+    @apply flex w-full max-w-[720px] flex-col gap-8;
   }
   .settings-page {
-    @apply mx-auto flex w-full max-w-[680px] flex-col gap-6;
+    @apply flex w-full min-w-0 flex-col gap-6;
+  }
+  .settings-lead {
+    @apply m-0 text-muted;
+    font-size: var(--type-body);
+    line-height: var(--type-body-lh);
+  }
+  /* Panels render their own title block for historical reasons; the header
+     already names the section, so it is hidden (and leaves the a11y tree). */
+  .settings-page > div:has(> .settings-heading) {
+    display: none;
   }
   .settings-heading {
-    @apply m-0 text-lg font-semibold tracking-[-0.01em] text-primary;
+    @apply m-0 text-primary;
+    font-size: var(--type-section);
+    line-height: var(--type-section-lh);
+    font-weight: var(--type-section-weight);
   }
   .settings-desc {
-    @apply m-0 mt-1 text-sm text-muted;
+    @apply m-0 mt-1 text-muted;
+    font-size: var(--type-body);
   }
   /* A group of rows in one bordered card. */
   .settings-group {
     @apply flex flex-col rounded-lg border border-border bg-panel;
   }
   .settings-group-title {
-    @apply mb-2 text-sm font-medium text-primary;
+    @apply m-0 mb-2 text-primary;
+    font-size: var(--type-section);
+    line-height: var(--type-section-lh);
+    font-weight: var(--type-section-weight);
   }
   .setting-row {
-    @apply flex min-h-14 items-center justify-between gap-6 px-4 py-3;
+    @apply flex min-h-14 flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3;
   }
   .settings-group > .setting-row + .setting-row,
   .settings-group > * + .setting-row,
@@ -580,23 +664,29 @@
   }
   .setting-row-main {
     @apply flex min-w-0 flex-col gap-0.5;
+    flex: 1 1 14rem;
   }
   .setting-title {
-    @apply text-sm text-primary;
+    @apply text-primary;
+    font-size: var(--type-body);
+    line-height: var(--type-body-lh);
   }
   .setting-meta {
-    @apply text-xs leading-snug text-muted;
+    @apply text-muted;
+    font-size: var(--type-meta);
+    line-height: var(--type-meta-lh);
   }
   .setting-control {
-    @apply flex shrink-0 items-center gap-2;
+    @apply flex max-w-full shrink-0 items-center gap-2;
   }
   .system-value {
     @apply truncate rounded-md border border-border bg-surface-input px-2.5 py-1.5 font-mono text-xs text-secondary;
   }
 
-  @media (max-width: 860px) {
+  /* Below 1180 px the rail keeps icons only (names stay as aria-label). */
+  @media (max-width: 1179px) {
     .settings-sidebar {
-      @apply w-14 px-2;
+      @apply w-10;
     }
     .settings-label {
       display: none;
@@ -604,8 +694,11 @@
     .settings-nav-item {
       @apply justify-center px-0;
     }
-    .settings-content {
-      @apply px-5;
+    .settings-shell {
+      @apply gap-4 px-4;
+    }
+    .settings-frame > .view-header {
+      @apply px-4;
     }
   }
 }

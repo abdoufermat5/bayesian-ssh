@@ -13,14 +13,18 @@ async function openSettings(app: AppFixture, page: Page) {
   await app.gotoApp();
   await app.nav("Settings");
   await expect(page.locator(".settings-shell")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Profiles & workspace", level: 2 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
+  await expect(page.locator(SECTIONS).getByRole("button", { name: "Workspace", exact: true })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
 }
 
 async function openSection(page: Page, label: string) {
   const button = page.locator(SECTIONS).getByRole("button", { name: label, exact: true });
   await button.click();
   await expect(button).toHaveAttribute("aria-current", "page");
-  await expect(page.getByRole("heading", { name: label, level: 2 })).toBeVisible();
+  await expect(page.locator(".settings-eyebrow")).toHaveText(`/ ${label}`);
 }
 
 test.describe("settings", () => {
@@ -28,18 +32,15 @@ test.describe("settings", () => {
     await openSettings(app, page);
 
     const sections = [
-      { label: "Profiles & workspace", marker: page.getByText("Active profile") },
-      { label: "SSH agent", marker: page.getByRole("checkbox", { name: /Start agent on launch/ }) },
-      { label: "Kerberos", marker: page.getByRole("checkbox", { name: /Monitor ticket expiry/ }) },
-      { label: "Terminal", marker: page.getByText("Font size", { exact: true }) },
-      { label: "History", marker: page.getByRole("checkbox", { name: /Record session history/ }) },
+      { label: "Workspace", marker: page.getByText("Active profile") },
+      { label: "Connection", marker: page.getByRole("checkbox", { name: /Start agent on launch/ }) },
+      { label: "Terminal & files", marker: page.getByText("Font size", { exact: true }) },
+      { label: "Privacy & history", marker: page.getByRole("checkbox", { name: /Record session history/ }) },
       { label: "Appearance", marker: page.getByRole("radiogroup", { name: "Theme" }) },
-      { label: "Features", marker: page.getByRole("checkbox", { name: /SFTP file browser/ }) },
-      { label: "Inventory sources", marker: page.getByRole("heading", { name: "Inventory sources" }) },
-      { label: "Updates", marker: page.getByRole("button", { name: "Check for updates" }) },
+      { label: "Sources & updates", marker: page.getByRole("button", { name: "Check for updates" }) },
     ];
 
-    // The rail exposes exactly the nine documented categories.
+    // The rail exposes exactly the six settings sections.
     await expect(page.locator(SECTIONS).getByRole("button")).toHaveCount(sections.length);
 
     for (const { label, marker } of sections) {
@@ -48,7 +49,7 @@ test.describe("settings", () => {
     }
 
     // Workspace section content round-trips when we come back to it.
-    await openSection(page, "Profiles & workspace");
+    await openSection(page, "Workspace");
     await expect(page.getByText("Config root")).toBeVisible();
     await expect(page.getByText("/home/me/.config/bayesian-ssh", { exact: true })).toBeVisible();
   });
@@ -57,7 +58,7 @@ test.describe("settings", () => {
     await openSettings(app, page);
 
     // Kerberos: monitoring starts enabled, flip it off.
-    await openSection(page, "Kerberos");
+    await openSection(page, "Connection");
     const monitor = page.getByRole("checkbox", { name: /Monitor ticket expiry/ });
     await expect(monitor).toBeChecked();
     await app.clearIpc();
@@ -71,7 +72,7 @@ test.describe("settings", () => {
     await expect(page.locator("#settings-kerberos-warn")).toBeDisabled();
 
     // Features: disable the SFTP browser (enabled by default).
-    await openSection(page, "Features");
+    await openSection(page, "Terminal & files");
     const sftp = page.getByRole("checkbox", { name: /SFTP file browser/ });
     await expect(sftp).toBeChecked();
     await app.clearIpc();
@@ -106,7 +107,7 @@ test.describe("settings", () => {
     });
 
     // Connection defaults re-derive workspace fields and persist both blobs.
-    await openSection(page, "SSH agent");
+    await openSection(page, "Connection");
     await app.clearIpc();
     const defaultUser = page.locator("#settings-default-user");
     await expect(defaultUser).toHaveValue("root");
@@ -129,7 +130,7 @@ test.describe("settings", () => {
     await openSection(page, "Appearance");
 
     const group = page.getByRole("radiogroup", { name: "Theme" });
-    await expect(group.getByRole("radio")).toHaveCount(4);
+    await expect(group.getByRole("radio")).toHaveCount(5);
     // Default theme is Graphite/zinc.
     await expect(page.getByRole("radio", { name: "Graphite" })).toHaveAttribute(
       "aria-checked",
@@ -139,20 +140,20 @@ test.describe("settings", () => {
     expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe("zinc");
 
     const themeCases = [
-      { name: "Midnight", id: "cyberpunk" },
-      { name: "OLED black", id: "oled" },
-      { name: "Slate", id: "slate" },
-      { name: "Graphite", id: "zinc" },
+      { name: "Midnight", id: "cyberpunk", cls: "theme-cyberpunk" },
+      { name: "OLED black", id: "oled", cls: "theme-oled" },
+      { name: "Paper", id: "paper", cls: "theme-paper" },
+      { name: "Match system", id: "system", cls: "theme-(zinc|paper)" },
+      { name: "Graphite", id: "zinc", cls: "theme-zinc" },
     ];
 
     let saves = 0;
-    for (const { name, id } of themeCases) {
+    for (const { name, id, cls } of themeCases) {
       await page.getByRole("radio", { name }).click();
       await expect(page.getByRole("radio", { name })).toHaveAttribute("aria-checked", "true");
 
       const classes = await page.evaluate(() => [...document.documentElement.classList]);
-      expect(classes).toContain(`theme-${id}`);
-      expect(classes.filter((c) => c.startsWith("theme-"))).toEqual([`theme-${id}`]);
+      expect(classes.some((c) => new RegExp(cls).test(c))).toBe(true);
       expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe(id);
 
       // Each switch persists through save_desktop_settings.
@@ -189,6 +190,30 @@ test.describe("settings", () => {
       "aria-checked",
       "true",
     );
+  });
+
+  test("appearance density switches data-density on html and persists", async ({ app, page }) => {
+    await openSettings(app, page);
+    await openSection(page, "Appearance");
+
+    const group = page.getByRole("radiogroup", { name: "Density" });
+    await expect(group.getByRole("radio")).toHaveCount(3);
+    await expect(page.getByRole("radio", { name: "Comfortable" })).toHaveAttribute("aria-checked", "true");
+    expect(await page.evaluate(() => document.documentElement.dataset.density)).toBe("comfortable");
+
+    await page.getByRole("radio", { name: "Compact" }).click();
+    await expect(page.getByRole("radio", { name: "Compact" })).toHaveAttribute("aria-checked", "true");
+    expect(await page.evaluate(() => document.documentElement.dataset.density)).toBe("compact");
+    expect((await app.ipcCalls("save_desktop_settings")).at(-1)).toMatchObject({
+      settings: { density: "compact" },
+    });
+
+    await page.getByRole("radio", { name: "Spacious" }).click();
+    await expect(page.getByRole("radio", { name: "Spacious" })).toHaveAttribute("aria-checked", "true");
+    expect(await page.evaluate(() => document.documentElement.dataset.density)).toBe("spacious");
+    expect((await app.ipcCalls("save_desktop_settings")).at(-1)).toMatchObject({
+      settings: { density: "spacious" },
+    });
   });
 
   test("browse picks an ssh config file and import pulls hosts", async ({ app, page }) => {

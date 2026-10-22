@@ -1,27 +1,47 @@
 <script lang="ts">
   import {
     Activity,
-    Clock,
-    HardDrive,
-    KeyRound,
-    Network,
+    FolderOpen,
+    Lock,
+    LockOpen,
     Palette,
+    Pencil,
     Plus,
+    RefreshCw,
     Search,
     Server,
     Settings,
-    ShieldCheck,
     Terminal,
     TerminalSquare,
     Upload,
+    UserPlus,
     Users,
     Wrench,
     X,
+    Copy,
+    ShieldAlert,
   } from "lucide-svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { tick } from "svelte";
-  import type { AppTab, Connection, DesktopSettings, Prediction } from "$lib/types";
+  import type {
+    AppTab,
+    Connection,
+    DesktopSettings,
+    Prediction,
+    TeamAttention,
+    TeamSyncResult,
+    TeamsStatus,
+  } from "$lib/types";
   import { predictionReason } from "$lib/utils/prediction";
+  import { GLOBAL_SHORTCUTS, HOST_SHORTCUTS, MOD, VIEW_ORDER, viewDigit, type Shortcut } from "$lib/shortcuts";
+  import { VIEW_META, viewEnabled } from "$lib/viewMeta";
+  import { SETTINGS_SECTIONS, requestSettingsSection } from "$lib/stores/settingsNav.svelte";
+  import { requestTeamFocus } from "$lib/stores/attention.svelte";
+  import { requestFilesHost } from "$lib/stores/filesHost.svelte";
+  import { TEAMS_CHANGED_EVENT } from "$lib/stores/teamsAttention.svelte";
+  import { THEME_OPTIONS } from "$lib/utils/theme";
+  import { toSshCommand } from "$lib/utils/sshCommand";
+  import { notify } from "$lib/stores/notifications.svelte";
 
   interface Props {
     open: boolean;
@@ -39,6 +59,8 @@
     onOpenKeys: () => void;
     onOpenSessionManager: () => void;
     onSelectTheme: (theme: string) => void;
+    onEditHost: (conn: Connection) => void;
+    onCopyCommand: (text: string, id: string) => void;
   }
 
   let {
@@ -57,10 +79,12 @@
     onOpenKeys,
     onOpenSessionManager,
     onSelectTheme,
+    onEditHost,
+    onCopyCommand,
   }: Props = $props();
 
-  type Category = "Suggested" | "Hosts" | "Actions" | "Navigation" | "Themes";
-  const CATEGORY_ORDER: Category[] = ["Suggested", "Hosts", "Actions", "Navigation", "Themes"];
+  type Category = "Suggested" | "Hosts" | "Actions" | "Teams" | "Navigation" | "Settings" | "Themes";
+  const CATEGORY_ORDER: Category[] = ["Suggested", "Hosts", "Actions", "Teams", "Navigation", "Settings", "Themes"];
 
   interface CommandItem {
     id: string;
@@ -73,6 +97,8 @@
     category: Category;
     icon: typeof Server;
     badge?: string;
+    /** Shown in the default (empty query) view even when its category is otherwise search-only. */
+    urgent?: boolean;
     /** Keyboard shortcut hint, one entry per key cap. */
     keys?: string[];
     action: () => void;
@@ -84,40 +110,105 @@
     items: CommandItem[];
   }
 
-  const THEMES: Array<{ id: string; label: string }> = [
-    { id: "zinc", label: "Zinc" },
-    { id: "cyberpunk", label: "Midnight" },
-    { id: "oled", label: "OLED black" },
-    { id: "slate", label: "Slate" },
-  ];
+  const shortcut = (list: Shortcut[], id: string) => list.find((s) => s.id === id);
+  /** First combo of a registry entry, as key caps. */
+  const keysOf = (list: Shortcut[], id: string) => shortcut(list, id)?.combos[0];
 
   let query = $state("");
   let selectedIndex = $state(0);
   let inputElement = $state<HTMLInputElement | null>(null);
   let listElement = $state<HTMLElement | null>(null);
   let suggestions = $state.raw<Prediction[]>([]);
+  /** Teams state read when the palette opens; null until known or when unavailable. */
+  let teamsInfo = $state.raw<{
+    identity: boolean;
+    unlocked: boolean;
+    teams: { id: string; name: string; admin: boolean; pending: number }[];
+  } | null>(null);
 
   function run(fn: () => void) {
     fn();
     onClose();
   }
 
+  function openTeams(teamId?: string) {
+    if (teamId) requestTeamFocus(teamId);
+    onSelectTab("teams");
+  }
+
+  async function syncAllTeams() {
+    try {
+      const results = await invoke<TeamSyncResult[]>("teams_sync", { team: null });
+      const ok = results.filter((r) => r.result).length;
+      for (const r of results) if (r.error) notify(`${r.team}: ${r.error}`, "error");
+      if (ok) notify(`Synced ${ok} ${ok === 1 ? "team" : "teams"}`, "success");
+    } catch (e) {
+      notify(`Sync failed: ${e}`, "error");
+    }
+    window.dispatchEvent(new Event(TEAMS_CHANGED_EVENT));
+  }
+
+  async function lockTeams() {
+    try {
+      await invoke("teams_lock");
+      notify("Teams locked", "success");
+    } catch (e) {
+      notify(`Lock failed: ${e}`, "error");
+    }
+    window.dispatchEvent(new Event(TEAMS_CHANGED_EVENT));
+  }
+
+  /**
+   * Teams verbs that make sense right now. Nothing here grants a key: the
+   * "review" verbs only open the team, where an admin checks the device's
+   * fingerprint out of band.
+   */
+  function teamVerbs(): CommandItem[] {
+    const info = teamsInfo;
+    const base = (id: string, title: string, icon: typeof Server, action: () => void, extra: Partial<CommandItem> = {}): CommandItem => ({
+      id: `teams-${id}`,
+      title,
+      category: "Teams",
+      icon,
+      keywords: "team teams",
+      action: () => run(action),
+      ...extra,
+    });
+    // "Go to Teams" is already in Navigation.
+    const items: ReturnType<typeof base>[] = [];
+    if (!info?.identity) return items;
+    if (!info.unlocked) {
+      items.push(base("unlock", "Unlock Teams…", LockOpen, () => openTeams(), { subtitle: "Asks for your passphrase in Teams" }));
+      return items;
+    }
+    if (info.teams.length > 0) {
+      items.push(base("sync", "Sync all teams", RefreshCw, () => void syncAllTeams(), { subtitle: "bssh teams sync" }));
+    }
+    items.push(base("lock", "Lock Teams", Lock, () => void lockTeams(), { subtitle: "bssh teams lock" }));
+    for (const t of info.teams) {
+      if (t.pending > 0) {
+        items.push(
+          base(`review-${t.id}`, `Review waiting devices in ${t.name}`, ShieldAlert, () => openTeams(t.id), {
+            subtitle: `${t.pending} ${t.pending === 1 ? "device" : "devices"} · check fingerprints before granting`,
+            urgent: true,
+          }),
+        );
+      }
+      if (t.admin) {
+        items.push(base(`invite-${t.id}`, `Invite to ${t.name}…`, UserPlus, () => openTeams(t.id), { keywords: "team teams invite member add" }));
+      }
+    }
+    return items;
+  }
+
   const staticItems = $derived.by((): CommandItem[] => {
-    const nav: Array<{ tab: AppTab; label: string; icon: typeof Server; key?: string }> = [
-      { tab: "connections", label: "Go to hosts", icon: Server, key: "1" },
-      { tab: "terminals", label: "Go to terminals", icon: TerminalSquare, key: "2" },
-      ...(settings.enable_sftp !== false
-        ? [{ tab: "sftp" as AppTab, label: "Go to files", icon: HardDrive }]
-        : []),
-      ...(settings.enable_tunneling !== false
-        ? [{ tab: "tunnels" as AppTab, label: "Go to tunnels", icon: Network }]
-        : []),
-      { tab: "keys", label: "Go to SSH keys", icon: KeyRound, key: "3" },
-      { tab: "audit", label: "Go to security check", icon: ShieldCheck, key: "4" },
-      { tab: "history", label: "Go to history", icon: Clock, key: "5" },
-      { tab: "teams", label: "Go to Teams", icon: Users },
-      { tab: "settings", label: "Go to settings", icon: Settings, key: "6" },
-    ];
+    const nav = VIEW_ORDER.filter((tab) => viewEnabled(tab, settings)).map((tab) => ({
+      tab,
+      label: `Go to ${VIEW_META[tab as Exclude<AppTab, "settings">].label}`,
+      icon: VIEW_META[tab as Exclude<AppTab, "settings">].icon,
+      key: viewDigit(tab),
+    }));
+    nav.push({ tab: "settings", label: "Go to Settings", icon: Settings, key: null });
 
     const actions: CommandItem[] = [
       {
@@ -126,7 +217,7 @@
         subtitle: "Add an SSH host",
         category: "Actions",
         icon: Plus,
-        keys: ["N"],
+        keys: keysOf(GLOBAL_SHORTCUTS, "new-host"),
         action: () => run(onOpenAddModal),
       },
       {
@@ -179,11 +270,13 @@
       subtitle: activeTab === item.tab ? "Current view" : undefined,
       category: "Navigation",
       icon: item.icon,
-      keys: item.key ? [item.key] : undefined,
+      keys: item.tab === "settings" ? keysOf(GLOBAL_SHORTCUTS, "settings") : item.key ? [item.key] : undefined,
       action: () => run(item.tab === "keys" ? onOpenKeys : () => onSelectTab(item.tab)),
     }));
 
-    const themeItems: CommandItem[] = THEMES.map((t) => ({
+    const teamItems = teamVerbs();
+
+    const themeItems: CommandItem[] = THEME_OPTIONS.map((t) => ({
       id: `theme-${t.id}`,
       title: `Theme: ${t.label}`,
       keywords: `switch appearance ${t.id}`,
@@ -193,7 +286,19 @@
       action: () => run(() => onSelectTheme(t.id)),
     }));
 
-    return [...actions, ...navItems, ...themeItems];
+    const settingsItems: CommandItem[] = SETTINGS_SECTIONS.map((section) => ({
+      id: `settings-${section.id}`,
+      title: `Settings: ${section.label}`,
+      category: "Settings",
+      icon: Settings,
+      action: () =>
+        run(() => {
+          requestSettingsSection(section.id);
+          onSelectTab("settings");
+        }),
+    }));
+
+    return [...actions, ...teamItems, ...navItems, ...settingsItems, ...themeItems];
   });
 
   const hostItems = $derived(
@@ -232,7 +337,9 @@
       Suggested: [],
       Hosts: [],
       Actions: [],
+      Teams: [],
       Navigation: [],
+      Settings: [],
       Themes: [],
     };
 
@@ -241,7 +348,9 @@
       buckets.Suggested = suggestedItems;
       buckets.Hosts = hostItems.slice(0, 5);
       for (const item of staticItems) {
-        if (item.category !== "Themes") buckets[item.category].push(item);
+        if (item.category === "Themes" || item.category === "Settings") continue;
+        if (item.category === "Teams" && !item.urgent) continue;
+        buckets[item.category].push(item);
       }
     } else {
       for (const item of [...hostItems, ...staticItems]) {
@@ -269,6 +378,55 @@
 
   const flatItems = $derived(groups.flatMap((g) => g.items));
 
+  /** The host under the highlight (a Hosts or Suggested row), if any. */
+  const highlightedHost = $derived.by((): Connection | null => {
+    const item = flatItems[Math.min(selectedIndex, flatItems.length - 1)];
+    if (!item || (item.category !== "Hosts" && item.category !== "Suggested")) return null;
+    return connections.find((c) => item.id === `host-${c.id}` || item.id === `suggested-${c.id}`) ?? null;
+  });
+
+  interface HostVerb {
+    id: string;
+    label: string;
+    icon: typeof Server;
+    keys: string[];
+    cli?: string;
+    run: (conn: Connection) => void;
+  }
+
+  const HOST_VERBS: HostVerb[] = ([
+    // Keys and CLI come from the registry below.
+    { id: "host-connect", label: "Connect", icon: Terminal, run: (c) => onConnectHost(c) },
+    { id: "host-connect-tab", label: "Connect in new tab", icon: TerminalSquare, run: (c) => onConnectHost(c) },
+    { id: "host-files", label: "Browse files", icon: FolderOpen, run: (c) => {
+        requestFilesHost(c.id);
+        onSelectTab("sftp");
+      } },
+    {
+      id: "host-copy",
+      label: "Copy ssh command",
+      icon: Copy,
+      run: (c) => onCopyCommand(toSshCommand(c), c.id),
+    },
+    { id: "host-edit", label: "Edit", icon: Pencil, run: (c) => onEditHost(c) },
+  ] as Omit<HostVerb, "keys" | "cli">[]).map((v) => {
+    const sc = shortcut(HOST_SHORTCUTS, v.id);
+    return { ...v, keys: sc?.combos[0] ?? [], cli: sc?.cli };
+  });
+
+  const visibleVerbs = $derived(HOST_VERBS.filter((v) => v.id !== "host-files" || viewEnabled("sftp", settings)));
+  let hoveredVerb = $state<string | null>(null);
+  const verbCli = $derived.by(() => {
+    const verb = visibleVerbs.find((v) => v.id === hoveredVerb) ?? visibleVerbs[0];
+    return verb?.cli && highlightedHost ? verb.cli.replace("<host>", highlightedHost.name) : null;
+  });
+
+  function runVerb(verb: HostVerb) {
+    const host = highlightedHost;
+    if (!host) return;
+    run(() => verb.run(host));
+  }
+
   let previousFocus: HTMLElement | null = null;
 
   $effect(() => {
@@ -285,6 +443,27 @@
       })
       .catch(() => {
         if (!cancelled) suggestions = [];
+      });
+    teamsInfo = null;
+    invoke<TeamsStatus>("teams_status")
+      .then(async (status) => {
+        if (cancelled) return;
+        const identity = Boolean(status?.identity);
+        const unlocked = Boolean(status?.unlocked);
+        let attention: TeamAttention[] = [];
+        if (unlocked) attention = (await invoke<TeamAttention[] | null>("teams_attention").catch(() => null)) ?? [];
+        if (cancelled) return;
+        teamsInfo = {
+          identity,
+          unlocked,
+          teams: (status?.teams ?? []).map((t) => {
+            const a = attention.find((x) => x.team_id === t.team_id);
+            return { id: t.team_id, name: t.name, admin: a?.role === "admin", pending: a?.pending_devices ?? 0 };
+          }),
+        };
+      })
+      .catch(() => {
+        if (!cancelled) teamsInfo = null;
       });
     const raf = requestAnimationFrame(() => inputElement?.focus());
     return () => {
@@ -316,7 +495,17 @@
       void select((selectedIndex - 1 + count) % count);
     } else if (e.key === "Enter") {
       e.preventDefault();
-      flatItems[Math.min(selectedIndex, count - 1)]?.action();
+      const combo = (id: string) => {
+        const k = keysOf(HOST_SHORTCUTS, id) ?? [];
+        return k.includes("Shift") ? e.shiftKey : k.includes(MOD) ? e.ctrlKey || e.metaKey : false;
+      };
+      if (highlightedHost && combo("host-connect-tab")) {
+        runVerb(HOST_VERBS.find((v) => v.id === "host-connect-tab")!);
+      } else if (highlightedHost && combo("host-files") && viewEnabled("sftp", settings)) {
+        runVerb(HOST_VERBS.find((v) => v.id === "host-files")!);
+      } else {
+        flatItems[Math.min(selectedIndex, count - 1)]?.action();
+      }
     }
   }
 </script>
@@ -428,6 +617,31 @@
           </div>
         {/each}
       </div>
+
+      {#if highlightedHost}
+        <div class="shrink-0 border-t border-border px-3 py-2" role="group" aria-label="Actions for {highlightedHost.name}">
+          <div class="flex flex-wrap items-center gap-1.5">
+            {#each visibleVerbs as verb (verb.id)}
+              <button
+                type="button"
+                class="btn btn-secondary btn-sm gap-1.5"
+                onclick={() => runVerb(verb)}
+                onmouseenter={() => (hoveredVerb = verb.id)}
+                onfocus={() => (hoveredVerb = verb.id)}
+                onmouseleave={() => (hoveredVerb = null)}
+                onblur={() => (hoveredVerb = null)}
+              >
+                <verb.icon size={13} />
+                {verb.label}
+                {#each verb.keys as key (key)}<kbd class="kbd">{key}</kbd>{/each}
+              </button>
+            {/each}
+          </div>
+          {#if verbCli}
+            <p class="m-0 mt-1.5 truncate font-mono text-xs text-muted">{verbCli}</p>
+          {/if}
+        </div>
+      {/if}
 
       <div class="flex h-9 shrink-0 items-center gap-4 border-t border-border px-3 text-xs text-muted">
         <span class="flex items-center gap-1.5">

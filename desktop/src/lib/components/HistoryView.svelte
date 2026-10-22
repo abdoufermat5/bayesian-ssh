@@ -1,9 +1,19 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
-  import { Clock, Download, FileText, Play, Search, X } from "lucide-svelte";
+  import { Clock, Download, FileText, Play, ScrollText, Search, X } from "lucide-svelte";
   import ReplayModal from "$lib/components/modals/ReplayModal.svelte";
-  import type { SessionHistoryEntry, SessionTextHit } from "$lib/types";
+  import SourceBadge, {
+    loadSourceIndex,
+    matchesSource,
+    sourceOf,
+    type SourceFilterValue,
+    type SourceInfo,
+  } from "$lib/components/hosts/SourceBadge.svelte";
+  import SourceFilter from "$lib/components/hosts/SourceFilter.svelte";
+  import type { Connection, SessionHistoryEntry, SessionTextHit, TeamAttention, TeamsStatus } from "$lib/types";
   import { formatDate, formatDateTime, formatRelative, resolveTimeZone } from "$lib/utils/timezone";
+  import { requestTeamFocus } from "$lib/stores/attention.svelte";
+  import { appState } from "$lib/stores/appState.svelte";
 
   interface Props {
     history: SessionHistoryEntry[];
@@ -33,6 +43,8 @@
     /** Message carried by `{ Error: string }`, if any. */
     error: string | null;
     exitCode: number | undefined;
+    /** Source id of the host (null = local); undefined when the host is no longer in the list. */
+    sourceId: string | null | undefined;
   }
 
   interface SnippetPart {
@@ -48,6 +60,42 @@
 
   let filterQuery = $state("");
   let statusFilter = $state<Filter>("all");
+  let sourceFilter = $state<SourceFilterValue>("all");
+
+  // ---- Provenance: which source (local, inventory, team) each session's host
+  // comes from. History rows only carry the host name, so map it through the
+  // current, unfiltered host list.
+  let sourceByName = $state.raw<Record<string, string | null>>({});
+  let sourceIndex = $state.raw<Record<string, SourceInfo>>({});
+  /** Team ids where this device's account is an admin (needs Teams unlocked). */
+  let adminTeams = $state.raw<Set<string>>(new Set());
+
+  $effect(() => {
+    if (history.length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      const conns = (await invoke<Connection[] | null>("get_connections", { query: "", tagFilter: null }).catch(() => null)) ?? [];
+      if (cancelled) return;
+      sourceByName = Object.fromEntries(conns.map((c) => [c.name, c.source_id ?? null]));
+      if (!conns.some((c) => c.source_id)) return;
+      const index = await loadSourceIndex();
+      if (cancelled) return;
+      sourceIndex = index;
+      if (!Object.values(index).some((s) => s.kind === "team")) return;
+      const status = await invoke<TeamsStatus | null>("teams_status").catch(() => null);
+      if (!status?.unlocked) return;
+      const attention = (await invoke<TeamAttention[] | null>("teams_attention").catch(() => null)) ?? [];
+      if (!cancelled) adminTeams = new Set(attention.filter((a) => a.role === "admin").map((a) => a.team_id));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  function openTeamAudit(teamId: string) {
+    requestTeamFocus(teamId, "audit");
+    appState.handleTabChange("teams");
+  }
 
   let outputQuery = $state("");
   let outputHits = $state.raw<SessionTextHit[]>([]);
@@ -198,12 +246,14 @@
       const startedMs = Date.parse(entry.started_at);
       const outcome = outcomeOf(entry);
       const sessionId = entry.session_id ?? "";
+      const sourceId = entry.connection_name in sourceByName ? sourceByName[entry.connection_name] : undefined;
+      const sourceName = sourceId === undefined ? "" : (sourceOf(sourceId, sourceIndex)?.name ?? "Local");
       return {
         key: `${sessionId}|${entry.started_at}|${entry.connection_name}|${i}`,
         sessionId,
         recorded: Boolean(entry.recording_path),
         name: entry.connection_name,
-        search: `${entry.connection_name}\n${detail}\n${sessionId}`.toLowerCase(),
+        search: `${entry.connection_name}\n${detail}\n${sessionId}\n${sourceName}`.toLowerCase(),
         startedAt: entry.started_at,
         startedMs: Number.isNaN(startedMs) ? 0 : startedMs,
         relative: formatRelative(entry.started_at, now),
@@ -214,6 +264,7 @@
         detail: error === null ? detail : "Error",
         error,
         exitCode: entry.exit_code ?? undefined,
+        sourceId,
       };
     });
     return out.sort((a, b) => b.startedMs - a.startedMs);
@@ -229,10 +280,40 @@
     return { all: rows.length, success, failed };
   });
 
+  const hasSources = $derived(Object.values(sourceByName).some(Boolean));
+
+  /** Sources that appear in this history, teams first, then by name. */
+  const filterSources = $derived.by(() => {
+    const ids = new Set(rows.map((r) => r.sourceId).filter((id): id is string => Boolean(id)));
+    return [...ids]
+      .map((id) => sourceOf(id, sourceIndex) as SourceInfo)
+      .sort((a, b) => Number(b.kind === "team") - Number(a.kind === "team") || a.name.localeCompare(b.name));
+  });
+
+  const sourceCounts = $derived.by(() => {
+    const out: Record<string, number> = { all: rows.length, local: 0 };
+    for (const r of rows) {
+      if (r.sourceId === undefined) continue;
+      const key = r.sourceId ?? "local";
+      out[key] = (out[key] ?? 0) + 1;
+    }
+    return out;
+  });
+
+  function rowMatchesSource(r: Row): boolean {
+    if (sourceFilter === "all") return true;
+    return r.sourceId !== undefined && matchesSource(r.sourceId, sourceFilter);
+  }
+
   const filteredRows = $derived.by(() => {
     const q = filterQuery.trim().toLowerCase();
-    if (!q && statusFilter === "all") return rows;
-    return rows.filter((r) => (statusFilter === "all" || r.outcome === statusFilter) && (!q || r.search.includes(q)));
+    if (!q && statusFilter === "all" && sourceFilter === "all") return rows;
+    return rows.filter(
+      (r) =>
+        (statusFilter === "all" || r.outcome === statusFilter) &&
+        rowMatchesSource(r) &&
+        (!q || r.search.includes(q)),
+    );
   });
 
   // Consecutive rows sharing a calendar day (history arrives newest first).
@@ -259,12 +340,13 @@
     return out;
   });
 
-  const hasFilters = $derived(filterQuery.trim() !== "" || statusFilter !== "all");
+  const hasFilters = $derived(filterQuery.trim() !== "" || statusFilter !== "all" || sourceFilter !== "all");
   const isOutputSearchActive = $derived(outputQuery.trim() !== "");
 
   function clearFilters() {
     filterQuery = "";
     statusFilter = "all";
+    sourceFilter = "all";
   }
 
   function csvCell(value: string | number | null | undefined): string {
@@ -392,6 +474,16 @@
         </div>
       {/if}
     </div>
+    {#if !isOutputSearchActive && (hasSources || sourceFilter !== "all")}
+      <div class="flex shrink-0 px-6 pb-3">
+        <SourceFilter
+          sources={filterSources}
+          value={sourceFilter}
+          counts={sourceCounts}
+          onChange={(v) => (sourceFilter = v)}
+        />
+      </div>
+    {/if}
   {/if}
 
   <div class="view-body">
@@ -489,31 +581,56 @@
       </div>
     {:else}
       <div class="table-wrap">
-        <table class="data-table table-fixed">
+        <table class="data-table history-table table-fixed">
           <thead>
             <tr>
               <th>Host</th>
-              <th class="w-[148px]">Started</th>
-              <th class="w-[104px] text-right">Duration</th>
-              <th class="w-[30%]">Status</th>
-              <th class="w-[88px] text-right">Exit code</th>
+              {#if hasSources}<th class="w-[148px]">Source</th>{/if}
+              <th class="w-[120px]">Started</th>
+              <th class="w-[88px] text-right">Duration</th>
+              <th>Status</th>
+              <th class="w-[80px] text-right">Exit code</th>
               <th class="w-[104px] text-right">Recording</th>
             </tr>
           </thead>
           {#each groups as group, gi (group.key)}
             <tbody>
               <tr class="hover:bg-transparent {gi > 0 ? 'border-t border-border' : ''}">
-                <td colspan="6" class="h-8 bg-surface/60">
+                <td colspan={hasSources ? 7 : 6} class="h-8 bg-surface/60">
                   <span class="section-label">{group.label}</span>
                   <span class="ml-1.5 text-2xs tabular-nums text-muted">{group.rows.length}</span>
                 </td>
               </tr>
               {#each group.rows as row (row.key)}
                 {@const outcome = OUTCOME[row.outcome]}
-                <tr>
+                <tr data-history-row>
                   <td>
                     <span class="block truncate font-medium text-primary" title={row.name}>{row.name}</span>
                   </td>
+                  {#if hasSources}
+                    {@const source = row.sourceId === undefined ? null : sourceOf(row.sourceId, sourceIndex)}
+                    <td>
+                      {#if row.sourceId === undefined}
+                        <span class="text-xs text-muted" title="This host is no longer in your list">—</span>
+                      {:else}
+                        <div class="flex min-w-0 items-center gap-1">
+                          <SourceBadge {source} />
+                          {#if source?.teamId && adminTeams.has(source.teamId)}
+                            {@const teamId = source.teamId}
+                            <button
+                              type="button"
+                              class="btn-icon btn-icon-sm"
+                              onclick={() => openTeamAudit(teamId)}
+                              title="View in team audit log"
+                              aria-label="View in {source.name} audit log"
+                            >
+                              <ScrollText size={13} />
+                            </button>
+                          {/if}
+                        </div>
+                      {/if}
+                    </td>
+                  {/if}
                   <td>
                     <span class="text-xs text-secondary" title={row.absolute}>{row.relative}</span>
                   </td>
@@ -576,3 +693,12 @@
   startedLabel={replayTarget?.startedLabel ?? ""}
   onClose={() => (replayTarget = null)}
 />
+
+<style>
+  /* Session rows follow the density setting (--row-height, 32/40/48 px). */
+  .history-table :global(tr[data-history-row] > td) {
+    height: var(--row-height, 40px);
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+</style>

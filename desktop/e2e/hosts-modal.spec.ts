@@ -121,7 +121,8 @@ test.describe("edit host modal", () => {
   test("row action prefills fields and records edit_connection", async ({ app, page }) => {
     await app.gotoApp();
 
-    await page.getByRole("button", { name: "Edit prod-api-01" }).click();
+    await page.getByRole("button", { name: "More actions for prod-api-01" }).click();
+    await page.getByRole("menuitem", { name: "Edit" }).click();
     const modal = dialog(page, "Edit host");
     await expect(modal).toBeVisible();
 
@@ -153,11 +154,11 @@ test.describe("edit host modal", () => {
     await expect(modal).toHaveCount(0);
   });
 
-  test("Ctrl+E opens the edit modal for the selected host", async ({ app, page }) => {
+  test("E opens the edit modal for the selected host", async ({ app, page }) => {
     await app.gotoApp();
 
     await page.locator("tr", { hasText: "staging-web" }).click();
-    await page.keyboard.press("Control+e");
+    await page.keyboard.press("e");
 
     const modal = dialog(page, "Edit host");
     await expect(modal).toBeVisible();

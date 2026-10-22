@@ -12,8 +12,10 @@ import type {
 } from "$lib/types";
 import { notify } from "$lib/stores/notifications.svelte";
 import { refreshTeamsAttention, startTeamsAttentionPoller } from "$lib/stores/teamsAttention.svelte";
-import { applyTheme } from "$lib/utils/theme";
+import { applyTheme, applyDensity } from "$lib/utils/theme";
 import { isTerminalFocused } from "$lib/utils/terminal-focus";
+import { VIEW_ORDER } from "$lib/shortcuts";
+import { viewEnabled } from "$lib/viewMeta";
 import { copyTextWithFallback, setTerminalSmartCopy } from "$lib/utils/terminal-xterm";
 import {
   applyThemeToAllTerminals,
@@ -54,6 +56,17 @@ const kerberosState = getKerberosState();
 /** Rebuild the tray menu in the background; never blocks the UI flow. */
 function refreshTray() {
   invoke("refresh_tray_menu").catch((e) => console.error("Failed to refresh tray menu", e));
+}
+
+/** True while any modal dialog is open (ours or a shared ModalShell/palette). */
+function hasOpenDialog(): boolean {
+  return document.querySelector('[role="dialog"][aria-modal="true"], [role="alertdialog"]') !== null;
+}
+
+/** The view a digit key opens, or null. */
+function digitView(key: string): AppTab | null {
+  if (!/^[1-9]$/.test(key)) return null;
+  return VIEW_ORDER[Number(key) - 1] ?? null;
 }
 
 export class AppStateStore {
@@ -128,6 +141,7 @@ export class AppStateStore {
 
   settings = $state<DesktopSettings>({
     theme: "zinc",
+    density: "comfortable",
     auto_start_agent: false,
     custom_agent_socket: "",
     kerberos_warn_minutes: 15,
@@ -302,6 +316,7 @@ export class AppStateStore {
       this.showOnboarding = false;
       await this.loadData();
       applyTheme(this.settings.theme);
+      applyDensity(this.settings.density);
       if (imported > 0) {
         notify(`Setup complete — imported ${imported} host${imported === 1 ? "" : "s"}`, "success");
       } else {
@@ -318,6 +333,7 @@ export class AppStateStore {
       this.settings = {
         theme: (loaded.theme as string) || "zinc",
         auto_start_agent: Boolean(loaded.auto_start_agent),
+        density: (loaded.density as "compact" | "comfortable" | "spacious") || "comfortable",
         custom_agent_socket: (loaded.custom_agent_socket as string) || "",
         kerberos_warn_minutes: Number(loaded.kerberos_warn_minutes) || 15,
         monitor_kerberos: loaded.monitor_kerberos !== false,
@@ -342,6 +358,7 @@ export class AppStateStore {
         record_tags: Array.isArray(loaded.record_tags) ? (loaded.record_tags as string[]) : [],
       };
       applyTheme(this.settings.theme);
+      applyDensity(this.settings.density);
       setTerminalSmartCopy(Boolean(this.settings.terminal_smart_copy));
       applyThemeToAllTerminals(this.settings);
 
@@ -360,6 +377,7 @@ export class AppStateStore {
 
   saveSettings = async () => {
     applyTheme(this.settings.theme);
+    applyDensity(this.settings.density);
     applyThemeToAllTerminals(this.settings);
     try {
       await invoke("save_desktop_settings", {
@@ -393,6 +411,12 @@ export class AppStateStore {
     applyTheme(theme);
     void this.saveSettings();
   }
+  handleDensityChange = (density: "compact" | "comfortable" | "spacious") => {
+    this.settings.density = density;
+    applyDensity(density);
+    void this.saveSettings();
+  }
+
 
   loadAgentStatus = async () => {
     try {
@@ -889,7 +913,14 @@ export class AppStateStore {
       }
     }
 
-    if (this.showModal || this.showEnvModal || this.showAgentModal || this.showDeleteConfirm) {
+    if (this.showModal || this.showEnvModal || this.showAgentModal || this.showDeleteConfirm || hasOpenDialog()) {
+      return;
+    }
+
+    // Settings: Ctrl/Cmd+, from anywhere, including text fields and terminals.
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.key === "," || e.code === "Comma")) {
+      e.preventDefault();
+      this.handleTabChange("settings");
       return;
     }
 
@@ -934,15 +965,15 @@ export class AppStateStore {
       return;
     }
 
-    // Tab switching (1..6 or Alt+1..6) when not editing input & not in terminal
-    if (!isTerminalFocused() && !isEditing) {
-      const key = e.key;
-      if (key === "1") { e.preventDefault(); this.activeTab = "connections"; return; }
-      if (key === "2") { e.preventDefault(); this.goToTerminals(); return; }
-      if (key === "3") { e.preventDefault(); this.activeTab = "keys"; return; }
-      if (key === "4") { e.preventDefault(); this.activeTab = "audit"; return; }
-      if (key === "5") { e.preventDefault(); this.activeTab = "history"; return; }
-      if (key === "6") { e.preventDefault(); this.activeTab = "settings"; return; }
+    // View digits follow VIEW_ORDER; never while typing, in a terminal or in a dialog.
+    if (!isTerminalFocused() && !isEditing && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const view = digitView(e.key);
+      if (view && viewEnabled(view, this.settings)) {
+        e.preventDefault();
+        if (view === "terminals") this.goToTerminals();
+        else this.handleTabChange(view);
+        return;
+      }
     }
   };
 }

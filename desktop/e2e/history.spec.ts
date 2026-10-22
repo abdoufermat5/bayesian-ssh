@@ -152,3 +152,74 @@ test("Export CSV downloads the session history", async ({ page, app }) => {
   // Terminated/exit-0 exports as a rounded duration, never NaN.
   expect(csv).not.toContain("NaN");
 });
+
+test("without synced hosts there is no Source column or source filter", async ({ page, app }) => {
+  await gotoHistory(page, app);
+  await expect(page.getByRole("columnheader", { name: "Source" })).toHaveCount(0);
+  await expect(page.getByRole("group", { name: "Filter by source" })).toHaveCount(0);
+});
+
+test.describe("history provenance", () => {
+  test.use({
+    mockOptions: {
+      overrides: {
+        // Same names as the seeded history: prod-api-01 is a team host,
+        // prod-db-primary is synced from AWS, the rest are local.
+        get_connections: () =>
+          ["prod-api-01", "prod-api-02", "prod-db-primary", "staging-web", "build-runner", "homelab-nas", "gpu-trainer"].map(
+            (name, i) => ({
+              id: "h-" + i,
+              name,
+              host: "10.0.0." + i,
+              user: "ubuntu",
+              port: 22,
+              tags: [],
+              use_kerberos: false,
+              created_at: "2030-01-01T00:00:00Z",
+              source_id: name === "prod-api-01" ? "s-1" : name === "prod-db-primary" ? "s-aws" : undefined,
+            }),
+          ),
+        list_sources: () => [
+          { id: "s-1", name: "platform", kind: "team", config: {}, created_at: "2030-01-01T00:00:00Z" },
+          { id: "s-aws", name: "aws-prod", kind: "aws", config: {}, created_at: "2030-01-01T00:00:00Z" },
+        ],
+        teams_status: () => ({
+          identity: { email: "admin@example.com", server_url: "https://teams.example.com", device_id: "d-1" },
+          unlocked: true,
+          fingerprint: "SHA256:adminFingerprintAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          teams: [{ team_id: "t-1", source_id: "s-1", name: "platform", hosts: 1, last_sync_at: null }],
+        }),
+        teams_attention: () => [
+          { team_id: "t-1", role: "admin", pending_devices: 0, waiting_for_key: false, removed: false },
+        ],
+        teams_members: () => [],
+        teams_pending: () => [],
+      },
+    },
+  });
+
+  test("a Source column and filter; admins jump to the team audit log", async ({ page, app }) => {
+    await gotoHistory(page, app);
+    await expect(page.getByRole("columnheader", { name: "Source" })).toBeVisible();
+
+    const rows = page.locator(DATA_ROW);
+    const team = rows.filter({ hasText: "prod-api-01" });
+    await expect(team).toHaveCount(2);
+    await expect(team.first().locator('[title^="Team platform"]')).toHaveCount(1);
+    await expect(rows.filter({ hasText: "prod-db-primary" }).first()).toContainText("aws-prod");
+    await expect(rows.filter({ hasText: "staging-web" }).first()).toContainText("Local");
+
+    const sources = page.getByRole("group", { name: "Filter by source" });
+    await sources.getByRole("button", { name: /platform/ }).click();
+    await expect(rows).toHaveCount(2);
+    await sources.getByRole("button", { name: /^Local/ }).click();
+    await expect(rows).toHaveCount(12);
+    await sources.getByRole("button", { name: /^All/ }).click();
+    await expect(rows).toHaveCount(16);
+
+    // Local sessions have no audit link; team sessions do, for an admin.
+    await expect(rows.filter({ hasText: "staging-web" }).getByRole("button", { name: /audit log/ })).toHaveCount(0);
+    await team.first().getByRole("button", { name: "View in platform audit log" }).click();
+    await expect(page.locator(".workspace h1")).toHaveText("Teams");
+  });
+});

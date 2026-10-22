@@ -59,7 +59,7 @@ test("connects to the selected host and renders the remote listing", async ({ ap
 
   // Not connected yet: the empty state invites a connection to the default host.
   await expect(page.getByText("Not connected")).toBeVisible();
-  await expect(page.getByText("Browse remote files")).toBeVisible();
+  await expect(page.getByText("to browse its files.")).toBeVisible();
 
   await connectDefaultHost(app, page);
 
@@ -133,7 +133,7 @@ test("honours the sftp_show_hidden_files setting", async ({ app, page }) => {
   await app.nav("Settings");
   await page
     .getByRole("navigation", { name: "Settings sections" })
-    .getByRole("button", { name: "Terminal", exact: true })
+    .getByRole("button", { name: "Terminal & files", exact: true })
     .click();
   const setting = page.getByRole("checkbox", { name: /Show hidden files in SFTP/ });
   await expect(setting).toBeChecked();
@@ -159,8 +159,7 @@ test("shows the empty state for an empty remote folder", async ({ app, page }) =
   await goToPath(page, "/srv");
   await expect.poll(() => lastRemotePath(app)).toBe("/srv");
 
-  await expect(page.getByText("This folder is empty")).toBeVisible();
-  await expect(page.getByText("/srv has no files or folders.", { exact: true })).toBeVisible();
+  await expect(page.getByText("This folder is empty.")).toBeVisible();
   await expect(page.getByText("0 folders · 0 files", { exact: false })).toBeVisible();
   await expect(page.locator("tbody tr")).toHaveCount(0);
 });

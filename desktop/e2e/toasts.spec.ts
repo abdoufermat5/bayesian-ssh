@@ -12,7 +12,8 @@ test("success action shows a success toast that auto-dismisses", async ({ app, p
   await app.gotoApp();
 
   // Copying the SSH command for a host notifies success.
-  await page.getByRole("button", { name: "Copy SSH command for prod-api-01" }).click();
+  await page.getByRole("button", { name: "More actions for prod-api-01" }).click();
+  await page.getByRole("menuitem", { name: "Copy ssh command" }).click();
 
   const toast = page.getByRole("status").filter({ hasText: "SSH command copied to clipboard" });
   await expect(toast).toBeVisible();

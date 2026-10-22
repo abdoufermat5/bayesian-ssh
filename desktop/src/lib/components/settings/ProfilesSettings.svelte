@@ -91,13 +91,8 @@
 </script>
 
 <div class="settings-page">
-  <div>
-    <h2 class="settings-heading">Profiles & workspace</h2>
-    <p class="settings-desc">Environment profiles, host search and where your data lives.</p>
-  </div>
-
   <section>
-    <h3 class="settings-group-title">Profile</h3>
+    <h2 class="settings-group-title">Profile</h2>
     <div class="settings-group">
       <div class="setting-row">
         <div class="setting-row-main">
@@ -138,7 +133,7 @@
   </section>
 
   <section>
-    <h3 class="settings-group-title">OpenSSH config</h3>
+    <h2 class="settings-group-title">OpenSSH config</h2>
     <div class="settings-group">
       <div class="setting-row">
         <div class="setting-row-main">
@@ -176,7 +171,7 @@
   </section>
 
   <section>
-    <h3 class="settings-group-title">Backup & restore</h3>
+    <h2 class="settings-group-title">Backup & restore</h2>
     <div class="settings-group">
       <div class="setting-row">
         <div class="setting-row-main">
@@ -214,7 +209,7 @@
   </section>
 
   <section>
-    <h3 class="settings-group-title">Storage</h3>
+    <h2 class="settings-group-title">Storage</h2>
     <div class="settings-group">
       {#each systemPaths as p (p.label)}
         <div class="setting-row">

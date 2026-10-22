@@ -217,3 +217,75 @@ test.describe("terminals — detached sessions", () => {
     await expect(page.locator('.sidebar [aria-label="Background sessions"]')).toBeHidden();
   });
 });
+
+test.describe("terminals — connect progress and failure", () => {
+  async function connect(app: any, page: any, host: string) {
+    await page.getByTitle(`Connect to ${host}`).click();
+    await expect.poll(async () => (await app.ipcCalls("spawn_pty")).length).toBeGreaterThan(0);
+    const calls = (await app.ipcCalls("spawn_pty")) as Array<{ sessionId: string }>;
+    return calls[calls.length - 1].sessionId;
+  }
+
+  test("shows Connecting until ssh prints something, and Esc cancels", async ({ app, page }) => {
+    await app.gotoApp();
+    await app.nav("Terminals");
+    const id = await connect(app, page, "prod-api-01");
+
+    const status = page.getByRole("status").filter({ hasText: /Connecting to .*prod-api-01|Connecting to .*@/ });
+    await expect(status).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect.poll(async () => app.ipcCalls("close_pty")).toEqual([{ sessionId: id }]);
+    await expect(page.locator('[role="tab"]')).toHaveCount(0);
+  });
+
+  test("first output ends the connecting state", async ({ app, page }) => {
+    await app.gotoApp();
+    await app.nav("Terminals");
+    const id = await connect(app, page, "prod-api-01");
+    await page.evaluate((sid) => (window as any).__MOCK_EMIT("pty-output", { session_id: sid, data: "Last login\r\n" }), id);
+    await expect(page.getByRole("status").filter({ hasText: "Connecting to" })).toBeHidden();
+  });
+
+  test("an ssh failure stays in the tab with Retry and Edit host", async ({ app, page }) => {
+    await app.gotoApp();
+    await app.nav("Terminals");
+    const id = await connect(app, page, "prod-api-01");
+    await page.evaluate((sid) => {
+      const emit = (window as any).__MOCK_EMIT;
+      emit("pty-output", { session_id: sid, data: "ssh: connect to host x port 22: Connection refused\r\n" });
+      emit("pty-exit-status", { session_id: sid, exit_code: 255 });
+      emit("pty-exit", sid);
+    }, id);
+
+    const alert = page.getByRole("alert").filter({ hasText: "refused the connection" });
+    await expect(alert).toBeVisible();
+    await expect(alert.getByRole("button", { name: "Edit host" })).toBeVisible();
+    await alert.getByRole("button", { name: "Retry" }).click();
+    await expect.poll(async () => (await app.ipcCalls("spawn_pty")).length).toBe(2);
+    await expect(alert).toBeHidden();
+  });
+});
+
+test.describe("terminals — tab shortcuts", () => {
+  test("Ctrl+Tab cycles tabs, Ctrl+Shift+W closes, Ctrl+Shift+T reopens", async ({ app, page }) => {
+    await app.gotoApp();
+    await app.nav("Terminals");
+    await page.getByTitle("Connect to prod-api-01").click();
+    await page.getByRole("button", { name: "New session" }).click();
+    await page.getByRole("option", { name: /prod-api-02/ }).click();
+    const tabs = page.locator('[role="tab"]');
+    await expect(tabs).toHaveCount(2);
+    await expect(tabs.nth(1)).toHaveAttribute("aria-selected", "true");
+
+    await page.keyboard.press("Control+Tab");
+    await expect(tabs.nth(0)).toHaveAttribute("aria-selected", "true");
+    await page.keyboard.press("Control+Shift+Tab");
+    await expect(tabs.nth(1)).toHaveAttribute("aria-selected", "true");
+
+    await page.keyboard.press("Control+Shift+W");
+    await expect(tabs).toHaveCount(1);
+    await page.keyboard.press("Control+Shift+T");
+    await expect(tabs).toHaveCount(2);
+    await expect(tabs.nth(1)).toContainText("prod-api-02");
+  });
+});

@@ -18,8 +18,10 @@
     raiseAttention,
     resolveAttention,
     takeTeamFocus,
+    takeTeamFocusTab,
     TEAM_ATTENTION,
   } from "$lib/stores/attention.svelte";
+  import { TEAMS_CHANGED_EVENT } from "$lib/stores/teamsAttention.svelte";
   import TeamsSetup from "./teams/TeamsSetup.svelte";
   import TeamsUnlock from "./teams/TeamsUnlock.svelte";
   import TeamsHome from "./teams/TeamsHome.svelte";
@@ -271,9 +273,10 @@
   $effect(() => {
     if (!pendingTeamFocus() || !status?.unlocked) return;
     const teamId = takeTeamFocus();
+    const requestedTab = takeTeamFocusTab();
     if (!teamId || !teams.some((t) => t.team_id === teamId)) return;
     const raised = new Set(getAttention().map((i) => i.id));
-    const tab: TeamTab = raised.has(TEAM_ATTENTION.auditFailed(teamId))
+    const tab: TeamTab = requestedTab ?? raised.has(TEAM_ATTENTION.auditFailed(teamId))
       ? "audit"
       : raised.has(TEAM_ATTENTION.pending(teamId)) || raised.has(TEAM_ATTENTION.rotationBlocked(teamId))
         ? "members"
@@ -284,6 +287,10 @@
 
   onMount(() => {
     void refresh();
+    // Sync, lock or share from the palette or the Hosts view.
+    const onTeamsChanged = () => void refresh();
+    window.addEventListener(TEAMS_CHANGED_EVENT, onTeamsChanged);
+    return () => window.removeEventListener(TEAMS_CHANGED_EVENT, onTeamsChanged);
   });
 </script>
 

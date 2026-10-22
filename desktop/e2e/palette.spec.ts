@@ -6,7 +6,7 @@ test.describe("command palette", () => {
     await app.openPalette();
     const dialog = page.getByRole("dialog", { name: "Command palette" });
     await expect(dialog.getByRole("group", { name: "Hosts" })).toBeVisible();
-    await expect(dialog.getByRole("group", { name: "Actions" })).toBeVisible();
+    await expect(dialog.getByRole("group", { name: "Actions", exact: true })).toBeVisible();
     await expect(dialog.getByRole("group", { name: "Navigation" })).toBeVisible();
     await expect(dialog.getByRole("option", { name: /prod-api-01/ })).toBeVisible();
 
@@ -21,7 +21,7 @@ test.describe("command palette", () => {
     const input = dialog.getByRole("combobox", { name: "Search commands" });
 
     await input.fill("keys");
-    await expect(dialog.getByRole("option", { name: /Go to SSH keys/ })).toBeVisible();
+    await expect(dialog.getByRole("option", { name: /Go to Keys/ })).toBeVisible();
     await expect(dialog.getByRole("option", { name: /prod-api-01/ })).toHaveCount(0);
 
     await input.fill("zzz-nothing");
@@ -61,6 +61,30 @@ test.describe("command palette", () => {
     await page.keyboard.press("Enter");
     await expect(dialog).toBeHidden();
     await expect(page.locator(".workspace h1")).toHaveText("Settings");
+  });
+
+  test("Teams and Settings section commands are offered", async ({ app, page }) => {
+    await app.gotoApp();
+    await app.openPalette();
+    const dialog = page.getByRole("dialog", { name: "Command palette" });
+    const input = dialog.getByRole("combobox", { name: "Search commands" });
+
+    await input.fill("Go to Teams");
+    await expect(dialog.getByRole("option", { name: /Go to Teams/ })).toBeVisible();
+
+    await input.fill("Settings: Terminal");
+    await page.keyboard.press("Enter");
+    await expect(dialog).toBeHidden();
+    await expect(page.locator(".workspace h1")).toHaveText("Settings");
+  });
+
+  test("a highlighted host offers its verbs with the CLI equivalent", async ({ app, page }) => {
+    await app.gotoApp();
+    await app.openPalette();
+    const dialog = page.getByRole("dialog", { name: "Command palette" });
+    const verbs = dialog.getByRole("group", { name: /^Actions for / });
+    await expect(verbs.getByRole("button", { name: /Browse files/ })).toBeVisible();
+    await expect(verbs.getByText(/^bssh connect /)).toBeVisible();
   });
 
   test("theme commands are offered and apply a theme", async ({ app, page }) => {

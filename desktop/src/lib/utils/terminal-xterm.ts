@@ -14,6 +14,7 @@ import { ImageAddon } from "@xterm/addon-image";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 
 import { attachOrphanCompositionEndGuard } from "$lib/utils/terminal-composition-guard";
+import { TERMINAL_SHORTCUTS, type Combo } from "$lib/shortcuts";
 
 function writePty(sessionId: string, data: string): void {
   invoke("write_pty", { sessionId, data }).catch((err) => {
@@ -239,12 +240,51 @@ export function setTerminalSmartCopy(enabled: boolean): void {
 
 const IS_MAC = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform || "");
 
-/** Terminal font zoom requested with Ctrl/Cmd+Shift+=, -, 0. */
-export function terminalZoomDelta(event: KeyboardEvent): 1 | -1 | 0 | null {
-  if (!(IS_MAC ? event.metaKey : event.ctrlKey) || !event.shiftKey || event.altKey) return null;
-  if (event.code === "Equal" || event.code === "NumpadAdd" || event.key === "+") return 1;
-  if (event.code === "Minus" || event.code === "NumpadSubtract" || event.key === "_") return -1;
-  if (event.code === "Digit0" || event.code === "Numpad0" || event.key === ")") return 0;
+/** Does the key event press the key named last in a shortcuts.ts combo? */
+function keyMatches(event: KeyboardEvent, key: string): boolean {
+  switch (key) {
+    case "=":
+      return event.code === "Equal" || event.code === "NumpadAdd" || event.key === "=" || event.key === "+";
+    case "-":
+      return event.code === "Minus" || event.code === "NumpadSubtract" || event.key === "-" || event.key === "_";
+    case "0":
+      return event.code === "Digit0" || event.code === "Numpad0" || event.key === "0" || event.key === ")";
+    case "Esc":
+      return event.key === "Escape";
+    default:
+      return event.key.toLowerCase() === key.toLowerCase();
+  }
+}
+
+function comboMatches(event: KeyboardEvent, combo: Combo): boolean {
+  const key = combo[combo.length - 1];
+  const mods = combo.slice(0, -1);
+  if (event.ctrlKey !== mods.includes("Ctrl")) return false;
+  if (event.metaKey !== mods.includes("⌘")) return false;
+  if (event.altKey !== mods.includes("Alt")) return false;
+  // "=" needs Shift on most layouts, so Cmd+= and Cmd++ are the same chord.
+  if (key !== "=" && event.shiftKey !== mods.includes("Shift")) return false;
+  return keyMatches(event, key);
+}
+
+/** Terminal shortcuts the tab store runs itself (copy, paste and find stay in the key handler). */
+const STORE_SHORTCUT_IDS = new Set([
+  "term-next-tab",
+  "term-prev-tab",
+  "term-close-tab",
+  "term-reopen-tab",
+  "term-zoom-in",
+  "term-zoom-out",
+  "term-zoom-reset",
+  "term-cancel",
+]);
+
+/** The id of the tab, zoom or cancel shortcut the event presses, if any. */
+export function terminalShortcutId(event: KeyboardEvent): string | null {
+  for (const shortcut of TERMINAL_SHORTCUTS) {
+    if (!STORE_SHORTCUT_IDS.has(shortcut.id)) continue;
+    if (shortcut.combos.some((combo) => comboMatches(event, combo))) return shortcut.id;
+  }
   return null;
 }
 
@@ -265,11 +305,14 @@ export function isTerminalPaletteKey(event: KeyboardEvent): boolean {
  * Terminal keys. Plain Ctrl+C/V/F/K always reach the shell; the app's
  * copy, paste and find are Ctrl+Shift+C/V/F (Cmd+C/V/F on macOS).
  * Keys returned `false` here are not sent to the PTY and still bubble to the
- * window, where the palette and font-zoom shortcuts are handled.
+ * window, where the palette shortcut is handled. Tab, zoom and cancel
+ * shortcuts run through `onShortcut` and stop there.
  */
 export function attachXtermKeyHandler(
   term: Terminal,
   onOpenSearch?: () => void,
+  /** Runs a tab/zoom/cancel shortcut; false means it did not apply (Esc with nothing connecting). */
+  onShortcut?: (id: string) => boolean,
 ): void {
   const copySelection = () => {
     const selection = term.getSelection();
@@ -307,7 +350,22 @@ export function attachXtermKeyHandler(
     const noAlt = !event.altKey;
 
     if (isTerminalPaletteKey(event)) return false;
-    if (terminalZoomDelta(event) !== null) return false;
+    // Ctrl/Cmd+, opens Settings; let it bubble to the window like the palette key.
+    if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && (key === "," || event.code === "Comma")) {
+      return false;
+    }
+
+    const shortcutId = onShortcut ? terminalShortcutId(event) : null;
+    if (shortcutId) {
+      if (event.type !== "keydown") return shortcutId === "term-cancel";
+      if (onShortcut!(shortcutId)) {
+        event.preventDefault();
+        // Keep the page-level key handlers from acting on it a second time.
+        event.stopPropagation();
+        return false;
+      }
+      return true;
+    }
 
     if (appMod && noAlt && key === "f" && !(IS_MAC && event.shiftKey)) {
       return onOpenSearch ? consume(event, onOpenSearch) : true;

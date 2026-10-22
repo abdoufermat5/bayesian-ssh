@@ -28,6 +28,7 @@
   import CustomSelect from "$lib/components/ui/CustomSelect.svelte";
   import { appState } from "$lib/stores/appState.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
+  import { pendingFilesHost, takeFilesHost } from "$lib/stores/filesHost.svelte";
   import { copyTextWithFallback } from "$lib/utils/terminal-xterm";
 
   export interface RemoteFileEntry {
@@ -68,6 +69,20 @@
       return connections.find((c) => c.id === selectedConnectionId) ?? connections[0] ?? null;
     }
     return connections.length > 0 ? connections[0] : null;
+  });
+
+  // "Browse files" on a host (Hosts list, palette) preselects it.
+  $effect(() => {
+    if (!pendingFilesHost()) return;
+    const id = takeFilesHost();
+    if (id && connections.some((c) => c.id === id)) selectedConnectionId = id;
+  });
+
+  // "Browse files" on a host (Hosts list, palette) preselects it.
+  $effect(() => {
+    if (!pendingFilesHost()) return;
+    const id = takeFilesHost();
+    if (id && connections.some((c) => c.id === id)) selectedConnectionId = id;
   });
 
   const hostOptions = $derived(
@@ -569,38 +584,31 @@
       <div class="empty-state h-full">
         <div class="empty-state-icon"><HardDrive size={18} /></div>
         {#if selectedConnection}
-          <div class="empty-state-title">Browse remote files</div>
-          <p class="empty-state-desc">
-            Connect to {selectedConnection.name} to browse its files over SFTP.
-          </p>
+          <div class="empty-state-title">Connect to {selectedConnection.name} to browse its files.</div>
           <div class="empty-state-action">
             <button type="button" class="btn btn-secondary" onclick={handleConnectClick}>
               Connect to {selectedConnection.name}
             </button>
           </div>
         {:else}
-          <div class="empty-state-title">No hosts yet</div>
-          <p class="empty-state-desc">Add a host first, then come back here to browse its files.</p>
+          <div class="empty-state-title">Add a host first, then come back to browse its files.</div>
         {/if}
       </div>
     {:else if filteredEntries.length === 0}
       <div class="empty-state h-full">
         <div class="empty-state-icon"><Folder size={18} /></div>
         {#if filterQuery.trim()}
-          <div class="empty-state-title">No files match</div>
-          <p class="empty-state-desc">Nothing in {currentPath} matches “{filterQuery.trim()}”.</p>
+          <div class="empty-state-title">No files in {currentPath} match “{filterQuery.trim()}”.</div>
           <div class="empty-state-action">
             <button type="button" class="btn btn-secondary" onclick={() => (filterQuery = "")}>Clear filter</button>
           </div>
         {:else if hiddenCount > 0}
-          <div class="empty-state-title">Only hidden files here</div>
-          <p class="empty-state-desc">{currentPath} contains {hiddenCount} hidden {hiddenCount === 1 ? "entry" : "entries"}.</p>
+          <div class="empty-state-title">Only hidden files here ({hiddenCount}).</div>
           <div class="empty-state-action">
             <button type="button" class="btn btn-secondary" onclick={() => (showHidden = true)}>Show hidden files</button>
           </div>
         {:else}
-          <div class="empty-state-title">This folder is empty</div>
-          <p class="empty-state-desc">{currentPath} has no files or folders.</p>
+          <div class="empty-state-title">This folder is empty.</div>
           {#if canGoUp}
             <div class="empty-state-action">
               <button type="button" class="btn btn-secondary" onclick={navigateUp}>
