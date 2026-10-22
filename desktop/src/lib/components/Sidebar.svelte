@@ -3,7 +3,6 @@
     Check,
     ChevronsUpDown,
     Clock,
-    Code,
     FolderCog,
     HardDrive,
     KeyRound,
@@ -43,7 +42,6 @@
     kerberosRemainingLabel: string;
     onShowKerberosModal: () => void;
     onShowSessionManager: () => void;
-    onShowSnippetsModal: () => void;
     settings: DesktopSettings;
   }
 
@@ -67,7 +65,6 @@
     kerberosRemainingLabel,
     onShowKerberosModal,
     onShowSessionManager,
-    onShowSnippetsModal,
     settings,
   }: Props = $props();
 
@@ -237,18 +234,6 @@
             {/if}
           </button>
         {/each}
-        {#if section.label === "Activity"}
-          <button
-            type="button"
-            class="nav-item {sidebarCollapsed ? 'nav-item-collapsed' : ''}"
-            onclick={onShowSnippetsModal}
-            title="Snippets"
-            aria-label="Snippets"
-          >
-            <Code size={16} strokeWidth={1.75} class="text-muted" />
-            {#if !sidebarCollapsed}<span>Snippets</span>{/if}
-          </button>
-        {/if}
       </div>
     {/each}
   </nav>

@@ -14,7 +14,6 @@
   import SettingsView from "$lib/components/SettingsView.svelte";
   import SFTPView from "$lib/components/SFTPView.svelte";
   import TunnelStudioView from "$lib/components/TunnelStudioView.svelte";
-  import SnippetsModal from "$lib/components/modals/SnippetsModal.svelte";
   import ConnectionModal from "$lib/components/modals/ConnectionModal.svelte";
   import EnvModal from "$lib/components/modals/EnvModal.svelte";
   import AgentModal from "$lib/components/modals/AgentModal.svelte";
@@ -91,7 +90,6 @@
   let uploadConnectionIds = $state<string[] | undefined>(undefined);
   let uploadRemoteDir = $state<string | null>(null);
   let showQuitConfirmModal = $state(false);
-  let showSnippetsModal = $state(false);
   let showCommandPalette = $state(false);
 
   /** Open the upload modal, optionally preselecting a host and destination. */
@@ -243,7 +241,6 @@
       kerberosRemainingLabel={appState.kerberosRemainingLabel}
       onShowKerberosModal={openKerberosModal}
       onShowSessionManager={appState.openSessionManager}
-      onShowSnippetsModal={() => (showSnippetsModal = true)}
       settings={appState.settings}
     />
 
@@ -442,47 +439,6 @@
     }}
   />
 {/if}
-
-<SnippetsModal
-  show={showSnippetsModal}
-  onClose={() => (showSnippetsModal = false)}
-  onRunSnippet={(cmd) => {
-    const tab = terminalState.tabs.find((t) => t.id === terminalState.activeTabId);
-    if (!tab?.term) {
-      // No active terminal — fall back to copying the command.
-      notify("No active terminal — command copied to clipboard", "info");
-      navigator.clipboard.writeText(cmd).catch(() => {});
-      return;
-    }
-    const send = () => {
-      // Resolve at send time: the tab may have closed while the confirm
-      // dialog was open, leaving a disposed xterm behind.
-      const term = terminalState.tabs.find((t) => t.id === tab.id)?.term;
-      if (!term) {
-        notify("Terminal closed — snippet not sent", "error");
-        return;
-      }
-      // Bracketed paste would swallow a trailing "\r" inside the paste
-      // markers, so Enter must be sent as a separate keystroke to execute.
-      term.paste(cmd);
-      term.input("\r");
-    };
-    if (appState.settings.confirm_snippet_execution !== false) {
-      appState.promptDelete(
-        "Send to active terminal",
-        cmd,
-        async () => send(),
-        {
-          title: "Execute command snippet",
-          confirmLabel: "Execute",
-          warning: "The command will be sent to the currently active SSH session.",
-        },
-      );
-    } else {
-      send();
-    }
-  }}
-/>
 
 <CommandPalette
   open={showCommandPalette}

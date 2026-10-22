@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- **Snippets** in the desktop app (the sidebar entry, the Snippets modal and the "Confirm snippets" setting). Snippets you had saved stay in the app's local storage but are no longer shown; an old `confirm_snippet_execution` value in desktop settings is ignored.
+
 ### Added
 - **bssh Teams** (`bssh teams ...`): share connections with your team through an end-to-end encrypted vault. The sync server stores only ciphertext; all cryptography is client-side and in this repo (`crates/teams-proto`, `services/teams`). `init` creates your account and device keys (sealed with a passphrase, or `BSSH_TEAMS_PASSPHRASE`); `create`, `share`, `unshare`, `invite`, `join`, `grant`, `sync`, `members` and `remove` manage teams. Team connections are an inventory source of kind `team`, so they show in `bssh list` and `bssh connect` (as `name@team` when a local name is taken), and connecting to one is recorded in the team's signed, hash-chained audit log at the next sync. A team key only ever goes to devices an admin approved by fingerprint, and removing a member rotates it. See the Teams page in the docs.
 - **Team audit log** (`bssh teams audit`, and an Audit log section per team in the desktop app): who connected to which shared host, when and from where. Every event's signature and each device's hash chain are verified on the admin's machine; edited, forged, reordered or deleted events are flagged, and the command exits non-zero so it can gate compliance checks.

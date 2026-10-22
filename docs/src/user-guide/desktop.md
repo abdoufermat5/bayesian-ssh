@@ -40,7 +40,8 @@ Sidebar navigation:
 - **Hosts**, **Terminals**, **Files**, **Tunnels** (Files and Tunnels appear only
   when they are enabled under Settings → Features)
 - **Security**: Keys, Audit
-- **Activity**: History, Snippets
+- **Activity**: History
+- **Team**: Teams
 - At the bottom: **Background** (only while sessions run outside the tab bar), the
   **SSH agent** entry (state plus loaded-key count; click to start the agent or open
   its manager), the **Kerberos** entry, and **Settings**. The Kerberos entry stays
@@ -191,7 +192,7 @@ Save button.
   the default user and port used by hosts that don't define their own.
 - **Kerberos** — monitor ticket expiry and set the warning threshold in minutes.
 - **Terminal** — font family, size and line height, cursor style and blinking,
-  scrollback size, copy-on-select, snippet confirmation, and whether the file browser
+  scrollback size, copy-on-select, and whether the file browser
   lists dotfiles.
 - **History** — record session history, cap the number of stored entries, and set the
   backend log level.
@@ -227,11 +228,6 @@ Save button.
   exported as Markdown, CSV, JSON or plain text. A History tab keeps recent runs (for
   inspection or repeat) and a Templates tab manages built-in and custom commands.
   `Ctrl`/`Cmd` + `Enter` runs, `Ctrl`/`Cmd` + `Shift` + `D` toggles dry run.
-- **Snippets** — saved commands with a title, category, description and command. Search
-  and category chips narrow the list; snippets can be created, edited, deleted, copied,
-  or sent to the active terminal tab (**Run in terminal**, which asks for confirmation
-  unless that is disabled in settings; with no active terminal the command is copied
-  instead).
 - **Profiles** — list profiles, create a new one, and delete any profile that is
   neither active nor the default. Switching profiles happens from the sidebar profile
   menu, which also opens this dialog through **Manage profiles…**.

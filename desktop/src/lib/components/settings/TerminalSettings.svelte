@@ -166,13 +166,6 @@
       </label>
       <label class="setting-row cursor-pointer">
         <span class="setting-row-main">
-          <span class="setting-title">Confirm snippets</span>
-          <span class="setting-meta">Ask before sending a snippet to the terminal.</span>
-        </span>
-        <input type="checkbox" class="switch" bind:checked={settings.confirm_snippet_execution} onchange={onSave} />
-      </label>
-      <label class="setting-row cursor-pointer">
-        <span class="setting-row-main">
           <span class="setting-title">Show hidden files in SFTP</span>
           <span class="setting-meta">List dotfiles such as .bashrc and .env in the file browser.</span>
         </span>
