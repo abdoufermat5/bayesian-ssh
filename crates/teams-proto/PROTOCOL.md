@@ -140,6 +140,23 @@ What the chain guarantees, against a server that edits its database:
   events before it uploads anything after them. The device notices on its next upload.
   Closing this needs devices to publish signed chain heads elsewhere (future work).
 
+## Billing
+
+Seats are enforced by the server (perimeter rule P3: no license in the client). A team has
+`free_seats` members for free; above that it needs a subscription for all its seats. The
+client never handles payment data: an admin asks for a provider page and opens it.
+
+- `GET /teams/{id}/billing` (any member): `BillingInfo`, including `read_only`.
+- `POST /teams/{id}/billing/checkout { seats, interval }` (admin): a checkout page URL.
+  `seats` must cover the seats in use.
+- `POST /teams/{id}/billing/portal` (admin): the provider's customer portal (card,
+  invoices, seats, cancellation).
+
+When a subscription lapses and the team has more members than the free seats, it becomes
+**read-only**: pulls, key grants, member removal and audit uploads keep working (nobody is
+locked out of their hosts, and the team can shrink back under the free seats), while pushes
+fail with `PaymentRequired` and invites with `SeatLimit`.
+
 ## Server-side checks (non-exhaustive)
 
 - Entry push: the author device belongs to the caller, is active and is a member; the
