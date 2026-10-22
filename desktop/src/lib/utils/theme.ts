@@ -1,6 +1,14 @@
 export const APP_THEMES = ["zinc", "cyberpunk", "oled", "slate"] as const;
 export type AppTheme = (typeof APP_THEMES)[number];
 
+/** The themes users can pick, in display order; onboarding and Appearance both read this. */
+export const THEME_OPTIONS: { id: AppTheme; label: string; desc: string }[] = [
+  { id: "zinc", label: "Graphite", desc: "Neutral gray, blue accent" },
+  { id: "cyberpunk", label: "Midnight", desc: "Deep navy, cyan accent" },
+  { id: "oled", label: "OLED black", desc: "Pure black for OLED screens" },
+  { id: "slate", label: "Slate", desc: "Cool blue-gray" },
+];
+
 const THEME_WINDOW_BG: Record<AppTheme, string> = {
   zinc: "#0b0c0e",
   cyberpunk: "#070b14",
