@@ -60,15 +60,15 @@
     <section class="panel flex flex-col gap-2 p-4" aria-label="This device">
       <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <span class="font-medium text-primary">{status.identity.email}</span>
-        <span class="text-xs text-muted">{status.identity.server_url}</span>
-        <span class="text-xs text-muted">Unlocked until you lock or quit</span>
+        <span class="type-meta">{status.identity.server_url}</span>
+        <span class="type-meta">Unlocked until you lock or quit</span>
       </div>
       {#if status.fingerprint}
         <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <span class="text-xs text-muted">This device</span>
+          <span class="type-meta">This device</span>
           <Fingerprint value={status.fingerprint} label="this device's fingerprint" />
         </div>
-        <p class="m-0 text-xs text-muted">
+        <p class="m-0 type-meta">
           Admins compare this fingerprint with what the server reports before granting you a team key. Send it over a
           channel where they know it's you.
         </p>
@@ -89,8 +89,7 @@
   {#if status.teams.length === 0}
     <div class="empty-state py-12">
       <div class="empty-state-icon"><Users size={18} /></div>
-      <div class="empty-state-title">No teams yet</div>
-      <p class="empty-state-desc">Create a team to share hosts, or join one with the invite an admin sent you.</p>
+      <div class="empty-state-title">No teams yet. Create one to share hosts, or join with an invite.</div>
       <div class="empty-state-action flex gap-2">
         <button type="button" class="btn btn-secondary" onclick={onJoin}><LogIn size={14} /> Join with invite</button>
         <button type="button" class="btn btn-primary" onclick={onCreate}><Plus size={14} /> Create team</button>

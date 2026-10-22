@@ -28,13 +28,8 @@
 </script>
 
 <div class="settings-page">
-  <div>
-    <h2 class="settings-heading">SSH agent</h2>
-    <p class="settings-desc">Agent behaviour and the values used when a host doesn't set its own.</p>
-  </div>
-
   <section>
-    <h3 class="settings-group-title">Agent</h3>
+    <h2 class="settings-group-title">Agent</h2>
     <div class="settings-group">
       <label class="setting-row cursor-pointer">
         <span class="setting-row-main">
@@ -74,7 +69,7 @@
   </section>
 
   <section>
-    <h3 class="settings-group-title">Connection defaults</h3>
+    <h2 class="settings-group-title">Connection defaults</h2>
     <div class="settings-group">
       <div class="setting-row">
         <div class="setting-row-main">

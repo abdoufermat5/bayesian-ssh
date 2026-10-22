@@ -29,7 +29,7 @@
 <!-- Chunks are separate spans spaced by margin, so a selection copies the
      fingerprint without spaces; never truncated, wraps on narrow widths. -->
 <span class="inline-flex min-w-0 flex-wrap items-center gap-2">
-  <code class="fingerprint select-all font-mono text-sm leading-relaxed text-primary">
+  <code class="fingerprint select-all font-mono type-body leading-relaxed text-primary">
     <span class="text-muted">{parts.prefix}</span>{#each parts.chunks as chunk, i (i)}<span class="chunk">{chunk}</span>{/each}
   </code>
   {#if copyable}

@@ -70,7 +70,7 @@
       <h2 class="modal-title">Grant the {team.name} key to a new device</h2>
       <button type="button" class="modal-close" onclick={onClose} aria-label="Close"><X size={16} /></button>
     </div>
-    <div class="modal-body flex flex-col gap-4 text-sm text-secondary">
+    <div class="modal-body flex flex-col gap-4 type-body text-secondary">
       <p class="m-0">
         <span class="font-medium text-primary">{device.email}</span> is waiting for the key on
         <span class="font-medium text-primary">"{deviceName}"</span>.
@@ -90,7 +90,7 @@
             <label class="field-label" for="grant-fp">Fingerprint {device.email} sent you</label>
             <input
               id="grant-fp"
-              class="input input-mono text-sm"
+              class="input input-mono type-body"
               class:input-invalid={mismatch}
               bind:value={pasted}
               onblur={() => (touched = true)}
@@ -132,11 +132,11 @@
         </li>
       </ol>
 
-      <p class="m-0 text-xs text-muted">
+      <p class="m-0 type-meta">
         Granting lets this device read every {team.name} host and write to it.
       </p>
       {#if error}<div class="alert alert-error" role="alert">Couldn't grant the key: {error}</div>{/if}
-      <p class="m-0 text-xs text-muted">
+      <p class="m-0 type-meta">
         CLI: <code class="select-text">bssh teams grant {team.name} --fingerprint {matches ? normalizeFingerprint(pasted) : "<FINGERPRINT>"}</code>
       </p>
     </div>

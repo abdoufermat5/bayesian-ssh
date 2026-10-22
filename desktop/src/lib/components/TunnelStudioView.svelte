@@ -197,13 +197,10 @@
     {#if tunnels.length === 0}
       <div class="empty-state h-full">
         <div class="empty-state-icon"><Network size={18} /></div>
-        <div class="empty-state-title">No tunnels yet</div>
         {#if connections.length === 0}
-          <p class="empty-state-desc">Add a host first; tunnels forward ports through one of your SSH hosts.</p>
+          <div class="empty-state-title">Add a host first; tunnels forward ports through one of your hosts.</div>
         {:else}
-          <p class="empty-state-desc">
-            Add a local, remote or SOCKS5 port-forwarding rule for one of your hosts, or start from a preset above.
-          </p>
+          <div class="empty-state-title">No tunnels yet. Add a forwarding rule or start from a preset.</div>
           <div class="empty-state-action">
             <button type="button" class="btn btn-secondary" onclick={() => openCreate()}>
               <Plus size={14} />

@@ -30,13 +30,8 @@
 </script>
 
 <div class="settings-page">
-  <div>
-    <h2 class="settings-heading">Terminal</h2>
-    <p class="settings-desc">Typography, cursor and behaviour of terminal sessions.</p>
-  </div>
-
   <section>
-    <h3 class="settings-group-title">Font</h3>
+    <h2 class="settings-group-title">Font</h2>
     <div class="settings-group">
       <div class="setting-row">
         <div class="setting-row-main">
@@ -106,7 +101,7 @@
   </section>
 
   <section>
-    <h3 class="settings-group-title">Cursor</h3>
+    <h2 class="settings-group-title">Cursor</h2>
     <div class="settings-group">
       <div class="setting-row">
         <div class="setting-row-main">
@@ -138,7 +133,7 @@
   </section>
 
   <section>
-    <h3 class="settings-group-title">Behaviour</h3>
+    <h2 class="settings-group-title">Behaviour</h2>
     <div class="settings-group">
       <div class="setting-row">
         <div class="setting-row-main">

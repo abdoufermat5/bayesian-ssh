@@ -72,7 +72,7 @@
     <Users size={16} />
     <h2 class="m-0 text-base font-semibold text-primary">Share connections with your team</h2>
   </div>
-  <p class="m-0 text-sm text-secondary">
+  <p class="m-0 type-body text-secondary">
     Team connections are encrypted on your devices; the sync server only ever stores ciphertext. Set this
     device up once, then create a team or join one you were invited to.
   </p>
@@ -140,7 +140,7 @@
       Set up this device
     </button>
     {#if blocker}
-      <span id="teams-setup-reason" class="text-xs text-muted">{blocker}</span>
+      <span id="teams-setup-reason" class="type-meta">{blocker}</span>
     {/if}
   </div>
 </form>

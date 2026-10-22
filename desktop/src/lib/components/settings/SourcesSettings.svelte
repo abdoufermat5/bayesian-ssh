@@ -158,10 +158,10 @@
 </script>
 
 <div class="settings-page">
-  <div class="flex items-start justify-between gap-3">
-    <div>
-      <h2 class="settings-heading">Inventory sources</h2>
-      <p class="settings-desc">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div class="min-w-0 flex-1 basis-72">
+      <h2 class="settings-group-title !mb-1">Inventory sources</h2>
+      <p class="setting-meta m-0">
         Sync hosts from SSH configs, Ansible, Tailscale, AWS or GCP. Connections are matched by
         their source id, so a changed address updates the same host.
       </p>

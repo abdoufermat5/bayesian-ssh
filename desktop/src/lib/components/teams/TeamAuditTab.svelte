@@ -173,7 +173,7 @@
     {/if}
 
     {#if log.lines.length === 0}
-      <p class="m-0 text-xs text-muted">
+      <p class="m-0 type-meta">
         {filtered ? "No events match these filters." : "No events yet. Connections show up here after members sync."}
       </p>
     {:else}
@@ -213,7 +213,7 @@
       </div>
     {/if}
   {/if}
-  <p class="m-0 text-xs text-muted">
+  <p class="m-0 type-meta">
     Every event is verified here, not trusted from the server. CLI: <code class="select-text">{cliLine}</code>
   </p>
 </div>

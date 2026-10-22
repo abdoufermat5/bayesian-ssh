@@ -107,6 +107,26 @@
   --text-xl: 1.25rem;
   --text-xl--line-height: 1.75rem;
 
+  /* ---- Type scale (UX phase 2) ----------------------------------
+     Five sizes, each with one job. Use the .type-* classes and
+     .section-heading in components.css; never pick a size ad hoc.
+     title 20/600 · section 14/600 · body 13 · meta 12 · caption 11/500 */
+  --type-title: 1.25rem;
+  --type-title-lh: 1.75rem;
+  --type-title-weight: 600;
+  --type-title-tracking: -0.02em;
+  --type-section: 0.875rem;
+  --type-section-lh: 1.25rem;
+  --type-section-weight: 600;
+  --type-body: 0.8125rem;
+  --type-body-lh: 1.25rem;
+  --type-meta: 0.75rem;
+  --type-meta-lh: 1.125rem;
+  --type-caption: 0.6875rem;
+  --type-caption-lh: 1rem;
+  --type-caption-weight: 500;
+  /* ---- end Type scale ------------------------------------------- */
+
   /* ---- Fonts (bundled: @fontsource-variable, see app.css) -------- */
   --font-sans: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont,
     "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
