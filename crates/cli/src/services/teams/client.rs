@@ -381,6 +381,22 @@ impl TeamsClient {
         self.post(&format!("/teams/{team_id}/invites"), req).await
     }
 
+    /// Pending, unexpired invites (admin); tokens are never returned here.
+    pub async fn list_invites(&self, team_id: Uuid) -> ClientResult<Vec<Invite>> {
+        self.get(&format!("/teams/{team_id}/invites"), &[]).await
+    }
+
+    pub async fn revoke_invite(&self, team_id: Uuid, invite_id: Uuid) -> ClientResult<()> {
+        self.call(
+            Method::DELETE,
+            &format!("/teams/{team_id}/invites/{invite_id}"),
+            &[],
+            None,
+        )
+        .await?;
+        Ok(())
+    }
+
     /// Join the team the invite is for; returns that team.
     pub async fn accept_invite(&self, req: &AcceptInviteRequest) -> ClientResult<TeamInfo> {
         self.post("/invites/accept", req).await

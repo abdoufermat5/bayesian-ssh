@@ -203,6 +203,14 @@ pub struct PendingDto {
     device: DeviceDto,
 }
 
+/// A pending invite as an admin sees it: no token.
+#[derive(Serialize)]
+pub struct PendingInviteDto {
+    email: String,
+    role: &'static str,
+    expires_at: DateTime<Utc>,
+}
+
 #[derive(Serialize)]
 pub struct MemberDto {
     email: String,
@@ -627,6 +635,45 @@ pub fn teams_members(state: State<'_, TeamsState>, team: String) -> Result<Vec<M
                         .collect(),
                 })
                 .collect())
+        })
+    })
+}
+
+/// Pending invites (admin); empty for a member.
+#[tauri::command(async)]
+pub fn teams_invites(
+    state: State<'_, TeamsState>,
+    team: String,
+) -> Result<Vec<PendingInviteDto>, String> {
+    with_session(state.unlocked()?, move |s| {
+        Box::pin(async move {
+            Ok(s.invites(resolve(&team)?)
+                .await?
+                .unwrap_or_default()
+                .into_iter()
+                .map(|i| PendingInviteDto {
+                    email: i.email,
+                    role: match i.role {
+                        Role::Admin => "admin",
+                        Role::Member => "member",
+                    },
+                    expires_at: i.expires_at,
+                })
+                .collect())
+        })
+    })
+}
+
+#[tauri::command(async)]
+pub fn teams_uninvite(
+    state: State<'_, TeamsState>,
+    team: String,
+    email: String,
+) -> Result<(), String> {
+    with_session(state.unlocked()?, move |s| {
+        Box::pin(async move {
+            s.uninvite(resolve(&team)?, &email).await?;
+            Ok(())
         })
     })
 }

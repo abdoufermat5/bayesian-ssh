@@ -8,7 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Revoke a pending invite** (`bssh teams uninvite <team> <email>`): a pending invite holds a seat until it is accepted or expires, so a lost token no longer blocks a seat for 7 days. `bssh teams members` lists pending invites for admins, and the desktop app shows them on the Members tab with **Revoke**. Needs a Teams server with the invite endpoints (bssh-cloud 0.2.0): on an older one, `members` lists no invites and `uninvite` says the server needs an update.
 - **Teams plans and seats** (`bssh teams billing <team>`): see a team's plan, seats in use and renewal; admins subscribe (`--checkout [--seats N] [--yearly]`) or manage billing (`--manage`) on Stripe's pages, opened in the browser. The desktop app shows the plan and a seat meter on the team's Members tab, with **Upgrade…** and **Manage billing**. A team over its free seats without an active subscription is read-only, and both the CLI and the app say so.
+
+### Fixed
+- `bssh teams share` and `unshare` no longer say "Shared" or "Removed" when the server refused the change (a read-only team, or a key rotation pending): they say the change is queued, above the server's reason.
+- `bssh teams billing` no longer shows a renewal date for a cancelled subscription.
 
 ## [2.9.0] - 2026-10-22
 
