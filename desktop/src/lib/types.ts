@@ -95,7 +95,6 @@ export interface DesktopSettings {
   terminal_scrollback?: number;
   sftp_show_hidden_files?: boolean;
   sftp_default_remote_path?: string;
-  confirm_snippet_execution?: boolean;
   enable_sftp?: boolean;
   enable_tunneling?: boolean;
   record_sessions?: boolean;

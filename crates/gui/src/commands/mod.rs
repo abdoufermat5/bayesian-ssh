@@ -198,8 +198,6 @@ pub struct DesktopSettings {
     pub sftp_show_hidden_files: bool,
     #[serde(default = "default_sftp_default_remote_path")]
     pub sftp_default_remote_path: String,
-    #[serde(default = "default_confirm_snippet_execution")]
-    pub confirm_snippet_execution: bool,
     #[serde(default = "default_enable_sftp")]
     pub enable_sftp: bool,
     #[serde(default = "default_enable_tunneling")]
@@ -216,10 +214,6 @@ pub fn default_sftp_show_hidden_files() -> bool {
 
 pub fn default_sftp_default_remote_path() -> String {
     "/".to_string()
-}
-
-pub fn default_confirm_snippet_execution() -> bool {
-    true
 }
 
 pub fn default_enable_sftp() -> bool {
@@ -301,7 +295,6 @@ impl Default for DesktopSettings {
             terminal_scrollback: default_terminal_scrollback(),
             sftp_show_hidden_files: default_sftp_show_hidden_files(),
             sftp_default_remote_path: default_sftp_default_remote_path(),
-            confirm_snippet_execution: default_confirm_snippet_execution(),
             enable_sftp: default_enable_sftp(),
             enable_tunneling: default_enable_tunneling(),
             record_sessions: false,
@@ -361,5 +354,22 @@ pub fn sync_search_mode_to_config(fuzzy: bool) -> String {
         "fuzzy".to_string()
     } else {
         "bayesian".to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DesktopSettings;
+
+    /// Settings saved by a version that still had snippets must keep loading.
+    #[test]
+    fn settings_with_the_removed_snippet_option_still_load() {
+        let mut saved = serde_json::to_value(DesktopSettings::default()).unwrap();
+        saved["confirm_snippet_execution"] = serde_json::json!(false);
+        let loaded: DesktopSettings = serde_json::from_value(saved).unwrap();
+        assert!(serde_json::to_value(&loaded)
+            .unwrap()
+            .get("confirm_snippet_execution")
+            .is_none());
     }
 }

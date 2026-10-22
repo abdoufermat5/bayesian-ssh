@@ -34,7 +34,7 @@ the app's CSP blocks remote fonts, and the UI must look the same offline.
 │ profile switcher                            │ .view                                   │
 │ Hosts · Terminals · Files · Tunnels         │   .view-header  title + count │ actions │
 │ Security: Keys · Audit                      │   .view-toolbar search · chips · sort   │
-│ Activity: History · Snippets                │   .view-body    scrolling content       │
+│ Activity: History · Team: Teams             │   .view-body    scrolling content       │
 │ … agent / Kerberos status · Settings        │                                         │
 └─────────────────────────────────────────────┴─────────────────────────────────────────┘
 ```
