@@ -308,4 +308,87 @@ mod tests {
             Err(KeyCheckError::DuplicateVersion(1))
         );
     }
+
+    /// The whole client-side path with real crypto, no fakes: an admin wraps
+    /// the team key to a member's device, the member unwraps it against the
+    /// pinned admin key, seals an entry, and the admin opens it.
+    #[test]
+    fn real_crypto_round_trip_between_two_devices() {
+        use bssh_teams_proto::api::{ConnectionRecord, DeviceInfo};
+
+        let team = Uuid::new_v4();
+        let (admin_id, member_id) = (Uuid::new_v4(), Uuid::new_v4());
+        let admin = DeviceKeys::generate();
+        let member = DeviceKeys::generate();
+        let member_info = DeviceInfo {
+            device_id: member_id,
+            account_id: Uuid::new_v4(),
+            name: "laptop".into(),
+            x25519_public: member.x25519_public(),
+            ed25519_public: member.ed25519_public(),
+            created_at: chrono::Utc::now(),
+            revoked_at: None,
+        };
+
+        let tk = TeamKey::generate(1);
+        let wrapped = crypto::wrap_team_key(team, &tk, &member_info, admin_id, &admin).unwrap();
+        let trust_root = admin.ed25519_public();
+        let member_keys = unwrap_all(
+            team,
+            member_id,
+            std::slice::from_ref(&wrapped),
+            &member,
+            &trust_root,
+        )
+        .expect("member unwraps a key signed by the pinned admin");
+
+        // A wrap replayed for another team or device is refused before unwrapping.
+        assert!(unwrap_all(
+            Uuid::new_v4(),
+            member_id,
+            std::slice::from_ref(&wrapped),
+            &member,
+            &trust_root
+        )
+        .is_err());
+        assert!(unwrap_all(team, Uuid::new_v4(), &[wrapped], &member, &trust_root).is_err());
+
+        let member_codec = CryptoCodec::new(
+            team,
+            member_id,
+            member,
+            member_keys,
+            HashMap::from([(admin_id, trust_root)]),
+        )
+        .unwrap();
+        let record = ConnectionRecord {
+            name: "db-prod".into(),
+            host: "10.0.0.5".into(),
+            user: "ops".into(),
+            port: 22,
+            bastion: None,
+            bastion_user: None,
+            use_kerberos: false,
+            tags: vec!["prod".into()],
+            notes: None,
+        };
+        let entry = member_codec
+            .seal(Uuid::new_v4(), 0, &VaultPayload::Connection(record.clone()))
+            .unwrap();
+        assert!(!String::from_utf8_lossy(&entry.ciphertext.0).contains("10.0.0.5"));
+
+        let member_pub = member_codec.device_keys.ed25519_public();
+        let admin_codec = CryptoCodec::new(
+            team,
+            admin_id,
+            admin,
+            vec![tk],
+            HashMap::from([(member_id, member_pub)]),
+        )
+        .unwrap();
+        assert_eq!(
+            admin_codec.open(&entry).unwrap(),
+            VaultPayload::Connection(record)
+        );
+    }
 }
