@@ -66,3 +66,8 @@ make frontend
 2. **Format code**: Run `make format` before committing.
 3. **Verify tests**: Ensure `make test` and `make lint` pass without warnings.
 4. **License**: By contributing, you agree that your contributions will be licensed under the project's [MIT License](LICENSE).
+5. **Sign off your commits** ([Developer Certificate of Origin](https://developercertificate.org/)):
+   `git commit -s` adds a `Signed-off-by:` line certifying you wrote the change
+   or have the right to submit it. PRs with unsigned commits can't be merged.
+6. **Run the guardrails**: `make hooks` once, so `git push` runs the perimeter
+   check and a gitleaks secret scan. CI runs the same checks plus `cargo deny`.

@@ -1,0 +1,13 @@
+# Code that touches users' plaintext or keys needs the maintainer's review
+# (PERIMETER.md rule P2). Enable "Require review from Code Owners" on main.
+/crates/cli/src/services/crypto.rs     @abdoufermat5
+/crates/cli/src/services/security.rs   @abdoufermat5
+/crates/cli/src/services/auth.rs       @abdoufermat5
+/crates/cli/src/services/recording.rs  @abdoufermat5
+/crates/cli/src/services/teams/        @abdoufermat5
+
+# The guardrails themselves
+/deny.toml                             @abdoufermat5
+/scripts/check-perimeter.sh            @abdoufermat5
+/.githooks/                            @abdoufermat5
+/.github/                              @abdoufermat5

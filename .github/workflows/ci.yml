@@ -19,6 +19,37 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # PERIMETER.md guardrails: no private code, no secrets, only vetted crates.
+  perimeter:
+    name: Perimeter
+    runs-on: ubuntu-latest
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0 # gitleaks scans the whole history
+
+    - name: No dependency on private code
+      run: ./scripts/check-perimeter.sh
+
+    - name: Install gitleaks
+      run: |
+        curl -fsSLo gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+        echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
+        tar xzf gitleaks.tar.gz gitleaks
+        sudo mv gitleaks /usr/local/bin/
+
+    - name: Secret scan
+      run: gitleaks git --no-banner --redact .
+
+    - name: Licenses, advisories and sources
+      uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
+      with:
+        command: check advisories licenses bans sources
+
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -106,7 +137,7 @@ jobs:
   deploy-docs:
     name: Deploy Docs
     runs-on: ubuntu-latest
-    needs: [test, test-desktop]
+    needs: [perimeter, test, test-desktop]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     # Allow only one concurrent deployment to Pages
     concurrency:

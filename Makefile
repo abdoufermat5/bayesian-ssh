@@ -1,4 +1,4 @@
-.PHONY: help frontend gui-dev build release test check format lint e2e install uninstall package flatpak-build snap-build docs clean
+.PHONY: help frontend gui-dev build release test check format lint perimeter hooks e2e install uninstall package flatpak-build snap-build docs clean
 
 INSTALL_DIR ?= /usr/local/bin
 
@@ -40,6 +40,14 @@ format: ## Format Rust code
 
 lint: frontend ## Run Clippy linter on the whole workspace
 	cargo clippy --workspace --all-targets -- -D warnings
+
+# Open/closed perimeter (PERIMETER.md rule P1): no dependency on the private
+# bssh-cloud server, crates only from crates.io.
+perimeter: ## Check that nothing depends on private code
+	@./scripts/check-perimeter.sh
+
+hooks: ## Enable the repo's git hooks (perimeter check + gitleaks on push)
+	git config core.hooksPath .githooks
 
 # End-to-end tests for the desktop GUI (Playwright + chromium). Starts/reuses
 # the Vite dev server on port 1420 and stubs the Tauri IPC layer.
