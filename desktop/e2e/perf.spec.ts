@@ -90,7 +90,10 @@ test.describe("performance smoke", () => {
     await page.keyboard.press("Enter");
     await expect(page.locator(".workspace h1")).toHaveText("Terminals");
 
-    await page.keyboard.press("1");
+    // Navigate with the sidebar, not the "1" shortcut: shortcuts are ignored
+    // while the terminal has focus (keys go to the shell), and xterm takes
+    // focus asynchronously after connecting, which made this test racy.
+    await app.nav("Hosts");
     await expect(page.getByRole("heading", { level: 1, name: "Hosts" })).toBeVisible();
 
     const display = await page.evaluate(() => {
