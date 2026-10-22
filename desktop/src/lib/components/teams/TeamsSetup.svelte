@@ -49,6 +49,8 @@
         email: email.trim(),
         deviceName: deviceName.trim() || null,
         passphrase: pass1,
+        // Servers that only accept invited accounts check the pasted invite.
+        inviteToken: invite?.token ?? null,
       });
       pass1 = pass2 = "";
       notify("Teams is set up on this device", "success");

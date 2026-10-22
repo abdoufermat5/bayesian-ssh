@@ -71,6 +71,7 @@
           email: email.trim(),
           deviceName: null,
           passphrase: pass1,
+          inviteToken: token.trim(),
         });
         initialised = true;
         pass1 = pass2 = "";

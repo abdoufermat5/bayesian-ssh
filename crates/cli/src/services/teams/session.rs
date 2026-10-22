@@ -321,12 +321,14 @@ pub fn unlock(store: &TeamsStore, passphrase: &str) -> Result<Arc<DeviceKeys>> {
 
 /// Create an account and this machine's device on `server_url`. The device's
 /// private keys are sealed with `passphrase` and never leave the machine.
+/// `invite_token` is required by servers that only accept invited accounts.
 pub async fn init(
     store: &TeamsStore,
     server_url: &str,
     email: &str,
     device_name: &str,
     passphrase: &str,
+    invite_token: Option<&str>,
 ) -> Result<Identity> {
     if let Some(existing) = load_identity(store.database())? {
         bail!(
@@ -347,6 +349,10 @@ pub async fn init(
         .create_account(&CreateAccountRequest {
             email: email.clone(),
             device: keys.to_new_device(device_name),
+            invite_token: invite_token
+                .map(str::trim)
+                .filter(|t| !t.is_empty())
+                .map(str::to_string),
         })
         .await?;
     let identity = Identity {

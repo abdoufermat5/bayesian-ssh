@@ -442,6 +442,7 @@ pub enum Commands {
           bssh teams create platform\n\
           bssh teams share db-prod --team platform\n\
           bssh teams invite platform ana@example.com\n\
+          bssh teams init --server https://teams.example.com --email ana@example.com --invite <TOKEN>\n\
           bssh teams join <TOKEN> --fingerprint SHA256:...      (on Ana's machine)\n\
           bssh teams grant platform --fingerprint SHA256:...    (admin, Ana's device)\n\
           bssh teams sync"
@@ -852,6 +853,9 @@ pub enum TeamsCommands {
         /// Name for this device, shown to team admins (default: hostname)
         #[arg(long, value_name = "NAME")]
         device_name: Option<String>,
+        /// Invite token from your admin (servers that only accept invited accounts need it)
+        #[arg(long, value_name = "TOKEN")]
+        invite: Option<String>,
     },
     /// Show this machine's account, device and fingerprint
     Whoami,
