@@ -498,8 +498,10 @@ dependencies = [
 name = "bayesian-ssh-gui"
 version = "2.8.0"
 dependencies = [
+ "anyhow",
  "base64 0.22.1",
  "bayesian-ssh",
+ "bssh-teams-proto",
  "chrono",
  "dirs 5.0.1",
  "futures",
@@ -516,6 +518,7 @@ dependencies = [
  "tauri-plugin-updater",
  "tokio",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]

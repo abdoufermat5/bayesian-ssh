@@ -22,6 +22,7 @@ pub mod security;
 pub mod settings;
 pub mod sftp;
 pub mod sources;
+pub mod teams;
 pub mod upload;
 
 pub use agent::*;
@@ -36,6 +37,7 @@ pub use security::*;
 pub use settings::*;
 pub use sftp::*;
 pub use sources::*;
+pub use teams::*;
 pub use upload::*;
 
 // State for active PTY sessions

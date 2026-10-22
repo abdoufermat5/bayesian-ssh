@@ -168,6 +168,23 @@ pub fn load_identity(db: &Database) -> Result<Option<Identity>> {
     .transpose()
 }
 
+fn require_identity(db: &Database) -> Result<Identity> {
+    load_identity(db)?.ok_or_else(|| {
+        anyhow!("Teams isn't set up on this machine: run `bssh teams init --server <url> --email <you>`")
+    })
+}
+
+/// Decrypt this machine's device keys with `passphrase`.
+pub fn unlock(store: &TeamsStore, passphrase: &str) -> Result<Arc<DeviceKeys>> {
+    let identity = require_identity(store.database())?;
+    let sealed = store
+        .sealed_device_keys(identity.device_id)?
+        .ok_or_else(|| anyhow!("this device's keys are missing from the local database"))?;
+    Ok(Arc::new(
+        DeviceKeys::unseal(&sealed, passphrase).map_err(|_| anyhow!("wrong Teams passphrase"))?,
+    ))
+}
+
 /// Create an account and this machine's device on `server_url`. The device's
 /// private keys are sealed with `passphrase` and never leave the machine.
 pub async fn init(
@@ -305,18 +322,18 @@ pub struct Session<'a> {
 impl<'a> Session<'a> {
     /// Unlock this machine's device keys with `passphrase`.
     pub fn open(store: &'a TeamsStore, config: &'a AppConfig, passphrase: &str) -> Result<Self> {
-        let identity = load_identity(store.database())?.ok_or_else(|| {
-            anyhow!(
-                "Teams isn't set up on this machine: run `bssh teams init --server <url> --email <you>`"
-            )
-        })?;
-        let sealed = store
-            .sealed_device_keys(identity.device_id)?
-            .ok_or_else(|| anyhow!("this device's keys are missing from the local database"))?;
-        let keys = Arc::new(
-            DeviceKeys::unseal(&sealed, passphrase)
-                .map_err(|_| anyhow!("wrong Teams passphrase"))?,
-        );
+        let keys = unlock(store, passphrase)?;
+        Self::with_keys(store, config, keys)
+    }
+
+    /// A session over keys unlocked earlier with [`unlock`], so a long-lived
+    /// process (the desktop app) pays for the passphrase KDF only once.
+    pub fn with_keys(
+        store: &'a TeamsStore,
+        config: &'a AppConfig,
+        keys: Arc<DeviceKeys>,
+    ) -> Result<Self> {
+        let identity = require_identity(store.database())?;
         let client = TeamsClient::new(&identity.server_url, identity.device_id, keys.clone())?;
         Ok(Self {
             store,

@@ -96,6 +96,13 @@ your device key, chains it to your previous events and uploads it. The server
 verifies the signature and the chain, so events can't be edited, reordered or
 dropped without detection.
 
+## In the desktop app
+
+The **Teams** page in the sidebar does everything the commands below do. Unlock
+it once with your passphrase; the keys stay unlocked in memory until you click
+**Lock** or quit. When granting a key, paste the fingerprint the member sent
+you: **Grant key** only becomes available when it matches the waiting device.
+
 ## Commands
 
 | Command | What it does |

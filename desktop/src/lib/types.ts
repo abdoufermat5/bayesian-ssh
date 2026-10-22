@@ -137,6 +137,7 @@ export type AppTab =
   | "history"
   | "keys"
   | "audit"
+  | "teams"
   | "settings";
 export type NotificationType = "success" | "error" | "info";
 
@@ -237,4 +238,83 @@ export interface Prediction {
   connection: Connection;
   score: number;
   breakdown: ScoreBreakdown;
+}
+
+// ── bssh Teams (crates/gui/src/commands/teams.rs) ──────────────────────────
+
+export interface TeamsIdentity {
+  email: string;
+  server_url: string;
+  device_id: string;
+}
+
+export interface TeamSummary {
+  team_id: string;
+  /** The team's inventory source; its connections carry this source_id. */
+  source_id: string;
+  name: string;
+  hosts: number;
+  last_sync_at?: string;
+}
+
+export interface TeamsStatus {
+  identity?: TeamsIdentity;
+  unlocked: boolean;
+  fingerprint?: string;
+  teams: TeamSummary[];
+}
+
+export interface TeamSyncReport {
+  team_id: string;
+  name?: string;
+  waiting_for_key: boolean;
+  pulled: number;
+  pushed: number;
+  conflicts_resolved: number;
+  audit_uploaded: number;
+  dropped_edits: number;
+  rejected: string[];
+  unreadable: number;
+  rotated_to?: number;
+  rotation_required: boolean;
+  errors: string[];
+  hosts_added: number;
+  hosts_updated: number;
+  hosts_stale: number;
+}
+
+export interface TeamSyncResult {
+  team: string;
+  result?: TeamSyncReport;
+  error?: string;
+}
+
+export interface TeamInvite {
+  email: string;
+  expires_at: string;
+  token: string;
+  admin_fingerprint: string;
+  server_url: string;
+}
+
+export interface TeamJoin {
+  team_id: string;
+  name: string;
+  my_fingerprint: string;
+}
+
+export interface TeamDevice {
+  name: string;
+  fingerprint: string;
+}
+
+export interface TeamPendingDevice {
+  email: string;
+  device: TeamDevice;
+}
+
+export interface TeamMember {
+  email: string;
+  role: "admin" | "member";
+  devices: TeamDevice[];
 }
