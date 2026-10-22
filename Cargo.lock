@@ -459,6 +459,7 @@ dependencies = [
  "argon2 0.5.3",
  "async-trait",
  "base64 0.22.1",
+ "bssh-teams-proto",
  "chrono",
  "clap",
  "clap_complete",
@@ -665,6 +666,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bf88ba1141d185c399bee5288d850d63b8369520c1eafc32a0430b5b6c287bf4"
 dependencies = [
  "tinyvec",
+]
+
+[[package]]
+name = "bssh-teams-proto"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "uuid",
 ]
 
 [[package]]

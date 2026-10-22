@@ -52,6 +52,9 @@ uuid = { version = "1.0", features = ["v4", "serde"] }
 # Async trait
 async-trait = "0.1"
 
+# bssh Teams wire contract
+bssh-teams-proto = { path = "../teams-proto" }
+
 # Native SSH
 # ring instead of the default aws-lc-rs: ring is already in the tree via rustls,
 # and aws-lc-sys needs cmake + a C toolchain in every packaging build.

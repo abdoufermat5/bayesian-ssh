@@ -10,6 +10,7 @@ pub mod recording;
 pub mod security;
 pub mod sftp_shared;
 pub mod ssh;
+pub mod teams;
 pub mod transfer;
 pub mod transport;
 pub mod upload;
