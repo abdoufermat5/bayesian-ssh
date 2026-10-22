@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Local guardrails before anything leaves this machine. CI runs the same checks;
+# this only catches mistakes earlier. Enable with: make hooks
+set -euo pipefail
+
+repo=$(git rev-parse --show-toplevel)
+
+"$repo/scripts/check-perimeter.sh"
+
+# Scan only the commits being pushed. Skipped (with a warning) if gitleaks is
+# not installed, since CI scans every push anyway.
+if command -v gitleaks >/dev/null 2>&1; then
+    zero=0000000000000000000000000000000000000000
+    while read -r _local_ref local_sha _remote_ref remote_sha; do
+        [ "$local_sha" = "$zero" ] && continue # branch deletion
+        if [ "$remote_sha" = "$zero" ]; then
+            range="$local_sha --not --remotes"
+        else
+            range="$remote_sha..$local_sha"
+        fi
+        gitleaks git --no-banner --redact --log-opts="$range" "$repo"
+    done
+else
+    echo "pre-push: gitleaks not installed, skipping local secret scan" >&2
+fi

@@ -1,0 +1,65 @@
+# cargo-deny policy (https://embarkstudios.github.io/cargo-deny/).
+# Run locally with: cargo deny check
+# Enforces PERIMETER.md: crates only from crates.io, permissive licenses only,
+# no known-vulnerable crates.
+
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+yanked = "deny"
+# Unmaintained transitive crates (tauri, zbus, portable-pty...) are the
+# upstreams' to replace; flag only the ones we depend on directly.
+unmaintained = "workspace"
+# Every entry needs a reason and, where a fix exists, the work that removes it.
+ignore = [
+    # russh 0.44: agent frame / CryptoVec unbounded allocation (DoS by a
+    # malicious agent or peer). Fixed in russh >= 0.60.3, a breaking upgrade.
+    # TODO: remove once the russh 0.64 migration lands.
+    { id = "RUSTSEC-2026-0153", reason = "russh 0.44 -> 0.64 migration pending" },
+    { id = "RUSTSEC-2026-0154", reason = "russh 0.44 -> 0.64 migration pending" },
+    # rsa Marvin timing side channel: no fixed release exists. We only sign
+    # with the user's own local keys, which needs a co-located timing attacker.
+    { id = "RUSTSEC-2023-0071", reason = "no upstream fix; local-key signing only" },
+    # zip 4.x extraction issues, pulled in by tauri-plugin-updater, which only
+    # extracts update bundles after verifying their signature.
+    { id = "RUSTSEC-2026-0367", reason = "tauri-plugin-updater pins zip 4; bundles are signature-checked" },
+    { id = "RUSTSEC-2026-0368", reason = "tauri-plugin-updater pins zip 4; bundles are signature-checked" },
+    { id = "RUSTSEC-2026-0369", reason = "tauri-plugin-updater pins zip 4; bundles are signature-checked" },
+]
+
+[licenses]
+version = 2
+confidence-threshold = 0.9
+# Everything the MIT-licensed binaries can ship with. MPL-2.0 is file-level
+# copyleft: fine to link, but changes to those files must stay MPL.
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-1-Clause",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
