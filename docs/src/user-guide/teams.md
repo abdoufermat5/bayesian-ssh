@@ -15,7 +15,10 @@ connecting to one is recorded in the team's signed audit log.
 bssh teams init --server https://teams.example.com --email you@example.com
 ```
 
-This creates your account and this machine's device keys. The private keys
+This creates your account and this machine's device keys. A server may only
+accept accounts for people it knows: the hosted one takes invited members
+(`--invite <TOKEN>`, from the invite) and the team creators its operator
+registered. The private keys
 never leave the machine; they're encrypted with a passphrase you choose. Every
 `bssh teams` command asks for it, or reads `BSSH_TEAMS_PASSPHRASE` in scripts.
 
@@ -49,7 +52,7 @@ own, so they're exchanged out of band, e.g. in your chat.
    for Ana, including a one-time token and your fingerprint. On a new install of
    the desktop app, Ana can instead choose **I was invited to a team** in
    onboarding and paste the whole invite message.
-2. **Ana:** runs `bssh teams init ...`, then
+2. **Ana:** runs `bssh teams init ... --invite <TOKEN>`, then
    `bssh teams join <TOKEN> --fingerprint <ADMIN FINGERPRINT>`. bssh refuses to
    trust the team if no admin of it has that fingerprint. It prints Ana's
    device fingerprint for her to send back.
@@ -182,7 +185,7 @@ event.
 
 | Command | What it does |
 | --- | --- |
-| `bssh teams init --server URL --email EMAIL` | Set up this machine |
+| `bssh teams init --server URL --email EMAIL [--invite TOKEN]` | Set up this machine |
 | `bssh teams whoami` | Account, device and fingerprint |
 | `bssh teams create NAME` | Create a team (you're its admin) |
 | `bssh teams list` | Teams on this machine |

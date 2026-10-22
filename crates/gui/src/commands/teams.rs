@@ -326,6 +326,7 @@ pub fn teams_init(
     email: String,
     device_name: Option<String>,
     passphrase: String,
+    invite_token: Option<String>,
 ) -> Result<TeamsStatus, String> {
     let passphrase = Zeroizing::new(passphrase);
     if passphrase.chars().count() < 8 {
@@ -337,7 +338,14 @@ pub fn teams_init(
         .unwrap_or_else(default_device_name);
     let keys = on_teams_thread(move || {
         let (store, _) = open_store()?;
-        block_on(session::init(&store, &server, &email, &name, &passphrase))?;
+        block_on(session::init(
+            &store,
+            &server,
+            &email,
+            &name,
+            &passphrase,
+            invite_token.as_deref(),
+        ))?;
         session::unlock(&store, &passphrase)
     })?;
     state.set(Some(keys));

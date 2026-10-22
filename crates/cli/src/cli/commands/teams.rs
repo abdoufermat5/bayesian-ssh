@@ -63,10 +63,12 @@ async fn run(command: TeamsCommands, store: &TeamsStore, config: &AppConfig) -> 
             server,
             email,
             device_name,
+            invite,
         } => {
             let pass = passphrase(true)?;
             let name = device_name.unwrap_or_else(default_device_name);
-            let identity = session::init(store, &server, &email, &name, &pass).await?;
+            let identity =
+                session::init(store, &server, &email, &name, &pass, invite.as_deref()).await?;
             let s = Session::open(store, config, &pass)?;
             println!(
                 "✅ Teams is set up for {} on {}",
@@ -141,7 +143,7 @@ async fn run(command: TeamsCommands, store: &TeamsStore, config: &AppConfig) -> 
             println!("Send them these, over a channel you trust (the token is shown only once):");
             println!();
             println!(
-                "  bssh teams init --server {} --email {}",
+                "  bssh teams init --server {} --email {} --invite {token}",
                 s.identity.server_url, invite.email
             );
             println!("  bssh teams join {token} --fingerprint {fp}");

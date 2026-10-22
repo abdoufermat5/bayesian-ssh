@@ -56,7 +56,7 @@ export function inviteMessage(team: string, invite: TeamInvite): string {
     "",
     'Desktop app: open Teams, choose "Join with invite" and paste this whole message.',
     "Command line:",
-    `  bssh teams init --server ${invite.server_url} --email ${invite.email}`,
+    `  bssh teams init --server ${invite.server_url} --email ${invite.email} --invite ${invite.token}`,
     `  bssh teams join ${invite.token} --fingerprint ${invite.admin_fingerprint}`,
     "",
     `Server: ${invite.server_url}`,

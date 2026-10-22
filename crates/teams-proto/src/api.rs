@@ -64,6 +64,10 @@ pub struct NewDevice {
 pub struct CreateAccountRequest {
     pub email: String,
     pub device: NewDevice,
+    /// A pending invite for `email`. Servers that only accept invited
+    /// accounts check it here; it is not consumed (`/invites/accept` does).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invite_token: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -421,5 +425,23 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(c, VaultPayload::Connection(ref r) if r.tags.is_empty()));
+    }
+
+    #[test]
+    fn invite_token_is_optional_on_the_wire() {
+        let req = CreateAccountRequest {
+            email: "ana@example.com".into(),
+            device: NewDevice {
+                name: "laptop".into(),
+                x25519_public: Fixed::ZERO,
+                ed25519_public: Fixed::ZERO,
+            },
+            invite_token: None,
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(!json.contains("invite_token"), "{json}");
+        // A request from an older client still parses.
+        let old: CreateAccountRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(old.invite_token, None);
     }
 }

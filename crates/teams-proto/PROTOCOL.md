@@ -77,7 +77,10 @@ team: the creating admin device's Ed25519 public key.
 `POST /teams { initial_key }`. Write a `TeamProfile` entry with the team name.
 
 **Invite and join.** An admin calls `POST /teams/{id}/invites` and sends the token and
-fingerprint to the invitee. The invitee calls `POST /invites/accept`. The admin's client
+fingerprint to the invitee. A new invitee creates their account with `POST /accounts`,
+passing the token as `invite_token`: a server may accept accounts only for an email with a
+pending, unexpired invite (the token is checked, not consumed). The invitee then calls
+`POST /invites/accept`, which consumes it. The admin's client
 polls `GET /teams/{id}/devices/pending` and posts a `WrappedKey` for each new device
 (`POST /teams/{id}/keys`, same `key_version`).
 
