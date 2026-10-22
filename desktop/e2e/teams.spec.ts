@@ -1,10 +1,14 @@
 import { test, expect } from "./fixtures/app";
 
 /**
- * Teams view: setup, unlock, the fingerprint-guarded grant, and invites.
- * The `teams_*` commands are stubbed per test; overrides must be
- * self-contained (they're stringified into the page).
+ * Teams view: setup, unlock, join, the fingerprint-guarded grant, removal,
+ * the audit log states and role-aware actions. The `teams_*` commands are
+ * stubbed per test; overrides must be self-contained (they're stringified
+ * into the page).
  */
+
+const ADMIN_FP = "SHA256:adminFingerprintAAAAAAAAAAAAAAAAAAAAAAAAAA";
+const ANA_FP = "SHA256:anaDeviceFingerprintBBBBBBBBBBBBBBBBBBBBBBB";
 
 test.describe("Teams setup", () => {
   test.use({
@@ -17,27 +21,31 @@ test.describe("Teams setup", () => {
           fingerprint: "SHA256:anaDeviceFingerprintBBBBBBBBBBBBBBBBBBBBBBB",
           teams: [],
         }),
+        teams_attention: () => [],
       },
     },
   });
 
-  test("sets up this device and shows its fingerprint", async ({ app, page }) => {
+  test("explains why setup is disabled, then shows this device's fingerprint", async ({ app, page }) => {
     await app.gotoApp();
     await app.nav("Teams");
     await expect(page.getByRole("heading", { name: "Share connections with your team" })).toBeVisible();
+    await expect(page.getByText("nobody can reset it")).toBeVisible();
 
     const setUp = page.getByRole("button", { name: "Set up this device" });
     await expect(setUp).toBeDisabled();
+    await expect(page.getByText("Enter the sync server")).toBeVisible();
 
     await page.getByLabel("Sync server").fill("https://teams.example.com");
     await page.getByLabel("Your email").fill("ana@example.com");
-    await page.getByLabel(/^Passphrase/).fill("correct horse");
+    await page.getByLabel("Passphrase", { exact: true }).fill("correct horse");
     await page.getByLabel("Repeat passphrase").fill("correct hors");
     await expect(setUp).toBeDisabled();
+    await expect(page.getByText("The passphrases don't match")).toBeVisible();
     await page.getByLabel("Repeat passphrase").fill("correct horse");
     await setUp.click();
 
-    await expect(page.getByText("SHA256:anaDeviceFingerprintBBBBBBBBBBBBBBBBBBBBBBB")).toBeVisible();
+    await expect(page.locator("code.fingerprint").first()).toHaveText(ANA_FP);
     const calls = (await app.ipcCalls("teams_init")) as Array<Record<string, unknown>>;
     expect(calls[0]).toMatchObject({
       server: "https://teams.example.com",
@@ -57,120 +65,336 @@ test.describe("Teams unlock", () => {
           fingerprint: null,
           teams: [],
         }),
-        teams_unlock: () => ({
-          identity: { email: "admin@example.com", server_url: "https://teams.example.com", device_id: "d-1" },
-          unlocked: true,
-          fingerprint: "SHA256:adminFingerprintAAAAAAAAAAAAAAAAAAAAAAAAAA",
-          teams: [],
-        }),
+        teams_unlock: (args) => {
+          if ((args as { passphrase: string }).passphrase !== "correct horse") throw "wrong Teams passphrase";
+          return {
+            identity: { email: "admin@example.com", server_url: "https://teams.example.com", device_id: "d-1" },
+            unlocked: true,
+            fingerprint: "SHA256:adminFingerprintAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            teams: [],
+          };
+        },
+        teams_attention: () => [],
       },
     },
   });
 
-  test("unlocks with the passphrase", async ({ app, page }) => {
+  test("says inline when the passphrase is wrong, then unlocks", async ({ app, page }) => {
     await app.gotoApp();
     await app.nav("Teams");
     await expect(page.getByRole("heading", { name: "Unlock Teams" })).toBeVisible();
-    await page.getByPlaceholder("Teams passphrase").fill("correct horse");
+    await expect(page.getByText("Team hosts still connect while locked")).toBeVisible();
+
+    await page.getByLabel("Teams passphrase").fill("nope");
     await page.getByRole("button", { name: "Unlock" }).click();
-    await expect(page.getByRole("heading", { name: "Create a team" })).toBeVisible();
+    await expect(page.getByRole("alert")).toHaveText("That passphrase didn't unlock this device's keys.");
+
+    await page.getByLabel("Teams passphrase").fill("correct horse");
+    await page.getByRole("button", { name: "Unlock" }).click();
+    await expect(page.getByText("No teams yet")).toBeVisible();
     await expect(page.getByRole("button", { name: "Lock" })).toBeVisible();
   });
 });
 
-test.describe("Teams admin", () => {
+test.describe("Teams join", () => {
   test.use({
     mockOptions: {
       overrides: {
         teams_status: () => ({
-          identity: { email: "admin@example.com", server_url: "https://teams.example.com", device_id: "d-1" },
+          identity: { email: "ana@example.com", server_url: "https://teams.example.com", device_id: "d-2" },
           unlocked: true,
-          fingerprint: "SHA256:adminFingerprintAAAAAAAAAAAAAAAAAAAAAAAAAA",
-          teams: [{ team_id: "t-1", source_id: "s-1", name: "platform", hosts: 2, last_sync_at: null }],
+          fingerprint: "SHA256:anaDeviceFingerprintBBBBBBBBBBBBBBBBBBBBBBB",
+          teams: [],
         }),
-        teams_members: () => [
-          {
-            email: "admin@example.com",
-            role: "admin",
-            devices: [{ name: "laptop", fingerprint: "SHA256:adminFingerprintAAAAAAAAAAAAAAAAAAAAAAAAAA" }],
-          },
-        ],
-        teams_pending: () => [
-          {
-            email: "ana@example.com",
-            device: { name: "ana-laptop", fingerprint: "SHA256:anaDeviceFingerprintBBBBBBBBBBBBBBBBBBBBBBB" },
-          },
-        ],
-        teams_grant: (args) => ({
+        teams_attention: () => [],
+        teams_join: (args) => {
+          const a = args as { token: string | null; teamId: string | null; fingerprint: string };
+          if (a.fingerprint !== "SHA256:adminFingerprintAAAAAAAAAAAAAAAAAAAAAAAAAA") {
+            throw (
+              "no admin device of team 0b6f7c1e-1111-4222-8333-944455556666 has fingerprint " +
+              a.fingerprint +
+              ". Nothing was trusted."
+            );
+          }
+          return {
+            team_id: "0b6f7c1e-1111-4222-8333-944455556666",
+            name: "platform",
+            my_fingerprint: "SHA256:anaDeviceFingerprintBBBBBBBBBBBBBBBBBBBBBBB",
+          };
+        },
+      },
+    },
+  });
+
+  test("parses a pasted invite and retries a fingerprint mismatch by team id", async ({ app, page }) => {
+    await app.gotoApp();
+    await app.nav("Teams");
+    await page.getByRole("button", { name: "Join with invite" }).first().click();
+    const dialog = page.getByRole("dialog", { name: "Join a team" });
+
+    await dialog.getByLabel("Invite message").fill(
+      [
+        'Join the "platform" team on Bayesian SSH.',
+        "Server: https://teams.example.com",
+        "Email: ana@example.com",
+        "Token: one-time-token-123",
+        "Admin fingerprint: SHA256:adminFingerprintAAAAAAAAAAAAAAAAAAAAAAAAAX",
+      ].join("\n"),
+    );
+    await expect(dialog.getByLabel("Invite token")).toHaveValue("one-time-token-123");
+    const fp = dialog.getByLabel("Admin's fingerprint (from the invite)");
+    await expect(fp).toHaveValue("SHA256:adminFingerprintAAAAAAAAAAAAAAAAAAAAAAAAAX");
+
+    await dialog.getByRole("button", { name: "Join" }).click();
+    await expect(dialog.getByRole("alert")).toContainText("doesn't belong to an admin of this team");
+    await expect(dialog.getByRole("alert")).toContainText("0b6f7c1e-1111-4222-8333-944455556666");
+
+    // Missing prefix and stray spaces are normalized.
+    await fp.fill(" adminFingerprint AAAAAAAAAAAAAAAAAAAAAAAAAA ");
+    await dialog.getByRole("button", { name: "Try again" }).click();
+    await expect(page.getByRole("dialog", { name: "Joined platform" })).toContainText(
+      "Waiting for an admin to grant this device the key.",
+    );
+
+    const calls = (await app.ipcCalls("teams_join")) as Array<Record<string, unknown>>;
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toMatchObject({ token: "one-time-token-123", teamId: null });
+    expect(calls[1]).toMatchObject({
+      token: null,
+      teamId: "0b6f7c1e-1111-4222-8333-944455556666",
+      fingerprint: ADMIN_FP,
+    });
+  });
+});
+
+const adminOverrides = {
+  teams_status: () => ({
+    identity: { email: "admin@example.com", server_url: "https://teams.example.com", device_id: "d-1" },
+    unlocked: true,
+    fingerprint: "SHA256:adminFingerprintAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    teams: [{ team_id: "t-1", source_id: "s-1", name: "platform", hosts: 2, last_sync_at: null }],
+  }),
+  teams_attention: () => [
+    { team_id: "t-1", role: "admin", pending_devices: 1, waiting_for_key: false, removed: false },
+  ],
+  teams_members: () => [
+    {
+      email: "admin@example.com",
+      role: "admin",
+      devices: [{ name: "laptop", fingerprint: "SHA256:adminFingerprintAAAAAAAAAAAAAAAAAAAAAAAAAA" }],
+    },
+    {
+      email: "ana@example.com",
+      role: "member",
+      devices: [{ name: "ana-laptop", fingerprint: "SHA256:anaDeviceFingerprintBBBBBBBBBBBBBBBBBBBBBBB" }],
+    },
+  ],
+  teams_pending: () => [
+    {
+      email: "ana@example.com",
+      device: { name: "ana-laptop", fingerprint: "SHA256:anaDeviceFingerprintBBBBBBBBBBBBBBBBBBBBBBB" },
+    },
+  ],
+  teams_grant: (args: unknown) => ({
+    email: "ana@example.com",
+    device: { name: "ana-laptop", fingerprint: (args as { fingerprint: string }).fingerprint },
+  }),
+  teams_invite: () => ({
+    email: "ana@example.com",
+    expires_at: "2030-01-08T00:00:00Z",
+    token: "one-time-token-123",
+    admin_fingerprint: "SHA256:adminFingerprintAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    server_url: "https://teams.example.com",
+  }),
+};
+
+test.describe("Teams admin", () => {
+  test.use({ mockOptions: { overrides: adminOverrides } });
+
+  test("lists the team with its role and what needs attention", async ({ app, page }) => {
+    await app.gotoApp();
+    await app.nav("Teams");
+    const row = page.getByRole("row", { name: /platform/ });
+    await expect(row).toContainText("Admin");
+    await expect(row).toContainText("1 device waiting");
+    await expect(row).toContainText("never");
+  });
+
+  test("grant modal never shows the server's fingerprint before a match", async ({ app, page }) => {
+    await app.gotoApp();
+    await app.nav("Teams");
+    await page.getByRole("button", { name: "platform", exact: true }).click();
+    await page.getByRole("tab", { name: /Members & devices/ }).click();
+    await expect(page.getByRole("button", { name: "Verify and grant…" })).toBeVisible();
+    // The waiting device's fingerprint is hidden in the member list too.
+    await expect(page.getByText("Waiting for the key").first()).toBeVisible();
+    expect(await page.content()).not.toContain("anaDeviceFingerprint");
+
+    await page.getByRole("button", { name: "Verify and grant…" }).click();
+    const dialog = page.getByRole("dialog", { name: "Grant the platform key to a new device" });
+    const grant = dialog.getByRole("button", { name: "Grant key to ana-laptop" });
+    const input = dialog.getByLabel("Fingerprint ana@example.com sent you");
+    await expect(grant).toBeDisabled();
+    await expect(dialog.getByText("Paste the fingerprint ana@example.com sent you")).toBeVisible();
+    expect(await page.content()).not.toContain("anaDeviceFingerprint");
+
+    // Mismatch: the button stays disabled and the reason says why.
+    await input.fill("SHA256:somethingElseEntirelyCCCCCCCCCCCCCCCCCCCCCC");
+    await expect(dialog.getByText(/Doesn't match\. Don't grant\./)).toBeVisible();
+    await expect(dialog.getByText("The fingerprint doesn't match")).toBeVisible();
+    await expect(grant).toBeDisabled();
+    expect(await page.content()).not.toContain("anaDeviceFingerprint");
+
+    // Match (chunked read-back, no prefix): still gated by the checkbox.
+    await input.fill("anaD evic eFin gerp rint BBBB BBBB BBBB BBBB BBBB BBB");
+    await expect(dialog.getByText("Matches the device waiting on the server.")).toBeVisible();
+    await expect(dialog.locator("code.fingerprint")).toHaveText(ANA_FP);
+    await expect(grant).toBeDisabled();
+    await expect(dialog.getByText("Confirm where the fingerprint came from")).toBeVisible();
+    await dialog.getByLabel("I got this fingerprint from ana@example.com directly, not from this screen.").check();
+    await expect(grant).toBeEnabled();
+    await expect(dialog).toContainText(`bssh teams grant platform --fingerprint ${ANA_FP}`);
+    await grant.click();
+
+    await expect(page.getByText("Granted the platform key to ana@example.com")).toBeVisible();
+    const calls = (await app.ipcCalls("teams_grant")) as Array<Record<string, unknown>>;
+    expect(calls).toEqual([{ team: "t-1", fingerprint: ANA_FP }]);
+  });
+
+  test("invite shows a ready-to-send message", async ({ app, page }) => {
+    await app.gotoApp();
+    await app.nav("Teams");
+    await page.getByRole("button", { name: "platform", exact: true }).click();
+    await page.getByRole("tab", { name: /Members & devices/ }).click();
+    await page.getByRole("button", { name: "Invite", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Invite someone to platform" });
+    await dialog.getByLabel("Their email").fill("ana@example.com");
+    await dialog.getByRole("button", { name: "Create invite" }).click();
+    await expect(dialog.locator("pre")).toContainText(`bssh teams join one-time-token-123 --fingerprint ${ADMIN_FP}`);
+    await expect(dialog.locator("pre")).toContainText("Join with invite");
+    await expect(dialog.locator("pre")).toContainText("until 2030-01-08 00:00 UTC");
+    await expect(dialog.getByRole("button", { name: "Copy message" })).toBeVisible();
+  });
+});
+
+test.describe("Teams remove member, blocked", () => {
+  test.use({
+    mockOptions: {
+      overrides: {
+        ...adminOverrides,
+        teams_pending: () => [],
+        teams_remove_preview: () => ({
           email: "ana@example.com",
-          device: { name: "ana-laptop", fingerprint: (args as { fingerprint: string }).fingerprint },
-        }),
-        teams_invite: () => ({
-          email: "ana@example.com",
-          expires_at: "2030-01-08T00:00:00Z",
-          token: "one-time-token-123",
-          admin_fingerprint: "SHA256:adminFingerprintAAAAAAAAAAAAAAAAAAAAAAAAAA",
-          server_url: "https://teams.example.com",
+          removed_devices: [{ email: "ana@example.com", name: "ana-laptop", fingerprint: "SHA256:x", approved: true }],
+          next_key_version: 4,
+          recipients: [{ email: "admin@example.com", name: "laptop", fingerprint: "SHA256:y", approved: true }],
+          blocking: [{ email: "bob@example.com", name: "unknown-01", fingerprint: "SHA256:z", approved: false }],
+          shared_hosts: 3,
         }),
       },
     },
   });
 
-  test("grants the key only when the received fingerprint matches", async ({ app, page }) => {
+  test("lists the blocking device and doesn't allow removal", async ({ app, page }) => {
     await app.gotoApp();
     await app.nav("Teams");
-    await page.getByRole("button", { name: /platform/ }).click();
-    await page.getByRole("button", { name: "Check" }).click();
-    await expect(page.getByText("ana@example.com · ana-laptop")).toBeVisible();
-
-    const grant = page.getByRole("button", { name: "Grant key" });
-    const input = page.getByPlaceholder("Paste the fingerprint ana@example.com sent you");
-    await expect(grant).toBeDisabled();
-
-    await input.fill("SHA256:somethingElseEntirelyCCCCCCCCCCCCCCCCCCCC");
-    await expect(grant).toBeDisabled();
-    await expect(page.getByText("Doesn't match this device. Don't grant it.")).toBeVisible();
-
-    await input.fill("SHA256:anaDeviceFingerprintBBBBBBBBBBBBBBBBBBBBBBB");
-    await expect(grant).toBeEnabled();
-    await grant.click();
-
-    await expect(page.getByText("Granted the platform key to ana@example.com")).toBeVisible();
-    const calls = (await app.ipcCalls("teams_grant")) as Array<Record<string, unknown>>;
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({
-      team: "t-1",
-      fingerprint: "SHA256:anaDeviceFingerprintBBBBBBBBBBBBBBBBBBBBBBB",
-    });
-  });
-
-  test("invite shows the commands to send", async ({ app, page }) => {
-    await app.gotoApp();
-    await app.nav("Teams");
-    await page.getByRole("button", { name: /platform/ }).click();
-    await page.getByPlaceholder("ana@example.com").fill("ana@example.com");
-    await page.getByRole("button", { name: "Invite", exact: true }).click();
-    await expect(
-      page.getByText(
-        "bssh teams join one-time-token-123 --fingerprint SHA256:adminFingerprintAAAAAAAAAAAAAAAAAAAAAAAAAA",
-      ),
-    ).toBeVisible();
+    await page.getByRole("button", { name: "platform", exact: true }).click();
+    await page.getByRole("tab", { name: /Members & devices/ }).click();
+    await page.getByRole("button", { name: "Remove ana@example.com" }).click();
+    const dialog = page.getByRole("dialog", { name: "Remove ana@example.com from platform?" });
+    await expect(dialog).toContainText("rotates the team key to v4");
+    await expect(dialog).toContainText("They keep copies of 3 hosts already synced: rotate credentials that matter.");
+    await expect(dialog.getByRole("alert")).toContainText("bob@example.com · unknown-01");
+    await expect(dialog.getByLabel("Type ana@example.com to confirm")).toHaveCount(0);
+    await expect(dialog.getByRole("button", { name: "Remove and rotate key" })).toBeDisabled();
+    await expect(dialog.getByText("Unapproved devices block the key rotation")).toBeVisible();
+    expect(await app.ipcCalls("teams_remove")).toHaveLength(0);
   });
 });
 
-const auditStatus = () => ({
-  identity: { email: "admin@example.com", server_url: "https://teams.example.com", device_id: "d-1" },
-  unlocked: true,
-  fingerprint: "SHA256:adminFingerprintAAAAAAAAAAAAAAAAAAAAAAAAAA",
-  teams: [{ team_id: "t-1", source_id: "s-1", name: "platform", hosts: 1, last_sync_at: null }],
+test.describe("Teams remove member, rotation fails", () => {
+  test.use({
+    mockOptions: {
+      overrides: {
+        ...adminOverrides,
+        teams_pending: () => [],
+        teams_remove_preview: () => ({
+          email: "ana@example.com",
+          removed_devices: [{ email: "ana@example.com", name: "ana-laptop", fingerprint: "SHA256:x", approved: true }],
+          next_key_version: 2,
+          recipients: [],
+          blocking: [],
+          shared_hosts: 1,
+        }),
+        teams_remove: () => {
+          throw "can't rotate the team key: these devices were never approved on this machine: unknown-01";
+        },
+      },
+    },
+  });
+
+  test("needs the typed email and keeps a rotation failure in the modal", async ({ app, page }) => {
+    await app.gotoApp();
+    await app.nav("Teams");
+    await page.getByRole("button", { name: "platform", exact: true }).click();
+    await page.getByRole("tab", { name: /Members & devices/ }).click();
+    await page.getByRole("button", { name: "Remove ana@example.com" }).click();
+    const dialog = page.getByRole("dialog", { name: "Remove ana@example.com from platform?" });
+    const remove = dialog.getByRole("button", { name: "Remove and rotate key" });
+    await expect(remove).toBeDisabled();
+    await dialog.getByLabel("Type ana@example.com to confirm").fill("ana@example.co");
+    await expect(remove).toBeDisabled();
+    await dialog.getByLabel("Type ana@example.com to confirm").fill("ana@example.com");
+    await remove.click();
+    await expect(dialog.getByRole("alert")).toContainText("Rotation stopped. ana@example.com isn't fully removed yet.");
+    await expect(dialog).toBeVisible();
+  });
+});
+
+test.describe("Teams member role", () => {
+  test.use({
+    mockOptions: {
+      overrides: {
+        teams_status: () => ({
+          identity: { email: "ana@example.com", server_url: "https://teams.example.com", device_id: "d-2" },
+          unlocked: true,
+          fingerprint: "SHA256:anaDeviceFingerprintBBBBBBBBBBBBBBBBBBBBBBB",
+          teams: [{ team_id: "t-1", source_id: "s-1", name: "platform", hosts: 0, last_sync_at: null }],
+        }),
+        teams_attention: () => [
+          { team_id: "t-1", role: "member", pending_devices: 0, waiting_for_key: true, removed: false },
+        ],
+        teams_members: () => [
+          { email: "admin@example.com", role: "admin", devices: [] },
+          { email: "ana@example.com", role: "member", devices: [] },
+        ],
+      },
+    },
+  });
+
+  test("hides admin actions and shows the waiting-for-key status", async ({ app, page }) => {
+    await app.gotoApp();
+    await app.nav("Teams");
+    await expect(page.getByText("platform: waiting for an admin to grant this device the key.")).toBeVisible();
+    await expect(page.getByRole("row", { name: /platform/ })).toContainText("Member");
+
+    await page.getByRole("button", { name: "platform", exact: true }).click();
+    await expect(page.getByText("Waiting for an admin to grant this device the key.")).toBeVisible();
+    await expect(page.getByRole("tab")).toHaveText(["Hosts", "Members & devices"]);
+    await page.getByRole("tab", { name: /Members & devices/ }).click();
+    await expect(page.getByText("admin@example.com")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Invite", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^Remove/ })).toHaveCount(0);
+    await expect(page.getByText("Devices waiting for the key")).toHaveCount(0);
+    expect(await app.ipcCalls("teams_pending")).toHaveLength(0);
+  });
 });
 
 test.describe("Teams audit log, verified", () => {
   test.use({
     mockOptions: {
       overrides: {
-        teams_status: auditStatus,
-        teams_members: () => [],
+        ...adminOverrides,
         teams_audit: () => ({
           lines: [
             {
@@ -195,18 +419,55 @@ test.describe("Teams audit log, verified", () => {
     },
   });
 
-  test("shows events and the local verification verdict", async ({ app, page }) => {
+  test("verifies on open, shows UTC times and filters by member", async ({ app, page }) => {
     await app.gotoApp();
     await app.nav("Teams");
-    await page.getByRole("button", { name: /platform/ }).click();
-    await page.getByRole("button", { name: "Load" }).click();
+    await page.getByRole("button", { name: "platform", exact: true }).click();
+    await page.getByRole("tab", { name: "Audit log" }).click();
     await expect(page.getByRole("status").filter({ hasText: "Verified on this device" })).toContainText(
-      "1 signature(s) valid, 1 device chain(s) intact, complete",
+      "1 event, 1 device chain, complete from the first event.",
     );
     const row = page.getByRole("row", { name: /ana@example.com/ });
+    await expect(row).toContainText("Valid");
+    await expect(row).toContainText("2030-01-02 09:30");
     await expect(row).toContainText("db-prod");
-    await expect(row).toContainText("203.0.113.7");
     await expect(row).toContainText("Session start");
+
+    await page.getByLabel("Member").selectOption("ana@example.com");
+    await page.getByLabel("Since (UTC)").fill("2030-01-01");
+    await expect(page.getByText("bssh teams audit platform --member ana@example.com --since 2030-01-01")).toBeVisible();
+    await expect
+      .poll(async () => ((await app.ipcCalls("teams_audit")) as Array<Record<string, unknown>>).at(-1))
+      .toMatchObject({ team: "t-1", member: "ana@example.com", since: "2030-01-01T00:00:00Z" });
+  });
+});
+
+test.describe("Teams audit log, partial", () => {
+  test.use({
+    mockOptions: {
+      overrides: {
+        ...adminOverrides,
+        teams_audit: () => ({
+          lines: [],
+          chains: 1,
+          from_genesis: true,
+          problems: [],
+          invalid_events: 0,
+          complete: false,
+          clean: true,
+        }),
+      },
+    },
+  });
+
+  test("says older events weren't checked", async ({ app, page }) => {
+    await app.gotoApp();
+    await app.nav("Teams");
+    await page.getByRole("button", { name: "platform", exact: true }).click();
+    await page.getByRole("tab", { name: "Audit log" }).click();
+    await expect(page.getByRole("status").filter({ hasText: "Verified, partial" })).toContainText(
+      "older events weren't checked",
+    );
   });
 });
 
@@ -214,8 +475,7 @@ test.describe("Teams audit log, tampered", () => {
   test.use({
     mockOptions: {
       overrides: {
-        teams_status: auditStatus,
-        teams_members: () => [],
+        ...adminOverrides,
         teams_audit: () => ({
           lines: [
             {
@@ -240,14 +500,18 @@ test.describe("Teams audit log, tampered", () => {
     },
   });
 
-  test("flags failed verification as tampering", async ({ app, page }) => {
+  test("flags failed verification as tampering and keeps it on the team row", async ({ app, page }) => {
     await app.gotoApp();
     await app.nav("Teams");
-    await page.getByRole("button", { name: /platform/ }).click();
-    await page.getByRole("button", { name: "Load" }).click();
+    await page.getByRole("button", { name: "platform", exact: true }).click();
+    await page.getByRole("tab", { name: "Audit log" }).click();
     const alert = page.getByRole("alert").filter({ hasText: "Verification failed" });
-    await expect(alert).toContainText("1 invalid event(s), 1 chain problem(s)");
+    await expect(alert).toContainText("treat this log as tampered");
+    await expect(alert).toContainText("1 event failed the check · 1 chain problem");
     await expect(alert).toContainText("events 3 to 4 are missing");
     await expect(page.getByRole("row", { name: /ana@example.com/ })).toContainText("Bad signature");
+
+    await page.getByRole("button", { name: "All teams" }).click();
+    await expect(page.getByRole("row", { name: /platform/ })).toContainText("Audit log failed");
   });
 });
