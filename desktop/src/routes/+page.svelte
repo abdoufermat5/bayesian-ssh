@@ -41,7 +41,10 @@
     focusPopoutSession,
     terminateDetachedSession,
     terminatePopoutSession,
+    updateTerminalFontSize,
+    getTerminalFontSize,
   } from "$lib/stores/terminal.svelte";
+  import { isTerminalPaletteKey, isXtermEvent, terminalZoomDelta } from "$lib/utils/terminal-xterm";
   import {
     getKerberosState,
     openKerberosModal,
@@ -105,10 +108,25 @@
       document.activeElement?.tagName === "TEXTAREA" ||
       document.activeElement?.getAttribute("contenteditable") === "true";
 
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+    // Plain Ctrl+K never reaches this handler from a focused terminal (xterm
+    // consumes it for the shell), so terminals use Ctrl+Shift+P (Cmd+K on macOS).
+    if (((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") || isTerminalPaletteKey(e)) {
       e.preventDefault();
       showCommandPalette = !showCommandPalette;
       return;
+    }
+
+    // Terminal font zoom while xterm has focus (the terminal key handler lets
+    // these through instead of sending them to the shell).
+    if (isXtermEvent(e)) {
+      const zoom = terminalZoomDelta(e);
+      if (zoom !== null) {
+        e.preventDefault();
+        updateTerminalFontSize(
+          zoom === 0 ? (appState.settings.terminal_font_size ?? 13) : getTerminalFontSize() + zoom,
+        );
+        return;
+      }
     }
 
     if (

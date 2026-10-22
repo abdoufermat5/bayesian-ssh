@@ -227,7 +227,46 @@ export function copyTextWithFallback(text: string): void {
   legacyFallback();
 }
 
-/** Copy/paste shortcuts, selection, and Linux WebKitGTK IME guards. */
+let smartCopy = false;
+
+/**
+ * "Smart copy": Ctrl+C copies while text is selected instead of sending
+ * SIGINT. Off by default so plain Ctrl+C always interrupts the shell.
+ */
+export function setTerminalSmartCopy(enabled: boolean): void {
+  smartCopy = enabled;
+}
+
+const IS_MAC = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform || "");
+
+/** Terminal font zoom requested with Ctrl/Cmd+Shift+=, -, 0. */
+export function terminalZoomDelta(event: KeyboardEvent): 1 | -1 | 0 | null {
+  if (!(IS_MAC ? event.metaKey : event.ctrlKey) || !event.shiftKey || event.altKey) return null;
+  if (event.code === "Equal" || event.code === "NumpadAdd" || event.key === "+") return 1;
+  if (event.code === "Minus" || event.code === "NumpadSubtract" || event.key === "_") return -1;
+  if (event.code === "Digit0" || event.code === "Numpad0" || event.key === ")") return 0;
+  return null;
+}
+
+/** True when the event comes from an xterm input textarea. */
+export function isXtermEvent(event: Event): boolean {
+  const target = event.target;
+  return target instanceof HTMLElement && target.classList.contains("xterm-helper-textarea");
+}
+
+/** The shortcut that opens the command palette from inside a terminal. */
+export function isTerminalPaletteKey(event: KeyboardEvent): boolean {
+  const key = event.key.toLowerCase();
+  if (IS_MAC) return event.metaKey && !event.shiftKey && !event.altKey && key === "k";
+  return event.ctrlKey && event.shiftKey && !event.altKey && key === "p";
+}
+
+/**
+ * Terminal keys. Plain Ctrl+C/V/F/K always reach the shell; the app's
+ * copy, paste and find are Ctrl+Shift+C/V/F (Cmd+C/V/F on macOS).
+ * Keys returned `false` here are not sent to the PTY and still bubble to the
+ * window, where the palette and font-zoom shortcuts are handled.
+ */
 export function attachXtermKeyHandler(
   term: Terminal,
   onOpenSearch?: () => void,
@@ -248,51 +287,50 @@ export function attachXtermKeyHandler(
     });
   };
 
+  /** Run `action` once per key press and keep the browser from acting too. */
+  const consume = (event: KeyboardEvent, action: () => void): false => {
+    if (event.type === "keydown") {
+      event.preventDefault();
+      action();
+    }
+    return false;
+  };
+
   term.attachCustomKeyEventHandler((event) => {
     if (event.isComposing) {
       return false;
     }
 
     const key = event.key.toLowerCase();
-    const isCmdOrCtrl = event.ctrlKey || event.metaKey;
+    // The app modifier: Cmd on macOS, Ctrl+Shift elsewhere.
+    const appMod = IS_MAC ? event.metaKey && !event.ctrlKey : event.ctrlKey && event.shiftKey;
+    const noAlt = !event.altKey;
 
-    // Ctrl+F / Cmd+F -> Open in-terminal search
-    if (isCmdOrCtrl && key === "f" && !event.shiftKey && onOpenSearch) {
-      if (event.type === "keydown") {
-        onOpenSearch();
-      }
-      return false;
+    if (isTerminalPaletteKey(event)) return false;
+    if (terminalZoomDelta(event) !== null) return false;
+
+    if (appMod && noAlt && key === "f" && !(IS_MAC && event.shiftKey)) {
+      return onOpenSearch ? consume(event, onOpenSearch) : true;
     }
 
-    // Ctrl+Shift+A / Cmd+A -> Select All (plain Ctrl+A stays with the shell)
-    if (isCmdOrCtrl && key === "a" && (event.shiftKey || event.metaKey)) {
-      if (event.type === "keydown") {
-        term.selectAll();
-      }
-      return false;
+    // Ctrl+Shift+A / Cmd+A -> Select all (plain Ctrl+A stays with the shell)
+    if (appMod && noAlt && key === "a") {
+      return consume(event, () => term.selectAll());
     }
 
-    // Ctrl+C / Cmd+C (when text is selected) or Ctrl+Shift+C -> Copy
+    if (appMod && noAlt && key === "c") {
+      return consume(event, copySelection);
+    }
+    // Opt-in: plain Ctrl+C copies while text is selected.
+    if (smartCopy && !IS_MAC && event.ctrlKey && !event.shiftKey && noAlt && key === "c" && term.hasSelection()) {
+      return consume(event, copySelection);
+    }
+
     if (
-      (isCmdOrCtrl && key === "c" && term.hasSelection()) ||
-      (isCmdOrCtrl && event.shiftKey && key === "c")
+      (appMod && noAlt && key === "v") ||
+      (event.shiftKey && !event.ctrlKey && !event.metaKey && event.key === "Insert")
     ) {
-      if (event.type === "keydown") {
-        copySelection();
-      }
-      return false;
-    }
-
-    // Ctrl+V / Cmd+V or Ctrl+Shift+V or Shift+Insert -> Paste
-    if (
-      (isCmdOrCtrl && key === "v") ||
-      (isCmdOrCtrl && event.shiftKey && key === "v") ||
-      (event.shiftKey && event.key === "Insert")
-    ) {
-      if (event.type === "keydown") {
-        pasteText();
-      }
-      return false;
+      return consume(event, pasteText);
     }
 
     return true;

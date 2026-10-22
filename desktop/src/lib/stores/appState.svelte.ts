@@ -13,7 +13,7 @@ import type {
 import { notify } from "$lib/stores/notifications.svelte";
 import { applyTheme } from "$lib/utils/theme";
 import { isTerminalFocused } from "$lib/utils/terminal-focus";
-import { copyTextWithFallback } from "$lib/utils/terminal-xterm";
+import { copyTextWithFallback, setTerminalSmartCopy } from "$lib/utils/terminal-xterm";
 import {
   applyThemeToAllTerminals,
   closeAllTabs,
@@ -142,6 +142,7 @@ export class AppStateStore {
     terminal_cursor_style: "block",
     terminal_cursor_blink: true,
     terminal_copy_on_select: false,
+    terminal_smart_copy: false,
     terminal_scrollback: 10000,
     sftp_show_hidden_files: true,
     sftp_default_remote_path: "/",
@@ -327,6 +328,7 @@ export class AppStateStore {
         terminal_cursor_style: (loaded.terminal_cursor_style as "block" | "bar" | "underline") || "block",
         terminal_cursor_blink: loaded.terminal_cursor_blink !== false,
         terminal_copy_on_select: Boolean(loaded.terminal_copy_on_select),
+        terminal_smart_copy: Boolean(loaded.terminal_smart_copy),
         terminal_scrollback: Number(loaded.terminal_scrollback) || 10000,
         sftp_show_hidden_files: loaded.sftp_show_hidden_files !== false,
         sftp_default_remote_path: (loaded.sftp_default_remote_path as string) || "/",
@@ -336,6 +338,7 @@ export class AppStateStore {
         record_tags: Array.isArray(loaded.record_tags) ? (loaded.record_tags as string[]) : [],
       };
       applyTheme(this.settings.theme);
+      setTerminalSmartCopy(Boolean(this.settings.terminal_smart_copy));
       applyThemeToAllTerminals(this.settings);
 
       if (this.settings.monitor_kerberos) {
