@@ -51,6 +51,8 @@ test.describe("Teams setup", () => {
       server: "https://teams.example.com",
       email: "ana@example.com",
       passphrase: "correct horse",
+      // No invite pasted: nothing to show an invite-only server.
+      inviteToken: null,
     });
   });
 });
