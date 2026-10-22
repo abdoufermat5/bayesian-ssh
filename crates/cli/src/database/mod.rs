@@ -22,7 +22,7 @@ pub use search::{Prediction, RankContext, ScoreBreakdown, SearchField};
 pub use session::live_pid;
 pub use source::SourceSummary;
 
-const SCHEMA_VERSION: i32 = 8;
+const SCHEMA_VERSION: i32 = 9;
 
 /// How long a statement waits on a lock held by another process (the CLI
 /// and the desktop app share the same database file) before failing with
@@ -162,6 +162,10 @@ impl Database {
         if current < 8 {
             self.migrate_v8_teams_tables()?;
             self.set_schema_version(8)?;
+        }
+        if current < 9 {
+            self.migrate_v9_teams_trust()?;
+            self.set_schema_version(9)?;
         }
         Ok(())
     }
@@ -364,6 +368,14 @@ impl Database {
     fn migrate_v8_teams_tables(&self) -> Result<()> {
         self.conn
             .execute_batch(crate::services::teams::store::SCHEMA_V8)?;
+        Ok(())
+    }
+
+    /// Teams identity, known author keys, admin-approved devices, and
+    /// session events waiting to be signed.
+    fn migrate_v9_teams_trust(&self) -> Result<()> {
+        self.conn
+            .execute_batch(crate::services::teams::session::SCHEMA_V9)?;
         Ok(())
     }
 
@@ -606,7 +618,7 @@ mod tests {
     }
 
     #[test]
-    fn v7_database_upgrades_to_v8_with_teams_tables() {
+    fn v7_database_upgrades_with_teams_tables() {
         let dir = tempdir().unwrap();
         let config = AppConfig {
             database_path: dir.path().join("test.db"),
@@ -643,8 +655,9 @@ mod tests {
         }
 
         let db = Database::new(&config).unwrap();
-        assert_eq!(db.current_schema_version().unwrap(), 8);
+        assert_eq!(db.current_schema_version().unwrap(), SCHEMA_VERSION);
         for table in [
+            // v8
             "teams_local",
             "team_wrapped_keys",
             "vault_entries",
@@ -652,6 +665,11 @@ mod tests {
             "audit_outbox",
             "audit_chain",
             "device_keys",
+            // v9
+            "teams_identity",
+            "team_authors",
+            "team_approved_devices",
+            "team_audit_pending",
         ] {
             let n: i64 = db
                 .conn

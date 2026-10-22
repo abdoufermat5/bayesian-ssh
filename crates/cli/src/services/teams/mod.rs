@@ -11,6 +11,8 @@
 //!   outbox, audit chain.
 //! - [`client`]: the HTTPS client for the `/v1` API.
 //! - [`sync`]: the local-first sync engine.
+//! - [`session`]: the workflows behind `bssh teams` (identity, invites,
+//!   device approval, rotation) and the trust rules they enforce.
 //!
 //! Local-first (PERIMETER.md R1): [`read_vault`] and [`queue_edit`] only touch
 //! the local store. Nothing here waits on the network; [`sync::SyncEngine`]
@@ -21,6 +23,7 @@
 pub mod client;
 pub mod codec;
 pub mod crypto;
+pub mod session;
 pub mod store;
 pub mod sync;
 

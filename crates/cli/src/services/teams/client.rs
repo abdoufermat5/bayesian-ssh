@@ -381,9 +381,9 @@ impl TeamsClient {
         self.post(&format!("/teams/{team_id}/invites"), req).await
     }
 
-    /// The response body isn't specified; it is ignored. List teams afterwards.
-    pub async fn accept_invite(&self, req: &AcceptInviteRequest) -> ClientResult<()> {
-        self.post_unit("/invites/accept", req).await
+    /// Join the team the invite is for; returns that team.
+    pub async fn accept_invite(&self, req: &AcceptInviteRequest) -> ClientResult<TeamInfo> {
+        self.post("/invites/accept", req).await
     }
 
     pub async fn pending_devices(&self, team_id: Uuid) -> ClientResult<PendingDevices> {

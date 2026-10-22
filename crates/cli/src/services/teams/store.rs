@@ -127,6 +127,12 @@ impl TeamsStore {
         Self { db }
     }
 
+    /// The underlying database, for the connection tables team vaults are
+    /// materialized into.
+    pub fn database(&self) -> &Database {
+        &self.db
+    }
+
     // -- teams ---------------------------------------------------------------
 
     pub fn upsert_team(&self, t: &TeamLocal) -> Result<()> {
@@ -443,6 +449,20 @@ impl TeamsStore {
         kind: AuditKind,
         entry_id: Option<Uuid>,
     ) -> Result<AuditEvent> {
+        self.append_audit_event_at(team_id, codec, kind, entry_id, Utc::now())
+    }
+
+    /// [`Self::append_audit_event`] for something that happened at
+    /// `occurred_at`, e.g. a session recorded while the device keys were
+    /// locked and signed at the next sync.
+    pub fn append_audit_event_at(
+        &self,
+        team_id: Uuid,
+        codec: &dyn VaultCodec,
+        kind: AuditKind,
+        entry_id: Option<Uuid>,
+        occurred_at: DateTime<Utc>,
+    ) -> Result<AuditEvent> {
         let device_id = codec.device_id();
         let tx = self.db.conn.unchecked_transaction()?;
         let head: Option<(i64, Vec<u8>)> = tx
@@ -465,7 +485,7 @@ impl TeamsStore {
             entry_id,
             // Only millisecond precision is signed; truncate so the stored
             // event matches what the server verifies.
-            occurred_at: Utc::now().trunc_subsecs(3),
+            occurred_at: occurred_at.trunc_subsecs(3),
             prev_hash,
             signature: Fixed::ZERO,
         };
