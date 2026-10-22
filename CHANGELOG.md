@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.9.0] - 2026-10-22
+
 ### Removed
 - **Desktop Tunnels view**: it only held port-forward rules in memory and never started a tunnel. Use `bssh forward` (`-L`) and `bssh proxy` (`-D`) from the CLI. The "Tunnels" setting is gone; an old `enable_tunneling` value in desktop settings is ignored. The number keys now run `1`–`7` (Keys is `4`).
 - **Desktop grid layout and Ping on the Hosts view** (and "Ping all hosts" in the command palette): the list is the one host layout, and `bssh ping` remains on the CLI.
