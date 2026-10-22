@@ -2,6 +2,7 @@
 members = [
     "crates/cli",
     "crates/gui",
+    "crates/teams-proto",
 ]
 default-members = ["crates/cli"]
 resolver = "2"

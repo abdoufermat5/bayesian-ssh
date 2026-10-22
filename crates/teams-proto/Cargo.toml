@@ -1,0 +1,19 @@
+[package]
+name = "bssh-teams-proto"
+version = "0.1.0"
+edition = "2021"
+authors = ["Abdoufermat5"]
+description = "Wire types and byte layouts shared by the bssh Teams client and server"
+license = "MIT"
+repository = "https://github.com/abdoufermat5/bayesian-ssh"
+publish = false
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.0", features = ["v4", "serde"] }
+base64 = "0.22"
+sha2 = "0.10"
+
+[dev-dependencies]
+serde_json = "1.0"
