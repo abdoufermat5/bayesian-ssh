@@ -27,7 +27,7 @@ const THEMES = {
   zinc: { label: "Graphite", vars: { ...base, ...block("html\\.theme-zinc") } },
   cyberpunk: { label: "Midnight", vars: { ...base, ...block("html\\.theme-cyberpunk") } },
   oled: { label: "OLED", vars: { ...base, ...block("html\\.theme-oled") } },
-  slate: { label: "Slate", vars: { ...base, ...block("html\\.theme-slate") } },
+  paper: { label: "Paper", vars: { ...base, ...block("html\\.theme-paper") } },
 };
 
 function parseColor(v) {

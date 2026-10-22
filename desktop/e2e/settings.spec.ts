@@ -126,7 +126,7 @@ test.describe("settings", () => {
     await openSection(page, "Appearance");
 
     const group = page.getByRole("radiogroup", { name: "Theme" });
-    await expect(group.getByRole("radio")).toHaveCount(4);
+    await expect(group.getByRole("radio")).toHaveCount(5);
     // Default theme is Graphite/zinc.
     await expect(page.getByRole("radio", { name: "Graphite" })).toHaveAttribute(
       "aria-checked",
@@ -136,20 +136,20 @@ test.describe("settings", () => {
     expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe("zinc");
 
     const themeCases = [
-      { name: "Midnight", id: "cyberpunk" },
-      { name: "OLED black", id: "oled" },
-      { name: "Slate", id: "slate" },
-      { name: "Graphite", id: "zinc" },
+      { name: "Midnight", id: "cyberpunk", cls: "theme-cyberpunk" },
+      { name: "OLED black", id: "oled", cls: "theme-oled" },
+      { name: "Paper", id: "paper", cls: "theme-paper" },
+      { name: "Match system", id: "system", cls: "theme-(zinc|paper)" },
+      { name: "Graphite", id: "zinc", cls: "theme-zinc" },
     ];
 
     let saves = 0;
-    for (const { name, id } of themeCases) {
+    for (const { name, id, cls } of themeCases) {
       await page.getByRole("radio", { name }).click();
       await expect(page.getByRole("radio", { name })).toHaveAttribute("aria-checked", "true");
 
       const classes = await page.evaluate(() => [...document.documentElement.classList]);
-      expect(classes).toContain(`theme-${id}`);
-      expect(classes.filter((c) => c.startsWith("theme-"))).toEqual([`theme-${id}`]);
+      expect(classes.some((c) => new RegExp(cls).test(c))).toBe(true);
       expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe(id);
 
       // Each switch persists through save_desktop_settings.
@@ -186,6 +186,30 @@ test.describe("settings", () => {
       "aria-checked",
       "true",
     );
+  });
+
+  test("appearance density switches data-density on html and persists", async ({ app, page }) => {
+    await openSettings(app, page);
+    await openSection(page, "Appearance");
+
+    const group = page.getByRole("radiogroup", { name: "Density" });
+    await expect(group.getByRole("radio")).toHaveCount(3);
+    await expect(page.getByRole("radio", { name: "Comfortable" })).toHaveAttribute("aria-checked", "true");
+    expect(await page.evaluate(() => document.documentElement.dataset.density)).toBe("comfortable");
+
+    await page.getByRole("radio", { name: "Compact" }).click();
+    await expect(page.getByRole("radio", { name: "Compact" })).toHaveAttribute("aria-checked", "true");
+    expect(await page.evaluate(() => document.documentElement.dataset.density)).toBe("compact");
+    expect((await app.ipcCalls("save_desktop_settings")).at(-1)).toMatchObject({
+      settings: { density: "compact" },
+    });
+
+    await page.getByRole("radio", { name: "Spacious" }).click();
+    await expect(page.getByRole("radio", { name: "Spacious" })).toHaveAttribute("aria-checked", "true");
+    expect(await page.evaluate(() => document.documentElement.dataset.density)).toBe("spacious");
+    expect((await app.ipcCalls("save_desktop_settings")).at(-1)).toMatchObject({
+      settings: { density: "spacious" },
+    });
   });
 
   test("browse picks an ssh config file and import pulls hosts", async ({ app, page }) => {

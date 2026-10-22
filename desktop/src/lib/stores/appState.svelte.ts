@@ -12,7 +12,7 @@ import type {
 } from "$lib/types";
 import { notify } from "$lib/stores/notifications.svelte";
 import { refreshTeamsAttention, startTeamsAttentionPoller } from "$lib/stores/teamsAttention.svelte";
-import { applyTheme } from "$lib/utils/theme";
+import { applyTheme, applyDensity } from "$lib/utils/theme";
 import { isTerminalFocused } from "$lib/utils/terminal-focus";
 import { VIEW_ORDER } from "$lib/shortcuts";
 import { viewEnabled } from "$lib/viewMeta";
@@ -141,6 +141,7 @@ export class AppStateStore {
 
   settings = $state<DesktopSettings>({
     theme: "zinc",
+    density: "comfortable",
     auto_start_agent: false,
     custom_agent_socket: "",
     kerberos_warn_minutes: 15,
@@ -315,6 +316,7 @@ export class AppStateStore {
       this.showOnboarding = false;
       await this.loadData();
       applyTheme(this.settings.theme);
+      applyDensity(this.settings.density);
       if (imported > 0) {
         notify(`Setup complete — imported ${imported} host${imported === 1 ? "" : "s"}`, "success");
       } else {
@@ -331,6 +333,7 @@ export class AppStateStore {
       this.settings = {
         theme: (loaded.theme as string) || "zinc",
         auto_start_agent: Boolean(loaded.auto_start_agent),
+        density: (loaded.density as "compact" | "comfortable" | "spacious") || "comfortable",
         custom_agent_socket: (loaded.custom_agent_socket as string) || "",
         kerberos_warn_minutes: Number(loaded.kerberos_warn_minutes) || 15,
         monitor_kerberos: loaded.monitor_kerberos !== false,
@@ -355,6 +358,7 @@ export class AppStateStore {
         record_tags: Array.isArray(loaded.record_tags) ? (loaded.record_tags as string[]) : [],
       };
       applyTheme(this.settings.theme);
+      applyDensity(this.settings.density);
       setTerminalSmartCopy(Boolean(this.settings.terminal_smart_copy));
       applyThemeToAllTerminals(this.settings);
 
@@ -373,6 +377,7 @@ export class AppStateStore {
 
   saveSettings = async () => {
     applyTheme(this.settings.theme);
+    applyDensity(this.settings.density);
     applyThemeToAllTerminals(this.settings);
     try {
       await invoke("save_desktop_settings", {
@@ -406,6 +411,12 @@ export class AppStateStore {
     applyTheme(theme);
     void this.saveSettings();
   }
+  handleDensityChange = (density: "compact" | "comfortable" | "spacious") => {
+    this.settings.density = density;
+    applyDensity(density);
+    void this.saveSettings();
+  }
+
 
   loadAgentStatus = async () => {
     try {

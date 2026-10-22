@@ -165,7 +165,10 @@ pub struct AgentStatus {
 // Desktop App Settings
 #[derive(Serialize, Deserialize, Clone)]
 pub struct DesktopSettings {
-    pub theme: String, // "zinc" | "cyberpunk" | "oled" | "slate"
+    #[serde(default = "default_theme", deserialize_with = "deserialize_theme")]
+    pub theme: String, // "zinc" | "cyberpunk" | "oled" | "paper" | "system"
+    #[serde(default = "default_density")]
+    pub density: String, // "compact" | "comfortable" | "spacious"
     pub auto_start_agent: bool,
     pub custom_agent_socket: Option<String>,
     #[serde(default = "default_kerberos_warn_minutes")]
@@ -229,6 +232,25 @@ pub fn default_enable_tunneling() -> bool {
 
 pub fn default_timezone() -> String {
     "system".to_string()
+}
+pub fn default_theme() -> String {
+    "zinc".to_string()
+}
+
+pub fn deserialize_theme<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    if s == "slate" {
+        Ok("cyberpunk".to_string())
+    } else {
+        Ok(s)
+    }
+}
+
+pub fn default_density() -> String {
+    "comfortable".to_string()
 }
 
 pub fn default_kerberos_warn_minutes() -> u32 {
@@ -303,6 +325,7 @@ impl Default for DesktopSettings {
             enable_tunneling: default_enable_tunneling(),
             record_sessions: false,
             record_tags: Vec::new(),
+            density: default_density(),
         }
     }
 }
@@ -375,5 +398,25 @@ mod tests {
             .unwrap()
             .get("confirm_snippet_execution")
             .is_none());
+    }
+
+    #[test]
+    fn settings_migrates_slate_theme_to_cyberpunk() {
+        let mut saved = serde_json::to_value(DesktopSettings::default()).unwrap();
+        saved["theme"] = serde_json::json!("slate");
+        let loaded: DesktopSettings = serde_json::from_value(saved).unwrap();
+        assert_eq!(loaded.theme, "cyberpunk");
+    }
+
+    #[test]
+    fn settings_defaults_density_to_comfortable() {
+        let saved = serde_json::json!({
+            "auto_start_agent": false,
+            "default_user": "root",
+            "default_port": 22,
+            "fuzzy_search": false
+        });
+        let loaded: DesktopSettings = serde_json::from_value(saved).unwrap();
+        assert_eq!(loaded.density, "comfortable");
     }
 }
