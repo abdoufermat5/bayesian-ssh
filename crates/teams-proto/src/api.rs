@@ -188,6 +188,12 @@ pub struct CreateInviteRequest {
 /// `token` is returned once and never again; the admin sends it to the
 /// invitee out of band together with their own device's Ed25519 fingerprint,
 /// which the invitee pins as the team's trust root.
+///
+/// `GET /v1/teams/{team_id}/invites` (admin) returns the pending, unexpired
+/// invites as `Vec<Invite>`, all with `token: None`.
+/// `DELETE /v1/teams/{team_id}/invites/{invite_id}` (admin) revokes a pending
+/// invite: no body, 204, and its seat is free again. An accepted or unknown
+/// invite is `NotFound`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Invite {
     pub invite_id: Uuid,

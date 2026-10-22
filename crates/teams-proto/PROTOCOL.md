@@ -84,6 +84,10 @@ pending, unexpired invite (the token is checked, not consumed). The invitee then
 polls `GET /teams/{id}/devices/pending` and posts a `WrappedKey` for each new device
 (`POST /teams/{id}/keys`, same `key_version`).
 
+**Revoke an invite.** A pending invite takes a seat until it is accepted or expires.
+`GET /teams/{id}/invites` (admin) lists the pending ones, without their tokens;
+`DELETE /teams/{id}/invites/{invite}` (admin) revokes one, and its token stops working.
+
 **Remove a member.** `DELETE /teams/{id}/members/{member}` sets `rotation_required`.
 Pushes with the old `key_version` then fail with `RotationRequired`. The admin generates
 `TK_{v+1}`, wraps it to every remaining active device, and posts them all in one request.

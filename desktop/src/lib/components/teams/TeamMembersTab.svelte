@@ -1,13 +1,14 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
-  import { Hourglass, KeyRound, RefreshCw, UserMinus, UserPlus } from "lucide-svelte";
-  import type { TeamMember, TeamPendingDevice, TeamSummary, TeamSyncReport } from "$lib/types";
+  import { Hourglass, KeyRound, Mail, RefreshCw, UserMinus, UserPlus } from "lucide-svelte";
+  import type { TeamMember, TeamPendingDevice, TeamPendingInvite, TeamSummary, TeamSyncReport } from "$lib/types";
   import { notify } from "$lib/stores/notifications.svelte";
   import Fingerprint from "./Fingerprint.svelte";
   import GrantDeviceModal from "./GrantDeviceModal.svelte";
   import InviteModal from "./InviteModal.svelte";
   import RemoveMemberModal from "./RemoveMemberModal.svelte";
   import TeamBilling from "./TeamBilling.svelte";
+  import { formatUtc } from "./teams";
 
   let {
     team,
@@ -39,6 +40,11 @@
   let granting = $state.raw<TeamPendingDevice | null>(null);
   let removing = $state<string | null>(null);
   let inviting = $state(false);
+  let invites = $state.raw<TeamPendingInvite[] | null>(null);
+  let invitesError = $state<string | null>(null);
+  let revoking = $state<string | null>(null);
+  /** Bumped after an invite or a revoke so the plan card recounts seats. */
+  let seatsVersion = $state(0);
 
   /**
    * Server-reported fingerprints of devices still waiting for the key. They're
@@ -59,6 +65,33 @@
     }
   }
 
+  async function loadInvites() {
+    invitesError = null;
+    try {
+      invites = await invoke<TeamPendingInvite[]>("teams_invites", { team: team.team_id });
+    } catch (err) {
+      invitesError = String(err);
+    }
+  }
+
+  async function revoke(email: string) {
+    revoking = email;
+    try {
+      await invoke("teams_uninvite", { team: team.team_id, email });
+      notify(`Revoked the invite for ${email}`, "success");
+      seatsVersion++;
+      await loadInvites();
+    } catch (err) {
+      notify(`Couldn't revoke the invite: ${err}`, "error");
+    } finally {
+      revoking = null;
+    }
+  }
+
+  $effect(() => {
+    if (isAdmin) void loadInvites();
+  });
+
   $effect(() => {
     // Reload when the role becomes known or the poller reports a new count.
     void pendingHint;
@@ -67,7 +100,7 @@
 </script>
 
 <div class="flex flex-col gap-6">
-  <TeamBilling {team} {isAdmin} />
+  {#key seatsVersion}<TeamBilling {team} {isAdmin} />{/key}
 
   {#if isAdmin}
     <section class="flex flex-col gap-2" aria-labelledby="team-pending-heading">
@@ -163,6 +196,40 @@
       {/if}
     {/if}
   </section>
+
+  {#if isAdmin && (invitesError || (invites && invites.length > 0))}
+    <section class="flex flex-col gap-2" aria-labelledby="team-invites-heading">
+      <h3 id="team-invites-heading" class="section-heading flex items-center gap-1.5">
+        <Mail size={14} /> Pending invites
+        {#if invites}<span class="count ml-1">{invites.length}</span>{/if}
+      </h3>
+      {#if invitesError}
+        <div class="alert alert-error" role="alert">Couldn't load invites: {invitesError}</div>
+      {:else if invites}
+        <ul class="panel m-0 flex list-none flex-col p-0">
+          {#each invites as inv, i (inv.email)}
+            <li class="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5" class:border-t={i > 0} class:border-border-subtle={i > 0}>
+              <span class="flex min-w-0 items-center gap-2 type-body">
+                <span class="truncate text-primary">{inv.email}</span>
+                {#if inv.role === "admin"}<span class="badge badge-neutral">Admin</span>{/if}
+                <span class="type-meta">expires {formatUtc(inv.expires_at)}</span>
+              </span>
+              <button
+                type="button"
+                class="btn btn-ghost btn-sm"
+                onclick={() => revoke(inv.email)}
+                disabled={revoking !== null}
+                aria-label="Revoke the invite for {inv.email}"
+              >
+                {revoking === inv.email ? "Revoking…" : "Revoke"}
+              </button>
+            </li>
+          {/each}
+        </ul>
+        <p class="m-0 type-meta">Each pending invite holds a seat until it's accepted or expires.</p>
+      {/if}
+    </section>
+  {/if}
 </div>
 
 {#if granting}
@@ -194,5 +261,12 @@
 {/if}
 
 {#if inviting}
-  <InviteModal {team} onClose={() => (inviting = false)} />
+  <InviteModal
+    {team}
+    onClose={() => {
+      inviting = false;
+      seatsVersion++;
+      void loadInvites();
+    }}
+  />
 {/if}

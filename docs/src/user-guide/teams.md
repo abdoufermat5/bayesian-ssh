@@ -65,6 +65,11 @@ If Ana mistyped the fingerprint in step 2, the invite token is already used:
 she finishes with `bssh teams join --team <TEAM ID> --fingerprint <FINGERPRINT>`
 (the error message prints the exact command).
 
+A pending invite holds a seat until it's accepted or expires (after 7 days).
+`bssh teams members platform` lists pending invites for admins, and
+`bssh teams uninvite platform ana@example.com` revokes one: its token stops
+working and the seat is free again. Send a new invite if the token was lost.
+
 ## Sync
 
 ```bash
@@ -173,7 +178,8 @@ Open a team to see three tabs:
 - **Hosts**: the team's connections, **Share** one of yours, or **Unshare** one
   (a confirmation says it's removed for everyone in the team).
 - **Members & devices**: members, their role and each device's fingerprint.
-  Admins also see **Invite**, the devices waiting for the key and **Remove**.
+  Admins also see **Invite**, the devices waiting for the key, **Remove**, and
+  pending invites with **Revoke**.
   **Invite** produces a message to send as is, with both the desktop and the
   command-line steps, the one-time token, your fingerprint and the expiry, and
   a **Copy message** button.
@@ -219,7 +225,8 @@ event.
 | `bssh teams join TOKEN --fingerprint FP` | Join a team |
 | `bssh teams grant TEAM [--fingerprint FP]` | List waiting devices, or grant one (admin) |
 | `bssh teams sync [TEAM]` | Sync one team or all |
-| `bssh teams members TEAM` | Members and device fingerprints |
+| `bssh teams uninvite TEAM EMAIL` | Revoke a pending invite and free its seat (admin) |
+| `bssh teams members TEAM` | Members and device fingerprints; pending invites for admins |
 | `bssh teams remove TEAM EMAIL` | Remove a member and rotate the key (admin) |
 | `bssh teams billing TEAM [--checkout [--seats N] [--yearly] \| --manage]` | Plan and seats; subscribe or manage billing (admin) |
 | `bssh teams audit TEAM [--host H] [--member E] [--since D]` | Show and verify the audit log (admin) |

@@ -312,6 +312,13 @@ export interface TeamPendingDevice {
   device: TeamDevice;
 }
 
+/** A pending invite, as its team's admin sees it (no token). */
+export interface TeamPendingInvite {
+  email: string;
+  role: "admin" | "member";
+  expires_at: string;
+}
+
 export interface TeamMember {
   email: string;
   role: "admin" | "member";

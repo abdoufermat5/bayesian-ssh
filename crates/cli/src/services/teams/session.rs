@@ -871,6 +871,40 @@ impl<'a> Session<'a> {
         Ok(members)
     }
 
+    /// Pending invites, which hold seats until accepted or expired. Only
+    /// admins can see them: `None` for a member, or on a server too old to
+    /// list them (no such route: a bare 404 or 405).
+    pub async fn invites(&self, team_id: Uuid) -> Result<Option<Vec<Invite>>> {
+        if self.team_info(team_id).await?.my_role != Role::Admin {
+            return Ok(None);
+        }
+        match self.client.list_invites(team_id).await {
+            Ok(invites) => Ok(Some(invites)),
+            Err(TeamsError::Http {
+                status: 404 | 405, ..
+            }) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Revoke the pending invite for `email`: its token stops working and its
+    /// seat is free again.
+    pub async fn uninvite(&self, team_id: Uuid, email: &str) -> Result<Invite> {
+        self.require_admin(team_id).await?;
+        let email = email.trim().to_lowercase();
+        let invite = self
+            .invites(team_id)
+            .await?
+            .ok_or_else(|| {
+                anyhow!("this Teams server can't revoke invites yet: it needs an update")
+            })?
+            .into_iter()
+            .find(|i| i.email == email)
+            .ok_or_else(|| anyhow!("no pending invite for {email}"))?;
+        self.client.revoke_invite(team_id, invite.invite_id).await?;
+        Ok(invite)
+    }
+
     /// What needs a human in this team. A removed account is reported, not
     /// raised as an error.
     pub async fn attention(&self, team_id: Uuid) -> Result<TeamAttentionState> {

@@ -247,6 +247,14 @@ async fn run(command: TeamsCommands, store: &TeamsStore, config: &AppConfig) -> 
                 .ok_or_else(|| anyhow!("no connection named '{connection}'"))?;
             let s = Session::open(store, config, &passphrase(false)?)?;
             let (_, sync) = s.share(team_id, &conn).await?;
+            if !reached_server(&sync) {
+                println!(
+                    "📥 '{}' is queued for '{}': it is shared once a sync goes through.",
+                    conn.name, source.name
+                );
+                print_sync(&source.name, &sync);
+                return Ok(());
+            }
             println!("📤 Shared '{}' with '{}'.", conn.name, source.name);
             print_sync(&source.name, &sync);
             if conn.source_id.is_none() {
@@ -273,7 +281,14 @@ async fn run(command: TeamsCommands, store: &TeamsStore, config: &AppConfig) -> 
             }
             let s = Session::open(store, config, &passphrase(false)?)?;
             let sync = s.unshare(&conn).await?;
-            println!("🗑️  Removed '{}' from the team vault.", conn.name);
+            if reached_server(&sync) {
+                println!("🗑️  Removed '{}' from the team vault.", conn.name);
+            } else {
+                println!(
+                    "📥 Removing '{}' is queued: it happens once a sync goes through.",
+                    conn.name
+                );
+            }
             print_sync(sync.name.as_deref().unwrap_or("team"), &sync);
         }
 
@@ -296,6 +311,34 @@ async fn run(command: TeamsCommands, store: &TeamsStore, config: &AppConfig) -> 
                     );
                 }
             }
+            if let Some(invites) = s.invites(team_id).await?.filter(|i| !i.is_empty()) {
+                println!();
+                println!(
+                    "✉️  Pending invites ({}), each holding a seat:",
+                    invites.len()
+                );
+                for i in &invites {
+                    println!(
+                        "  {:<32} expires {}",
+                        i.email,
+                        i.expires_at.format("%Y-%m-%d")
+                    );
+                }
+                println!(
+                    "   Revoke one: `bssh teams uninvite {} <email>`",
+                    source.name
+                );
+            }
+        }
+
+        TeamsCommands::Uninvite { team, email } => {
+            let (team_id, source) = session::resolve_team(db, &team)?;
+            let s = Session::open(store, config, &passphrase(false)?)?;
+            let invite = s.uninvite(team_id, &email).await?;
+            println!(
+                "🚫 Revoked the invite for {} to '{}': its token no longer works and its seat is free.",
+                invite.email, source.name
+            );
         }
 
         TeamsCommands::Billing {
@@ -476,6 +519,12 @@ fn print_pending(p: &PendingDevice) {
     println!("  {:<28} {:<16} {}", p.email, p.device.name, p.fingerprint);
 }
 
+/// The server took this run's queued edits (or there was nothing to refuse).
+fn reached_server(sync: &TeamSync) -> bool {
+    let r = &sync.report;
+    r.pushed > 0 || (r.errors.is_empty() && !r.rotation_required && !sync.waiting_for_key)
+}
+
 fn print_sync(name: &str, sync: &TeamSync) {
     if sync.waiting_for_key {
         println!("⏳ {name}: waiting for an admin to grant this device the team key.");
@@ -567,7 +616,7 @@ fn print_billing(team: &str, info: &bssh_teams_proto::api::BillingInfo) {
         "   {} of {} seats used (members and pending invites)",
         info.seats_used, info.seat_limit
     );
-    if let Some(end) = info.current_period_end {
+    if let Some(end) = info.current_period_end.filter(|_| info.plan == Plan::Team) {
         let what = if info.cancel_at_period_end {
             "Ends"
         } else {

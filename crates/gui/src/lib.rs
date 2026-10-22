@@ -149,6 +149,8 @@ pub fn run() {
             commands::teams_pending,
             commands::teams_grant,
             commands::teams_members,
+            commands::teams_invites,
+            commands::teams_uninvite,
             commands::teams_billing,
             commands::teams_billing_checkout,
             commands::teams_billing_portal,

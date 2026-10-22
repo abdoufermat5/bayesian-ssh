@@ -874,6 +874,8 @@ pub enum TeamsCommands {
         #[arg(long)]
         admin: bool,
     },
+    /// Revoke a pending invite (admin): its token stops working and its seat is free again
+    Uninvite { team: String, email: String },
     /// Join a team with an invite token and the admin's device fingerprint
     Join {
         /// Invite token (single use)

@@ -279,6 +279,41 @@ test.describe("Teams admin", () => {
   });
 });
 
+test.describe("Teams pending invites", () => {
+  test.use({
+    mockOptions: {
+      overrides: {
+        ...adminOverrides,
+        teams_pending: () => [],
+        // Stateful across calls: a revoke empties the list.
+        teams_invites: () =>
+          (window as unknown as { __revoked?: boolean }).__revoked
+            ? []
+            : [{ email: "lost@example.com", role: "member", expires_at: "2026-10-29T22:00:00Z" }],
+        teams_uninvite: () => {
+          (window as unknown as { __revoked?: boolean }).__revoked = true;
+          return null;
+        },
+      },
+    },
+  });
+
+  test("lists a pending invite and revokes it", async ({ app, page }) => {
+    await app.gotoApp();
+    await app.nav("Teams");
+    await page.getByRole("button", { name: "platform", exact: true }).click();
+    await page.getByRole("tab", { name: /Members & devices/ }).click();
+    const section = page.getByRole("region", { name: /Pending invites/ });
+    await expect(section).toContainText("lost@example.com");
+    await expect(section).toContainText("holds a seat");
+    await section.getByRole("button", { name: "Revoke the invite for lost@example.com" }).click();
+    await expect(section).toHaveCount(0);
+    const calls = await app.ipcCalls("teams_uninvite");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ team: "t-1", email: "lost@example.com" });
+  });
+});
+
 test.describe("Teams remove member, blocked", () => {
   test.use({
     mockOptions: {
