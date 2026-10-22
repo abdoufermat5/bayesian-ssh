@@ -6,7 +6,7 @@ const VIEWS: Array<{ nav: string; title: string }> = [
   { nav: "Files", title: "Files" },
   { nav: "Tunnels", title: "Tunnels" },
   { nav: "Keys", title: "Keys" },
-  { nav: "Audit", title: "Security audit" },
+  { nav: "Security check", title: "Security check" },
   { nav: "History", title: "History" },
   { nav: "Settings", title: "Settings" },
 ];

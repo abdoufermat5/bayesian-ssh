@@ -9,6 +9,7 @@
   import TerminalsView from "$lib/components/TerminalsView.svelte";
   import HistoryView from "$lib/components/HistoryView.svelte";
   import KeysView from "$lib/components/KeysView.svelte";
+  import AttentionBanner from "$lib/components/AttentionBanner.svelte";
   import AuditView from "$lib/components/AuditView.svelte";
   import TeamsView from "$lib/components/TeamsView.svelte";
   import SettingsView from "$lib/components/SettingsView.svelte";
@@ -263,6 +264,7 @@
     />
 
     <main class="workspace">
+      <AttentionBanner onTabChange={appState.handleTabChange} />
       {#if appState.activeTab === "connections"}
         <ConnectionsView
           connections={appState.connections}

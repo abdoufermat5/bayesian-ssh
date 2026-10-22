@@ -175,7 +175,7 @@ export const test = base.extend<Fixtures>({
           sftp: "Files",
           tunnels: "Tunnels",
           keys: "Keys",
-          audit: "Audit",
+          audit: "Security check",
           history: "History",
           settings: "Settings",
         };

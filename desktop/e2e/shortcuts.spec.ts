@@ -7,7 +7,7 @@ test.describe("global shortcuts", () => {
       ["1", "Hosts"],
       ["2", "Terminals"],
       ["3", "Keys"],
-      ["4", "Security audit"],
+      ["4", "Security check"],
       ["5", "History"],
       ["6", "Settings"],
     ];

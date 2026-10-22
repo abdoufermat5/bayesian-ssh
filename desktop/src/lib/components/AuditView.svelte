@@ -29,7 +29,7 @@
       loadError = null;
     } catch (err) {
       loadError = String(err);
-      notify(`Security audit failed: ${err}`, "error");
+      notify(`Security check failed: ${err}`, "error");
     } finally {
       loading = false;
     }
@@ -91,7 +91,7 @@
 <div class="view select-none">
   <header class="view-header">
     <div class="flex min-w-0 items-baseline gap-2.5">
-      <h1 class="view-title">Security audit</h1>
+      <h1 class="view-title">Security check</h1>
       {#if report}
         <span class="text-sm tabular-nums text-muted">
           {report.findings.length} {report.findings.length === 1 ? "finding" : "findings"}
@@ -140,7 +140,7 @@
 
   <div class="view-body">
     {#if !report && loading}
-      <div class="flex flex-col gap-3" aria-busy="true" aria-label="Running security audit">
+      <div class="flex flex-col gap-3" aria-busy="true" aria-label="Running security check">
         <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {#each [0, 1, 2, 3] as i (i)}
             <div class="stat">
@@ -163,7 +163,7 @@
     {:else if !report}
       <div class="empty-state h-full">
         <div class="empty-state-icon"><ShieldAlert size={18} /></div>
-        <div class="empty-state-title">The audit could not run</div>
+        <div class="empty-state-title">The security check could not run</div>
         <p class="empty-state-desc">{loadError ?? "Something went wrong while inspecting ~/.ssh."}</p>
         <div class="empty-state-action">
           <button type="button" class="btn btn-secondary" onclick={runAudit}>

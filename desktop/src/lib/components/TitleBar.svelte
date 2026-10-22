@@ -55,12 +55,13 @@
     {#if onOpenCommandPalette}
       <button
         type="button"
-        class="flex h-[26px] w-full max-w-[420px] cursor-pointer items-center gap-2 rounded-md border border-border bg-surface px-2.5 text-xs text-muted transition-colors duration-fast hover:border-border-hover hover:text-secondary"
+        class="flex h-[26px] w-full max-w-[150px] cursor-pointer items-center gap-2 rounded-md border border-border bg-surface px-2.5 text-xs text-muted transition-colors duration-fast hover:border-border-hover hover:text-secondary"
         onclick={onOpenCommandPalette}
-        aria-label="Open command palette"
+        aria-label="Jump to…"
+        title="Jump to hosts, views and actions"
       >
         <Search size={13} class="shrink-0" />
-        <span class="truncate">Search hosts and commands</span>
+        <span class="truncate">Jump to…</span>
         <span class="ml-auto flex shrink-0 items-center gap-0.5">
           <kbd class="kbd">{isMac ? "⌘" : "Ctrl"}</kbd>
           <kbd class="kbd">K</kbd>
