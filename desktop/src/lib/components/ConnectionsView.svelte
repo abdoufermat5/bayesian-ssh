@@ -7,7 +7,7 @@
 
 <script lang="ts">
   import { tick } from "svelte";
-  import { Activity, Download, LayoutGrid, List, Plus, Search, Server, SquareTerminal, Upload, X } from "lucide-svelte";
+  import { Download, Plus, Search, Server, SquareTerminal, Upload, X } from "lucide-svelte";
   import { invoke } from "@tauri-apps/api/core";
   import type { Connection, Prediction } from "$lib/types";
   import { GLOBAL_SHORTCUTS, HOST_SHORTCUTS, IS_MAC, MOD, type Combo } from "$lib/shortcuts";
@@ -32,7 +32,6 @@
 
   interface Props {
     connections: Connection[];
-    viewMode: "list" | "grid";
     selectedHostIndex: number;
     copiedId: string | null;
     justDuplicatedId: string | null;
@@ -55,7 +54,6 @@
 
   let {
     connections,
-    viewMode = $bindable("list"),
     selectedHostIndex,
     justDuplicatedId,
     timezone,
@@ -85,10 +83,6 @@
   /** Below this width the tags cell shows one tag and "+N". */
   const WIDE_MIN_PX = 1180;
 
-  type PingResult = { latency_ms: number; success: boolean };
-
-  let pinging = $state(false);
-  let pingResults = $state.raw<Record<string, PingResult>>({});
   let connectingHostId = $state<string | null>(null);
   let sortBy = $state<SortKey>("bayesian");
   let suggestions = $state.raw<Prediction[]>([]);
@@ -190,27 +184,6 @@
     appState.handleTabChange("sftp");
   }
 
-  async function pingAllHosts() {
-    pinging = true;
-    try {
-      const results = await invoke<Array<{ connection_id: string; success: boolean; latency_ms: number }>>(
-        "ping_all_connections",
-      );
-      const map: Record<string, PingResult> = {};
-      let reachable = 0;
-      for (const r of results) {
-        map[r.connection_id] = { latency_ms: r.latency_ms, success: r.success };
-        if (r.success) reachable++;
-      }
-      pingResults = map;
-      notify(`${reachable} of ${results.length} hosts reachable`, "success");
-    } catch (err) {
-      notify(`Ping failed: ${err}`, "error");
-    } finally {
-      pinging = false;
-    }
-  }
-
   // The backend already applies search + tag filters (Bayesian ranking);
   // the source filter is local, and the view only re-sorts when a
   // non-default order is chosen.
@@ -225,21 +198,16 @@
   });
 
   const hasFilters = $derived(Boolean(searchQuery.trim() || selectedTag || sourceFilter !== "all"));
-  const pingCount = $derived(Object.keys(pingResults).length);
-  const reachableCount = $derived(Object.values(pingResults).filter((r) => r.success).length);
 
   // ---- Windowed rendering -------------------------------------------
   // Rendering every host row is O(n) DOM, so the list only mounts the rows
-  // in view plus an overscan; spacer rows keep the scroll height. The grid
-  // mounts cards progressively as you scroll.
+  // in view plus an overscan; spacer rows keep the scroll height.
   const OVERSCAN = 12;
-  const GRID_PAGE = 96;
   let bodyEl = $state<HTMLDivElement>();
   let tableEl = $state<HTMLTableElement>();
   let scrollTop = $state(0);
   let viewportH = $state(800);
   let rowH = $state(40);
-  let gridLimit = $state(GRID_PAGE);
 
   $effect(() => {
     const el = bodyEl;
@@ -255,12 +223,6 @@
     void visibleRows.length;
     const first = tableEl?.querySelector<HTMLTableRowElement>("tbody tr[data-host-row]");
     if (first && first.offsetHeight > 0 && first.offsetHeight !== rowH) rowH = first.offsetHeight;
-  });
-
-  // A new result set starts the grid from the first page again.
-  $effect(() => {
-    void rows;
-    gridLimit = GRID_PAGE;
   });
 
   /** Table border + sticky header height above the first row. */
@@ -281,23 +243,6 @@
   function onBodyScroll() {
     if (!bodyEl) return;
     scrollTop = bodyEl.scrollTop;
-    if (
-      viewMode === "grid" &&
-      gridLimit < rows.length &&
-      bodyEl.scrollTop + bodyEl.clientHeight > bodyEl.scrollHeight - 600
-    ) {
-      gridLimit += GRID_PAGE;
-    }
-  }
-
-  function statusOf(conn: Connection): { cls: string; label: string } {
-    const ping = pingResults[conn.id];
-    if (ping) {
-      return ping.success
-        ? { cls: "status-dot-success", label: `Reachable · ${ping.latency_ms} ms` }
-        : { cls: "status-dot-error", label: "Unreachable" };
-    }
-    return { cls: "status-dot-offline", label: "Not checked — use Ping" };
   }
 
   function lastUsedLabel(conn: Connection) {
@@ -320,9 +265,8 @@
 
   /** The row that takes Tab: the selection when it is mounted, else the first mounted one. */
   const tabStopId = $derived.by(() => {
-    const mounted = viewMode === "list" ? visibleRows : rows.slice(0, gridLimit);
-    if (selectedId && mounted.some((r) => r.conn.id === selectedId)) return selectedId;
-    return mounted[0]?.conn.id ?? null;
+    if (selectedId && visibleRows.some((r) => r.conn.id === selectedId)) return selectedId;
+    return visibleRows[0]?.conn.id ?? null;
   });
 
   const KEY_NAMES: Record<string, string> = { "↑": "ArrowUp", "↓": "ArrowDown" };
@@ -355,10 +299,6 @@
   function scrollRowIntoView(displayIndex: number) {
     const el = bodyEl;
     if (!el) return;
-    if (viewMode === "grid") {
-      if (displayIndex >= gridLimit) gridLimit = displayIndex + GRID_PAGE;
-      return;
-    }
     const top = tableTop + displayIndex * rowH;
     if (top < el.scrollTop + 36) el.scrollTop = top - 36;
     else if (top + rowH > el.scrollTop + el.clientHeight) el.scrollTop = top + rowH - el.clientHeight;
@@ -369,8 +309,7 @@
   async function focusRow(id: string) {
     await tick();
     const row = bodyEl?.querySelector<HTMLElement>(`[data-host-focus][data-host-id="${CSS.escape(id)}"]`);
-    row?.focus({ preventScroll: viewMode === "list" });
-    if (viewMode === "grid") row?.scrollIntoView({ block: "nearest" });
+    row?.focus({ preventScroll: true });
   }
 
   function moveSelection(delta: 1 | -1) {
@@ -549,20 +488,6 @@
       <button
         type="button"
         class="btn btn-ghost"
-        onclick={pingAllHosts}
-        disabled={pinging || connections.length === 0}
-        title="Check which hosts are reachable"
-      >
-        {#if pinging}
-          <span class="spinner size-3"></span>
-        {:else}
-          <Activity size={14} />
-        {/if}
-        {pingCount > 0 ? `${reachableCount}/${pingCount} up` : "Ping"}
-      </button>
-      <button
-        type="button"
-        class="btn btn-ghost"
         onclick={onOpenBatchExec}
         disabled={connections.length === 0}
         title="Run a command on several hosts"
@@ -626,28 +551,6 @@
           value={sortBy}
           onChange={(v) => (sortBy = v as SortKey)}
         />
-      </div>
-      <div class="segmented" role="group" aria-label="Layout">
-        <button
-          type="button"
-          class="segmented-item {viewMode === 'list' ? 'segmented-item-active' : ''}"
-          onclick={() => (viewMode = "list")}
-          aria-pressed={viewMode === "list"}
-          aria-label="List layout"
-          title="List"
-        >
-          <List size={14} />
-        </button>
-        <button
-          type="button"
-          class="segmented-item {viewMode === 'grid' ? 'segmented-item-active' : ''}"
-          onclick={() => (viewMode = "grid")}
-          aria-pressed={viewMode === "grid"}
-          aria-label="Grid layout"
-          title="Grid"
-        >
-          <LayoutGrid size={14} />
-        </button>
       </div>
     </div>
   </div>
@@ -713,7 +616,7 @@
           </div>
         {/if}
       </div>
-    {:else if viewMode === "list"}
+    {:else}
       <div class="table-wrap">
         <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
         <table
@@ -741,8 +644,6 @@
             {/if}
             {#each visibleRows as { conn, originalIndex }, i (conn.id)}
               {@const selected = selectedHostIndex === originalIndex}
-              {@const status = statusOf(conn)}
-              {@const ping = pingResults[conn.id]}
               <tr
                 class="cursor-default {selected ? 'is-selected' : ''} {justDuplicatedId === conn.id ? 'animate-flash' : ''}"
                 data-host-row
@@ -759,7 +660,6 @@
               >
                 <td>
                   <div class="flex min-w-0 items-center gap-2.5">
-                    <span class="status-dot {status.cls}" title={status.label} role="img" aria-label={status.label}></span>
                     <span class="truncate font-medium {conn.stale_since ? 'text-muted' : 'text-primary'}" title={conn.name}>{conn.name}</span>
                     {@render kindBadges(conn)}
                   </div>
@@ -769,9 +669,6 @@
                     <span class="truncate font-mono text-xs" title={`${conn.user}@${conn.host}:${conn.port}`}>
                       <span class="text-muted">{conn.user}@</span>{conn.host}{#if conn.port !== 22}<span class="text-muted">:{conn.port}</span>{/if}
                     </span>
-                    {#if ping?.success}
-                      <span class="shrink-0 font-mono text-2xs text-success">{ping.latency_ms}ms</span>
-                    {/if}
                   </div>
                 </td>
                 <td>
@@ -803,71 +700,6 @@
             {/if}
           </tbody>
         </table>
-      </div>
-    {:else}
-      <!-- svelte-ignore a11y_interactive_supports_focus -->
-      <div
-        class="grid grid-cols-[repeat(auto-fill,minmax(272px,1fr))] gap-3"
-        role="grid"
-        aria-label="Hosts"
-        aria-rowcount={rows.length}
-        aria-describedby="hosts-grid-help"
-        onkeydown={onGridKeydown}
-      >
-        {#each rows.slice(0, gridLimit) as { conn, originalIndex }, i (conn.id)}
-          {@const selected = selectedHostIndex === originalIndex}
-          {@const status = statusOf(conn)}
-          <!-- Keys are handled by the grid (arrows) and the window (HOST_SHORTCUTS). -->
-          <!-- svelte-ignore a11y_click_events_have_key_events -->
-          <div
-            class="host-card card card-interactive group {selected ? 'card-selected is-selected' : ''} {justDuplicatedId === conn.id ? 'animate-flash' : ''}"
-            data-host-focus
-            data-host-id={conn.id}
-            data-host-selected={selected}
-            role="row"
-            tabindex={tabStopId === conn.id ? 0 : -1}
-            aria-rowindex={i + 1}
-            aria-selected={selected}
-            aria-label="{conn.name}, {conn.user}@{conn.host}{conn.port !== 22 ? `:${conn.port}` : ''}"
-            onclick={(e) => selectRow(originalIndex, e)}
-            onfocusin={() => onRowFocusIn(originalIndex)}
-            ondblclick={() => handleConnectHost(conn)}
-          >
-            <div class="flex h-full flex-col gap-3 p-4" role="gridcell">
-              <div class="flex items-start justify-between gap-2">
-                <div class="flex min-w-0 flex-col gap-1">
-                  <div class="flex min-w-0 items-center gap-2">
-                    <span class="status-dot {status.cls}" title={status.label} role="img" aria-label={status.label}></span>
-                    <span class="truncate font-medium {conn.stale_since ? 'text-muted' : 'text-primary'}" title={conn.name}>{conn.name}</span>
-                  </div>
-                  <span class="truncate font-mono text-xs text-muted" title={`${conn.user}@${conn.host}:${conn.port}`}>
-                    {conn.user}@{conn.host}{conn.port !== 22 ? `:${conn.port}` : ""}
-                  </span>
-                </div>
-                <div class="flex shrink-0 gap-1">
-                  {@render kindBadges(conn)}
-                  {#if conn.source_id}
-                    <SourceBadge
-                      source={sourceOf(conn.source_id, sourceIndex)}
-                      detail={conn.external_id ? `id ${conn.external_id}` : undefined}
-                    />
-                  {/if}
-                </div>
-              </div>
-
-              {#if conn.tags.length > 0}
-                <TagList tags={conn.tags} limit={4} tabindex={-1} wrap />
-              {/if}
-
-              <div class="mt-auto flex items-center justify-between gap-2">
-                <span class="text-xs text-muted" title={conn.last_used ? formatDateTime(conn.last_used, timezone) : undefined}>
-                  {lastUsedLabel(conn)}
-                </span>
-                <div class="row-actions">{@render actions(conn)}</div>
-              </div>
-            </div>
-          </div>
-        {/each}
       </div>
     {/if}
   </div>
@@ -931,8 +763,7 @@
     }
   }
 
-  /* Actions stay visible on the selected card and while a row menu is open. */
-  .host-card.is-selected .row-actions,
+  /* Actions stay visible while a row menu is open. */
   .row-actions:has(:global([aria-expanded="true"])) {
     opacity: 1;
   }

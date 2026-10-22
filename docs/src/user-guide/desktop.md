@@ -2,7 +2,7 @@
 
 Bayesian SSH ships a standalone desktop app: a SvelteKit/TypeScript front end on a
 Rust/Tauri backend. It manages the same hosts, profiles and session history as the
-CLI, and adds terminals, a file browser, tunnel rules and a local security check.
+CLI, and adds terminals, a file browser and a local security check.
 
 ## Launching
 
@@ -43,8 +43,8 @@ The first launch runs onboarding, which starts by asking which applies:
 
 Sidebar navigation:
 
-- **Hosts**, **Terminals**, **Files**, **Tunnels** (Files and Tunnels appear only
-  when they are enabled under Settings → Terminal & files)
+- **Hosts**, **Terminals**, **Files** (Files appears only when it is enabled under
+  Settings → Terminal & files)
 - **Security**: Keys, Security check
 - **Activity**: History
 - **Team**: Teams
@@ -53,7 +53,7 @@ Sidebar navigation:
   its manager), the **Kerberos** entry, and **Settings**. The Kerberos entry stays
   hidden until a connection actually uses Kerberos.
 
-Each entry shows its number key (`1`–`8`, in sidebar order). The sidebar collapses
+Each entry shows its number key (`1`–`7`, in sidebar order). The sidebar collapses
 to icons automatically when the window is narrower than 1100 px; the collapse toggle
 still works.
 
@@ -63,27 +63,24 @@ still works.
 
 ![Bayesian SSH desktop hosts list](../assets/desktop-home.png)
 
-The host list is the main view. It has a filter box, tag chips, a sort selector and a
-list/grid toggle. Tag chips that don't fit the window go behind a `+N` button that
+The host list is the main view. It has a filter box, tag chips and a sort selector.
+Tag chips that don't fit the window go behind a `+N` button that
 lists the rest; when the selected tag is one of them, the button shows its name.
 
 - **Sort** — Smart rank (frequency and recency), Last used, Name or Address.
-- **List view** — columns Name, Address, Tags, Source and Last used. Address is
+- **Columns** — Name, Address, Tags, Source and Last used. Address is
   shown as `user@host`, with `:port` when it is not 22. Hosts with Kerberos or a
   jump host carry a badge. Narrow windows show the first tag and a `+N` button that
   lists the others. Row height follows the density setting (Settings → Appearance).
+  The list is windowed, so large host lists stay responsive.
 - **Source** — where a host comes from: Local, an inventory source, or a team
   (people icon and the team name). The column and the source chips above the list
   (All, Local, each team and source, with counts) appear once any host comes from a
   source.
-- **Grid view** — the same information as cards, mounted progressively while you
-  scroll. The list is windowed, so large host lists stay responsive.
-- **Ping** — checks reachability for every host, then reports `n/m up` and shows a
-  latency next to each reachable host.
 - **Batch run** — opens the batch-execution modal (see below).
 - **New host** — opens the host form.
 
-Row actions (also on cards) appear on hover, focus or selection: **Connect**,
+Row actions appear on hover, focus or selection: **Connect**,
 **Files**, and a **More** menu with **Copy SSH command**, **Edit**, **Duplicate**,
 **Share with a team…** and **Delete…**. Duplicate creates `<name> (Copy)`, flashes
 the new row and opens it for editing. Delete asks for confirmation and shows
@@ -170,18 +167,6 @@ you) and press **Connect**; the header then shows `user@host` and the button bec
 The browser is read-only for its own navigation: it lists directories and reports
 errors. The desktop app can also upload a file to several hosts at once.
 
-### Tunnels
-
-The Tunnels view manages port-forwarding rules: local (`-L`), remote (`-R`) and
-SOCKS5 dynamic (`-D`). You can start from a preset or add a rule with a host, type,
-local port, remote host and remote port; the form validates the values and previews
-the matching `ssh` command. Each rule can be enabled or disabled, edited, deleted, or
-have its local address copied.
-
-Rules are configuration held by the view: no tunnel process is started, and rules are
-not persisted across restarts. The section is hidden when Tunnels is turned off under
-Settings → Terminal & files.
-
 ### Keys
 
 The Keys view lists the identity files in `~/.ssh`, paired from each `*.pub` file:
@@ -234,8 +219,8 @@ Save button.
   with its warning threshold.
 - **Terminal & files** — font family, size and line height, cursor style and
   blinking, scrollback size, copy-on-select and Smart copy, whether the file browser
-  lists dotfiles, and the switches that turn Files and Tunnels on or off (the
-  sidebar updates immediately).
+  lists dotfiles, and the switch that turns Files on or off (the sidebar updates
+  immediately).
 - **Privacy & history** — record session history, cap the number of stored entries,
   the backend log level, and session recording (all hosts or only hosts with given
   tags).
@@ -267,7 +252,7 @@ Save button.
   - A highlighted host lists its verbs (Connect, Connect in new tab, Browse files,
     Copy ssh command, Edit) with their keys and CLI equivalents; `Enter` connects,
     `Ctrl`/`Cmd` + `Enter` opens Files.
-  - Actions cover New host, Run command on hosts, Ping all hosts, Manage sessions and
+  - Actions cover New host, Run command on hosts, Upload files, Manage sessions and
     Fix key permissions.
   - Teams entries depend on the state: Unlock Teams…, Sync all teams, Lock Teams,
     Review waiting devices in *team* and Invite to *team*… (admins). They open the
@@ -309,7 +294,7 @@ read `Cmd` for `Ctrl`, and `Cmd` alone for `Ctrl` + `Shift` in terminals.
 | Settings | `Ctrl`/`Cmd` + `,` |
 | Keyboard shortcuts | `?`, `F1`, `Ctrl`/`Cmd` + `/` |
 | Close a dialog or clear the filter | `Esc` |
-| Hosts / Terminals / Files / Tunnels / Keys / Security check / History / Teams | `1` … `8` (sidebar order) |
+| Hosts / Terminals / Files / Keys / Security check / History / Teams | `1` … `7` (sidebar order) |
 | Focus the host filter | `/` |
 | New host | `N`, `Ctrl`/`Cmd` + `N` |
 | Move host selection | `↑`/`↓`, `j`/`k` |

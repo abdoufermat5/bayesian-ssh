@@ -62,7 +62,7 @@
     <div class="modal-body flex flex-col gap-4">
       <p class="m-0 text-sm leading-relaxed text-secondary">
         A keyboard-first SSH host manager. It ranks hosts by how often and how recently you use them,
-        and supports jump hosts, Kerberos, tunnels and file transfer.
+        and supports jump hosts, Kerberos and file transfer.
       </p>
 
       <dl class="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 rounded-md border border-border bg-panel px-3 py-2.5 text-xs">

@@ -40,24 +40,6 @@ test.describe("performance smoke", () => {
     expect(mounted).toBeGreaterThan(5);
     expect(mounted).toBeLessThan(120);
 
-    // A full list <-> grid re-render stays fast because nothing off-screen mounts.
-    const rerenderMs = await page.evaluate(async () => {
-      const grid = document.querySelector<HTMLButtonElement>('button[aria-label="Grid layout"]')!;
-      const list = document.querySelector<HTMLButtonElement>('button[aria-label="List layout"]')!;
-      // Resolves after the frame that renders the click has been painted.
-      const afterPaint = () => {
-        const { promise, resolve } = Promise.withResolvers<void>();
-        requestAnimationFrame(() => setTimeout(resolve));
-        return promise;
-      };
-      const s = performance.now();
-      grid.click();
-      await afterPaint();
-      list.click();
-      await afterPaint();
-      return performance.now() - s;
-    });
-
     // Scrolling to the end mounts the last host.
     await page.locator(".view-body").evaluate((el) => {
       el.scrollTop = el.scrollHeight;
@@ -73,8 +55,7 @@ test.describe("performance smoke", () => {
     const filterMs = (await page.evaluate(() => performance.now())) - filterStart;
 
     // eslint-disable-next-line no-console
-    console.log(`[perf] 2000 hosts: mounted ${mounted} rows, grid+list re-render ${Math.round(rerenderMs)}ms, filter ${Math.round(filterMs)}ms`);
-    expect(rerenderMs).toBeLessThan(1500);
+    console.log(`[perf] 2000 hosts: mounted ${mounted} rows, filter ${Math.round(filterMs)}ms`);
     expect(filterMs).toBeLessThan(1500);
 
     await expect.poll(async () => app.ipcCalls("get_connections")).toEqual(

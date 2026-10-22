@@ -80,7 +80,6 @@
         navItem("connections"),
         navItem("terminals", { badge: terminalCount }),
         ...(viewEnabled("sftp", settings) ? [navItem("sftp")] : []),
-        ...(viewEnabled("tunnels", settings) ? [navItem("tunnels")] : []),
       ],
     },
     {

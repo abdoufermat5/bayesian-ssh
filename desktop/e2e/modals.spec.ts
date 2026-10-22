@@ -207,11 +207,10 @@ test.describe("shortcuts modal", () => {
       ["Hosts", "1"],
       ["Terminals", "2"],
       ["Files", "3"],
-      ["Tunnels", "4"],
-      ["Keys", "5"],
-      ["Security check", "6"],
-      ["History", "7"],
-      ["Teams", "8"],
+      ["Keys", "4"],
+      ["Security check", "5"],
+      ["History", "6"],
+      ["Teams", "7"],
     ];
     await expect(row("Settings").locator("kbd")).toHaveText(["Ctrl", ","]);
     for (const [name, key] of views) {

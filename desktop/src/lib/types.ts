@@ -97,7 +97,6 @@ export interface DesktopSettings {
   sftp_show_hidden_files?: boolean;
   sftp_default_remote_path?: string;
   enable_sftp?: boolean;
-  enable_tunneling?: boolean;
   record_sessions?: boolean;
   record_tags?: string[];
   density?: "compact" | "comfortable" | "spacious";
@@ -134,7 +133,6 @@ export type AppTab =
   | "connections"
   | "terminals"
   | "sftp"
-  | "tunnels"
   | "history"
   | "keys"
   | "audit"

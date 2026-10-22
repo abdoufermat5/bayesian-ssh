@@ -1,6 +1,5 @@
 <script lang="ts">
   import {
-    Activity,
     FolderOpen,
     Lock,
     LockOpen,
@@ -54,7 +53,6 @@
     onOpenAddModal: () => void;
     onOpenBatchExec: () => void;
     onOpenUpload: () => void;
-    onPingAll: () => void;
     onFixPermissions: () => void;
     onOpenKeys: () => void;
     onOpenSessionManager: () => void;
@@ -74,7 +72,6 @@
     onOpenAddModal,
     onOpenBatchExec,
     onOpenUpload,
-    onPingAll,
     onFixPermissions,
     onOpenKeys,
     onOpenSessionManager,
@@ -237,14 +234,6 @@
         category: "Actions",
         icon: Upload,
         action: () => run(onOpenUpload),
-      },
-      {
-        id: "act-ping-all",
-        title: "Ping all hosts",
-        subtitle: "Check reachability and latency",
-        category: "Actions",
-        icon: Activity,
-        action: () => run(onPingAll),
       },
       {
         id: "act-sessions",

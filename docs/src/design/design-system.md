@@ -32,7 +32,7 @@ the app's CSP blocks remote fonts, and the UI must look the same offline.
 ┌ titlebar (bg-chrome, 38px): brand · command search (Ctrl/⌘K) · help · window buttons ┐
 ├ sidebar (bg-chrome, 224px / 56px collapsed) ┬ workspace (bg-surface, rounded top-left) ┤
 │ profile switcher                            │ .view                                   │
-│ Hosts · Terminals · Files · Tunnels         │   .view-header  title + count │ actions │
+│ Hosts · Terminals · Files                   │   .view-header  title + count │ actions │
 │ Security: Keys · Security check             │   .view-toolbar search · chips · sort   │
 │ Activity: History · Team: Teams             │   .view-body    scrolling content       │
 │ … agent / Kerberos status · Settings        │                                         │
@@ -62,7 +62,7 @@ Settings sits in a centred `.settings-frame` (960–1040 px), keeps one `.view-h
 
 Empty states use one pattern: `.empty-state` > `.empty-state-icon` + `.empty-state-title` (one sentence) + `.empty-state-action` (one primary action). Don't repeat the view header in it.
 
-Long lists are windowed: the Hosts table mounts only the rows in view (spacer rows keep the scroll height) and the grid mounts cards page by page as you scroll. Reuse that approach for any list that can reach hundreds of rows.
+Long lists are windowed: the Hosts table mounts only the rows in view (spacer rows keep the scroll height). Reuse that approach for any list that can reach hundreds of rows.
 
 ---
 

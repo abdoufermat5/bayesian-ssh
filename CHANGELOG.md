@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Removed
+- **Desktop Tunnels view**: it only held port-forward rules in memory and never started a tunnel. Use `bssh forward` (`-L`) and `bssh proxy` (`-D`) from the CLI. The "Tunnels" setting is gone; an old `enable_tunneling` value in desktop settings is ignored. The number keys now run `1`–`7` (Keys is `4`).
+- **Desktop grid layout and Ping on the Hosts view** (and "Ping all hosts" in the command palette): the list is the one host layout, and `bssh ping` remains on the CLI.
 - **Snippets** in the desktop app (the sidebar entry, the Snippets modal and the "Confirm snippets" setting). Snippets you had saved stay in the app's local storage but are no longer shown; an old `confirm_snippet_execution` value in desktop settings is ignored.
 
 ### Added
@@ -20,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Teams in the desktop app**: a Teams page to set up a device, unlock it once per session, create or join teams, share and unshare connections, invite, remove members and sync. Granting a key requires pasting the fingerprint the member sent; the button stays disabled until it matches.
 
 ### Changed
-- **Desktop keyboard**: `1`–`8` open views in sidebar order, `Ctrl`/`Cmd` + `,` opens Settings, and the host list has verbs (`Shift`+`Enter`, `Ctrl`/`Cmd`+`Enter` for Files, `C`, `E`, `S`, `Delete`; edit moved from `Ctrl`+`E` to `E`). The shortcut sheet, sidebar hints and command palette come from one table. The palette gains Teams, host and Settings-section commands with CLI equivalents.
+- **Desktop keyboard**: `1`–`7` open views in sidebar order, `Ctrl`/`Cmd` + `,` opens Settings, and the host list has verbs (`Shift`+`Enter`, `Ctrl`/`Cmd`+`Enter` for Files, `C`, `E`, `S`, `Delete`; edit moved from `Ctrl`+`E` to `E`). The shortcut sheet, sidebar hints and command palette come from one table. The palette gains Teams, host and Settings-section commands with CLI equivalents.
 - **Desktop Settings** regrouped into six sections: Workspace, Connection, Terminal & files, Privacy & history, Appearance, Sources & updates. A type scale, shared empty states and layouts that hold at 1024 px; the sidebar collapses to icons below 1100 px.
 - **Desktop connect reuses an open session**: Connect (and `Enter`) switches to the tab already open or connecting to that host; `Shift`+`Enter`, "Connect in new tab", the Terminals launcher and reopening a closed tab always start a new session. Tag chips that don't fit the Hosts toolbar go behind a `+N` menu.
 - **Desktop themes**: Slate is removed (a saved Slate opens as Midnight); OLED black uses the standard accent.

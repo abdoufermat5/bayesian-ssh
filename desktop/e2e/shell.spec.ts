@@ -4,7 +4,6 @@ const VIEWS: Array<{ nav: string; title: string }> = [
   { nav: "Hosts", title: "Hosts" },
   { nav: "Terminals", title: "Terminals" },
   { nav: "Files", title: "Files" },
-  { nav: "Tunnels", title: "Tunnels" },
   { nav: "Keys", title: "Keys" },
   { nav: "Security check", title: "Security check" },
   { nav: "History", title: "History" },

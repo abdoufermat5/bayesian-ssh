@@ -206,8 +206,6 @@ pub struct DesktopSettings {
     pub sftp_default_remote_path: String,
     #[serde(default = "default_enable_sftp")]
     pub enable_sftp: bool,
-    #[serde(default = "default_enable_tunneling")]
-    pub enable_tunneling: bool,
     #[serde(default)]
     pub record_sessions: bool,
     #[serde(default)]
@@ -223,10 +221,6 @@ pub fn default_sftp_default_remote_path() -> String {
 }
 
 pub fn default_enable_sftp() -> bool {
-    true
-}
-
-pub fn default_enable_tunneling() -> bool {
     true
 }
 
@@ -322,7 +316,6 @@ impl Default for DesktopSettings {
             sftp_show_hidden_files: default_sftp_show_hidden_files(),
             sftp_default_remote_path: default_sftp_default_remote_path(),
             enable_sftp: default_enable_sftp(),
-            enable_tunneling: default_enable_tunneling(),
             record_sessions: false,
             record_tags: Vec::new(),
             density: default_density(),
@@ -418,5 +411,14 @@ mod tests {
         });
         let loaded: DesktopSettings = serde_json::from_value(saved).unwrap();
         assert_eq!(loaded.density, "comfortable");
+    }
+
+    #[test]
+    fn settings_saved_with_removed_fields_still_load() {
+        // `enable_tunneling` went away with the Tunnels view.
+        let mut saved = serde_json::to_value(DesktopSettings::default()).unwrap();
+        saved["enable_tunneling"] = serde_json::json!(false);
+        let loaded: Result<DesktopSettings, _> = serde_json::from_value(saved);
+        assert!(loaded.is_ok());
     }
 }

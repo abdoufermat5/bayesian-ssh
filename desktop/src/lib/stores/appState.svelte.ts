@@ -81,7 +81,6 @@ export class AppStateStore {
   stats = $state.raw<ConnectionStats | null>(null);
   history = $state.raw<SessionHistoryEntry[]>([]);
 
-  viewMode = $state<"list" | "grid">("list");
   sidebarCollapsed = $state(false);
   selectedHostIndex = $state(0);
 
@@ -162,7 +161,6 @@ export class AppStateStore {
     sftp_show_hidden_files: true,
     sftp_default_remote_path: "/",
     enable_sftp: true,
-    enable_tunneling: true,
     record_sessions: false,
     record_tags: [],
   });
@@ -353,7 +351,6 @@ export class AppStateStore {
         sftp_show_hidden_files: loaded.sftp_show_hidden_files !== false,
         sftp_default_remote_path: (loaded.sftp_default_remote_path as string) || "/",
         enable_sftp: loaded.enable_sftp !== false,
-        enable_tunneling: loaded.enable_tunneling !== false,
         record_sessions: Boolean(loaded.record_sessions),
         record_tags: Array.isArray(loaded.record_tags) ? (loaded.record_tags as string[]) : [],
       };

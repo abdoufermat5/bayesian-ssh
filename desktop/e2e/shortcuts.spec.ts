@@ -1,17 +1,16 @@
 import { test, expect } from "./fixtures/app";
 
 test.describe("global shortcuts", () => {
-  test("number keys 1-8 switch views in sidebar order", async ({ app, page }) => {
+  test("number keys 1-7 switch views in sidebar order", async ({ app, page }) => {
     await app.gotoApp();
     const expectations: Array<[string, string]> = [
       ["1", "Hosts"],
       ["2", "Terminals"],
       ["3", "Files"],
-      ["4", "Tunnels"],
-      ["5", "Keys"],
-      ["6", "Security check"],
-      ["7", "History"],
-      ["8", "Teams"],
+      ["4", "Keys"],
+      ["5", "Security check"],
+      ["6", "History"],
+      ["7", "Teams"],
     ];
     for (const [key, title] of expectations) {
       await page.keyboard.press(key);
@@ -29,8 +28,8 @@ test.describe("global shortcuts", () => {
 
   test("sidebar items show the same digit as the shortcut", async ({ app, page }) => {
     await app.gotoApp();
-    await expect(page.locator('.sidebar [aria-label="Keys"]')).toHaveAttribute("aria-keyshortcuts", "5");
-    await expect(page.locator('.sidebar [aria-label="Teams"]')).toHaveAttribute("aria-keyshortcuts", "8");
+    await expect(page.locator('.sidebar [aria-label="Keys"]')).toHaveAttribute("aria-keyshortcuts", "4");
+    await expect(page.locator('.sidebar [aria-label="Teams"]')).toHaveAttribute("aria-keyshortcuts", "7");
   });
 
   test("'/' focuses the hosts filter", async ({ app, page }) => {
