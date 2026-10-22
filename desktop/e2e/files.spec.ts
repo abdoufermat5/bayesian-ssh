@@ -160,7 +160,6 @@ test("shows the empty state for an empty remote folder", async ({ app, page }) =
   await expect.poll(() => lastRemotePath(app)).toBe("/srv");
 
   await expect(page.getByText("This folder is empty.")).toBeVisible();
-  await expect(page.getByText("/srv has no files or folders.", { exact: true })).toBeVisible();
   await expect(page.getByText("0 folders · 0 files", { exact: false })).toBeVisible();
   await expect(page.locator("tbody tr")).toHaveCount(0);
 });

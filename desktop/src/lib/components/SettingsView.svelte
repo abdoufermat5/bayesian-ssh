@@ -86,8 +86,8 @@
   <div class="settings-frame">
     <header class="view-header">
       <div class="flex min-w-0 items-baseline gap-2.5">
-        <span class="settings-eyebrow" aria-hidden="true">Settings /</span>
-        <h1 class="view-title">{current.label}</h1>
+        <h1 class="view-title">Settings</h1>
+        <span class="settings-eyebrow" aria-hidden="true">/ {current.label}</span>
       </div>
     </header>
 

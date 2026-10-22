@@ -67,7 +67,8 @@ test.describe("performance smoke", () => {
 
     const filterStart = await page.evaluate(() => performance.now());
     await page.locator(".search-input").fill("host-1999");
-    await expect(table).toHaveAttribute("aria-rowcount", "1");
+    // Header row included.
+    await expect(table).toHaveAttribute("aria-rowcount", "2");
     await expect(hostRows).toHaveCount(1);
     const filterMs = (await page.evaluate(() => performance.now())) - filterStart;
 

@@ -154,11 +154,11 @@ test.describe("edit host modal", () => {
     await expect(modal).toHaveCount(0);
   });
 
-  test("Ctrl+E opens the edit modal for the selected host", async ({ app, page }) => {
+  test("E opens the edit modal for the selected host", async ({ app, page }) => {
     await app.gotoApp();
 
     await page.locator("tr", { hasText: "staging-web" }).click();
-    await page.keyboard.press("Control+e");
+    await page.keyboard.press("e");
 
     const modal = dialog(page, "Edit host");
     await expect(modal).toBeVisible();

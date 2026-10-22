@@ -13,14 +13,18 @@ async function openSettings(app: AppFixture, page: Page) {
   await app.gotoApp();
   await app.nav("Settings");
   await expect(page.locator(".settings-shell")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Workspace", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
+  await expect(page.locator(SECTIONS).getByRole("button", { name: "Workspace", exact: true })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
 }
 
 async function openSection(page: Page, label: string) {
   const button = page.locator(SECTIONS).getByRole("button", { name: label, exact: true });
   await button.click();
   await expect(button).toHaveAttribute("aria-current", "page");
-  await expect(page.getByRole("heading", { name: label, level: 1 })).toBeVisible();
+  await expect(page.locator(".settings-eyebrow")).toHaveText(`/ ${label}`);
 }
 
 test.describe("settings", () => {

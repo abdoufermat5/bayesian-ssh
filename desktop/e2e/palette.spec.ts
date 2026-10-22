@@ -6,7 +6,7 @@ test.describe("command palette", () => {
     await app.openPalette();
     const dialog = page.getByRole("dialog", { name: "Command palette" });
     await expect(dialog.getByRole("group", { name: "Hosts" })).toBeVisible();
-    await expect(dialog.getByRole("group", { name: "Actions" })).toBeVisible();
+    await expect(dialog.getByRole("group", { name: "Actions", exact: true })).toBeVisible();
     await expect(dialog.getByRole("group", { name: "Navigation" })).toBeVisible();
     await expect(dialog.getByRole("option", { name: /prod-api-01/ })).toBeVisible();
 

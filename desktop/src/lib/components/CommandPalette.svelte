@@ -174,7 +174,8 @@
       action: () => run(action),
       ...extra,
     });
-    const items = [base("go", "Go to Teams", Users, () => openTeams(), { subtitle: activeTab === "teams" ? "Current view" : undefined })];
+    // "Go to Teams" is already in Navigation.
+    const items: ReturnType<typeof base>[] = [];
     if (!info?.identity) return items;
     if (!info.unlocked) {
       items.push(base("unlock", "Unlock Teams…", LockOpen, () => openTeams(), { subtitle: "Asks for your passphrase in Teams" }));
