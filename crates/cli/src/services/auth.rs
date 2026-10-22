@@ -2,13 +2,13 @@
 //!
 //! Provides:
 //! - `candidate_key_paths()` — ordered list of key files to try
-//! - `AgentClient` wrapper for ssh-agent protocol (via `russh-keys`)
+//! - `AgentClient` wrapper for ssh-agent protocol (via `russh::keys`)
 
 #![allow(dead_code)]
 
 use crate::config::AuthConfig;
 use crate::models::Connection;
-use russh_keys::key::KeyPair;
+use russh::keys::PrivateKey;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
@@ -17,7 +17,7 @@ pub enum AuthError {
     #[error("failed to load key {path}: {source}")]
     KeyLoad {
         path: PathBuf,
-        source: russh_keys::Error,
+        source: russh::keys::Error,
     },
     #[error("agent error: {0}")]
     Agent(String),
@@ -74,12 +74,12 @@ fn ssh_dir() -> Option<PathBuf> {
 // Key loading
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// Try to load a `KeyPair` from `path` without a passphrase.
+/// Try to load a `PrivateKey` from `path` without a passphrase.
 /// Returns `None` if the key is encrypted (caller should try agent or prompt).
-pub fn try_load_key_no_passphrase(path: &Path) -> Result<Option<KeyPair>, AuthError> {
-    match russh_keys::load_secret_key(path, None) {
-        Ok(kp) => Ok(Some(kp)),
-        Err(russh_keys::Error::KeyIsEncrypted) => Ok(None),
+pub fn try_load_key_no_passphrase(path: &Path) -> Result<Option<PrivateKey>, AuthError> {
+    match russh::keys::load_secret_key(path, None) {
+        Ok(key) => Ok(Some(key)),
+        Err(russh::keys::Error::KeyIsEncrypted) => Ok(None),
         Err(e) => Err(AuthError::KeyLoad {
             path: path.to_owned(),
             source: e,
@@ -87,9 +87,9 @@ pub fn try_load_key_no_passphrase(path: &Path) -> Result<Option<KeyPair>, AuthEr
     }
 }
 
-/// Load a `KeyPair` from `path` using `passphrase`.
-pub fn load_key_with_passphrase(path: &Path, passphrase: &str) -> Result<KeyPair, AuthError> {
-    russh_keys::load_secret_key(path, Some(passphrase)).map_err(|e| AuthError::KeyLoad {
+/// Load a `PrivateKey` from `path` using `passphrase`.
+pub fn load_key_with_passphrase(path: &Path, passphrase: &str) -> Result<PrivateKey, AuthError> {
+    russh::keys::load_secret_key(path, Some(passphrase)).map_err(|e| AuthError::KeyLoad {
         path: path.to_owned(),
         source: e,
     })

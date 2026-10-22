@@ -53,9 +53,10 @@ uuid = { version = "1.0", features = ["v4", "serde"] }
 async-trait = "0.1"
 
 # Native SSH
-russh = "0.44"
+# ring instead of the default aws-lc-rs: ring is already in the tree via rustls,
+# and aws-lc-sys needs cmake + a C toolchain in every packaging build.
+russh = { version = "0.64", default-features = false, features = ["flate2", "ring", "rsa"] }
 russh-sftp = "2.1"
-russh-keys = "0.44"
 rpassword = "7"
 base64 = "0.22"
 sha2 = "0.10"

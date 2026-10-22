@@ -14,11 +14,6 @@ yanked = "deny"
 unmaintained = "workspace"
 # Every entry needs a reason and, where a fix exists, the work that removes it.
 ignore = [
-    # russh 0.44: agent frame / CryptoVec unbounded allocation (DoS by a
-    # malicious agent or peer). Fixed in russh >= 0.60.3, a breaking upgrade.
-    # TODO: remove once the russh 0.64 migration lands.
-    { id = "RUSTSEC-2026-0153", reason = "russh 0.44 -> 0.64 migration pending" },
-    { id = "RUSTSEC-2026-0154", reason = "russh 0.44 -> 0.64 migration pending" },
     # rsa Marvin timing side channel: no fixed release exists. We only sign
     # with the user's own local keys, which needs a co-located timing attacker.
     { id = "RUSTSEC-2023-0071", reason = "no upstream fix; local-key signing only" },
