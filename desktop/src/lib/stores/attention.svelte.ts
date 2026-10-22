@@ -50,9 +50,14 @@ export function resolveAttention(id: string) {
   items = items.filter((i) => i.id !== id);
 }
 
-/** Clear every item whose id starts with `prefix`, e.g. all items for one team. */
+/** Clear every item whose id starts with `prefix`, e.g. `teams:`. */
 export function resolveAttentionPrefix(prefix: string) {
   items = items.filter((i) => !i.id.startsWith(prefix));
+}
+
+/** Clear every item whose id ends with `suffix`, e.g. `:<team_id>` for one team. */
+export function resolveAttentionSuffix(suffix: string) {
+  items = items.filter((i) => !i.id.endsWith(suffix));
 }
 
 /** User dismissal; ignored for non-dismissible items. */
@@ -69,4 +74,37 @@ export function getAttention(): AttentionItem[] {
 /** Count for a sidebar badge on `tab` (items whose action targets it). */
 export function attentionCount(tab: AppTab): number {
   return items.filter((i) => i.action?.tab === tab).length;
+}
+
+/**
+ * Item ids for Teams conditions, so every raiser (the app-level poller and
+ * the Teams view) updates the same item instead of stacking duplicates.
+ */
+export const TEAM_ATTENTION = {
+  pending: (teamId: string) => `teams:pending:${teamId}`,
+  waitingKey: (teamId: string) => `teams:waiting-key:${teamId}`,
+  removed: (teamId: string) => `teams:removed:${teamId}`,
+  auditFailed: (teamId: string) => `teams:audit-failed:${teamId}`,
+  integrity: (teamId: string) => `teams:integrity:${teamId}`,
+  chainBroken: (teamId: string) => `teams:chain-broken:${teamId}`,
+  rotationBlocked: (teamId: string) => `teams:rotation-blocked:${teamId}`,
+} as const;
+
+let focusTeamId = $state<string | null>(null);
+
+/** Ask the Teams view to open a team (e.g. from an attention action). */
+export function requestTeamFocus(teamId: string) {
+  focusTeamId = teamId;
+}
+
+/** Read and clear the pending focus request; the Teams view calls this. */
+export function takeTeamFocus(): string | null {
+  const id = focusTeamId;
+  focusTeamId = null;
+  return id;
+}
+
+/** Reactive peek, for an effect that reacts to new focus requests. */
+export function pendingTeamFocus(): string | null {
+  return focusTeamId;
 }
