@@ -10,9 +10,8 @@ use std::sync::Arc;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use russh::client::{self, Handle};
+use russh::keys::{PrivateKeyWithHashAlg, PublicKey, PublicKeyBase64, PublicKeyOrCertificate};
 use russh::ChannelMsg;
-use russh_keys::key::{KeyPair, PublicKey};
-use russh_keys::PublicKeyBase64;
 use tokio::io::AsyncReadExt;
 use tracing::{debug, info, warn};
 
@@ -46,16 +45,29 @@ impl ClientHandler {
     }
 }
 
-#[async_trait]
+/// The host key blob to check against known_hosts.
+///
+/// There is no `@cert-authority` support, so a host certificate gets the same
+/// treatment OpenSSH gives one with no matching CA: its embedded host key is
+/// checked like a plain key. A certificate never bypasses known_hosts.
+fn host_key_blob(server_key: &PublicKeyOrCertificate) -> Vec<u8> {
+    match server_key {
+        PublicKeyOrCertificate::PublicKey { key, .. } => key.public_key_bytes(),
+        PublicKeyOrCertificate::Certificate(cert) => {
+            PublicKey::from(cert.public_key().clone()).public_key_bytes()
+        }
+    }
+}
+
 impl client::Handler for ClientHandler {
     type Error = anyhow::Error;
 
     async fn check_server_key(
         &mut self,
-        server_public_key: &PublicKey,
+        server_public_key: &PublicKeyOrCertificate,
     ) -> Result<bool, Self::Error> {
         let khf = known_hosts::default_path();
-        let key_bytes = server_public_key.public_key_bytes();
+        let key_bytes = host_key_blob(server_public_key);
         // known_hosts stores the key *blob* type (`ssh-rsa`), whereas
         // `PublicKey::name()` reports the negotiated signature algorithm
         // (`rsa-sha2-512`). Using the latter made every stored RSA entry
@@ -156,21 +168,28 @@ impl RusshTransport {
         conn: &Connection,
     ) -> Result<bool, TransportError> {
         let user = &conn.user;
+        // Sign with SHA-2 for RSA keys when the server advertises it; `None`
+        // falls back to legacy ssh-rsa (SHA-1). Ignored for non-RSA keys.
+        let rsa_hash = handle
+            .best_supported_rsa_hash()
+            .await
+            .map_err(|e| TransportError::Permanent(anyhow!("{e}")))?
+            .flatten();
         for path in auth::candidate_key_paths(conn, &self.config.auth) {
             match auth::try_load_key_no_passphrase(&path) {
-                Ok(Some(kp)) => {
+                Ok(Some(key)) => {
                     debug!("Trying pubkey auth with {path:?}");
-                    match handle
-                        .authenticate_publickey(user, Arc::new(kp))
+                    let key = PrivateKeyWithHashAlg::new(Arc::new(key), rsa_hash);
+                    if handle
+                        .authenticate_publickey(user, key)
                         .await
                         .map_err(|e| TransportError::Permanent(anyhow!("{e}")))?
+                        .success()
                     {
-                        true => {
-                            info!("Authenticated with key {path:?}");
-                            return Ok(true);
-                        }
-                        false => debug!("Key {path:?} rejected"),
+                        info!("Authenticated with key {path:?}");
+                        return Ok(true);
                     }
+                    debug!("Key {path:?} rejected");
                 }
                 Ok(None) => debug!("Key {path:?} is encrypted, skipping"),
                 Err(e) => debug!("Could not load key {path:?}: {e}"),
@@ -187,6 +206,7 @@ impl RusshTransport {
         handle
             .authenticate_password(user, pw.as_str())
             .await
+            .map(|res| res.success())
             .map_err(|e| TransportError::Permanent(anyhow!("{e}")))
     }
 

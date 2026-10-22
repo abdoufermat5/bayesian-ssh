@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **Native SSH transport upgraded to russh 0.64** (from 0.44), fixing RUSTSEC-2026-0153 and RUSTSEC-2026-0154 (unbounded allocations from a malicious agent or peer). Connections now negotiate post-quantum hybrid key exchange (`mlkem768x25519-sha256`) with servers that support it, and RSA keys sign with SHA-2 (`rsa-sha2-256/512`) when the server advertises it, which OpenSSH 10 requires. Host certificates are checked like plain host keys against `known_hosts` (their embedded key must match), so a certificate never bypasses host verification.
+
 ## [2.8.0] - 2026-10-20
 
 ### Added
