@@ -338,3 +338,49 @@ export interface TeamAudit {
   complete: boolean;
   clean: boolean;
 }
+
+// ── bssh Teams, UX phase 1 contract (backend: crates/gui/src/commands/teams.rs) ──
+
+export type TeamRole = "admin" | "member";
+
+/**
+ * `teams_attention()` (needs Teams unlocked; one network round per team).
+ * What needs a human for each local team.
+ */
+export interface TeamAttention {
+  team_id: string;
+  role: TeamRole;
+  /** Devices waiting for the key; always 0 for members (they must not see this). */
+  pending_devices: number;
+  /** This device has no team key yet: an admin must grant it. */
+  waiting_for_key: boolean;
+  /** This account was removed from the team; it can no longer sync. */
+  removed: boolean;
+}
+
+export interface TeamPreviewDevice {
+  email: string;
+  name: string;
+  fingerprint: string;
+  /** This admin machine approved this device (granted it a key). */
+  approved: boolean;
+}
+
+/**
+ * `teams_remove_preview({ team, email })`: what removing a member would do,
+ * computed before anything changes. Rotation only wraps the new key to
+ * approved devices; any `blocking` device makes the rotation fail.
+ */
+export interface TeamRemovePreview {
+  email: string;
+  /** Devices of the member being removed. */
+  removed_devices: TeamPreviewDevice[];
+  /** Key version after rotation (current + 1). */
+  next_key_version: number;
+  /** Remaining devices that will receive the new key. */
+  recipients: TeamPreviewDevice[];
+  /** Remaining devices this machine never approved: rotation would stop. */
+  blocking: TeamPreviewDevice[];
+  /** Team hosts the removed member has already synced (they keep copies). */
+  shared_hosts: number;
+}
