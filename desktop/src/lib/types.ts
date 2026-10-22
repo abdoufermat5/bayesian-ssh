@@ -100,6 +100,7 @@ export interface DesktopSettings {
   enable_tunneling?: boolean;
   record_sessions?: boolean;
   record_tags?: string[];
+  density?: "compact" | "comfortable" | "spacious";
 }
 
 export interface WorkspaceInfo {
