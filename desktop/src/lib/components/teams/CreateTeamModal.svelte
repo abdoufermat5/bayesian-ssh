@@ -47,7 +47,7 @@
         <span class="field-hint">You'll be its admin. Its hosts show up as <code>name@team</code> in your host list.</span>
       </div>
       {#if error}<div class="alert alert-error" role="alert">Couldn't create the team: {error}</div>{/if}
-      <p class="m-0 text-xs text-muted">CLI: <code class="select-text">bssh teams create {name.trim() || "NAME"}</code></p>
+      <p class="m-0 type-meta">CLI: <code class="select-text">bssh teams create {name.trim() || "NAME"}</code></p>
     </div>
     <div class="modal-footer">
       {#if !name.trim()}<span class="mr-auto text-xs text-muted">Enter a team name</span>{/if}

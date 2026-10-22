@@ -174,8 +174,7 @@
     {:else if keys.length === 0}
       <div class="empty-state h-full">
         <div class="empty-state-icon"><KeyRound size={18} /></div>
-        <div class="empty-state-title">No SSH keys</div>
-        <p class="empty-state-desc">No identity files were found in ~/.ssh. Generate a key pair to get started.</p>
+        <div class="empty-state-title">No SSH keys found in ~/.ssh.</div>
         <div class="empty-state-action">
           <button type="button" class="btn btn-primary" onclick={openGenerate}>
             <Plus size={15} />
@@ -224,7 +223,7 @@
           <tbody>
             {#each keys as key (key.public_key_path)}
               {@const path = key.private_key_path ?? key.public_key_path}
-              <tr>
+              <tr style="height: var(--row-height, 40px)">
                 <td class="py-2">
                   <div class="flex min-w-0 flex-col gap-0.5">
                     <div class="flex min-w-0 items-baseline gap-2">

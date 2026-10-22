@@ -46,12 +46,12 @@
     <button type="button" class="modal-close" onclick={onClose} aria-label="Close"><X size={16} /></button>
   </div>
   {#if invite}
-    <div class="modal-body flex flex-col gap-3 text-sm text-secondary">
+    <div class="modal-body flex flex-col gap-3 type-body text-secondary">
       <p class="m-0">
         Send {invite.email} this message. The token is shown only once and works until {formatUtc(invite.expires_at)}.
       </p>
       <pre class="code-block m-0 max-h-72 whitespace-pre-wrap break-all select-text">{message}</pre>
-      <p class="m-0 text-xs text-muted">
+      <p class="m-0 type-meta">
         Send it over a channel where you know it's really {invite.email}. The fingerprint in it is what stops the
         server from impersonating you.
       </p>
@@ -75,12 +75,12 @@
           <label class="field-label" for="invite-email">Their email</label>
           <input id="invite-email" class="input" type="email" bind:value={email} placeholder="ana@example.com" />
         </div>
-        <label class="flex cursor-pointer items-start gap-2 text-sm text-secondary">
+        <label class="flex cursor-pointer items-start gap-2 type-body text-secondary">
           <input type="checkbox" class="checkbox mt-0.5" bind:checked={admin} />
           <span>Make them an admin (they can invite, grant keys, remove members and read the audit log)</span>
         </label>
         {#if error}<div class="alert alert-error" role="alert">Couldn't invite: {error}</div>{/if}
-        <p class="m-0 text-xs text-muted">
+        <p class="m-0 type-meta">
           CLI: <code class="select-text">bssh teams invite {team.name} {email.trim() || "EMAIL"}{admin ? " --admin" : ""}</code>
         </p>
       </div>

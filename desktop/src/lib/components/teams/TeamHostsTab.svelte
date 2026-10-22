@@ -42,7 +42,7 @@
 
 <div class="flex flex-col gap-5">
   <section class="flex flex-col gap-2" aria-labelledby="team-hosts-heading">
-    <h3 id="team-hosts-heading" class="m-0 text-sm font-semibold text-primary">
+    <h3 id="team-hosts-heading" class="section-heading">
       Team hosts <span class="count ml-1">{teamConnections.length}</span>
     </h3>
     {#if teamConnections.length}
@@ -73,12 +73,12 @@
         </table>
       </div>
     {:else}
-      <p class="m-0 text-xs text-muted">None yet. Sync to fetch them, or share one below.</p>
+      <p class="m-0 type-meta">None yet. Sync to fetch them, or share one below.</p>
     {/if}
   </section>
 
   <section class="flex flex-col gap-2" aria-labelledby="team-share-heading">
-    <h3 id="team-share-heading" class="m-0 flex items-center gap-1.5 text-sm font-semibold text-primary">
+    <h3 id="team-share-heading" class="section-heading flex items-center gap-1.5">
       <Share2 size={14} /> Share a host with {team.name}
     </h3>
     <form
@@ -102,7 +102,7 @@
         Share
       </button>
     </form>
-    <p class="m-0 text-xs text-muted">
+    <p class="m-0 type-meta">
       Host, user, port, bastion, Kerberos and tags are shared; key paths and passwords never are. Changes sync to
       everyone in {team.name}.
     </p>

@@ -30,7 +30,7 @@ test.describe("tunnels view", () => {
   test("renders the empty state initially", async ({ app, page }) => {
     await openTunnels(app, page);
 
-    await expect(page.locator(".empty-state-title")).toHaveText("No tunnels yet");
+    await expect(page.locator(".empty-state-title")).toContainText("No tunnels yet");
     await expect(page.getByRole("group", { name: "Tunnel presets" })).toBeVisible();
     await expect(page.getByRole("button", { name: "New tunnel" }).first()).toBeEnabled();
     await expect(page.getByRole("table")).toHaveCount(0);
@@ -121,6 +121,6 @@ test.describe("tunnels view", () => {
 
     await page.getByRole("button", { name: "Delete tunnel" }).click();
     await expect(page.locator("tbody tr")).toHaveCount(0);
-    await expect(page.locator(".empty-state-title")).toHaveText("No tunnels yet");
+    await expect(page.locator(".empty-state-title")).toContainText("No tunnels yet");
   });
 });

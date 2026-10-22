@@ -113,8 +113,8 @@
       {#if role}
         <span class="badge {isAdmin ? 'badge-accent' : 'badge-neutral'}">{isAdmin ? "Admin" : "Member"}</span>
       {/if}
-      <span class="text-xs text-muted">{plural(team.hosts, "host")}</span>
-      <span class="text-xs text-muted" title={team.last_sync_at ? formatUtc(team.last_sync_at, true) : undefined}>
+      <span class="type-meta">{plural(team.hosts, "host")}</span>
+      <span class="type-meta" title={team.last_sync_at ? formatUtc(team.last_sync_at, true) : undefined}>
         {team.last_sync_at ? `synced ${formatRelative(team.last_sync_at)}` : "never synced"}
       </span>
     </div>

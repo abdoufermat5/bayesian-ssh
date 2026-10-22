@@ -69,7 +69,7 @@
   {#if isAdmin}
     <section class="flex flex-col gap-2" aria-labelledby="team-pending-heading">
       <div class="flex items-center justify-between gap-2">
-        <h3 id="team-pending-heading" class="m-0 flex items-center gap-1.5 text-sm font-semibold text-primary">
+        <h3 id="team-pending-heading" class="section-heading flex items-center gap-1.5">
           <KeyRound size={14} /> Devices waiting for the key
           {#if pending}<span class="count ml-1">{pending.length}</span>{/if}
         </h3>
@@ -83,12 +83,12 @@
       {:else if pending === null}
         <div class="skeleton h-10 w-full rounded-md" aria-label="Loading waiting devices"></div>
       {:else if pending.length === 0}
-        <p class="m-0 text-xs text-muted">No device is waiting.</p>
+        <p class="m-0 type-meta">No device is waiting.</p>
       {:else}
         <ul class="m-0 flex list-none flex-col gap-2 p-0">
           {#each pending as p (p.device.fingerprint)}
             <li class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-warning/30 bg-warning/8 px-3 py-2">
-              <span class="flex min-w-0 items-center gap-2 text-sm">
+              <span class="flex min-w-0 items-center gap-2 type-body">
                 <Hourglass size={14} class="shrink-0 text-warning" />
                 <span class="text-primary">{p.email}</span>
                 <span class="text-muted">·</span>
@@ -100,7 +100,7 @@
             </li>
           {/each}
         </ul>
-        <p class="m-0 text-xs text-muted">
+        <p class="m-0 type-meta">
           You'll need the fingerprint each person sends you over a channel you trust; it isn't shown here.
         </p>
       {/if}
@@ -109,7 +109,7 @@
 
   <section class="flex flex-col gap-2" aria-labelledby="team-members-heading">
     <div class="flex items-center justify-between gap-2">
-      <h3 id="team-members-heading" class="m-0 text-sm font-semibold text-primary">
+      <h3 id="team-members-heading" class="section-heading">
         Members {#if members}<span class="count ml-1">{members.length}</span>{/if}
       </h3>
       {#if isAdmin}
@@ -128,10 +128,10 @@
         {#each members as m, i (m.email)}
           <li class="flex flex-col gap-1.5 px-4 py-3" class:border-t={i > 0} class:border-border-subtle={i > 0}>
             <div class="flex flex-wrap items-center justify-between gap-2">
-              <span class="flex min-w-0 items-center gap-2 text-sm">
+              <span class="flex min-w-0 items-center gap-2 type-body">
                 <span class="truncate text-primary">{m.email}</span>
                 <span class="badge {m.role === 'admin' ? 'badge-accent' : 'badge-neutral'}">{m.role === "admin" ? "Admin" : "Member"}</span>
-                {#if m.email === myEmail}<span class="text-xs text-muted">you</span>{/if}
+                {#if m.email === myEmail}<span class="type-meta">you</span>{/if}
               </span>
               {#if isAdmin && m.email !== myEmail}
                 <button type="button" class="btn btn-ghost btn-sm" onclick={() => (removing = m.email)} aria-label="Remove {m.email}">
@@ -156,7 +156,7 @@
         {/each}
       </ul>
       {#if !isAdmin}
-        <p class="m-0 text-xs text-muted">Only admins can invite people, grant keys and remove members.</p>
+        <p class="m-0 type-meta">Only admins can invite people, grant keys and remove members.</p>
       {/if}
     {/if}
   </section>

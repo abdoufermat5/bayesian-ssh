@@ -84,7 +84,7 @@
       <h2 class="modal-title break-words">Remove {email} from {team.name}?</h2>
       <button type="button" class="modal-close" onclick={onClose} aria-label="Close"><X size={16} /></button>
     </div>
-    <div class="modal-body flex flex-col gap-3 text-sm text-secondary">
+    <div class="modal-body flex flex-col gap-3 type-body text-secondary">
       {#if previewError}
         <div class="alert alert-error" role="alert">
           <div class="flex flex-col gap-2">
@@ -125,7 +125,7 @@
             {/if}
           </li>
         </ul>
-        <p class="m-0 text-xs text-muted">
+        <p class="m-0 type-meta">
           Lost a laptop? Devices can't be revoked one by one yet: remove the member, then invite them again.
         </p>
 
@@ -161,7 +161,7 @@
         </div>
       {/if}
 
-      <p class="m-0 text-xs text-muted">CLI: <code class="select-text">bssh teams remove {team.name} {email}</code></p>
+      <p class="m-0 type-meta">CLI: <code class="select-text">bssh teams remove {team.name} {email}</code></p>
     </div>
     <div class="modal-footer">
       {#if blocker}<span id="remove-reason" class="mr-auto text-xs text-muted">{blocker}</span>{/if}

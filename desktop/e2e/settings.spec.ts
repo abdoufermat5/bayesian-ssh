@@ -13,14 +13,14 @@ async function openSettings(app: AppFixture, page: Page) {
   await app.gotoApp();
   await app.nav("Settings");
   await expect(page.locator(".settings-shell")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Profiles & workspace", level: 2 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Workspace", level: 1 })).toBeVisible();
 }
 
 async function openSection(page: Page, label: string) {
   const button = page.locator(SECTIONS).getByRole("button", { name: label, exact: true });
   await button.click();
   await expect(button).toHaveAttribute("aria-current", "page");
-  await expect(page.getByRole("heading", { name: label, level: 2 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: label, level: 1 })).toBeVisible();
 }
 
 test.describe("settings", () => {
@@ -28,18 +28,15 @@ test.describe("settings", () => {
     await openSettings(app, page);
 
     const sections = [
-      { label: "Profiles & workspace", marker: page.getByText("Active profile") },
-      { label: "SSH agent", marker: page.getByRole("checkbox", { name: /Start agent on launch/ }) },
-      { label: "Kerberos", marker: page.getByRole("checkbox", { name: /Monitor ticket expiry/ }) },
-      { label: "Terminal", marker: page.getByText("Font size", { exact: true }) },
-      { label: "History", marker: page.getByRole("checkbox", { name: /Record session history/ }) },
+      { label: "Workspace", marker: page.getByText("Active profile") },
+      { label: "Connection", marker: page.getByRole("checkbox", { name: /Start agent on launch/ }) },
+      { label: "Terminal & files", marker: page.getByText("Font size", { exact: true }) },
+      { label: "Privacy & history", marker: page.getByRole("checkbox", { name: /Record session history/ }) },
       { label: "Appearance", marker: page.getByRole("radiogroup", { name: "Theme" }) },
-      { label: "Features", marker: page.getByRole("checkbox", { name: /SFTP file browser/ }) },
-      { label: "Inventory sources", marker: page.getByRole("heading", { name: "Inventory sources" }) },
-      { label: "Updates", marker: page.getByRole("button", { name: "Check for updates" }) },
+      { label: "Sources & updates", marker: page.getByRole("button", { name: "Check for updates" }) },
     ];
 
-    // The rail exposes exactly the nine documented categories.
+    // The rail exposes exactly the six settings sections.
     await expect(page.locator(SECTIONS).getByRole("button")).toHaveCount(sections.length);
 
     for (const { label, marker } of sections) {
@@ -48,7 +45,7 @@ test.describe("settings", () => {
     }
 
     // Workspace section content round-trips when we come back to it.
-    await openSection(page, "Profiles & workspace");
+    await openSection(page, "Workspace");
     await expect(page.getByText("Config root")).toBeVisible();
     await expect(page.getByText("/home/me/.config/bayesian-ssh", { exact: true })).toBeVisible();
   });
@@ -57,7 +54,7 @@ test.describe("settings", () => {
     await openSettings(app, page);
 
     // Kerberos: monitoring starts enabled, flip it off.
-    await openSection(page, "Kerberos");
+    await openSection(page, "Connection");
     const monitor = page.getByRole("checkbox", { name: /Monitor ticket expiry/ });
     await expect(monitor).toBeChecked();
     await app.clearIpc();
@@ -71,7 +68,7 @@ test.describe("settings", () => {
     await expect(page.locator("#settings-kerberos-warn")).toBeDisabled();
 
     // Features: disable the SFTP browser (enabled by default).
-    await openSection(page, "Features");
+    await openSection(page, "Terminal & files");
     const sftp = page.getByRole("checkbox", { name: /SFTP file browser/ });
     await expect(sftp).toBeChecked();
     await app.clearIpc();
@@ -106,7 +103,7 @@ test.describe("settings", () => {
     });
 
     // Connection defaults re-derive workspace fields and persist both blobs.
-    await openSection(page, "SSH agent");
+    await openSection(page, "Connection");
     await app.clearIpc();
     const defaultUser = page.locator("#settings-default-user");
     await expect(defaultUser).toHaveValue("root");
