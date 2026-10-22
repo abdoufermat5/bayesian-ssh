@@ -806,11 +806,11 @@ export class AppStateStore {
     });
   }
 
-  handleConnect = async (conn: Connection) => {
+  handleConnect = async (conn: Connection, options: { newTab?: boolean } = {}) => {
     this.activeTab = "terminals";
     await tick();
     try {
-      await connectSSH(conn);
+      await connectSSH(conn, options);
       requestAnimationFrame(() => fitActiveTerminal());
     } catch (e: unknown) {
       notify(String(e), "error");

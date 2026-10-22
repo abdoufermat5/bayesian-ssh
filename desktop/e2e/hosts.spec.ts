@@ -314,6 +314,47 @@ test.describe("hosts keyboard", () => {
       .toBe("staging-web");
   });
 
+  test("Enter brings an open session forward; Shift+Enter opens another", async ({ app, page }) => {
+    const sessions = async () =>
+      ((await app.ipcCalls("spawn_pty")) as Array<{ connectionName: string }>).filter(
+        (c) => c.connectionName === "staging-web",
+      ).length;
+    await app.gotoApp();
+    await focusRow(page, "staging-web");
+    await page.keyboard.press("Enter");
+    await expect.poll(sessions).toBe(1);
+
+    await app.nav("Hosts");
+    await focusRow(page, "staging-web");
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".workspace h1")).toHaveText("Terminals");
+    await expect.poll(sessions).toBe(1);
+
+    await app.nav("Hosts");
+    await focusRow(page, "staging-web");
+    await page.keyboard.press("Shift+Enter");
+    await expect.poll(sessions).toBe(2);
+  });
+
+  test("at 1024 px tags that don't fit go behind +N and stay selectable", async ({ app, page }) => {
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await app.gotoApp();
+    const group = page.getByRole("group", { name: "Filter by tag" });
+    const more = group.getByRole("button", { name: /more tags?$/ });
+    await expect(more).toBeVisible();
+    const box = (await group.boundingBox())!;
+    const moreBox = (await more.boundingBox())!;
+    expect(moreBox.x + moreBox.width).toBeLessThanOrEqual(box.x + box.width + 1);
+
+    await more.click();
+    const popover = page.getByRole("dialog", { name: "More tags" });
+    const hiddenTag = popover.getByRole("button").first();
+    const tagName = (await hiddenTag.textContent())!.trim();
+    await hiddenTag.click();
+    await expect(popover).toBeHidden();
+    await expect(group.getByRole("button", { name: `${tagName} selected`, exact: false })).toHaveText(tagName);
+  });
+
   test("host keys don't fire while the filter has focus", async ({ app, page }) => {
     await app.gotoApp();
     await page.locator(".search-input").click();

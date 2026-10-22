@@ -64,7 +64,8 @@ still works.
 ![Bayesian SSH desktop hosts list](../assets/desktop-home.png)
 
 The host list is the main view. It has a filter box, tag chips, a sort selector and a
-list/grid toggle.
+list/grid toggle. Tag chips that don't fit the window go behind a `+N` button that
+lists the rest; when the selected tag is one of them, the button shows its name.
 
 - **Sort** — Smart rank (frequency and recency), Last used, Name or Address.
 - **List view** — columns Name, Address, Tags, Source and Last used. Address is
@@ -95,7 +96,8 @@ reads **Update in** *team*. If Teams isn't set up or is locked, the dialog says 
 and offers **Open Teams**. CLI: `bssh teams share <host> --team <team>`.
 
 The list is a single Tab stop. With a host selected: `↑`/`↓` or `j`/`k` move,
-`Enter` or `Shift` + `Enter` connect (both open a new tab), `Ctrl`/`Cmd` + `Enter`
+`Enter` connects (or switches to the session already open to that host),
+`Shift` + `Enter` always opens a new tab, `Ctrl`/`Cmd` + `Enter`
 opens it in Files, `C` copies the ssh command, `E` edits, `S` shares with a team and
 `Delete` deletes. `←`/`→` reach the row's buttons. With no hosts yet, the empty
 state offers **Import ~/.ssh/config** and **New host**.
@@ -311,7 +313,8 @@ read `Cmd` for `Ctrl`, and `Cmd` alone for `Ctrl` + `Shift` in terminals.
 | Focus the host filter | `/` |
 | New host | `N`, `Ctrl`/`Cmd` + `N` |
 | Move host selection | `↑`/`↓`, `j`/`k` |
-| Connect to the selected host | `Enter`, `Shift` + `Enter` |
+| Connect to the selected host (or switch to its open session) | `Enter` |
+| Connect in a new tab | `Shift` + `Enter` |
 | Open the selected host in Files | `Ctrl`/`Cmd` + `Enter` |
 | Copy its ssh command / edit / share / delete | `C` / `E` / `S` / `Delete` |
 | Next / previous terminal tab | `Ctrl` + `Tab` / `Ctrl` + `Shift` + `Tab` |
