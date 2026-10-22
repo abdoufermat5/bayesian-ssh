@@ -121,7 +121,8 @@ test.describe("edit host modal", () => {
   test("row action prefills fields and records edit_connection", async ({ app, page }) => {
     await app.gotoApp();
 
-    await page.getByRole("button", { name: "Edit prod-api-01" }).click();
+    await page.getByRole("button", { name: "More actions for prod-api-01" }).click();
+    await page.getByRole("menuitem", { name: "Edit" }).click();
     const modal = dialog(page, "Edit host");
     await expect(modal).toBeVisible();
 
