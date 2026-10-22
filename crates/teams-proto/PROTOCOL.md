@@ -99,6 +99,24 @@ newest key. Old ciphertext stays readable to whoever already had the old key.
   tombstoned remotely is dropped, and the user is told.
 - Every request carries `Bssh-Protocol: 1` and `Bssh-Client-Version: <semver>`.
 
+**Integrity checks the client must run** (the server is untrusted for confidentiality
+and integrity, see PERIMETER.md):
+
+- *Rollback.* `revision` is assigned by the server and not signed, but `base_revision`
+  is. Because pull returns every revision in order, the revisions of one `entry_id` form
+  a chain: each pulled entry's `base_revision` must equal the revision the client already
+  holds for that entry (0 if new to it), and its `revision` must be greater. An entry that
+  breaks the chain, for example an old ciphertext relabelled as newer, is rejected and
+  reported, never applied.
+- *Unknown authors.* An entry whose `author_device_id` isn't a known device of the team
+  is rejected.
+- *Key replay.* Before unwrapping, check `team_id`, `recipient_device_id` (this device)
+  and `key_version` against what's expected. A stored key version is never replaced by
+  a different wrapped key for the same version.
+
+The server can still withhold updates (a client can't detect an entry it never sees);
+that's an availability limit, not a confidentiality or integrity one.
+
 ## Audit
 
 Each device keeps one hash chain per team: `seq` from 0, `prev_hash` =
