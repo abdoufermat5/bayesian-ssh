@@ -22,8 +22,15 @@ Packaged installs start the same `bayesian-ssh-gui` binary:
 - in the snap, the `bayesian-ssh.gui` app runs the desktop binary and is also
   available from the app menu.
 
-The first launch runs onboarding: profile name and connection defaults, an optional
-openSSH import, the theme, and an optional restore from a backup file.
+The first launch runs onboarding, which starts by asking which applies:
+
+- **Set up this machine** — profile name and connection defaults, an optional
+  OpenSSH import, the theme, an optional restore from a backup file, and a last
+  step to add or import a first host and connect to it.
+- **I was invited to a team** — paste the invite message your admin sent, choose
+  the passphrase that protects this device's Teams keys, and join. The app then
+  shows this device's fingerprint to send back to your admin, who grants the key
+  after checking it. See [Teams](./teams.md).
 
 ## Window layout
 
@@ -37,7 +44,7 @@ openSSH import, the theme, and an optional restore from a backup file.
 Sidebar navigation:
 
 - **Hosts**, **Terminals**, **Files**, **Tunnels** (Files and Tunnels appear only
-  when they are enabled under Settings → Features)
+  when they are enabled under Settings → Terminal & files)
 - **Security**: Keys, Security check
 - **Activity**: History
 - **Team**: Teams
@@ -46,7 +53,9 @@ Sidebar navigation:
   its manager), the **Kerberos** entry, and **Settings**. The Kerberos entry stays
   hidden until a connection actually uses Kerberos.
 
-The sidebar collapses automatically when the window is narrower than 860 px.
+Each entry shows its number key (`1`–`8`, in sidebar order). The sidebar collapses
+to icons automatically when the window is narrower than 1100 px; the collapse toggle
+still works.
 
 ## Views
 
@@ -58,9 +67,14 @@ The host list is the main view. It has a filter box, tag chips, a sort selector 
 list/grid toggle.
 
 - **Sort** — Smart rank (frequency and recency), Last used, Name or Address.
-- **List view** — columns Name, Address, Tags and Last used. Address is shown as
-  `user@host`, with `:port` when it is not 22. Hosts with Kerberos or a jump host
-  carry a badge.
+- **List view** — columns Name, Address, Tags, Source and Last used. Address is
+  shown as `user@host`, with `:port` when it is not 22. Hosts with Kerberos or a
+  jump host carry a badge. Narrow windows show the first tag and a `+N` button that
+  lists the others. Row height follows the density setting (Settings → Appearance).
+- **Source** — where a host comes from: Local, an inventory source, or a team
+  (people icon and the team name). The column and the source chips above the list
+  (All, Local, each team and source, with counts) appear once any host comes from a
+  source.
 - **Grid view** — the same information as cards, mounted progressively while you
   scroll. The list is windowed, so large host lists stay responsive.
 - **Ping** — checks reachability for every host, then reports `n/m up` and shows a
@@ -68,13 +82,23 @@ list/grid toggle.
 - **Batch run** — opens the batch-execution modal (see below).
 - **New host** — opens the host form.
 
-Row actions (also on cards): **Connect**, **Copy SSH command**, **Edit**,
-**Duplicate** and **Delete**. Duplicate creates `<name> (Copy)`, flashes the new row
-and opens it for editing. Delete asks for confirmation and shows `user@host:port`.
+Row actions (also on cards) appear on hover, focus or selection: **Connect**,
+**Files**, and a **More** menu with **Copy SSH command**, **Edit**, **Duplicate**,
+**Share with a team…** and **Delete…**. Duplicate creates `<name> (Copy)`, flashes
+the new row and opens it for editing. Delete asks for confirmation and shows
+`user@host:port`.
 
-Keyboard: `↑`/`↓` or `j`/`k` move the selection, `Enter` connects, `Ctrl`/`Cmd` + `E`
-edits the selected host. With no hosts yet, the empty state offers
-**Import ~/.ssh/config** and **New host**.
+**Share with a team…** shares the host's address, user, port, jump host, Kerberos
+setting and tags (never key paths or passwords) with a team this device holds the
+key for; everyone in the team gets it at their next sync. On a team copy the action
+reads **Update in** *team*. If Teams isn't set up or is locked, the dialog says so
+and offers **Open Teams**. CLI: `bssh teams share <host> --team <team>`.
+
+The list is a single Tab stop. With a host selected: `↑`/`↓` or `j`/`k` move,
+`Enter` or `Shift` + `Enter` connect (both open a new tab), `Ctrl`/`Cmd` + `Enter`
+opens it in Files, `C` copies the ssh command, `E` edits, `S` shares with a team and
+`Delete` deletes. `←`/`→` reach the row's buttons. With no hosts yet, the empty
+state offers **Import ~/.ssh/config** and **New host**.
 
 The host form (`New host` / `Edit host`) collects Name, Host, Port, User and an
 identity file, plus a Kerberos switch, comma-separated tags and an **Advanced**
@@ -90,13 +114,23 @@ state lists your recent hosts to connect with, and the **+** button opens a host
 launcher with a `Connect to host…` filter.
 
 Each tab shows a status dot (Connected, Connecting, Failed to connect, Disconnected)
-and a close button; middle-clicking a tab closes it. With an active session:
+and a close button; middle-clicking a tab closes it.
+
+While ssh starts, the tab shows "Connecting to user@host…" (with "via" and the jump host
+when there is one) and the elapsed time; `Esc` or **Cancel** stops it. If ssh fails
+to connect, the tab stays open with the error in plain words, **Retry**, **Edit
+host** and the equivalent `bssh connect` command.
+
+`Ctrl` + `Tab` / `Ctrl` + `Shift` + `Tab` switch tabs, `Ctrl` + `Shift` + `W` closes
+one and `Ctrl` + `Shift` + `T` reopens the last closed host (`Cmd` + `W` / `T` on
+macOS). With an active session:
 
 - **Find** (`Ctrl`/`Cmd` + `F`) opens a per-tab search bar over the scrollback
   (`Enter` next match, `Shift` + `Enter` previous).
 - **Font size** buttons adjust the terminal text; `Ctrl`/`Cmd` + mouse wheel zooms,
-  and `Ctrl`/`Cmd` + `+`/`-`/`0` adjust or reset it when the terminal is not focused.
-  The value is remembered in settings.
+  `Ctrl` + `Shift` + `=`/`-`/`0` (`Cmd` + `=`/`-`/`0` on macOS) adjust or reset it
+  while the terminal is focused, and `Ctrl`/`Cmd` + `+`/`-`/`0` when it isn't. The
+  value is remembered in settings.
 - **More** offers Open in new window, Run in background, Export scrollback (to a
   `.txt` file), Clear screen, Manage sessions…, and Close all sessions.
 
@@ -110,15 +144,17 @@ Closing the window while sessions are open shows a confirmation with **Cancel**,
 **Minimize to tray** (keeps the sessions running) and **Disconnect and quit**. With no
 open sessions the window simply hides to the tray.
 
-Terminal copy/paste uses the usual key combinations (`Ctrl`/`Cmd` + `C` for a
-selection, `Ctrl`/`Shift` + `C`, `Ctrl`/`Cmd` + `V`, `Ctrl`/`Shift` + `V` or
-`Shift` + `Insert`). OSC 52 clipboard writes from remote hosts are honoured; reads are
+Plain `Ctrl` + `C`/`V`/`F` always go to the shell. Copy, paste and find are
+`Ctrl` + `Shift` + `C`/`V`/`F` (`Cmd` + `C`/`V`/`F` on macOS), or `Shift` + `Insert`
+to paste; **Smart copy** (Settings → Terminal & files) makes `Ctrl` + `C` copy when
+text is selected. OSC 52 clipboard writes from remote hosts are honoured; reads are
 refused.
 
 ### Files
 
-The Files view browses a remote directory over SFTP. Pick a host and press
-**Connect**; the header then shows `user@host` and the button becomes **Disconnect**.
+The Files view browses a remote directory over SFTP. Pick a host (opening Files
+from a host's **Files** action, `Ctrl`/`Cmd` + `Enter` or the palette selects it for
+you) and press **Connect**; the header then shows `user@host` and the button becomes **Disconnect**.
 
 - Breadcrumbs navigate the tree; a go-to button turns the path into an editable field
   (`Enter` loads, `Esc` cancels).
@@ -142,7 +178,7 @@ have its local address copied.
 
 Rules are configuration held by the view: no tunnel process is started, and rules are
 not persisted across restarts. The section is hidden when Tunnels is turned off under
-Settings → Features.
+Settings → Terminal & files.
 
 ### Keys
 
@@ -176,31 +212,39 @@ Session history is grouped by day (Today, Yesterday, then dates) and shows Host,
 Started (relative, with an absolute tooltip in the configured timezone), Duration,
 Status and Exit code. Rows are badged **Succeeded**, **Failed** or **Running**; the
 status chips (`All`, `Succeeded`, `Failed`) and the search box filter the table.
-**Export CSV** downloads every recorded session.
+Once a host comes from an inventory source or a team, a **Source** column and source
+chips appear too; team admins get **View in** *team* **audit log** on team sessions,
+which opens that team's Audit log tab. **Export CSV** downloads every recorded
+session.
 
 ### Settings
 
-Settings has its own sidebar of sections. Every control saves immediately; there is no
+Settings (`Ctrl`/`Cmd` + `,`) has six sections, also reachable from the command
+palette ("Settings: Terminal & files"). Every control saves immediately; there is no
 Save button.
 
-- **Profiles & workspace** — switch or manage profiles, choose how hosts are ranked
+- **Workspace** — switch or manage profiles, choose how hosts are ranked
   (usage-ranked Bayesian scoring or fuzzy matching), set the OpenSSH config file used
   for imports, import hosts, encrypt/export/restore backups, and see the config,
   profile and database paths.
-- **SSH agent** — start the agent on launch, point at a custom agent socket, and set
-  the default user and port used by hosts that don't define their own.
-- **Kerberos** — monitor ticket expiry and set the warning threshold in minutes.
-- **Terminal** — font family, size and line height, cursor style and blinking,
-  scrollback size, copy-on-select, and whether the file browser
-  lists dotfiles.
-- **History** — record session history, cap the number of stored entries, and set the
-  backend log level.
-- **Appearance** — pick a theme and the timezone used for dates in history, logs and
-  audit. Themes: **Graphite**, **Midnight**, **OLED black** and **Slate**.
-- **Features** — turn the SFTP file browser and the Tunnels section on or off; the
-  sidebar updates immediately.
-- **Updates** — shows the current version and handles updates for the way the app was
-  installed.
+- **Connection** — the default user and port used by hosts that don't define their
+  own, the SSH agent (start on launch, custom socket), and Kerberos ticket monitoring
+  with its warning threshold.
+- **Terminal & files** — font family, size and line height, cursor style and
+  blinking, scrollback size, copy-on-select and Smart copy, whether the file browser
+  lists dotfiles, and the switches that turn Files and Tunnels on or off (the
+  sidebar updates immediately).
+- **Privacy & history** — record session history, cap the number of stored entries,
+  the backend log level, and session recording (all hosts or only hosts with given
+  tags).
+- **Appearance** — theme, row density and the timezone used for dates in history,
+  logs and audit. Themes: **Graphite**, **Midnight**, **OLED black**, **Paper** (light)
+  and **Match system** (Paper or Graphite, following the system's light/dark setting
+  as it changes). Density sets list and table rows to 32, 40 or 48 px (Compact,
+  Comfortable, Spacious). A previously saved Slate theme opens as Midnight.
+- **Sources & updates** — inventory sources (see
+  [Inventory sources](./inventory-sources.md)), and the current version and updates
+  for the way the app was installed.
 
   ![Bayesian SSH desktop settings](../assets/desktop-settings.png)
 
@@ -214,12 +258,21 @@ Save button.
 
 ## Modals and dialogs
 
-- **Command palette** (`Ctrl`/`Cmd` + `K`) — searches hosts and commands. It groups
-  results into Hosts, Actions, Navigation and Themes; with an empty query it shows the
-  first hosts plus the actions and navigation entries. Host entries connect on
-  selection; actions cover New host, Run command on hosts, Ping all hosts, Manage
-  sessions and Fix key permissions; navigation entries jump to a view; theme entries
-  switch the theme.
+- **Command palette** (`Ctrl`/`Cmd` + `K`; `Ctrl` + `Shift` + `P` from a focused
+  terminal) — searches hosts and commands. It groups results into Hosts, Actions,
+  Teams, Navigation, Settings and Themes; with an empty query it shows the first
+  hosts plus the actions and navigation entries.
+  - A highlighted host lists its verbs (Connect, Connect in new tab, Browse files,
+    Copy ssh command, Edit) with their keys and CLI equivalents; `Enter` connects,
+    `Ctrl`/`Cmd` + `Enter` opens Files.
+  - Actions cover New host, Run command on hosts, Ping all hosts, Manage sessions and
+    Fix key permissions.
+  - Teams entries depend on the state: Unlock Teams…, Sync all teams, Lock Teams,
+    Review waiting devices in *team* and Invite to *team*… (admins). They open the
+    team; granting a key always happens in the team page after checking the
+    fingerprint, never from the palette.
+  - Navigation entries jump to a view, Settings entries open a section, theme
+    entries switch the theme.
 - **Batch run** — runs one command on several hosts in parallel. Pick hosts (with
   filter, tag chips and All/None/Invert/Prod/Non-prod shortcuts), enter a command,
   optionally save it as a template, choose dry run and a timeout, then preview or run.
@@ -243,18 +296,26 @@ Save button.
 
 ## Keyboard shortcuts
 
-Press `?`, `F1` or `Ctrl`/`Cmd` + `/` to open the shortcut sheet. Single-key shortcuts
-work when no text field is focused.
+Press `?`, `F1` or `Ctrl`/`Cmd` + `/` to open the shortcut sheet; it, the sidebar
+hints and the command palette all come from one table, so they always agree.
+Single-key shortcuts work when no text field, dialog or terminal is focused. On macOS
+read `Cmd` for `Ctrl`, and `Cmd` alone for `Ctrl` + `Shift` in terminals.
 
 | Action | Keys |
 | --- | --- |
-| Command palette | `Ctrl`/`Cmd` + `K` |
+| Command palette | `Ctrl`/`Cmd` + `K` (`Ctrl` + `Shift` + `P` in a terminal) |
+| Settings | `Ctrl`/`Cmd` + `,` |
 | Keyboard shortcuts | `?`, `F1`, `Ctrl`/`Cmd` + `/` |
 | Close a dialog or clear the filter | `Esc` |
-| Hosts / Terminals / Keys / Security check / History / Settings | `1` / `2` / `3` / `4` / `5` / `6` |
+| Hosts / Terminals / Files / Tunnels / Keys / Security check / History / Teams | `1` … `8` (sidebar order) |
 | Focus the host filter | `/` |
 | New host | `N`, `Ctrl`/`Cmd` + `N` |
 | Move host selection | `↑`/`↓`, `j`/`k` |
-| Connect to the selected host | `Enter` |
-| Edit the selected host | `Ctrl`/`Cmd` + `E` |
-| Terminal font size (when the terminal is not focused) | `Ctrl`/`Cmd` + `+` / `-` / `0` |
+| Connect to the selected host | `Enter`, `Shift` + `Enter` |
+| Open the selected host in Files | `Ctrl`/`Cmd` + `Enter` |
+| Copy its ssh command / edit / share / delete | `C` / `E` / `S` / `Delete` |
+| Next / previous terminal tab | `Ctrl` + `Tab` / `Ctrl` + `Shift` + `Tab` |
+| Close / reopen a terminal tab | `Ctrl` + `Shift` + `W` / `Ctrl` + `Shift` + `T` |
+| Terminal copy / paste / find | `Ctrl` + `Shift` + `C` / `V` / `F` |
+| Terminal font size | `Ctrl` + `Shift` + `=` / `-` / `0` |
+| Cancel a connection in progress | `Esc` |

@@ -28,7 +28,8 @@ bssh teams create platform
 bssh teams share db-prod --team platform
 ```
 
-You're the team's admin. A shared connection carries its host, user, port,
+You're the team's admin. In the desktop app, **Share with a team…** in a host's
+menu (or `S` on the selected host) does the same. A shared connection carries its host, user, port,
 bastion, Kerberos setting and tags; never key paths or passwords, which stay
 per person. On your machine the team's copy is listed as `db-prod@platform`
 next to your own `db-prod`.
@@ -45,7 +46,9 @@ Fingerprints are how bssh keeps the server from slipping in a device of its
 own, so they're exchanged out of band, e.g. in your chat.
 
 1. **Admin:** `bssh teams invite platform ana@example.com` prints two commands
-   for Ana, including a one-time token and your fingerprint.
+   for Ana, including a one-time token and your fingerprint. On a new install of
+   the desktop app, Ana can instead choose **I was invited to a team** in
+   onboarding and paste the whole invite message.
 2. **Ana:** runs `bssh teams init ...`, then
    `bssh teams join <TOKEN> --fingerprint <ADMIN FINGERPRINT>`. bssh refuses to
    trust the team if no admin of it has that fingerprint. It prints Ana's
