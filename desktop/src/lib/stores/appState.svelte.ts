@@ -11,6 +11,7 @@ import type {
   WorkspaceInfo,
 } from "$lib/types";
 import { notify } from "$lib/stores/notifications.svelte";
+import { refreshTeamsAttention, startTeamsAttentionPoller } from "$lib/stores/teamsAttention.svelte";
 import { applyTheme } from "$lib/utils/theme";
 import { isTerminalFocused } from "$lib/utils/terminal-focus";
 import { copyTextWithFallback } from "$lib/utils/terminal-xterm";
@@ -213,6 +214,9 @@ export class AppStateStore {
         await this.triggerStartAgent();
       }
       refreshTray();
+      // Idempotent; also re-checks after a profile switch reloads the data.
+      startTeamsAttentionPoller();
+      void refreshTeamsAttention(true);
     } catch (e: unknown) {
       notify(String(e), "error");
     }
@@ -904,12 +908,9 @@ export class AppStateStore {
       }
     }
 
-    // Focus Search Bar: '/' (when not editing input & not in terminal) OR 'Ctrl+K' / 'Cmd+K'
-    if (
-      !isTerminalFocused() &&
-      (((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") ||
-        (e.key === "/" && !isEditing))
-    ) {
+    // Focus the host filter: '/' (when not editing input & not in terminal).
+    // Ctrl/Cmd+K opens the command palette; that is handled in +page.svelte.
+    if (!isTerminalFocused() && e.key === "/" && !isEditing) {
       e.preventDefault();
       const searchInput = document.querySelector(".search-input") as HTMLInputElement;
       if (searchInput) {
