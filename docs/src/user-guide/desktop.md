@@ -2,7 +2,7 @@
 
 Bayesian SSH ships a standalone desktop app: a SvelteKit/TypeScript front end on a
 Rust/Tauri backend. It manages the same hosts, profiles and session history as the
-CLI, and adds terminals, a file browser, tunnel rules and a security audit.
+CLI, and adds terminals, a file browser, tunnel rules and a local security check.
 
 ## Launching
 
@@ -27,8 +27,7 @@ openSSH import, the theme, and an optional restore from a backup file.
 
 ## Window layout
 
-- **Title bar** — app name, a command search button (`Search hosts and commands`,
-  `Ctrl`/`Cmd` + `K`), a keyboard-shortcuts button, an About button and the window
+- **Title bar** — app name, a **Jump to…** button (`Ctrl`/`Cmd` + `K`) that opens the command palette, a keyboard-shortcuts button, an About button and the window
   controls. The bar is draggable.
 - **Sidebar** — a profile switcher at the top, grouped navigation, status entries at
   the bottom, and a collapse toggle.
@@ -39,7 +38,7 @@ Sidebar navigation:
 
 - **Hosts**, **Terminals**, **Files**, **Tunnels** (Files and Tunnels appear only
   when they are enabled under Settings → Features)
-- **Security**: Keys, Audit
+- **Security**: Keys, Security check
 - **Activity**: History
 - **Team**: Teams
 - At the bottom: **Background** (only while sessions run outside the tab bar), the
@@ -158,9 +157,9 @@ The Keys view lists the identity files in `~/.ssh`, paired from each `*.pub` fil
   with an empty passphrase;
 - **Deploy** copies a public key to a chosen host's `authorized_keys`.
 
-### Security audit
+### Security check
 
-The audit view runs on open and scores the local setup out of 100 with a grade, plus
+The Security check view (the local scan; **Audit log** is reserved for Teams) runs on open and scores the local setup out of 100 with a grade, plus
 counts for Critical, Warnings and Info findings. A severity filter narrows the list.
 Each finding shows its description and a copyable remediation command.
 
@@ -168,7 +167,7 @@ The checks cover StrictHostKeyChecking being disabled, overly permissive permiss
 on the config directory and database file, private keys readable by other users,
 connections with no identity key and no Kerberos, and connections unused for more than
 90 days. **Fix permissions** tightens the config directory, database file, `~/.ssh`
-and key files that are group/other-accessible, then re-runs the audit. **Re-scan**
+and key files that are group/other-accessible, then re-runs the check. **Re-scan**
 re-runs it manually.
 
 ### History
@@ -252,7 +251,7 @@ work when no text field is focused.
 | Command palette | `Ctrl`/`Cmd` + `K` |
 | Keyboard shortcuts | `?`, `F1`, `Ctrl`/`Cmd` + `/` |
 | Close a dialog or clear the filter | `Esc` |
-| Hosts / Terminals / Keys / Audit / History / Settings | `1` / `2` / `3` / `4` / `5` / `6` |
+| Hosts / Terminals / Keys / Security check / History / Settings | `1` / `2` / `3` / `4` / `5` / `6` |
 | Focus the host filter | `/` |
 | New host | `N`, `Ctrl`/`Cmd` + `N` |
 | Move host selection | `↑`/`↓`, `j`/`k` |

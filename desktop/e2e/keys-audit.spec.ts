@@ -102,12 +102,12 @@ test.describe("Keys", () => {
   });
 });
 
-test.describe("Audit", () => {
+test.describe("Security check", () => {
   test("renders score, grade and severity stats", async ({ app, page }) => {
     await app.gotoApp();
-    await app.nav("Audit");
+    await app.nav("Security check");
 
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Security audit");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Security check");
     await expect(page.getByText("78/100", { exact: true })).toBeVisible();
     await expect(page.getByText(/Grade\s+B\s+·\s+Good/)).toBeVisible();
 
@@ -122,7 +122,7 @@ test.describe("Audit", () => {
 
   test("severity filter narrows the findings", async ({ app, page }) => {
     await app.gotoApp();
-    await app.nav("Audit");
+    await app.nav("Security check");
 
     await expect(page.getByRole("heading", { name: "Agent forwarding disabled" })).toBeVisible();
 
@@ -144,7 +144,7 @@ test.describe("Audit", () => {
   test("copy remediation writes the command to the clipboard and toasts", async ({ app, page }) => {
     await grantClipboard(page);
     await app.gotoApp();
-    await app.nav("Audit");
+    await app.nav("Security check");
 
     const finding = page.locator("li").filter({ has: page.getByRole("heading", { name: "Private key world-readable" }) });
     await expect(finding).toBeVisible();
@@ -158,7 +158,7 @@ test.describe("Audit", () => {
 
   test("fix permissions calls the backend and reports the result", async ({ app, page }) => {
     await app.gotoApp();
-    await app.nav("Audit");
+    await app.nav("Security check");
 
     await expect(page.getByText("78/100", { exact: true })).toBeVisible();
 
