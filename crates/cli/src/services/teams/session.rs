@@ -354,7 +354,18 @@ pub async fn init(
                 .filter(|t| !t.is_empty())
                 .map(str::to_string),
         })
-        .await?;
+        .await
+        .map_err(|e| {
+            if e.code() == Some(ErrorCode::Forbidden) {
+                anyhow!(
+                    "{server_url} only accepts invited accounts: ask your team admin for an \
+                     invite, then pass its token (`--invite <TOKEN>`, or paste the invite in \
+                     the desktop app)"
+                )
+            } else {
+                anyhow::Error::from(e)
+            }
+        })?;
     let identity = Identity {
         server_url,
         email,
