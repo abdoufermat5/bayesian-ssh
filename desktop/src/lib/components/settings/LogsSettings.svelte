@@ -31,13 +31,8 @@
 </script>
 
 <div class="settings-page">
-  <div>
-    <h2 class="settings-heading">History</h2>
-    <p class="settings-desc">Session history and diagnostic logging.</p>
-  </div>
-
   <section>
-    <h3 class="settings-group-title">Session history</h3>
+    <h2 class="settings-group-title">Session history</h2>
     <div class="settings-group">
       <label class="setting-row cursor-pointer">
         <span class="setting-row-main">
@@ -79,7 +74,7 @@
   </section>
 
   <section>
-    <h3 class="settings-group-title">Diagnostics</h3>
+    <h2 class="settings-group-title">Diagnostics</h2>
     <div class="settings-group">
       <div class="setting-row">
         <div class="setting-row-main">

@@ -70,13 +70,8 @@
 </script>
 
 <div class="settings-page">
-  <div>
-    <h2 class="settings-heading">Updates</h2>
-    <p class="settings-desc">Version and update channel for this installation.</p>
-  </div>
-
   <section>
-    <h3 class="settings-group-title">Application</h3>
+    <h2 class="settings-group-title">Application</h2>
     <div class="settings-group">
       <div class="setting-row">
         <div class="setting-row-main">
