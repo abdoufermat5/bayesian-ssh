@@ -7,7 +7,7 @@ use crate::services::teams::session::{
 };
 use crate::services::teams::TeamsStore;
 use anyhow::{anyhow, bail, Result};
-use bssh_teams_proto::api::Role;
+use bssh_teams_proto::api::{BillingInterval, Role};
 use zeroize::Zeroizing;
 
 /// Env var read instead of prompting, for scripts.
@@ -298,6 +298,40 @@ async fn run(command: TeamsCommands, store: &TeamsStore, config: &AppConfig) -> 
             }
         }
 
+        TeamsCommands::Billing {
+            team,
+            checkout,
+            seats,
+            yearly,
+            manage,
+        } => {
+            let (team_id, source) = session::resolve_team(db, &team)?;
+            let s = Session::open(store, config, &passphrase(false)?)?;
+            if checkout || manage {
+                let url = if manage {
+                    s.portal_url(team_id).await?
+                } else {
+                    let info = s.billing(team_id).await?;
+                    let seats = seats.unwrap_or_else(|| info.seats_used.max(info.free_seats + 1));
+                    let interval = if yearly {
+                        BillingInterval::Year
+                    } else {
+                        BillingInterval::Month
+                    };
+                    s.checkout_url(team_id, seats, interval).await?
+                };
+                println!(
+                    "Opening the billing page for '{}' in your browser:",
+                    source.name
+                );
+                println!("  {url}");
+                open_in_browser(&url);
+                return Ok(());
+            }
+            let info = s.billing(team_id).await?;
+            print_billing(&source.name, &info);
+        }
+
         TeamsCommands::Audit {
             team,
             host,
@@ -505,4 +539,76 @@ fn print_sync(name: &str, sync: &TeamSync) {
             );
         }
     }
+}
+
+fn print_billing(team: &str, info: &bssh_teams_proto::api::BillingInfo) {
+    use bssh_teams_proto::api::Plan;
+    if !info.billing_enabled {
+        println!(
+            "💳 {team}: {} of {} seats used (this server has no billing)",
+            info.seats_used, info.seat_limit
+        );
+        return;
+    }
+    let plan = match info.plan {
+        Plan::Free => format!("Free plan, {} seats", info.free_seats),
+        Plan::Team => format!(
+            "Team plan, {} seats{}",
+            info.paid_seats,
+            match info.interval {
+                Some(BillingInterval::Year) => ", billed yearly",
+                Some(BillingInterval::Month) => ", billed monthly",
+                None => "",
+            }
+        ),
+    };
+    println!("💳 {team}: {plan}");
+    println!(
+        "   {} of {} seats used (members and pending invites)",
+        info.seats_used, info.seat_limit
+    );
+    if let Some(end) = info.current_period_end {
+        let what = if info.cancel_at_period_end {
+            "Ends"
+        } else {
+            "Renews"
+        };
+        println!("   {what} on {}", end.format("%Y-%m-%d"));
+    }
+    if let Some(status) = info
+        .status
+        .as_deref()
+        .filter(|s| !matches!(*s, "active" | "trialing"))
+    {
+        println!("   Subscription status: {status}");
+    }
+    if info.read_only {
+        println!();
+        println!("⚠️  Read-only: more members than the free plan and no active subscription.");
+        println!(
+            "   Members can still sync and connect; changes are refused until an admin subscribes"
+        );
+        println!("   (`bssh teams billing {team} --checkout`) or removes members.");
+    } else if info.plan == Plan::Free && info.seats_used >= info.seat_limit {
+        println!();
+        println!("   All free seats are taken. More: `bssh teams billing {team} --checkout`.");
+    }
+}
+
+/// Opens a URL in the default browser; the URL is printed first, so this may fail quietly.
+fn open_in_browser(url: &str) {
+    let mut cmd = if cfg!(target_os = "macos") {
+        std::process::Command::new("open")
+    } else if cfg!(target_os = "windows") {
+        let mut c = std::process::Command::new("cmd");
+        c.args(["/C", "start", ""]);
+        c
+    } else {
+        std::process::Command::new("xdg-open")
+    };
+    let _ = cmd
+        .arg(url)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
 }

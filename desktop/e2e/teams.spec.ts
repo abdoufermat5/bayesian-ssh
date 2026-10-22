@@ -517,3 +517,72 @@ test.describe("Teams audit log, tampered", () => {
     await expect(page.getByRole("row", { name: /platform/ })).toContainText("Audit log failed");
   });
 });
+
+test.describe("Teams billing, admin on a full free plan", () => {
+  test.use({
+    mockOptions: {
+      overrides: {
+        ...adminOverrides,
+        teams_billing: () => ({
+          billing_enabled: true, plan: "free", free_seats: 3, paid_seats: 0, seat_limit: 3, seats_used: 3,
+          status: null, interval: null, current_period_end: null, cancel_at_period_end: false, read_only: false,
+        }),
+        teams_billing_checkout: () => "https://checkout.stripe.test/c/pay_1",
+      },
+    },
+  });
+
+  test("upgrade opens Stripe Checkout for at least one seat above the free plan", async ({ app, page }) => {
+    await app.gotoApp();
+    await app.nav("Teams");
+    await page.getByRole("button", { name: "platform", exact: true }).click();
+    await page.getByRole("tab", { name: /Members & devices/ }).click();
+    const card = page.getByRole("region", { name: "Plan and seats" });
+    await expect(card.getByText("Free plan · 3 seats")).toBeVisible();
+    await expect(card.getByText(/3 of 3 seats used/)).toBeVisible();
+    await expect(card.getByText(/All free seats are taken: upgrade/)).toBeVisible();
+    await expect(card.getByRole("meter", { name: "Seats used" })).toHaveAttribute("aria-valuenow", "3");
+
+    await card.getByRole("button", { name: "Upgrade…" }).click();
+    await expect(card.getByLabel("Seats", { exact: true })).toHaveValue("4");
+    await card.getByLabel("Yearly").check();
+    await expect(card.getByText("bssh teams billing platform --checkout --seats 4 --yearly")).toBeVisible();
+    await card.getByRole("button", { name: "Continue to payment" }).click();
+    await app.waitForIpc("teams_billing_checkout", 1);
+    expect((await app.ipcCalls("teams_billing_checkout"))[0]).toEqual({ team: "t-1", seats: 4, yearly: true });
+    await expect(page.getByText(/Checkout opened in your browser/)).toBeVisible();
+  });
+});
+
+test.describe("Teams billing, member of a read-only team", () => {
+  test.use({
+    mockOptions: {
+      overrides: {
+        ...adminOverrides,
+        teams_attention: () => [
+          { team_id: "t-1", role: "member", pending_devices: 0, waiting_for_key: false, removed: false },
+        ],
+        teams_members: () => [
+          { email: "admin@example.com", role: "member", devices: [] },
+        ],
+        teams_billing: () => ({
+          billing_enabled: true, plan: "free", free_seats: 3, paid_seats: 0, seat_limit: 3, seats_used: 5,
+          status: "canceled", interval: "month", current_period_end: null, cancel_at_period_end: false, read_only: true,
+        }),
+      },
+    },
+  });
+
+  test("says the team is read-only and offers no billing actions", async ({ app, page }) => {
+    await app.gotoApp();
+    await app.nav("Teams");
+    await page.getByRole("button", { name: "platform", exact: true }).click();
+    await page.getByRole("tab", { name: /Members & devices/ }).click();
+    const card = page.getByRole("region", { name: "Plan and seats" });
+    await expect(card.getByRole("alert")).toContainText("This team is read-only");
+    await expect(card.getByRole("alert")).toContainText("an admin subscribes or removes members");
+    await expect(card.getByRole("button", { name: "Upgrade…" })).toHaveCount(0);
+    await expect(card.getByRole("button", { name: "Manage billing" })).toHaveCount(0);
+  });
+});
+

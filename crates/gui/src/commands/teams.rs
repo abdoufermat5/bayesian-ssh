@@ -555,6 +555,54 @@ pub fn teams_grant(
 }
 
 #[tauri::command(async)]
+pub fn teams_billing(
+    state: State<'_, TeamsState>,
+    team: String,
+) -> Result<bssh_teams_proto::api::BillingInfo, String> {
+    with_session(state.unlocked()?, move |s| {
+        Box::pin(async move { s.billing(resolve(&team)?).await })
+    })
+}
+
+/// A Stripe Checkout URL for the team (admin); the page opens it in the browser.
+/// Without `seats`, the seats in use, at least one above the free plan.
+#[tauri::command(async)]
+pub fn teams_billing_checkout(
+    state: State<'_, TeamsState>,
+    team: String,
+    seats: Option<u32>,
+    yearly: bool,
+) -> Result<String, String> {
+    use bssh_teams_proto::api::BillingInterval;
+    with_session(state.unlocked()?, move |s| {
+        Box::pin(async move {
+            let team_id = resolve(&team)?;
+            let seats = match seats {
+                Some(n) => n,
+                None => {
+                    let info = s.billing(team_id).await?;
+                    info.seats_used.max(info.free_seats + 1)
+                }
+            };
+            let interval = if yearly {
+                BillingInterval::Year
+            } else {
+                BillingInterval::Month
+            };
+            s.checkout_url(team_id, seats, interval).await
+        })
+    })
+}
+
+/// The Stripe Customer Portal URL of the team (admin).
+#[tauri::command(async)]
+pub fn teams_billing_portal(state: State<'_, TeamsState>, team: String) -> Result<String, String> {
+    with_session(state.unlocked()?, move |s| {
+        Box::pin(async move { s.portal_url(resolve(&team)?).await })
+    })
+}
+
+#[tauri::command(async)]
 pub fn teams_members(state: State<'_, TeamsState>, team: String) -> Result<Vec<MemberDto>, String> {
     with_session(state.unlocked()?, move |s| {
         Box::pin(async move {

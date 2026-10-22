@@ -7,6 +7,7 @@
   import GrantDeviceModal from "./GrantDeviceModal.svelte";
   import InviteModal from "./InviteModal.svelte";
   import RemoveMemberModal from "./RemoveMemberModal.svelte";
+  import TeamBilling from "./TeamBilling.svelte";
 
   let {
     team,
@@ -66,6 +67,8 @@
 </script>
 
 <div class="flex flex-col gap-6">
+  <TeamBilling {team} {isAdmin} />
+
   {#if isAdmin}
     <section class="flex flex-col gap-2" aria-labelledby="team-pending-heading">
       <div class="flex items-center justify-between gap-2">

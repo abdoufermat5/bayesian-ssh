@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Teams plans and seats** (`bssh teams billing <team>`): see a team's plan, seats in use and renewal; admins subscribe (`--checkout [--seats N] [--yearly]`) or manage billing (`--manage`) on Stripe's pages, opened in the browser. The desktop app shows the plan and a seat meter on the team's Members tab, with **Upgrade…** and **Manage billing**. A team over its free seats without an active subscription is read-only, and both the CLI and the app say so.
+
 ## [2.9.0] - 2026-10-22
 
 ### Removed

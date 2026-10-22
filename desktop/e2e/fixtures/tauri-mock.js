@@ -362,6 +362,11 @@
       warnings: window.__BATCH_ENV_WARN ? ["SSH_AUTH_SOCK is not set; key-based hosts may prompt for a passphrase."] : [],
     }),
     count_active_sessions: () => 0,
+    // Teams billing: off unless a spec overrides it (self-hosted server).
+    teams_billing: () => ({
+      billing_enabled: false, plan: "free", free_seats: 5, paid_seats: 0, seat_limit: 5, seats_used: 2,
+      status: null, interval: null, current_period_end: null, cancel_at_period_end: false, read_only: false,
+    }),
     close_all_ptys: () => 1,
     // Fake PTY lifecycle; set window.__MOCK_DETACHED / __MOCK_POPOUTS.
     spawn_pty: () => null,
