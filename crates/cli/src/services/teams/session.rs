@@ -21,9 +21,9 @@ use crate::models::{Connection, DiscoveredHost, Source, SourceKind};
 use crate::services::inventory::sync as inventory;
 use anyhow::{anyhow, bail, Context, Result};
 use bssh_teams_proto::api::{
-    AcceptInviteRequest, AuditKind, ConnectionRecord, CreateAccountRequest, CreateInviteRequest,
-    CreateTeamRequest, DeviceInfo, ErrorCode, Invite, Member, PutKeysRequest, Role, TeamInfo,
-    VaultPayload,
+    AcceptInviteRequest, AuditKind, BillingInfo, BillingInterval, CheckoutRequest,
+    ConnectionRecord, CreateAccountRequest, CreateInviteRequest, CreateTeamRequest, DeviceInfo,
+    ErrorCode, Invite, Member, PutKeysRequest, Role, TeamInfo, VaultPayload,
 };
 use bssh_teams_proto::wire::{Fixed, PublicKey32};
 use chrono::{DateTime, Utc};
@@ -831,6 +831,39 @@ impl<'a> Session<'a> {
         Ok(device)
     }
 
+    /// Plan and seats of a team (any member).
+    pub async fn billing(&self, team_id: Uuid) -> Result<BillingInfo> {
+        self.team_info(team_id).await?;
+        Ok(self.client.billing(team_id).await?)
+    }
+
+    /// A Stripe Checkout page to subscribe the team for `seats` seats (admin).
+    pub async fn checkout_url(
+        &self,
+        team_id: Uuid,
+        seats: u32,
+        interval: BillingInterval,
+    ) -> Result<String> {
+        self.require_admin(team_id).await?;
+        let redirect = self
+            .client
+            .billing_checkout(team_id, &CheckoutRequest { seats, interval })
+            .await
+            .map_err(server_message)?;
+        Ok(redirect.url)
+    }
+
+    /// The Stripe Customer Portal of the team: card, invoices, seats, cancellation (admin).
+    pub async fn portal_url(&self, team_id: Uuid) -> Result<String> {
+        self.require_admin(team_id).await?;
+        let redirect = self
+            .client
+            .billing_portal(team_id)
+            .await
+            .map_err(server_message)?;
+        Ok(redirect.url)
+    }
+
     pub async fn members(&self, team_id: Uuid) -> Result<Vec<Member>> {
         self.team_info(team_id).await?;
         let members = self.client.list_members(team_id).await?;
@@ -1250,11 +1283,27 @@ impl<'a> Session<'a> {
     }
 }
 
+/// Keep the server's own wording for errors whose message says what to fix
+/// (billing rules: seats, plan, existing subscription).
+fn server_message(e: TeamsError) -> anyhow::Error {
+    match &e {
+        TeamsError::Api { error, .. } if e.code() != Some(ErrorCode::Forbidden) => {
+            anyhow!("{}", error.message)
+        }
+        _ => e.into(),
+    }
+}
+
 /// Map a server error to a short, actionable message for the CLI.
 pub fn explain(err: &anyhow::Error) -> Option<&'static str> {
     let code = err.downcast_ref::<TeamsError>()?.code()?;
     Some(match code {
-        ErrorCode::SeatLimit => "the team has no free seat left",
+        ErrorCode::SeatLimit => {
+            "the team has no free seat left: an admin can add seats with `bssh teams billing <team> --checkout` (or `--manage` for a subscription)"
+        }
+        ErrorCode::PaymentRequired => {
+            "the team is read-only: it has more members than its free seats and no active subscription; an admin can subscribe with `bssh teams billing <team> --checkout`"
+        }
         ErrorCode::Unauthorized => "the server rejected this device's credentials",
         ErrorCode::Forbidden => "you don't have permission for that in this team",
         ErrorCode::Conflict => "that already exists or was already used",

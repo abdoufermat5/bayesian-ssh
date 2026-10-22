@@ -912,6 +912,27 @@ pub enum TeamsCommands {
     },
     /// List a team's members and their devices
     Members { team: String },
+    /// Show a team's plan and seats; subscribe or manage the subscription (admin)
+    #[command(after_help = "Examples:\n\
+      bssh teams billing platform                       plan, seats, renewal\n\
+      bssh teams billing platform --checkout --seats 8  subscribe for 8 seats (monthly)\n\
+      bssh teams billing platform --checkout --yearly   yearly, as many seats as in use\n\
+      bssh teams billing platform --manage              card, invoices, seats, cancel")]
+    Billing {
+        team: String,
+        /// Open a checkout page to subscribe the team (admin)
+        #[arg(long, conflicts_with = "manage")]
+        checkout: bool,
+        /// Seats to subscribe for (default: the seats in use, at least one above the free plan)
+        #[arg(long, requires = "checkout")]
+        seats: Option<u32>,
+        /// Pay yearly instead of monthly
+        #[arg(long, requires = "checkout")]
+        yearly: bool,
+        /// Open the billing portal: card, invoices, seats, cancellation (admin)
+        #[arg(long)]
+        manage: bool,
+    },
     /// Remove a member and rotate the team key (admin)
     Remove { team: String, email: String },
     /// Show and verify the team's audit log (admin). Exits non-zero if anything fails to verify

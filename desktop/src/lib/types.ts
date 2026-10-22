@@ -358,6 +358,25 @@ export interface TeamAttention {
   removed: boolean;
 }
 
+/** `teams_billing(team)`: the team's plan and seats (server `BillingInfo`). */
+export interface TeamBillingInfo {
+  /** False on a server without billing: `seat_limit` is fixed. */
+  billing_enabled: boolean;
+  plan: "free" | "team";
+  free_seats: number;
+  paid_seats: number;
+  /** What invites are checked against: members plus pending invites. */
+  seat_limit: number;
+  seats_used: number;
+  /** Stripe's subscription status (active, past_due, canceled…). */
+  status: string | null;
+  interval: "month" | "year" | null;
+  current_period_end: string | null;
+  cancel_at_period_end: boolean;
+  /** More members than the free seats and no active subscription: changes are refused. */
+  read_only: boolean;
+}
+
 export interface TeamPreviewDevice {
   email: string;
   name: string;

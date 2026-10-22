@@ -386,6 +386,29 @@ impl TeamsClient {
         self.post("/invites/accept", req).await
     }
 
+    // -- billing -------------------------------------------------------------
+
+    pub async fn billing(&self, team_id: Uuid) -> ClientResult<BillingInfo> {
+        self.get(&format!("/teams/{team_id}/billing"), &[]).await
+    }
+
+    pub async fn billing_checkout(
+        &self,
+        team_id: Uuid,
+        req: &CheckoutRequest,
+    ) -> ClientResult<BillingRedirect> {
+        self.post(&format!("/teams/{team_id}/billing/checkout"), req)
+            .await
+    }
+
+    pub async fn billing_portal(&self, team_id: Uuid) -> ClientResult<BillingRedirect> {
+        self.post(
+            &format!("/teams/{team_id}/billing/portal"),
+            &serde_json::json!({}),
+        )
+        .await
+    }
+
     pub async fn pending_devices(&self, team_id: Uuid) -> ClientResult<PendingDevices> {
         self.get(&format!("/teams/{team_id}/devices/pending"), &[])
             .await

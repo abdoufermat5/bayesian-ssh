@@ -94,6 +94,30 @@ with `bssh teams grant`. If the server lists a device you never approved, the
 rotation stops and names it; grant it after checking its fingerprint, or remove
 the member.
 
+## Plans and seats
+
+A team counts its members plus pending invites as seats. On a server with billing (the hosted
+one), a team has 3 seats for free; for more, an admin subscribes for all of the team's seats,
+monthly or yearly:
+
+```bash
+bssh teams billing platform                        # plan, seats in use, renewal date
+bssh teams billing platform --checkout --seats 8   # subscribe (add --yearly for yearly billing)
+bssh teams billing platform --manage               # card, invoices, seats, cancellation
+```
+
+`--checkout` and `--manage` open Stripe's pages in your browser: bssh and the sync server never
+see your card. In the desktop app, the team's **Members & devices** tab shows the plan and a seat
+meter, with **Upgrade…** or **Manage billing** for admins.
+
+If a subscription ends (cancelled or unpaid) while the team has more members than the free seats,
+the team becomes **read-only**: everyone can still sync and connect to the team's hosts, but
+changes and invites are refused until an admin subscribes again or removes members. A failed
+payment doesn't block anything while Stripe retries it; the desktop app says so and links to the
+billing portal.
+
+A self-hosted server without billing has a fixed number of seats per team, set by its operator.
+
 ## Audit log
 
 `bssh connect` to a team connection records a "session started" event
@@ -197,4 +221,5 @@ event.
 | `bssh teams sync [TEAM]` | Sync one team or all |
 | `bssh teams members TEAM` | Members and device fingerprints |
 | `bssh teams remove TEAM EMAIL` | Remove a member and rotate the key (admin) |
+| `bssh teams billing TEAM [--checkout [--seats N] [--yearly] \| --manage]` | Plan and seats; subscribe or manage billing (admin) |
 | `bssh teams audit TEAM [--host H] [--member E] [--since D]` | Show and verify the audit log (admin) |
