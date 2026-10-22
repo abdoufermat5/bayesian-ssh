@@ -92,6 +92,7 @@ export interface DesktopSettings {
   terminal_cursor_style?: "block" | "bar" | "underline";
   terminal_cursor_blink?: boolean;
   terminal_copy_on_select?: boolean;
+  terminal_smart_copy?: boolean;
   terminal_scrollback?: number;
   sftp_show_hidden_files?: boolean;
   sftp_default_remote_path?: string;

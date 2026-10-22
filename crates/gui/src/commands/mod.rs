@@ -192,6 +192,9 @@ pub struct DesktopSettings {
     pub terminal_cursor_blink: bool,
     #[serde(default = "default_terminal_copy_on_select")]
     pub terminal_copy_on_select: bool,
+    /// Ctrl+C copies when text is selected (otherwise it always sends SIGINT).
+    #[serde(default)]
+    pub terminal_smart_copy: bool,
     #[serde(default = "default_terminal_scrollback")]
     pub terminal_scrollback: u32,
     #[serde(default = "default_sftp_show_hidden_files")]
@@ -292,6 +295,7 @@ impl Default for DesktopSettings {
             terminal_cursor_style: default_terminal_cursor_style(),
             terminal_cursor_blink: default_terminal_cursor_blink(),
             terminal_copy_on_select: default_terminal_copy_on_select(),
+            terminal_smart_copy: false,
             terminal_scrollback: default_terminal_scrollback(),
             sftp_show_hidden_files: default_sftp_show_hidden_files(),
             sftp_default_remote_path: default_sftp_default_remote_path(),

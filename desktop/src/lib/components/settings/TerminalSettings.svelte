@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { DesktopSettings } from "$lib/types";
   import CustomSelect from "$lib/components/ui/CustomSelect.svelte";
+  import { setTerminalSmartCopy } from "$lib/utils/terminal-xterm";
 
   interface Props {
     settings: DesktopSettings;
@@ -163,6 +164,17 @@
           <span class="setting-meta">Copy selected text to the clipboard automatically.</span>
         </span>
         <input type="checkbox" class="switch" bind:checked={settings.terminal_copy_on_select} onchange={onSave} />
+      </label>
+      <label class="setting-row cursor-pointer">
+        <span class="setting-row-main">
+          <span class="setting-title">Smart copy</span>
+          <span class="setting-meta">
+            Ctrl+C copies the selection instead of interrupting the running command. Risk: with text
+            still selected, Ctrl+C will not send SIGINT, so a stuck command keeps running until you
+            clear the selection. Off by default; Ctrl+Shift+C always copies.
+          </span>
+        </span>
+        <input type="checkbox" class="switch" bind:checked={settings.terminal_smart_copy} onchange={() => { setTerminalSmartCopy(Boolean(settings.terminal_smart_copy)); onSave(); }} />
       </label>
       <label class="setting-row cursor-pointer">
         <span class="setting-row-main">

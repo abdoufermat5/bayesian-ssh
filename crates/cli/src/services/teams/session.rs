@@ -151,6 +151,97 @@ impl TeamAudit {
     }
 }
 
+/// A device as shown in a removal preview.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreviewDevice {
+    pub email: String,
+    pub name: String,
+    pub fingerprint: String,
+    /// This machine approved the device (and its keys still match).
+    pub approved: bool,
+}
+
+/// What removing a member would do, computed without changing anything.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemovePreview {
+    pub email: String,
+    pub removed_devices: Vec<PreviewDevice>,
+    pub next_key_version: u32,
+    /// Remaining devices that will receive the rotated key.
+    pub recipients: Vec<PreviewDevice>,
+    /// Remaining devices never approved here: rotation would stop.
+    pub blocking: Vec<PreviewDevice>,
+    pub shared_hosts: usize,
+}
+
+/// What needs a human for one team, for the desktop's attention list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TeamAttentionState {
+    pub team_id: Uuid,
+    pub role: Role,
+    pub pending_devices: usize,
+    pub waiting_for_key: bool,
+    pub removed: bool,
+}
+
+type ApprovedDevices = HashMap<Uuid, (String, PublicKey32, PublicKey32)>;
+
+fn preview_device(member: &Member, device: &DeviceInfo, approved: bool) -> PreviewDevice {
+    PreviewDevice {
+        email: member.email.clone(),
+        name: device.name.clone(),
+        fingerprint: fingerprint(&device.ed25519_public),
+        approved,
+    }
+}
+
+/// Who would get the rotated key if `email` were removed. Mirrors the checks
+/// in `Session::rotate`: a device is a recipient only if this machine
+/// approved it and its keys still match what was approved.
+pub fn plan_removal(
+    members: &[Member],
+    email: &str,
+    approved: &ApprovedDevices,
+    current_key_version: u32,
+    shared_hosts: usize,
+) -> Result<RemovePreview> {
+    let email = email.trim().to_lowercase();
+    let removed = members
+        .iter()
+        .find(|m| m.email == email)
+        .ok_or_else(|| anyhow!("{email} is not a member of this team"))?;
+    let removed_devices = removed
+        .devices
+        .iter()
+        .filter(|d| d.revoked_at.is_none())
+        .map(|d| preview_device(removed, d, approved.contains_key(&d.device_id)))
+        .collect();
+    let mut recipients = Vec::new();
+    let mut blocking = Vec::new();
+    for member in members.iter().filter(|m| m.member_id != removed.member_id) {
+        for device in member.devices.iter().filter(|d| d.revoked_at.is_none()) {
+            let ok = matches!(
+                approved.get(&device.device_id),
+                Some((_, x, e)) if *x == device.x25519_public && *e == device.ed25519_public
+            );
+            let line = preview_device(member, device, ok);
+            if ok {
+                recipients.push(line)
+            } else {
+                blocking.push(line)
+            }
+        }
+    }
+    Ok(RemovePreview {
+        email,
+        removed_devices,
+        next_key_version: current_key_version + 1,
+        recipients,
+        blocking,
+        shared_hosts,
+    })
+}
+
 /// A device waiting for a team key, for `bssh teams grant` to show.
 #[derive(Debug, Clone)]
 pub struct PendingDevice {
@@ -730,6 +821,64 @@ impl<'a> Session<'a> {
         Ok(members)
     }
 
+    /// What needs a human in this team. A removed account is reported, not
+    /// raised as an error.
+    pub async fn attention(&self, team_id: Uuid) -> Result<TeamAttentionState> {
+        let info = match self.client.get_team(team_id).await {
+            Ok(info) => info,
+            Err(e) if e.code() == Some(ErrorCode::Forbidden) => {
+                return Ok(TeamAttentionState {
+                    team_id,
+                    role: Role::Member,
+                    pending_devices: 0,
+                    waiting_for_key: false,
+                    removed: true,
+                })
+            }
+            Err(e) => return Err(e.into()),
+        };
+        let waiting_for_key = self
+            .team_keys(team_id, info.current_key_version)
+            .await?
+            .is_empty();
+        let pending_devices = if info.my_role == Role::Admin {
+            self.client.pending_devices(team_id).await?.devices.len()
+        } else {
+            0
+        };
+        Ok(TeamAttentionState {
+            team_id,
+            role: info.my_role,
+            pending_devices,
+            waiting_for_key,
+            removed: false,
+        })
+    }
+
+    /// What `remove` would do, without changing anything.
+    pub async fn remove_preview(&self, team_id: Uuid, email: &str) -> Result<RemovePreview> {
+        let info = self.require_admin(team_id).await?;
+        let members = self.client.list_members(team_id).await?;
+        let approved = self.approved_devices(team_id)?;
+        let shared_hosts = self.live_hosts(team_id)?;
+        plan_removal(
+            &members,
+            email,
+            &approved,
+            info.current_key_version,
+            shared_hosts,
+        )
+    }
+
+    fn live_hosts(&self, team_id: Uuid) -> Result<usize> {
+        Ok(self
+            .db()
+            .list_sources()?
+            .into_iter()
+            .find(|s| team_id_of(&s.source) == Some(team_id))
+            .map_or(0, |s| s.hosts.saturating_sub(s.stale)))
+    }
+
     /// Remove the member with `email`, then rotate the team key so they can't
     /// read anything written from now on.
     pub async fn remove(&self, team_id: Uuid, email: &str) -> Result<TeamSync> {
@@ -1095,4 +1244,92 @@ pub fn explain(err: &anyhow::Error) -> Option<&'static str> {
         ErrorCode::ClientTooOld => "the server needs a newer bssh; please upgrade",
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pk(b: u8) -> PublicKey32 {
+        PublicKey32::from([b; 32])
+    }
+
+    fn device(n: u8, revoked: bool) -> DeviceInfo {
+        DeviceInfo {
+            device_id: Uuid::from_u128(n as u128),
+            account_id: Uuid::nil(),
+            name: format!("dev{n}"),
+            x25519_public: pk(n),
+            ed25519_public: pk(n + 100),
+            created_at: Utc::now(),
+            revoked_at: revoked.then(Utc::now),
+        }
+    }
+
+    fn member(n: u128, email: &str, devices: Vec<DeviceInfo>) -> Member {
+        Member {
+            member_id: Uuid::from_u128(1000 + n),
+            account_id: Uuid::from_u128(2000 + n),
+            email: email.into(),
+            role: Role::Member,
+            devices,
+            joined_at: Utc::now(),
+        }
+    }
+
+    fn approve(map: &mut ApprovedDevices, d: &DeviceInfo) {
+        map.insert(d.device_id, ("x".into(), d.x25519_public, d.ed25519_public));
+    }
+
+    #[test]
+    fn plan_splits_recipients_and_blocking() {
+        let (a, b, c, gone) = (
+            device(1, false),
+            device(2, false),
+            device(3, false),
+            device(4, true),
+        );
+        let members = vec![
+            member(1, "admin@x.io", vec![a.clone()]),
+            member(2, "bob@x.io", vec![b.clone(), gone]),
+            member(3, "carol@x.io", vec![c.clone()]),
+        ];
+        let mut approved = HashMap::new();
+        approve(&mut approved, &a);
+        approve(&mut approved, &b);
+        let p = plan_removal(&members, " Bob@X.io ", &approved, 3, 5).unwrap();
+        assert_eq!(p.email, "bob@x.io");
+        assert_eq!(p.next_key_version, 4);
+        assert_eq!(p.shared_hosts, 5);
+        assert_eq!(p.removed_devices.len(), 1, "revoked devices are skipped");
+        assert!(p.removed_devices[0].approved);
+        assert_eq!(p.recipients.len(), 1);
+        assert_eq!(p.recipients[0].email, "admin@x.io");
+        assert_eq!(p.blocking.len(), 1);
+        assert_eq!(p.blocking[0].email, "carol@x.io");
+        assert!(!p.blocking[0].approved);
+    }
+
+    #[test]
+    fn changed_keys_block_rotation() {
+        let a = device(1, false);
+        let b = device(2, false);
+        let members = vec![
+            member(1, "a@x.io", vec![a.clone()]),
+            member(2, "b@x.io", vec![b]),
+        ];
+        let mut approved = HashMap::new();
+        let mut stale = a.clone();
+        stale.x25519_public = pk(99);
+        approve(&mut approved, &stale);
+        let p = plan_removal(&members, "b@x.io", &approved, 1, 0).unwrap();
+        assert!(p.recipients.is_empty());
+        assert_eq!(p.blocking.len(), 1);
+    }
+
+    #[test]
+    fn unknown_member_is_an_error() {
+        let members = vec![member(1, "a@x.io", vec![])];
+        assert!(plan_removal(&members, "nobody@x.io", &HashMap::new(), 1, 0).is_err());
+    }
 }

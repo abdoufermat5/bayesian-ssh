@@ -8,7 +8,9 @@
 use bayesian_ssh::config::AppConfig;
 use bayesian_ssh::services::teams::audit::EventCheck;
 use bayesian_ssh::services::teams::crypto::{fingerprint, DeviceKeys};
-use bayesian_ssh::services::teams::session::{self, AuditQuery, JoinWith, Session, TeamSync};
+use bayesian_ssh::services::teams::session::{
+    self, AuditQuery, JoinWith, PreviewDevice, Session, TeamSync,
+};
 use bayesian_ssh::services::teams::TeamsStore;
 use bssh_teams_proto::api::AuditKind;
 use bssh_teams_proto::api::Role;
@@ -219,6 +221,44 @@ pub struct AuditLineDto {
     client_ip: Option<String>,
     /// "valid", "bad_signature", "unknown_device" or "wrong_team".
     check: &'static str,
+}
+
+#[derive(Serialize)]
+pub struct TeamAttentionDto {
+    team_id: String,
+    role: &'static str,
+    pending_devices: usize,
+    waiting_for_key: bool,
+    removed: bool,
+}
+
+#[derive(Serialize)]
+pub struct PreviewDeviceDto {
+    email: String,
+    name: String,
+    fingerprint: String,
+    approved: bool,
+}
+
+impl From<PreviewDevice> for PreviewDeviceDto {
+    fn from(d: PreviewDevice) -> Self {
+        Self {
+            email: d.email,
+            name: d.name,
+            fingerprint: d.fingerprint,
+            approved: d.approved,
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct TeamRemovePreviewDto {
+    email: String,
+    removed_devices: Vec<PreviewDeviceDto>,
+    next_key_version: u32,
+    recipients: Vec<PreviewDeviceDto>,
+    blocking: Vec<PreviewDeviceDto>,
+    shared_hosts: usize,
 }
 
 #[derive(Serialize)]
@@ -549,13 +589,73 @@ pub fn teams_remove(
     })
 }
 
+/// What needs a human in each local team. A team that can't be reached is
+/// skipped so one offline server doesn't hide the others.
+#[tauri::command(async)]
+pub fn teams_attention(state: State<'_, TeamsState>) -> Result<Vec<TeamAttentionDto>, String> {
+    with_session(state.unlocked()?, move |s| {
+        Box::pin(async move {
+            let (store, _) = open_store()?;
+            let mut out = Vec::new();
+            for (team_id, _) in session::local_teams(store.database())? {
+                if let Ok(a) = s.attention(team_id).await {
+                    out.push(TeamAttentionDto {
+                        team_id: team_id.to_string(),
+                        role: match a.role {
+                            Role::Admin => "admin",
+                            Role::Member => "member",
+                        },
+                        pending_devices: a.pending_devices,
+                        waiting_for_key: a.waiting_for_key,
+                        removed: a.removed,
+                    });
+                }
+            }
+            Ok(out)
+        })
+    })
+}
+
+#[tauri::command(async)]
+pub fn teams_remove_preview(
+    state: State<'_, TeamsState>,
+    team: String,
+    email: String,
+) -> Result<TeamRemovePreviewDto, String> {
+    with_session(state.unlocked()?, move |s| {
+        Box::pin(async move {
+            let team_id = resolve(&team)?;
+            let p = s.remove_preview(team_id, &email).await?;
+            Ok(TeamRemovePreviewDto {
+                email: p.email,
+                removed_devices: p.removed_devices.into_iter().map(Into::into).collect(),
+                next_key_version: p.next_key_version,
+                recipients: p.recipients.into_iter().map(Into::into).collect(),
+                blocking: p.blocking.into_iter().map(Into::into).collect(),
+                shared_hosts: p.shared_hosts,
+            })
+        })
+    })
+}
+
 #[tauri::command(async)]
 pub fn teams_audit(
     state: State<'_, TeamsState>,
     team: String,
     host: Option<String>,
     member: Option<String>,
+    since: Option<String>,
 ) -> Result<TeamAuditDto, String> {
+    let since = since
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(|v| {
+            DateTime::parse_from_rfc3339(v)
+                .map(|t| t.with_timezone(&Utc))
+                .map_err(|e| format!("'since' must be an RFC 3339 date-time: {e}"))
+        })
+        .transpose()?;
     with_session(state.unlocked()?, move |s| {
         Box::pin(async move {
             let team_id = resolve(&team)?;
@@ -570,6 +670,7 @@ pub fn teams_audit(
                     AuditQuery {
                         entry_id,
                         email: member.filter(|m| !m.trim().is_empty()),
+                        since,
                         ..Default::default()
                     },
                 )
