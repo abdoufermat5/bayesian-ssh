@@ -37,6 +37,7 @@
   import { VIEW_META, viewEnabled } from "$lib/viewMeta";
   import { SETTINGS_SECTIONS, requestSettingsSection } from "$lib/stores/settingsNav.svelte";
   import { requestTeamFocus } from "$lib/stores/attention.svelte";
+  import { requestFilesHost } from "$lib/stores/filesHost.svelte";
   import { TEAMS_CHANGED_EVENT } from "$lib/stores/teamsAttention.svelte";
   import { THEME_OPTIONS } from "$lib/utils/theme";
   import { toSshCommand } from "$lib/utils/sshCommand";
@@ -396,7 +397,10 @@
     // Keys and CLI come from the registry below.
     { id: "host-connect", label: "Connect", icon: Terminal, run: (c) => onConnectHost(c) },
     { id: "host-connect-tab", label: "Connect in new tab", icon: TerminalSquare, run: (c) => onConnectHost(c) },
-    { id: "host-files", label: "Browse files", icon: FolderOpen, run: () => onSelectTab("sftp") },
+    { id: "host-files", label: "Browse files", icon: FolderOpen, run: (c) => {
+        requestFilesHost(c.id);
+        onSelectTab("sftp");
+      } },
     {
       id: "host-copy",
       label: "Copy ssh command",

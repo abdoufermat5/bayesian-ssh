@@ -93,7 +93,7 @@
   });
 
   function openTeamAudit(teamId: string) {
-    requestTeamFocus(teamId);
+    requestTeamFocus(teamId, "audit");
     appState.handleTabChange("teams");
   }
 

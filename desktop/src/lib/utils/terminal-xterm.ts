@@ -240,15 +240,6 @@ export function setTerminalSmartCopy(enabled: boolean): void {
 
 const IS_MAC = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform || "");
 
-/** Terminal font zoom requested with Ctrl/Cmd+Shift+=, -, 0. */
-export function terminalZoomDelta(event: KeyboardEvent): 1 | -1 | 0 | null {
-  if (!(IS_MAC ? event.metaKey : event.ctrlKey) || !event.shiftKey || event.altKey) return null;
-  if (event.code === "Equal" || event.code === "NumpadAdd" || event.key === "+") return 1;
-  if (event.code === "Minus" || event.code === "NumpadSubtract" || event.key === "_") return -1;
-  if (event.code === "Digit0" || event.code === "Numpad0" || event.key === ")") return 0;
-  return null;
-}
-
 /** Does the key event press the key named last in a shortcuts.ts combo? */
 function keyMatches(event: KeyboardEvent, key: string): boolean {
   switch (key) {
@@ -359,6 +350,10 @@ export function attachXtermKeyHandler(
     const noAlt = !event.altKey;
 
     if (isTerminalPaletteKey(event)) return false;
+    // Ctrl/Cmd+, opens Settings; let it bubble to the window like the palette key.
+    if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && (key === "," || event.code === "Comma")) {
+      return false;
+    }
 
     const shortcutId = onShortcut ? terminalShortcutId(event) : null;
     if (shortcutId) {

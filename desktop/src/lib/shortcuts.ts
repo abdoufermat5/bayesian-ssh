@@ -61,6 +61,7 @@ export const GLOBAL_SHORTCUTS: Shortcut[] = [
         },
       ]),
   { id: "settings", label: "Settings", combos: [[MOD, ","]], scope: "anywhere" },
+  { id: "help", label: "Keyboard shortcuts", combos: [["?"], ["F1"], [MOD, "/"]], scope: "anywhere" },
   { id: "filter", label: "Focus filter", combos: [["/"]], scope: "global" },
   { id: "new-host", label: "New host", combos: [["N"], [MOD, "N"]], scope: "global", cli: "bssh add" },
 ];

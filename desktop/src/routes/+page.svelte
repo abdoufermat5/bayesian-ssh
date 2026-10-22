@@ -45,7 +45,7 @@
     updateTerminalFontSize,
     getTerminalFontSize,
   } from "$lib/stores/terminal.svelte";
-  import { isTerminalPaletteKey, isXtermEvent, terminalZoomDelta } from "$lib/utils/terminal-xterm";
+  import { isTerminalPaletteKey } from "$lib/utils/terminal-xterm";
   import {
     getKerberosState,
     openKerberosModal,
@@ -117,19 +117,6 @@
       e.preventDefault();
       showCommandPalette = !showCommandPalette;
       return;
-    }
-
-    // Terminal font zoom while xterm has focus (the terminal key handler lets
-    // these through instead of sending them to the shell).
-    if (isXtermEvent(e)) {
-      const zoom = terminalZoomDelta(e);
-      if (zoom !== null) {
-        e.preventDefault();
-        updateTerminalFontSize(
-          zoom === 0 ? (appState.settings.terminal_font_size ?? 13) : getTerminalFontSize() + zoom,
-        );
-        return;
-      }
     }
 
     if (

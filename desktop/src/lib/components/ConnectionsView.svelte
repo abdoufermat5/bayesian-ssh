@@ -16,6 +16,7 @@
   import { formatDateTime, formatRelative } from "$lib/utils/timezone";
   import { notify } from "$lib/stores/notifications.svelte";
   import { appState } from "$lib/stores/appState.svelte";
+  import { requestFilesHost } from "$lib/stores/filesHost.svelte";
   import CustomSelect from "$lib/components/ui/CustomSelect.svelte";
   import SourceBadge, {
     loadSourceIndex,
@@ -178,12 +179,12 @@
     }
   }
 
-  function openFiles() {
+  function openFiles(conn: Connection) {
     if (!showFiles) {
       notify("Files is turned off in Settings (Terminal & files)", "info");
       return;
     }
-    // The Files view picks its host itself; it can't take a preselected one yet.
+    requestFilesHost(conn.id);
     appState.handleTabChange("sftp");
   }
 
@@ -392,7 +393,7 @@
         void handleConnectHost(conn);
         break;
       case "host-files":
-        openFiles();
+        openFiles(conn);
         break;
       case "host-copy":
         onCopyCommand(toSshCommand(conn), conn.id);
@@ -524,7 +525,7 @@
     {showFiles}
     teamName={teamNameOf(conn)}
     onConnect={() => void handleConnectHost(conn)}
-    onFiles={openFiles}
+    onFiles={() => openFiles(conn)}
     onCopy={() => onCopyCommand(toSshCommand(conn), conn.id)}
     onEdit={() => onEdit(conn)}
     onDuplicate={() => onDuplicate(conn)}

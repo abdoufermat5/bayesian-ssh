@@ -2,7 +2,7 @@ export const CONCRETE_THEMES = ["zinc", "cyberpunk", "oled", "paper"] as const;
 export type ConcreteTheme = (typeof CONCRETE_THEMES)[number];
 
 export const APP_THEMES = ["zinc", "cyberpunk", "oled", "paper", "system"] as const;
-export type AppTheme = (typeof APP_THEMES)[number] | "slate";
+export type AppTheme = (typeof APP_THEMES)[number];
 
 export const APP_DENSITIES = ["compact", "comfortable", "spacious"] as const;
 export type AppDensity = (typeof APP_DENSITIES)[number];

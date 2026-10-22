@@ -28,6 +28,7 @@
   import CustomSelect from "$lib/components/ui/CustomSelect.svelte";
   import { appState } from "$lib/stores/appState.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
+  import { pendingFilesHost, takeFilesHost } from "$lib/stores/filesHost.svelte";
   import { copyTextWithFallback } from "$lib/utils/terminal-xterm";
 
   export interface RemoteFileEntry {
@@ -68,6 +69,20 @@
       return connections.find((c) => c.id === selectedConnectionId) ?? connections[0] ?? null;
     }
     return connections.length > 0 ? connections[0] : null;
+  });
+
+  // "Browse files" on a host (Hosts list, palette) preselects it.
+  $effect(() => {
+    if (!pendingFilesHost()) return;
+    const id = takeFilesHost();
+    if (id && connections.some((c) => c.id === id)) selectedConnectionId = id;
+  });
+
+  // "Browse files" on a host (Hosts list, palette) preselects it.
+  $effect(() => {
+    if (!pendingFilesHost()) return;
+    const id = takeFilesHost();
+    if (id && connections.some((c) => c.id === id)) selectedConnectionId = id;
   });
 
   const hostOptions = $derived(

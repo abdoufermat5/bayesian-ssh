@@ -91,9 +91,14 @@ export const TEAM_ATTENTION = {
 } as const;
 
 let focusTeamId = $state<string | null>(null);
+let focusTeamTab: "hosts" | "members" | "audit" | null = null;
 
-/** Ask the Teams view to open a team (e.g. from an attention action). */
-export function requestTeamFocus(teamId: string) {
+/**
+ * Ask the Teams view to open a team (e.g. from an attention action). Without
+ * `tab`, the view picks the tab from the team's attention items.
+ */
+export function requestTeamFocus(teamId: string, tab?: "hosts" | "members" | "audit") {
+  focusTeamTab = tab ?? null;
   focusTeamId = teamId;
 }
 
@@ -102,6 +107,13 @@ export function takeTeamFocus(): string | null {
   const id = focusTeamId;
   focusTeamId = null;
   return id;
+}
+
+/** The tab asked for with the last focus request, if any; cleared on read. */
+export function takeTeamFocusTab(): "hosts" | "members" | "audit" | null {
+  const tab = focusTeamTab;
+  focusTeamTab = null;
+  return tab;
 }
 
 /** Reactive peek, for an effect that reacts to new focus requests. */
