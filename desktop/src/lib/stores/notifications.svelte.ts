@@ -6,9 +6,10 @@ export interface ToastItem {
   type: NotificationType;
 }
 
-/** Toasts beyond this count push the oldest one out. */
+/** Non-error toasts beyond this count push the oldest non-error one out. */
 const MAX_VISIBLE = 3;
-const DURATION_MS = 3000;
+/** Success/info toasts time out; errors never do (WCAG 2.2.1). */
+const DURATION_MS = 4000;
 
 let toasts = $state<ToastItem[]>([]);
 const timers = new Map<number, number>();
@@ -20,21 +21,26 @@ function schedule(id: number) {
 }
 
 export function notify(message: string, notificationType: NotificationType = "info") {
-  // Repeating the newest toast restarts its timer instead of stacking a copy.
+  // Repeating the newest toast restarts its timer (errors have none) instead of stacking a copy.
   const last = toasts[toasts.length - 1];
   if (last && last.text === message && last.type === notificationType) {
-    schedule(last.id);
+    if (notificationType !== "error") schedule(last.id);
     return;
   }
 
   const id = nextId++;
   const next = [...toasts, { id, text: message, type: notificationType }];
-  for (const dropped of next.splice(0, Math.max(0, next.length - MAX_VISIBLE))) {
+  // Evict the oldest non-error toasts only: an error is never dropped, it
+  // stays until the user closes it, so the stack may exceed MAX_VISIBLE.
+  while (next.length > MAX_VISIBLE) {
+    const victim = next.findIndex((t) => t.type !== "error" && t.id !== id);
+    if (victim === -1) break;
+    const [dropped] = next.splice(victim, 1);
     clearTimeout(timers.get(dropped.id));
     timers.delete(dropped.id);
   }
   toasts = next;
-  schedule(id);
+  if (notificationType !== "error") schedule(id);
 }
 
 /** Dismiss one toast by id, or every toast when no id is given. */
