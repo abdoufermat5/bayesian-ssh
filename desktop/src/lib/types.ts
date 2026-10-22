@@ -318,3 +318,24 @@ export interface TeamMember {
   role: "admin" | "member";
   devices: TeamDevice[];
 }
+
+export interface TeamAuditLine {
+  occurred_at: string;
+  received_at: string;
+  kind: "session_start" | "session_end" | "vault_read" | "vault_write";
+  who: string;
+  device_name: string;
+  host?: string;
+  client_ip?: string;
+  check: "valid" | "bad_signature" | "unknown_device" | "wrong_team";
+}
+
+export interface TeamAudit {
+  lines: TeamAuditLine[];
+  chains: number;
+  from_genesis: boolean;
+  problems: string[];
+  invalid_events: number;
+  complete: boolean;
+  clean: boolean;
+}

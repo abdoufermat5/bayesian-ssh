@@ -910,4 +910,20 @@ pub enum TeamsCommands {
     Members { team: String },
     /// Remove a member and rotate the team key (admin)
     Remove { team: String, email: String },
+    /// Show and verify the team's audit log (admin). Exits non-zero if anything fails to verify
+    Audit {
+        team: String,
+        /// Only events for this team connection
+        #[arg(long, value_name = "CONNECTION")]
+        host: Option<String>,
+        /// Only events by this member
+        #[arg(long, value_name = "EMAIL")]
+        member: Option<String>,
+        /// Only events received since this date (YYYY-MM-DD or RFC 3339)
+        #[arg(long, value_name = "DATE")]
+        since: Option<String>,
+        /// Maximum number of events (default and maximum: 1000)
+        #[arg(long)]
+        limit: Option<u32>,
+    },
 }

@@ -157,3 +157,97 @@ test.describe("Teams admin", () => {
     ).toBeVisible();
   });
 });
+
+const auditStatus = () => ({
+  identity: { email: "admin@example.com", server_url: "https://teams.example.com", device_id: "d-1" },
+  unlocked: true,
+  fingerprint: "SHA256:adminFingerprintAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  teams: [{ team_id: "t-1", source_id: "s-1", name: "platform", hosts: 1, last_sync_at: null }],
+});
+
+test.describe("Teams audit log, verified", () => {
+  test.use({
+    mockOptions: {
+      overrides: {
+        teams_status: auditStatus,
+        teams_members: () => [],
+        teams_audit: () => ({
+          lines: [
+            {
+              occurred_at: "2030-01-02T09:30:00Z",
+              received_at: "2030-01-02T09:31:00Z",
+              kind: "session_start",
+              who: "ana@example.com",
+              device_name: "ana-laptop",
+              host: "db-prod",
+              client_ip: "203.0.113.7",
+              check: "valid",
+            },
+          ],
+          chains: 1,
+          from_genesis: true,
+          problems: [],
+          invalid_events: 0,
+          complete: true,
+          clean: true,
+        }),
+      },
+    },
+  });
+
+  test("shows events and the local verification verdict", async ({ app, page }) => {
+    await app.gotoApp();
+    await app.nav("Teams");
+    await page.getByRole("button", { name: /platform/ }).click();
+    await page.getByRole("button", { name: "Load" }).click();
+    await expect(page.getByRole("status").filter({ hasText: "Verified on this device" })).toContainText(
+      "1 signature(s) valid, 1 device chain(s) intact, complete",
+    );
+    const row = page.getByRole("row", { name: /ana@example.com/ });
+    await expect(row).toContainText("db-prod");
+    await expect(row).toContainText("203.0.113.7");
+    await expect(row).toContainText("Session start");
+  });
+});
+
+test.describe("Teams audit log, tampered", () => {
+  test.use({
+    mockOptions: {
+      overrides: {
+        teams_status: auditStatus,
+        teams_members: () => [],
+        teams_audit: () => ({
+          lines: [
+            {
+              occurred_at: "2030-01-02T09:30:00Z",
+              received_at: "2030-01-02T09:31:00Z",
+              kind: "session_start",
+              who: "ana@example.com",
+              device_name: "ana-laptop",
+              host: "db-prod",
+              client_ip: "203.0.113.7",
+              check: "bad_signature",
+            },
+          ],
+          chains: 0,
+          from_genesis: true,
+          problems: ["device d-2: events 3 to 4 are missing"],
+          invalid_events: 1,
+          complete: true,
+          clean: false,
+        }),
+      },
+    },
+  });
+
+  test("flags failed verification as tampering", async ({ app, page }) => {
+    await app.gotoApp();
+    await app.nav("Teams");
+    await page.getByRole("button", { name: /platform/ }).click();
+    await page.getByRole("button", { name: "Load" }).click();
+    const alert = page.getByRole("alert").filter({ hasText: "Verification failed" });
+    await expect(alert).toContainText("1 invalid event(s), 1 chain problem(s)");
+    await expect(alert).toContainText("events 3 to 4 are missing");
+    await expect(page.getByRole("row", { name: /ana@example.com/ })).toContainText("Bad signature");
+  });
+});

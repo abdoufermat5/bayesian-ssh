@@ -92,9 +92,18 @@ the member.
 
 `bssh connect` to a team connection records a "session started" event
 locally, even offline and without your passphrase. The next sync signs it with
-your device key, chains it to your previous events and uploads it. The server
-verifies the signature and the chain, so events can't be edited, reordered or
-dropped without detection.
+your device key, chains it to your previous events and uploads it.
+
+Admins see the log with `bssh teams audit <team>` (`--host`, `--member`,
+`--since` to narrow it), or in the team's **Audit log** section in the desktop
+app. Every event is verified on your machine, not taken from the server: an
+edited, reordered or forged event shows as invalid, and a deleted one as a gap.
+The command exits non-zero when verification fails, so it can run in a
+compliance check.
+
+One limit: if the server drops a member's *newest* events before that member
+uploads anything more recent, what's left is still a valid log. The member's
+next sync then fails with an audit-chain error, so watch for that message.
 
 ## In the desktop app
 
@@ -119,3 +128,4 @@ you: **Grant key** only becomes available when it matches the waiting device.
 | `bssh teams sync [TEAM]` | Sync one team or all |
 | `bssh teams members TEAM` | Members and device fingerprints |
 | `bssh teams remove TEAM EMAIL` | Remove a member and rotate the key (admin) |
+| `bssh teams audit TEAM [--host H] [--member E] [--since D]` | Show and verify the audit log (admin) |

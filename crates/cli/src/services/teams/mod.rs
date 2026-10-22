@@ -20,6 +20,7 @@
 
 #![allow(dead_code)]
 
+pub mod audit;
 pub mod client;
 pub mod codec;
 pub mod crypto;

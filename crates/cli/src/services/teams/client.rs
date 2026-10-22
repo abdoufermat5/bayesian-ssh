@@ -429,6 +429,34 @@ impl TeamsClient {
     ) -> ClientResult<IngestAuditResponse> {
         self.post(&format!("/teams/{team_id}/audit"), req).await
     }
+
+    /// The team's audit log, newest first (admins only).
+    pub async fn list_audit(
+        &self,
+        team_id: Uuid,
+        filter: &AuditFilter,
+    ) -> ClientResult<Vec<AuditRecord>> {
+        let mut query = vec![("limit", filter.limit.unwrap_or(1000).to_string())];
+        if let Some(device) = filter.device_id {
+            query.push(("device_id", device.to_string()));
+        }
+        if let Some(entry) = filter.entry_id {
+            query.push(("entry_id", entry.to_string()));
+        }
+        if let Some(since) = filter.since {
+            query.push(("since", since.to_rfc3339()));
+        }
+        self.get(&format!("/teams/{team_id}/audit"), &query).await
+    }
+}
+
+/// Filters for [`TeamsClient::list_audit`]. The server caps `limit` at 1000.
+#[derive(Debug, Clone, Default)]
+pub struct AuditFilter {
+    pub device_id: Option<Uuid>,
+    pub entry_id: Option<Uuid>,
+    pub since: Option<DateTime<Utc>>,
+    pub limit: Option<u32>,
 }
 
 #[async_trait(?Send)]
