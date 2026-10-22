@@ -45,6 +45,7 @@ pub fn run() {
             sessions: Arc::new(Mutex::new(HashMap::new())),
         })
         .manage(UploadState::default())
+        .manage(commands::TeamsState::default())
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_background_color(Some(tauri::window::Color(9, 9, 11, 255)));
@@ -135,7 +136,21 @@ pub fn run() {
             updater::check_update,
             updater::install_update,
             updater::update_managed_by,
-            commands::predict_connections
+            commands::predict_connections,
+            commands::teams_status,
+            commands::teams_init,
+            commands::teams_unlock,
+            commands::teams_lock,
+            commands::teams_create,
+            commands::teams_sync,
+            commands::teams_share,
+            commands::teams_unshare,
+            commands::teams_invite,
+            commands::teams_join,
+            commands::teams_pending,
+            commands::teams_grant,
+            commands::teams_members,
+            commands::teams_remove
         ])
         .run(context)
         .expect("error while running tauri application");

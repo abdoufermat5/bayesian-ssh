@@ -16,6 +16,7 @@
     ShieldCheck,
     Ticket,
     TerminalSquare,
+    Users,
   } from "lucide-svelte";
   import type { AppTab, DesktopSettings, EnvInfo } from "$lib/types";
 
@@ -92,6 +93,10 @@
     {
       label: "Activity",
       items: [{ tab: "history", icon: Clock, label: "History", key: "5" }],
+    },
+    {
+      label: "Team",
+      items: [{ tab: "teams", icon: Users, label: "Teams" }],
     },
   ]);
 

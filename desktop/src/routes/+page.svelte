@@ -10,6 +10,7 @@
   import HistoryView from "$lib/components/HistoryView.svelte";
   import KeysView from "$lib/components/KeysView.svelte";
   import AuditView from "$lib/components/AuditView.svelte";
+  import TeamsView from "$lib/components/TeamsView.svelte";
   import SettingsView from "$lib/components/SettingsView.svelte";
   import SFTPView from "$lib/components/SFTPView.svelte";
   import TunnelStudioView from "$lib/components/TunnelStudioView.svelte";
@@ -275,6 +276,8 @@
         <KeysView connections={appState.connections} />
       {:else if appState.activeTab === "audit"}
         <AuditView />
+      {:else if appState.activeTab === "teams"}
+        <TeamsView connections={appState.connections} onConnectionsChanged={() => void appState.loadConnections()} />
       {:else if appState.activeTab === "settings"}
         <SettingsView
           bind:settings={appState.settings}
