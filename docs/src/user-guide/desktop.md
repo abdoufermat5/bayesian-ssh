@@ -225,10 +225,10 @@ Save button.
   the backend log level, and session recording (all hosts or only hosts with given
   tags).
 - **Appearance** — theme, row density and the timezone used for dates in history,
-  logs and audit. Themes: **Graphite**, **Midnight**, **OLED black**, **Paper** (light)
-  and **Match system** (Paper or Graphite, following the system's light/dark setting
-  as it changes). Density sets list and table rows to 32, 40 or 48 px (Compact,
-  Comfortable, Spacious). A previously saved Slate theme opens as Midnight.
+  logs and audit. Themes: **Light**, **Dark** and **Match system** (follows the
+  system's light/dark setting as it changes). Density sets list and table rows to
+  32, 40 or 48 px (Compact, Comfortable, Spacious). A theme saved by an earlier
+  version (Graphite, Midnight, OLED black, Slate, Paper) opens as Dark or Light.
 - **Sources & updates** — inventory sources (see
   [Inventory sources](./inventory-sources.md)), and the current version and updates
   for the way the app was installed.

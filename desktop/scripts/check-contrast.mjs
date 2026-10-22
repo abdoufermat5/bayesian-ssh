@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // WCAG contrast regression check for the design tokens.
 // Parses src/lib/styles/tokens.css per theme (the @theme block is the
-// default "zinc"/Graphite theme, html.theme-* blocks override it) and
+// default Dark theme, html.theme-light overrides it) and
 // asserts the contrast rules documented in docs/src/design/design-system.md.
 // Exit code 1 on any failure.
 import { readFileSync } from "node:fs";
@@ -24,10 +24,8 @@ function block(selectorRe) {
 
 const base = block("@theme");
 const THEMES = {
-  zinc: { label: "Graphite", vars: { ...base, ...block("html\\.theme-zinc") } },
-  cyberpunk: { label: "Midnight", vars: { ...base, ...block("html\\.theme-cyberpunk") } },
-  oled: { label: "OLED", vars: { ...base, ...block("html\\.theme-oled") } },
-  paper: { label: "Paper", vars: { ...base, ...block("html\\.theme-paper") } },
+  dark: { label: "Dark", vars: { ...base, ...block("html\\.theme-dark") } },
+  light: { label: "Light", vars: { ...base, ...block("html\\.theme-light") } },
 };
 
 function parseColor(v) {

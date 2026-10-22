@@ -130,7 +130,7 @@
             <div class="flex flex-wrap items-center justify-between gap-2">
               <span class="flex min-w-0 items-center gap-2 type-body">
                 <span class="truncate text-primary">{m.email}</span>
-                <span class="badge {m.role === 'admin' ? 'badge-accent' : 'badge-neutral'}">{m.role === "admin" ? "Admin" : "Member"}</span>
+                <span class="badge badge-neutral">{m.role === "admin" ? "Admin" : "Member"}</span>
                 {#if m.email === myEmail}<span class="type-meta">you</span>{/if}
               </span>
               {#if isAdmin && m.email !== myEmail}

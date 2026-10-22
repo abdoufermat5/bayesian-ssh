@@ -75,7 +75,7 @@
   ];
   let activeEnv = "default";
   let settings = {
-    theme: "zinc",
+    theme: "dark",
     auto_start_agent: false,
     kerberos_warn_minutes: 15,
     monitor_kerberos: true,

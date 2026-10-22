@@ -43,7 +43,7 @@ test("stepper drives to completion and submits the exact onboarding payload", as
 
   // Step 4 — Appearance.
   await expect(page.getByRole("heading", { name: "Appearance" })).toBeVisible();
-  await page.getByRole("radio", { name: /OLED/ }).click();
+  await page.getByRole("radio", { name: /^Light/ }).click();
   await page.locator("#ob-fuzzy").check();
   await page.getByRole("button", { name: "Continue" }).click();
 
@@ -61,7 +61,7 @@ test("stepper drives to completion and submits the exact onboarding payload", as
       default_user: "deploy",
       default_port: 2222,
       ssh_config_path: "~/.ssh/config",
-      theme: "oled",
+      theme: "light",
       auto_start_agent: true,
       import_ssh_config: true,
       fuzzy_search: true,

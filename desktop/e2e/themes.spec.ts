@@ -1,11 +1,9 @@
 import { test, expect } from "./fixtures/app";
 
 const THEMES = [
-  { card: "Graphite", cls: "theme-zinc", id: "zinc" },
-  { card: "Midnight", cls: "theme-cyberpunk", id: "cyberpunk" },
-  { card: "OLED black", cls: "theme-oled", id: "oled" },
-  { card: "Paper", cls: "theme-paper", id: "paper" },
-  { card: "Match system", cls: "theme-(zinc|paper)", id: "system" },
+  { card: "Light", cls: "theme-light", id: "light" },
+  { card: "Dark", cls: "theme-dark", id: "dark" },
+  { card: "Match system", cls: "theme-(dark|light)", id: "system" },
 ];
 
 test.describe("themes", () => {
@@ -30,11 +28,11 @@ test.describe("themes", () => {
     await app.gotoApp();
     await app.nav("Settings");
     await page.getByRole("button", { name: "Appearance" }).click();
-    await page.getByRole("radio", { name: "Midnight" }).click();
-    await expect(page.locator("html")).toHaveClass(/theme-cyberpunk/);
+    await page.getByRole("radio", { name: "Light" }).click();
+    await expect(page.locator("html")).toHaveClass(/theme-light/);
 
     await page.reload();
     await expect(page.locator(".app-shell")).toBeVisible();
-    await expect(page.locator("html")).toHaveClass(/theme-cyberpunk/);
+    await expect(page.locator("html")).toHaveClass(/theme-light/);
   });
 });

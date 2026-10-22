@@ -258,7 +258,7 @@
         title="Background sessions"
         aria-label="Background sessions"
       >
-        <Layers size={16} strokeWidth={1.75} class="text-accent" />
+        <Layers size={16} strokeWidth={1.75} />
         {#if !sidebarCollapsed}
           <span class="truncate">Background</span>
           <span class="count ml-auto bg-accent/15 text-accent">{externalSessionCount}</span>

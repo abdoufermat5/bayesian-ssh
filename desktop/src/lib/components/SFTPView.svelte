@@ -642,7 +642,7 @@
                     onclick={() => handleEntryClick(entry)}
                     title={entry.is_dir ? `Open ${entry.name}` : `Copy path of ${entry.name}`}
                   >
-                    <Icon size={14} class="shrink-0 {entry.is_dir ? 'text-accent' : 'text-muted'}" />
+                    <Icon size={14} class="shrink-0 {entry.is_dir ? 'text-secondary' : 'text-muted'}" />
                     <span class="truncate {entry.is_dir ? 'font-medium text-primary' : 'text-primary'}">{entry.name}</span>
                   </button>
                 </td>
@@ -670,7 +670,7 @@
               onclick={() => handleEntryClick(entry)}
               title={entry.is_dir ? `Open ${entry.name}` : `Copy path of ${entry.name}`}
             >
-              <Icon size={16} class="shrink-0 {entry.is_dir ? 'text-accent' : 'text-muted'}" />
+              <Icon size={16} class="shrink-0 {entry.is_dir ? 'text-secondary' : 'text-muted'}" />
               <span class="flex min-w-0 flex-col">
                 <span class="truncate text-sm text-primary {entry.is_dir ? 'font-medium' : ''}">{entry.name}</span>
                 <span class="truncate font-mono text-2xs text-muted">

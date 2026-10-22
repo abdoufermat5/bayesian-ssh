@@ -45,7 +45,7 @@
   let auto_start_agent = $state(false);
   let fuzzy_search = $state(false);
   let theme = $state<AppTheme>(
-    normalizeTheme(typeof document !== "undefined" ? (document.documentElement.dataset.theme ?? "zinc") : "zinc"),
+    normalizeTheme(typeof document !== "undefined" ? (document.documentElement.dataset.theme ?? "dark") : "dark"),
   );
 
   // Backup restore state

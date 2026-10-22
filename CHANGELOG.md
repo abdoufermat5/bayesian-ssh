@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Team audit log** (`bssh teams audit`, and an Audit log section per team in the desktop app): who connected to which shared host, when and from where. Every event's signature and each device's hash chain are verified on the admin's machine; edited, forged, reordered or deleted events are flagged, and the command exits non-zero so it can gate compliance checks.
 - **Desktop: share hosts with a team from the Hosts list** (**Share with a team…** or `S`), a team badge and Source column on hosts, source filter chips on Hosts and History, and a link from a team session in History to that team's audit log.
 - **Desktop onboarding for invited members**: "I was invited to a team" pastes the invite, sets the device passphrase, joins with the admin's fingerprint and shows this device's fingerprint to send back. The solo path ends with connecting to a first host.
-- **Desktop light theme "Paper"** (with a light terminal palette), **Match system**, and a row density setting (32/40/48 px).
+- **Desktop Light theme** (with a light terminal palette), **Match system**, and a row density setting (32/40/48 px).
 - **Desktop terminals**: connection progress with `Esc` to cancel, failures that stay in the tab with Retry and Edit host, and tab shortcuts (next/previous, close, reopen closed).
 - **Teams in the desktop app**: a Teams page to set up a device, unlock it once per session, create or join teams, share and unshare connections, invite, remove members and sync. Granting a key requires pasting the fingerprint the member sent; the button stays disabled until it matches.
 
@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Desktop keyboard**: `1`–`7` open views in sidebar order, `Ctrl`/`Cmd` + `,` opens Settings, and the host list has verbs (`Shift`+`Enter`, `Ctrl`/`Cmd`+`Enter` for Files, `C`, `E`, `S`, `Delete`; edit moved from `Ctrl`+`E` to `E`). The shortcut sheet, sidebar hints and command palette come from one table. The palette gains Teams, host and Settings-section commands with CLI equivalents.
 - **Desktop Settings** regrouped into six sections: Workspace, Connection, Terminal & files, Privacy & history, Appearance, Sources & updates. A type scale, shared empty states and layouts that hold at 1024 px; the sidebar collapses to icons below 1100 px.
 - **Desktop connect reuses an open session**: Connect (and `Enter`) switches to the tab already open or connecting to that host; `Shift`+`Enter`, "Connect in new tab", the Terminals launcher and reopening a closed tab always start a new session. Tag chips that don't fit the Hosts toolbar go behind a `+N` menu.
-- **Desktop themes**: Slate is removed (a saved Slate opens as Midnight); OLED black uses the standard accent.
+- **Desktop colors**: two themes, Dark and Light (plus Match system), with one blue accent used only for primary actions, focus and selection; neutral grays elsewhere; team, role and source badges are neutral; a muted ANSI palette in terminals. Graphite, Midnight, OLED black and Slate load as Dark, Paper as Light.
 - Database schema v9 (applied automatically): Teams tables for the local vault, outbox and audit chain (v8), and for identity, known author keys, approved devices and pending audit events (v9).
 - Inventory hosts can carry their own bastion and Kerberos settings; for team sources the vault is authoritative for them.
 
