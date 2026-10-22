@@ -891,7 +891,20 @@ async function startSession(tab: TabState, conn: Connection): Promise<void> {
   }
 }
 
-export async function connectSSH(conn: Connection): Promise<void> {
+/**
+ * Connect to a host. Without `newTab`, a tab already open (or connecting) to
+ * the same host is brought forward instead of starting a second session.
+ */
+export async function connectSSH(conn: Connection, options: { newTab?: boolean } = {}): Promise<void> {
+  if (!options.newTab) {
+    const open = tabs.find((t) => t.conn?.id === conn.id && (t.status === "connected" || t.status === "connecting"));
+    if (open) {
+      setActiveTab(open.id);
+      requestAnimationFrame(() => focusActiveTerminal());
+      return;
+    }
+  }
+
   const allowed = await ensureKerberosForConnection(conn);
   if (!allowed) return;
 
@@ -936,7 +949,7 @@ export async function reopenClosedTab(): Promise<void> {
     notify("No closed tab to reopen", "info");
     return;
   }
-  await connectSSH(conn);
+  await connectSSH(conn, { newTab: true });
 }
 
 function cycleTab(step: 1 | -1) {

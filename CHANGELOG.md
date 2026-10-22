@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Desktop keyboard**: `1`–`8` open views in sidebar order, `Ctrl`/`Cmd` + `,` opens Settings, and the host list has verbs (`Shift`+`Enter`, `Ctrl`/`Cmd`+`Enter` for Files, `C`, `E`, `S`, `Delete`; edit moved from `Ctrl`+`E` to `E`). The shortcut sheet, sidebar hints and command palette come from one table. The palette gains Teams, host and Settings-section commands with CLI equivalents.
 - **Desktop Settings** regrouped into six sections: Workspace, Connection, Terminal & files, Privacy & history, Appearance, Sources & updates. A type scale, shared empty states and layouts that hold at 1024 px; the sidebar collapses to icons below 1100 px.
+- **Desktop connect reuses an open session**: Connect (and `Enter`) switches to the tab already open or connecting to that host; `Shift`+`Enter`, "Connect in new tab", the Terminals launcher and reopening a closed tab always start a new session. Tag chips that don't fit the Hosts toolbar go behind a `+N` menu.
 - **Desktop themes**: Slate is removed (a saved Slate opens as Midnight); OLED black uses the standard accent.
 - Database schema v9 (applied automatically): Teams tables for the local vault, outbox and audit chain (v8), and for identity, known author keys, approved devices and pending audit events (v9).
 - Inventory hosts can carry their own bastion and Kerberos settings; for team sources the vault is authoritative for them.

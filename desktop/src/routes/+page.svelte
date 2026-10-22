@@ -325,7 +325,7 @@
             bind:searchQuery={appState.searchQuery}
             onCloseAll={appState.requestCloseAllSessions}
             onManageSessions={appState.openSessionManager}
-            onConnect={appState.handleConnect}
+            onConnect={(conn) => appState.handleConnect(conn, { newTab: true })}
           />
         </div>
       {/if}

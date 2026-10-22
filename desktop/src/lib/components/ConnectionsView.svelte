@@ -17,6 +17,7 @@
   import { notify } from "$lib/stores/notifications.svelte";
   import { appState } from "$lib/stores/appState.svelte";
   import { requestFilesHost } from "$lib/stores/filesHost.svelte";
+  import TagFilter from "./hosts/TagFilter.svelte";
   import CustomSelect from "$lib/components/ui/CustomSelect.svelte";
   import SourceBadge, {
     loadSourceIndex,
@@ -40,7 +41,8 @@
     selectedTag?: string | null;
     allTags: string[];
     onSelectHost: (index: number) => void;
-    onConnect: (conn: Connection) => void | Promise<void>;
+    /** Without `newTab`, an open session to the same host is brought forward. */
+    onConnect: (conn: Connection, options?: { newTab?: boolean }) => void | Promise<void>;
     onEdit: (conn: Connection) => void;
     onDelete: (conn: Connection) => void;
     onDuplicate: (conn: Connection) => void;
@@ -170,10 +172,10 @@
     return source?.kind === "team" ? source.name : null;
   }
 
-  async function handleConnectHost(conn: Connection) {
+  async function handleConnectHost(conn: Connection, newTab = false) {
     connectingHostId = conn.id;
     try {
-      await onConnect(conn);
+      await onConnect(conn, { newTab });
     } finally {
       connectingHostId = null;
     }
@@ -388,9 +390,10 @@
   function runHostVerb(id: string, conn: Connection) {
     switch (id) {
       case "host-connect":
-      case "host-connect-tab":
-        // Every connect opens a new terminal tab; there is no tab reuse yet.
         void handleConnectHost(conn);
+        break;
+      case "host-connect-tab":
+        void handleConnectHost(conn, true);
         break;
       case "host-files":
         openFiles(conn);
@@ -610,26 +613,7 @@
     </label>
 
     {#if allTags.length > 0}
-      <div class="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto scrollbar-none" role="group" aria-label="Filter by tag">
-        <button
-          type="button"
-          class="chip {selectedTag === null ? 'chip-active' : ''}"
-          onclick={() => (selectedTag = null)}
-          aria-pressed={selectedTag === null}
-        >
-          All
-        </button>
-        {#each allTags as tag (tag)}
-          <button
-            type="button"
-            class="chip {selectedTag === tag ? 'chip-active' : ''}"
-            onclick={() => (selectedTag = selectedTag === tag ? null : tag)}
-            aria-pressed={selectedTag === tag}
-          >
-            {tag}
-          </button>
-        {/each}
-      </div>
+      <TagFilter tags={allTags} selected={selectedTag} onSelect={(tag) => (selectedTag = tag)} />
     {:else}
       <div class="flex-1"></div>
     {/if}

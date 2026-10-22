@@ -50,7 +50,7 @@
     settings: DesktopSettings;
     onClose: () => void;
     onSelectTab: (tab: AppTab) => void;
-    onConnectHost: (conn: Connection) => void;
+    onConnectHost: (conn: Connection, options?: { newTab?: boolean }) => void;
     onOpenAddModal: () => void;
     onOpenBatchExec: () => void;
     onOpenUpload: () => void;
@@ -397,7 +397,7 @@
   const HOST_VERBS: HostVerb[] = ([
     // Keys and CLI come from the registry below.
     { id: "host-connect", label: "Connect", icon: Terminal, run: (c) => onConnectHost(c) },
-    { id: "host-connect-tab", label: "Connect in new tab", icon: TerminalSquare, run: (c) => onConnectHost(c) },
+    { id: "host-connect-tab", label: "Connect in new tab", icon: TerminalSquare, run: (c) => onConnectHost(c, { newTab: true }) },
     { id: "host-files", label: "Browse files", icon: FolderOpen, run: (c) => {
         requestFilesHost(c.id);
         onSelectTab("sftp");
