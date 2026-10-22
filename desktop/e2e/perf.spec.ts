@@ -30,7 +30,8 @@ test.describe("performance smoke", () => {
 
     await app.gotoApp();
     const table = page.locator("table.data-table");
-    await expect(table).toHaveAttribute("aria-rowcount", "2000", { timeout: 30_000 });
+    // aria-rowcount includes the header row.
+    await expect(table).toHaveAttribute("aria-rowcount", "2001", { timeout: 30_000 });
     const hostRows = page.locator("tbody tr[data-host-row]");
     await expect(hostRows.first()).toBeVisible();
 
