@@ -201,11 +201,14 @@ test.describe("shortcuts modal", () => {
     const views: Array<[string, string]> = [
       ["Hosts", "1"],
       ["Terminals", "2"],
-      ["Keys", "3"],
-      ["Security check", "4"],
-      ["History", "5"],
-      ["Settings", "6"],
+      ["Files", "3"],
+      ["Tunnels", "4"],
+      ["Keys", "5"],
+      ["Security check", "6"],
+      ["History", "7"],
+      ["Teams", "8"],
     ];
+    await expect(row("Settings").locator("kbd")).toHaveText(["Ctrl", ","]);
     for (const [name, key] of views) {
       await expect(row(name).locator("kbd")).toHaveText([key]);
     }

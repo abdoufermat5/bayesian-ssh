@@ -1,20 +1,36 @@
 import { test, expect } from "./fixtures/app";
 
 test.describe("global shortcuts", () => {
-  test("number keys 1-6 switch views", async ({ app, page }) => {
+  test("number keys 1-8 switch views in sidebar order", async ({ app, page }) => {
     await app.gotoApp();
     const expectations: Array<[string, string]> = [
       ["1", "Hosts"],
       ["2", "Terminals"],
-      ["3", "Keys"],
-      ["4", "Security check"],
-      ["5", "History"],
-      ["6", "Settings"],
+      ["3", "Files"],
+      ["4", "Tunnels"],
+      ["5", "Keys"],
+      ["6", "Security check"],
+      ["7", "History"],
+      ["8", "Teams"],
     ];
     for (const [key, title] of expectations) {
       await page.keyboard.press(key);
       await expect(page.locator(".workspace h1")).toHaveText(title);
     }
+  });
+
+  test("Ctrl+, opens Settings, even from a text field", async ({ app, page }) => {
+    await app.gotoApp();
+    await page.keyboard.press("/");
+    await expect(page.locator(".search-input")).toBeFocused();
+    await page.keyboard.press("Control+,");
+    await expect(page.locator(".workspace h1")).toHaveText("Settings");
+  });
+
+  test("sidebar items show the same digit as the shortcut", async ({ app, page }) => {
+    await app.gotoApp();
+    await expect(page.locator('.sidebar [aria-label="Keys"]')).toHaveAttribute("aria-keyshortcuts", "5");
+    await expect(page.locator('.sidebar [aria-label="Teams"]')).toHaveAttribute("aria-keyshortcuts", "8");
   });
 
   test("'/' focuses the hosts filter", async ({ app, page }) => {
