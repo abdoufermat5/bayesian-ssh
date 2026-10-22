@@ -683,6 +683,7 @@ pub enum Commands {
 }
 
 #[derive(Subcommand)]
+#[allow(clippy::large_enum_variant)]
 pub enum SourceCommands {
     /// Register a new inventory source (does not sync it)
     Add {

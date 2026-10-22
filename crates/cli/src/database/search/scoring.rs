@@ -76,7 +76,7 @@ impl Prediction {
             ("hour", b.hour, b.hour_hits),
         ] {
             if let Some(lr) = lr_opt {
-                if lr > 1.0 && hits > 0 && best.map_or(true, |(_, best_lr)| lr > best_lr) {
+                if lr > 1.0 && hits > 0 && best.is_none_or(|(_, best_lr)| lr > best_lr) {
                     best = Some((name, lr));
                 }
             }

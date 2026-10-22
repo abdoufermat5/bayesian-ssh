@@ -199,8 +199,8 @@ fn list(config: &AppConfig) -> Result<()> {
 
     println!("📦 Inventory sources");
     println!(
-        "{:<20} {:<12} {:>5} {:>5}  {:<16} {}",
-        "NAME", "KIND", "HOSTS", "STALE", "LAST SYNC", "ERROR"
+        "{:<20} {:<12} {:>5} {:>5}  {:<16} ERROR",
+        "NAME", "KIND", "HOSTS", "STALE", "LAST SYNC"
     );
     for summary in sources {
         let source = &summary.source;
