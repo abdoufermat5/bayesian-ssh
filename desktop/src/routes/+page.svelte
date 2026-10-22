@@ -87,6 +87,8 @@
   let unlistenQuitConfirm: (() => void) | undefined;
   let unlistenCloseRequested: (() => void) | undefined;
 
+  const SIDEBAR_AUTO_COLLAPSE_PX = 1100;
+
   let showShortcutsModal = $state(false);
   let showAboutModal = $state(false);
   let showBatchExecModal = $state(false);
@@ -195,15 +197,24 @@
       unlistenConnect = unsub;
     });
 
+    // Below 1100 px the sidebar collapses to icons by itself; the manual toggle
+    // still works. It re-expands on widening only if we were the one to collapse it.
+    let autoCollapsed = false;
+    let wasNarrow = false;
     function handleWindowResize() {
-      if (window.innerWidth < 860 && !appState.sidebarCollapsed) {
+      const narrow = window.innerWidth < SIDEBAR_AUTO_COLLAPSE_PX;
+      if (narrow === wasNarrow) return;
+      wasNarrow = narrow;
+      if (narrow && !appState.sidebarCollapsed) {
         appState.sidebarCollapsed = true;
+        autoCollapsed = true;
+      } else if (!narrow && autoCollapsed) {
+        appState.sidebarCollapsed = false;
+        autoCollapsed = false;
       }
     }
     window.addEventListener("resize", handleWindowResize);
-    if (window.innerWidth < 860) {
-      appState.sidebarCollapsed = true;
-    }
+    handleWindowResize();
 
     return () => {
       window.removeEventListener("keydown", handleKeydownWithHelp);
@@ -490,4 +501,6 @@
   onOpenKeys={() => appState.handleTabChange("keys")}
   onOpenSessionManager={appState.openSessionManager}
   onSelectTheme={appState.handleThemeChange}
+  onEditHost={appState.openEditModal}
+  onCopyCommand={appState.copyToClipboard}
 />

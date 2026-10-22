@@ -2,22 +2,18 @@
   import {
     Check,
     ChevronsUpDown,
-    Clock,
     FolderCog,
-    HardDrive,
     KeyRound,
     Layers,
-    Network,
     PanelLeftClose,
     PanelLeftOpen,
     Server,
     Settings,
-    ShieldCheck,
     Ticket,
-    TerminalSquare,
-    Users,
   } from "lucide-svelte";
   import { attentionCount } from "$lib/stores/attention.svelte";
+  import { GLOBAL_SHORTCUTS, viewDigit } from "$lib/shortcuts";
+  import { VIEW_META, viewEnabled } from "$lib/viewMeta";
   import type { AppTab, DesktopSettings, EnvInfo } from "$lib/types";
 
   type KerberosHealth = "missing" | "expired" | "warning" | "valid" | "unavailable";
@@ -69,34 +65,39 @@
     settings,
   }: Props = $props();
 
-  type NavItem = { tab: AppTab; icon: typeof Server; label: string; badge?: number; attention?: number; key?: string };
+  type NavItem = { tab: AppTab; icon: typeof Server; label: string; badge?: number; attention?: number; key: string | null };
 
+  function navItem(tab: Exclude<AppTab, "settings">, extra: { badge?: number; attention?: number } = {}): NavItem {
+    const { label, icon } = VIEW_META[tab];
+    return { tab, icon, label, key: viewDigit(tab), ...extra };
+  }
+
+  // Section order follows VIEW_ORDER, so the digit hints run 1..n down the list.
   const sections = $derived<{ label: string | null; items: NavItem[] }[]>([
     {
       label: null,
       items: [
-        { tab: "connections", icon: Server, label: "Hosts", key: "1" },
-        { tab: "terminals", icon: TerminalSquare, label: "Terminals", badge: terminalCount, key: "2" },
-        ...(settings.enable_sftp !== false ? [{ tab: "sftp" as AppTab, icon: HardDrive, label: "Files" }] : []),
-        ...(settings.enable_tunneling !== false ? [{ tab: "tunnels" as AppTab, icon: Network, label: "Tunnels" }] : []),
+        navItem("connections"),
+        navItem("terminals", { badge: terminalCount }),
+        ...(viewEnabled("sftp", settings) ? [navItem("sftp")] : []),
+        ...(viewEnabled("tunnels", settings) ? [navItem("tunnels")] : []),
       ],
     },
     {
       label: "Security",
-      items: [
-        { tab: "keys", icon: KeyRound, label: "Keys", key: "3" },
-        { tab: "audit", icon: ShieldCheck, label: "Security check", key: "4" },
-      ],
+      items: [navItem("keys"), navItem("audit")],
     },
     {
       label: "Activity",
-      items: [{ tab: "history", icon: Clock, label: "History", key: "5" }],
+      items: [navItem("history")],
     },
     {
       label: "Team",
-      items: [{ tab: "teams", icon: Users, label: "Teams", attention: attentionCount("teams") }],
+      items: [navItem("teams", { attention: attentionCount("teams") })],
     },
   ]);
+
+  const settingsHint = (GLOBAL_SHORTCUTS.find((s) => s.id === "settings")?.combos[0] ?? []).join("+");
 
   let profileMenuOpen = $state(false);
   let profileRoot = $state<HTMLDivElement>();
@@ -220,7 +221,8 @@
             type="button"
             class="nav-item {active ? 'nav-item-active' : ''} {sidebarCollapsed ? 'nav-item-collapsed' : ''}"
             onclick={() => onTabChange(item.tab)}
-            title={sidebarCollapsed ? item.label : item.key ? `${item.label} (${item.key})` : undefined}
+            title={item.key ? `${item.label} (${item.key})` : item.label}
+            aria-keyshortcuts={item.key ?? undefined}
             aria-label={item.attention
               ? `${item.label}, ${item.attention} ${item.attention === 1 ? "item needs" : "items need"} attention`
               : item.label}
@@ -233,6 +235,8 @@
                 <span class="count ml-auto bg-warning/15 text-warning" aria-hidden="true">{item.attention}</span>
               {:else if item.badge}
                 <span class="count ml-auto {active ? 'bg-accent/15 text-accent' : ''}">{item.badge}</span>
+              {:else if item.key}
+                <span class="ml-auto text-xs tabular-nums text-muted" aria-hidden="true">{item.key}</span>
               {/if}
             {:else if item.attention}
               <span class="absolute right-1.5 top-1.5 size-2 rounded-full bg-warning ring-2 ring-chrome" aria-hidden="true"></span>
@@ -310,7 +314,7 @@
         type="button"
         class="nav-item flex-1 {activeTab === 'settings' ? 'nav-item-active' : ''} {sidebarCollapsed ? 'nav-item-collapsed' : ''}"
         onclick={() => onTabChange("settings")}
-        title="Settings (6)"
+        title="Settings ({settingsHint})"
         aria-label="Settings"
         aria-current={activeTab === "settings" ? "page" : undefined}
       >

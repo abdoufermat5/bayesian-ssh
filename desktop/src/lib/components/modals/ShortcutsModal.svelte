@@ -1,6 +1,16 @@
 <script lang="ts">
   import { X } from "lucide-svelte";
   import ModalShell from "$lib/components/ui/ModalShell.svelte";
+  import {
+    IS_MAC,
+    GLOBAL_SHORTCUTS,
+    HOST_SHORTCUTS,
+    TERMINAL_SHORTCUTS,
+    VIEW_ORDER,
+    viewDigit,
+    type Shortcut,
+  } from "$lib/shortcuts";
+  import { VIEW_META } from "$lib/viewMeta";
 
   interface Props {
     show: boolean;
@@ -9,63 +19,30 @@
 
   let { show, onClose }: Props = $props();
 
-  const IS_MAC = typeof navigator !== "undefined" && /mac/i.test(navigator.platform || navigator.userAgent);
-  const MOD = IS_MAC ? "⌘" : "Ctrl";
-  /** App-level terminal shortcuts: plain Ctrl+C/V/F belong to the shell. */
-  const TERM_MOD = IS_MAC ? [MOD] : [MOD, "Shift"];
+  const viewRows: Shortcut[] = VIEW_ORDER.flatMap((tab) => {
+    const digit = viewDigit(tab);
+    if (!digit || tab === "settings") return [];
+    return [{ id: `view-${tab}`, label: VIEW_META[tab].label, combos: [[digit]], scope: "global" as const }];
+  });
 
-  /** Each shortcut lists alternative key combos; each combo is a list of keys. */
-  type Shortcut = { action: string; combos: string[][] };
   type Section = { title: string; note?: string; items: Shortcut[] };
 
-  // Mirrors +page.svelte (palette / help), terminal-xterm (terminal keys), appState.handleGlobalKeydown
-  // (filter, new host, views, terminal font) and ConnectionsView (host list).
+  const general = GLOBAL_SHORTCUTS.filter((s) => s.id === "palette" || s.id === "palette-terminal" || s.id === "settings");
+  const hostsGlobal = GLOBAL_SHORTCUTS.filter((s) => s.id === "filter" || s.id === "new-host");
+
   const columns: Section[][] = [
     [
-      {
-        title: "General",
-        items: [
-          { action: "Command palette", combos: [[MOD, "K"]] },
-          ...(IS_MAC ? [] : [{ action: "Command palette, inside a terminal", combos: [[MOD, "Shift", "P"]] }]),
-          { action: "Keyboard shortcuts", combos: [["?"], ["F1"], [MOD, "/"]] },
-          { action: "Close dialog or clear filter", combos: [["Esc"]] },
-        ],
-      },
-      {
-        title: "Views",
-        items: [
-          { action: "Hosts", combos: [["1"]] },
-          { action: "Terminals", combos: [["2"]] },
-          { action: "Keys", combos: [["3"]] },
-          { action: "Security check", combos: [["4"]] },
-          { action: "History", combos: [["5"]] },
-          { action: "Settings", combos: [["6"]] },
-        ],
-      },
+      { title: "General", items: general },
+      { title: "Views", items: viewRows },
     ],
     [
-      {
-        title: "Hosts",
-        items: [
-          { action: "Focus filter", combos: [["/"]] },
-          { action: "New host", combos: [["N"], [MOD, "N"]] },
-          { action: "Move selection", combos: [["↑", "↓"], ["J", "K"]] },
-          { action: "Connect to selected host", combos: [["Enter"]] },
-          { action: "Edit selected host", combos: [[MOD, "E"]] },
-        ],
-      },
+      { title: "Hosts", items: [...hostsGlobal, ...HOST_SHORTCUTS] },
       {
         title: "Terminal",
-        note: "Plain Ctrl+C, Ctrl+V, Ctrl+F and Ctrl+K go to the shell. Turn on Smart copy in Settings to copy with Ctrl+C while text is selected.",
-        items: [
-          { action: "Copy selection", combos: [[...TERM_MOD, "C"]] },
-          { action: "Paste", combos: [[...TERM_MOD, "V"], ["Shift", "Insert"]] },
-          { action: "Find in terminal", combos: [[...TERM_MOD, "F"]] },
-          { action: "Select all", combos: [[...TERM_MOD, "A"]] },
-          { action: "Increase font size", combos: [[...TERM_MOD, "+"], [MOD, "+"]] },
-          { action: "Decrease font size", combos: [[...TERM_MOD, "−"], [MOD, "−"]] },
-          { action: "Reset font size", combos: [[...TERM_MOD, "0"], [MOD, "0"]] },
-        ],
+        note: IS_MAC
+          ? "Terminal shortcuts use Cmd. Turn on Smart copy in Settings to copy while text is selected."
+          : "Plain Ctrl+C, Ctrl+V, Ctrl+F and Ctrl+K go to the shell. Turn on Smart copy in Settings to copy with Ctrl+C while text is selected.",
+        items: TERMINAL_SHORTCUTS,
       },
     ],
   ];
@@ -90,9 +67,9 @@
             <section class="flex flex-col gap-1">
               <h3 class="section-label m-0 mb-1">{section.title}</h3>
               <ul class="m-0 flex list-none flex-col p-0">
-                {#each section.items as item (item.action)}
+                {#each section.items as item (item.id)}
                   <li class="flex h-8 items-center justify-between gap-4 border-b border-border-subtle last:border-b-0">
-                    <span class="truncate text-sm text-secondary">{item.action}</span>
+                    <span class="truncate text-sm text-secondary">{item.label}</span>
                     <span class="flex shrink-0 items-center gap-1.5">
                       {#each item.combos as combo, i (i)}
                         {#if i > 0}<span class="text-xs text-muted">or</span>{/if}
