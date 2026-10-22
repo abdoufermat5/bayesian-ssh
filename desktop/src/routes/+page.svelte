@@ -14,7 +14,6 @@
   import TeamsView from "$lib/components/TeamsView.svelte";
   import SettingsView from "$lib/components/SettingsView.svelte";
   import SFTPView from "$lib/components/SFTPView.svelte";
-  import TunnelStudioView from "$lib/components/TunnelStudioView.svelte";
   import ConnectionModal from "$lib/components/modals/ConnectionModal.svelte";
   import EnvModal from "$lib/components/modals/EnvModal.svelte";
   import AgentModal from "$lib/components/modals/AgentModal.svelte";
@@ -266,7 +265,6 @@
       {#if appState.activeTab === "connections"}
         <ConnectionsView
           connections={appState.connections}
-          bind:viewMode={appState.viewMode}
           selectedHostIndex={appState.selectedHostIndex}
           copiedId={appState.copiedId}
           justDuplicatedId={appState.justDuplicatedId}
@@ -312,8 +310,6 @@
           onOpenUpload={(connectionId, remoteDir) =>
             openUploadModal(connectionId ? [connectionId] : [], remoteDir)}
         />
-      {:else if appState.activeTab === "tunnels" && appState.settings.enable_tunneling !== false}
-        <TunnelStudioView connections={appState.connections} />
       {/if}
 
       <!-- Terminals stay mounted while sessions exist so xterm buffers
@@ -469,14 +465,6 @@
   onOpenAddModal={appState.openAddModal}
   onOpenBatchExec={() => (showBatchExecModal = true)}
   onOpenUpload={() => openUploadModal(undefined)}
-  onPingAll={() => {
-    invoke<Array<{ success: boolean }>>("ping_all_connections")
-      .then((results) => {
-        const reachable = results.filter((r) => r.success).length;
-        notify(`Ping completed: ${reachable}/${results.length} reachable hosts`, "success");
-      })
-      .catch((e) => notify(`Ping failed: ${e}`, "error"));
-  }}
   onFixPermissions={async () => {
     try {
       const fixed = await invoke("fix_security_permissions");

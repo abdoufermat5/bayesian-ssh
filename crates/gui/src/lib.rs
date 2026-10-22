@@ -116,7 +116,6 @@ pub fn run() {
             commands::export_connections_payload,
             commands::import_connections_payload,
             commands::fix_security_permissions,
-            commands::ping_all_connections,
             commands::run_batch_command,
             commands::get_app_version,
             commands::list_remote_directory,

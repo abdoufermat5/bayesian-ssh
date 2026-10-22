@@ -1,7 +1,7 @@
-export const CONCRETE_THEMES = ["zinc", "cyberpunk", "oled", "paper"] as const;
+export const CONCRETE_THEMES = ["dark", "light"] as const;
 export type ConcreteTheme = (typeof CONCRETE_THEMES)[number];
 
-export const APP_THEMES = ["zinc", "cyberpunk", "oled", "paper", "system"] as const;
+export const APP_THEMES = ["dark", "light", "system"] as const;
 export type AppTheme = (typeof APP_THEMES)[number];
 
 export const APP_DENSITIES = ["compact", "comfortable", "spacious"] as const;
@@ -9,34 +9,35 @@ export type AppDensity = (typeof APP_DENSITIES)[number];
 
 /** The themes users can pick, in display order; onboarding and Appearance both read this. */
 export const THEME_OPTIONS: { id: AppTheme; label: string; desc: string }[] = [
-  { id: "zinc", label: "Graphite", desc: "Neutral gray, blue accent" },
-  { id: "cyberpunk", label: "Midnight", desc: "Deep navy, cyan accent" },
-  { id: "oled", label: "OLED black", desc: "Pure black for OLED screens" },
-  { id: "paper", label: "Paper", desc: "Warm light theme, crisp contrast" },
-  { id: "system", label: "Match system", desc: "Paper or Graphite from system preference" },
+  { id: "light", label: "Light", desc: "Light surfaces, blue accent" },
+  { id: "dark", label: "Dark", desc: "Dark surfaces, blue accent" },
+  { id: "system", label: "Match system", desc: "Light or Dark, following your system" },
 ];
 
 const THEME_WINDOW_BG: Record<ConcreteTheme, string> = {
-  zinc: "#0b0c0e",
-  cyberpunk: "#070b14",
-  oled: "#000000",
-  paper: "#ebebe8",
+  dark: "#0c0c0e",
+  light: "#e9ebef",
 };
 
-export function normalizeTheme(themeName: string): (typeof APP_THEMES)[number] {
-  if (themeName === "slate") {
-    return "cyberpunk";
-  }
-  return (APP_THEMES as readonly string[]).includes(themeName)
-    ? (themeName as (typeof APP_THEMES)[number])
-    : "zinc";
+/** Themes from earlier versions, and what they became. */
+const LEGACY_THEMES: Record<string, AppTheme> = {
+  zinc: "dark",
+  cyberpunk: "dark",
+  oled: "dark",
+  slate: "dark",
+  paper: "light",
+};
+
+export function normalizeTheme(themeName: string): AppTheme {
+  if (themeName in LEGACY_THEMES) return LEGACY_THEMES[themeName];
+  return (APP_THEMES as readonly string[]).includes(themeName) ? (themeName as AppTheme) : "dark";
 }
 
 export function resolveSystemTheme(): ConcreteTheme {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
-    return "zinc";
+    return "dark";
   }
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "zinc" : "paper";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
 export function getResolvedTheme(themeName: string): ConcreteTheme {
@@ -145,29 +146,30 @@ export interface XtermTheme {
   selectionBackground: string;
 }
 
+/** The terminal palette of the active theme (the --term-* tokens); Dark when unstyled. */
 export function getCurrentXtermTheme(): XtermTheme {
   const fallback: XtermTheme = {
-    background: "#0c0d12",
-    foreground: "#cbd5e1",
-    cursor: "#00f0ff",
-    cursorAccent: "#0c0d12",
-    black: "#18181b",
-    red: "#ef4444",
-    green: "#10b981",
-    yellow: "#fbbf24",
-    blue: "#3b82f6",
-    magenta: "#d946ef",
-    cyan: "#00f0ff",
-    white: "#cbd5e1",
-    brightBlack: "#71717a",
-    brightRed: "#f87171",
-    brightGreen: "#34d399",
-    brightYellow: "#fde047",
-    brightBlue: "#60a5fa",
-    brightMagenta: "#e879f9",
-    brightCyan: "#22d3ee",
-    brightWhite: "#f4f4f5",
-    selectionBackground: "rgba(59, 130, 246, 0.25)",
+    background: "#0c0c0e",
+    foreground: "#d6d6db",
+    cursor: "#5b8def",
+    cursorAccent: "#0c0c0e",
+    black: "#2a2a2e",
+    red: "#e5636b",
+    green: "#5fb87a",
+    yellow: "#d4a54a",
+    blue: "#6b9bf0",
+    magenta: "#b388e0",
+    cyan: "#4fb3c4",
+    white: "#c4c4ca",
+    brightBlack: "#6e6e76",
+    brightRed: "#f08a90",
+    brightGreen: "#7fcf96",
+    brightYellow: "#e6c071",
+    brightBlue: "#8db3f5",
+    brightMagenta: "#c9a6ec",
+    brightCyan: "#74c7d5",
+    brightWhite: "#f2f2f4",
+    selectionBackground: "rgba(91, 141, 239, 0.3)",
   };
 
   if (typeof window === "undefined") {
@@ -178,26 +180,26 @@ export function getCurrentXtermTheme(): XtermTheme {
   const read = (name: string, fb: string) => style.getPropertyValue(name).trim() || fb;
 
   return {
-    background: read("--term-bg", read("--bg-terminal", fallback.background)),
-    foreground: read("--term-fg", read("--text-primary", fallback.foreground)),
-    cursor: read("--term-cursor", read("--accent-cyan", fallback.cursor)),
-    cursorAccent: read("--term-cursor-accent", read("--bg-terminal", fallback.cursorAccent)),
-    black: read("--term-black", read("--surface-input", fallback.black)),
-    red: read("--term-red", read("--red-rose", fallback.red)),
-    green: read("--term-green", read("--green-emerald", fallback.green)),
-    yellow: read("--term-yellow", read("--yellow-amber", fallback.yellow)),
-    blue: read("--term-blue", read("--accent-blue", fallback.blue)),
-    magenta: read("--term-magenta", read("--accent-pink", fallback.magenta)),
-    cyan: read("--term-cyan", read("--accent-cyan", fallback.cyan)),
-    white: read("--term-white", read("--text-secondary", fallback.white)),
-    brightBlack: read("--term-bright-black", read("--text-muted", fallback.brightBlack)),
-    brightRed: read("--term-bright-red", read("--red-rose", fallback.brightRed)),
-    brightGreen: read("--term-bright-green", read("--green-emerald", fallback.brightGreen)),
-    brightYellow: read("--term-bright-yellow", read("--yellow-amber", fallback.brightYellow)),
-    brightBlue: read("--term-bright-blue", read("--accent-blue", fallback.brightBlue)),
-    brightMagenta: read("--term-bright-magenta", read("--accent-pink", fallback.brightMagenta)),
-    brightCyan: read("--term-bright-cyan", read("--accent-cyan", fallback.brightCyan)),
-    brightWhite: read("--term-bright-white", read("--text-primary", fallback.brightWhite)),
+    background: read("--term-bg", fallback.background),
+    foreground: read("--term-fg", fallback.foreground),
+    cursor: read("--term-cursor", fallback.cursor),
+    cursorAccent: read("--term-cursor-accent", fallback.cursorAccent),
+    black: read("--term-black", fallback.black),
+    red: read("--term-red", fallback.red),
+    green: read("--term-green", fallback.green),
+    yellow: read("--term-yellow", fallback.yellow),
+    blue: read("--term-blue", fallback.blue),
+    magenta: read("--term-magenta", fallback.magenta),
+    cyan: read("--term-cyan", fallback.cyan),
+    white: read("--term-white", fallback.white),
+    brightBlack: read("--term-bright-black", fallback.brightBlack),
+    brightRed: read("--term-bright-red", fallback.brightRed),
+    brightGreen: read("--term-bright-green", fallback.brightGreen),
+    brightYellow: read("--term-bright-yellow", fallback.brightYellow),
+    brightBlue: read("--term-bright-blue", fallback.brightBlue),
+    brightMagenta: read("--term-bright-magenta", fallback.brightMagenta),
+    brightCyan: read("--term-bright-cyan", fallback.brightCyan),
+    brightWhite: read("--term-bright-white", fallback.brightWhite),
     selectionBackground: read("--selection-bg", fallback.selectionBackground),
   };
 }

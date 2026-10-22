@@ -130,21 +130,19 @@ test.describe("settings", () => {
     await openSection(page, "Appearance");
 
     const group = page.getByRole("radiogroup", { name: "Theme" });
-    await expect(group.getByRole("radio")).toHaveCount(5);
-    // Default theme is Graphite/zinc.
-    await expect(page.getByRole("radio", { name: "Graphite" })).toHaveAttribute(
+    await expect(group.getByRole("radio")).toHaveCount(3);
+    // Default theme is Dark.
+    await expect(page.getByRole("radio", { name: "Dark" })).toHaveAttribute(
       "aria-checked",
       "true",
     );
-    await expect(page.locator("html")).toHaveClass(/theme-zinc/);
-    expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe("zinc");
+    await expect(page.locator("html")).toHaveClass(/theme-dark/);
+    expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe("dark");
 
     const themeCases = [
-      { name: "Midnight", id: "cyberpunk", cls: "theme-cyberpunk" },
-      { name: "OLED black", id: "oled", cls: "theme-oled" },
-      { name: "Paper", id: "paper", cls: "theme-paper" },
-      { name: "Match system", id: "system", cls: "theme-(zinc|paper)" },
-      { name: "Graphite", id: "zinc", cls: "theme-zinc" },
+      { name: "Light", id: "light", cls: "theme-light" },
+      { name: "Match system", id: "system", cls: "theme-(dark|light)" },
+      { name: "Dark", id: "dark", cls: "theme-dark" },
     ];
 
     let saves = 0;
@@ -164,9 +162,9 @@ test.describe("settings", () => {
       });
     }
 
-    // Land on Midnight and verify the persisted theme survives a reload.
-    await page.getByRole("radio", { name: "Midnight" }).click();
-    await expect(page.locator("html")).toHaveClass(/theme-cyberpunk/);
+    // Land on Light and verify the persisted theme survives a reload.
+    await page.getByRole("radio", { name: "Light" }).click();
+    await expect(page.locator("html")).toHaveClass(/theme-light/);
     await app.waitForIpc("save_desktop_settings", ++saves);
 
     // Mark the current JS realm so the reload below is provably a fresh
@@ -179,14 +177,14 @@ test.describe("settings", () => {
     expect(await page.evaluate(() => "__realm" in window)).toBe(false);
 
     const classes = await page.evaluate(() => [...document.documentElement.classList]);
-    expect(classes).toContain("theme-cyberpunk");
-    expect(classes.filter((c) => c.startsWith("theme-"))).toEqual(["theme-cyberpunk"]);
-    expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe("cyberpunk");
+    expect(classes).toContain("theme-light");
+    expect(classes.filter((c) => c.startsWith("theme-"))).toEqual(["theme-light"]);
+    expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe("light");
 
     // The UI reflects the persisted selection too.
     await app.nav("Settings");
     await openSection(page, "Appearance");
-    await expect(page.getByRole("radio", { name: "Midnight" })).toHaveAttribute(
+    await expect(page.getByRole("radio", { name: "Light" })).toHaveAttribute(
       "aria-checked",
       "true",
     );

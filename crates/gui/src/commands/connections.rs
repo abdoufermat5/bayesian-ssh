@@ -224,7 +224,7 @@ pub async fn run_batch_command(
         .map(|c| (c.id.to_string(), c.clone()))
         .collect();
 
-    // Bound concurrency (same limit as ping_all_connections) so a large
+    // Bound concurrency so a large
     // selection does not fork one ssh process per host all at once.
     const MAX_CONCURRENCY: usize = 16;
     let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENCY));

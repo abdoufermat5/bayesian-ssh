@@ -12,7 +12,7 @@ import type {
 } from "$lib/types";
 import { notify } from "$lib/stores/notifications.svelte";
 import { refreshTeamsAttention, startTeamsAttentionPoller } from "$lib/stores/teamsAttention.svelte";
-import { applyTheme, applyDensity } from "$lib/utils/theme";
+import { applyTheme, applyDensity, normalizeTheme } from "$lib/utils/theme";
 import { isTerminalFocused } from "$lib/utils/terminal-focus";
 import { VIEW_ORDER } from "$lib/shortcuts";
 import { viewEnabled } from "$lib/viewMeta";
@@ -81,7 +81,6 @@ export class AppStateStore {
   stats = $state.raw<ConnectionStats | null>(null);
   history = $state.raw<SessionHistoryEntry[]>([]);
 
-  viewMode = $state<"list" | "grid">("list");
   sidebarCollapsed = $state(false);
   selectedHostIndex = $state(0);
 
@@ -140,7 +139,7 @@ export class AppStateStore {
   });
 
   settings = $state<DesktopSettings>({
-    theme: "zinc",
+    theme: "dark",
     density: "comfortable",
     auto_start_agent: false,
     custom_agent_socket: "",
@@ -162,7 +161,6 @@ export class AppStateStore {
     sftp_show_hidden_files: true,
     sftp_default_remote_path: "/",
     enable_sftp: true,
-    enable_tunneling: true,
     record_sessions: false,
     record_tags: [],
   });
@@ -331,7 +329,7 @@ export class AppStateStore {
     try {
       const loaded: Record<string, unknown> = await invoke("load_desktop_settings");
       this.settings = {
-        theme: (loaded.theme as string) || "zinc",
+        theme: normalizeTheme((loaded.theme as string) || "dark"),
         auto_start_agent: Boolean(loaded.auto_start_agent),
         density: (loaded.density as "compact" | "comfortable" | "spacious") || "comfortable",
         custom_agent_socket: (loaded.custom_agent_socket as string) || "",
@@ -353,7 +351,6 @@ export class AppStateStore {
         sftp_show_hidden_files: loaded.sftp_show_hidden_files !== false,
         sftp_default_remote_path: (loaded.sftp_default_remote_path as string) || "/",
         enable_sftp: loaded.enable_sftp !== false,
-        enable_tunneling: loaded.enable_tunneling !== false,
         record_sessions: Boolean(loaded.record_sessions),
         record_tags: Array.isArray(loaded.record_tags) ? (loaded.record_tags as string[]) : [],
       };

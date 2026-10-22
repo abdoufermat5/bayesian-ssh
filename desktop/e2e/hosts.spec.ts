@@ -122,26 +122,6 @@ test.describe("hosts list", () => {
     await expect(page.locator("tbody tr").first()).toContainText("prod-api-01");
   });
 
-  test("list/grid toggle switches the layout", async ({ app, page }) => {
-    await app.gotoApp();
-    await expect(page.locator("table")).toHaveCount(1);
-
-    await page.getByRole("button", { name: "Grid layout" }).click();
-    await expect(page.getByRole("button", { name: "Grid layout" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-    // Hosts are rendered as cards, no table rows.
-    await expect(page.locator("table")).toHaveCount(0);
-    await expect(page.locator("tbody tr")).toHaveCount(0);
-    await expect(page.locator("[data-host-selected]")).toHaveCount(HOSTS.length);
-    await expect(page.getByText("edge-proxy-eu")).toBeVisible();
-
-    await page.getByRole("button", { name: "List layout" }).click();
-    await expect(page.locator("table")).toHaveCount(1);
-    await expect(page.locator("tbody tr")).toHaveCount(HOSTS.length);
-  });
-
   test("keyboard selection (ArrowDown/j) and Enter connect to the selected host", async ({
     app,
     page,
@@ -336,8 +316,8 @@ test.describe("hosts keyboard", () => {
     await expect.poll(sessions).toBe(2);
   });
 
-  test("at 1024 px tags that don't fit go behind +N and stay selectable", async ({ app, page }) => {
-    await page.setViewportSize({ width: 1024, height: 768 });
+  test("in a narrow window tags that don't fit go behind +N and stay selectable", async ({ app, page }) => {
+    await page.setViewportSize({ width: 860, height: 768 });
     await app.gotoApp();
     const group = page.getByRole("group", { name: "Filter by tag" });
     const more = group.getByRole("button", { name: /more tags?$/ });
@@ -365,39 +345,7 @@ test.describe("hosts keyboard", () => {
   });
 });
 
-test.describe("hosts ping and batch", () => {
-  test.use({
-    mockOptions: {
-      overrides: {
-        // The shipped mock has no ping handler; supply one with a fixed result.
-        ping_all_connections: () =>
-          [
-            { connection_id: "id-0", success: true, latency_ms: 11 },
-            { connection_id: "id-1", success: true, latency_ms: 14 },
-            { connection_id: "id-2", success: true, latency_ms: 22 },
-            { connection_id: "id-3", success: true, latency_ms: 31 },
-            { connection_id: "id-4", success: true, latency_ms: 48 },
-            { connection_id: "id-5", success: false, latency_ms: 0 },
-            { connection_id: "id-6", success: false, latency_ms: 0 },
-            { connection_id: "id-7", success: false, latency_ms: 0 },
-          ],
-      },
-    },
-  });
-
-  test("Ping all reports reachable hosts", async ({ app, page }) => {
-    await app.gotoApp();
-    await page.getByRole("button", { name: "Ping", exact: true }).click();
-
-    await expect.poll(async () => (await app.ipcCalls("ping_all_connections")).length).toBe(1);
-    await expect(
-      page.getByRole("status").filter({ hasText: "5 of 8 hosts reachable" }),
-    ).toBeVisible();
-    await expect(page.getByRole("button", { name: "5/8 up" })).toBeVisible();
-    await expect(page.locator('[title^="Reachable ·"]')).toHaveCount(5);
-    await expect(page.locator('[title="Unreachable"]')).toHaveCount(3);
-  });
-
+test.describe("hosts batch", () => {
   test("Batch run opens the batch modal", async ({ app, page }) => {
     await app.gotoApp();
     await page.getByRole("button", { name: "Batch run" }).click();

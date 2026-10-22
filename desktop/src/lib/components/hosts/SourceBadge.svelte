@@ -67,7 +67,7 @@
   <span class="text-xs text-muted">Local</span>
 {:else if source.kind === "team"}
   <span
-    class="badge badge-accent max-w-full"
+    class="badge badge-neutral max-w-full"
     title={`Team ${source.name}: shared with bssh Teams; connecting is recorded in the team's signed audit log${detail ? ` · ${detail}` : ""}`}
   >
     <Users size={11} class="shrink-0" aria-hidden="true" />

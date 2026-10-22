@@ -2,14 +2,17 @@
 /* DESIGN TOKENS — single source of truth                        */
 /* ============================================================ */
 /* Rules of this file:
-   - The @theme block below IS the default theme (Graphite, class
-     `theme-zinc` for settings compatibility).
+   - The @theme block below IS the default theme (Dark, class
+     `theme-dark`). `html.theme-light` overrides it.
+   - One accent (blue) in every theme, used only for the primary
+     action, focus, selection and links. Everything else is neutral;
+     success/warning/error mark state, never decoration.
    - html.theme-* blocks override ONLY what differs per theme.
    - Never put raw color literals in components; always consume
      a token from here (directly or via a components.css class).
    - `--color-*` names generate Tailwind utilities (bg-/text-/border-).
-   - Plain vars (--bg-terminal, --text-*, --selection-bg …) are read
-     by lib/utils/theme.ts for the xterm palette and are NOT utilities.
+   - Plain --term-* vars are the xterm palette (read by
+     lib/utils/theme.ts) and are NOT utilities.
    ============================================================ */
 
 @theme {
@@ -24,56 +27,56 @@
      surface-hover    — hover fill for rows / icon buttons
      surface-active   — selected row / pressed state
      surface-terminal — xterm background                           */
-  --color-chrome: #0b0c0e;
-  --color-surface: #101114;
-  --color-panel: #15161a;
-  --color-surface-card: #15161a;
-  --color-surface-raised: #202127;
-  --color-surface-elevated: #202127;
-  --color-surface-input: #0d0e11;
-  --color-surface-subtle: #131417;
-  --color-surface-hover: #1c1d22;
-  --color-surface-active: #212228;
-  --color-surface-terminal: #0b0c0e;
+  --color-chrome: #0c0c0e;
+  --color-surface: #111113;
+  --color-panel: #161618;
+  --color-surface-card: #161618;
+  --color-surface-raised: #212124;
+  --color-surface-elevated: #212124;
+  --color-surface-input: #0e0e10;
+  --color-surface-subtle: #141416;
+  --color-surface-hover: #1d1d20;
+  --color-surface-active: #232326;
+  --color-surface-terminal: #0c0c0e;
 
   /* ---- Borders -------------------------------------------------- */
-  --color-border: #222329;
-  --color-border-subtle: #1a1b20;
-  --color-border-hover: #2e3038;
-  --color-border-strong: #383a43;
-  --color-border-focus: #7b88ff;
+  --color-border: #242427;
+  --color-border-subtle: #1b1b1e;
+  --color-border-hover: #303034;
+  --color-border-strong: #3a3a3f;
+  --color-border-focus: #5b8def;
   /* Control boundary (WCAG 1.4.11, ≥ 3:1 vs the surface it sits on):
      inputs, selects, secondary buttons, switch off-track, checkboxes.
      --color-border stays subtle and is for decorative panel edges only. */
-  --color-border-control: #70737e;
+  --color-border-control: #74747b;
   /* Edge of floating layers (surface-raised) */
-  --color-border-floating: #3d3f4a;
+  --color-border-floating: #3e3e44;
 
   /* ---- Text ------------------------------------------------------
      primary   — default foreground
      secondary — supporting text, labels
      muted     — metadata, captions, placeholders
      faint     — decorative / disabled                              */
-  --color-primary: #ededf0;
-  --color-secondary: #a3a4ad;
-  --color-muted: #9496a0; /* ≥ 4.5:1 on every surface incl. selected rows and floating layers (WCAG AA) */
-  --color-faint: #4a4c55;
+  --color-primary: #ececef;
+  --color-secondary: #a3a3ab;
+  --color-muted: #96969e; /* ≥ 4.5:1 on every surface incl. selected rows and floating layers (WCAG AA) */
+  --color-faint: #4b4b52;
 
   /* ---- Accent (brand / interactive) ----------------------------- */
-  --color-accent: #7b88ff;
-  --color-accent-hover: #929dff;
-  --color-accent-strong: #5e6ad2;
-  --color-accent-muted: rgba(123, 136, 255, 0.14);
-  --color-selected: rgba(123, 136, 255, 0.1); /* selected row / palette item tint (+ 2px accent rail) */
+  --color-accent: #5b8def;
+  --color-accent-hover: #7aa3f2;
+  --color-accent-strong: #2563eb;
+  --color-accent-muted: rgba(91, 141, 239, 0.14);
+  --color-selected: rgba(91, 141, 239, 0.1); /* selected row / palette item tint (+ 2px accent rail) */
   --color-on-accent: #ffffff;
-  --color-accent-strong-hover: #525ec4; /* primary button hover (≥ 4.5:1 with on-accent) */
+  --color-accent-strong-hover: #1d4ed8; /* primary button hover (≥ 4.5:1 with on-accent) */
   /* Danger button: fill + text are ≥ 4.5:1; --color-danger stays the
      lighter text/icon red for use on dark surfaces. */
   --color-danger-strong: #c73e47;
   --color-danger-strong-hover: #b3333c;
   --color-on-danger: #ffffff;
   /* Disabled text: legible (≥ 3:1) but visibly dimmer than --color-muted */
-  --color-disabled-fg: #70727c;
+  --color-disabled-fg: #74747b;
   /* Hover fill for items inside floating layers (lighter than surface-raised) */
   --color-hover-on-floating: rgba(255, 255, 255, 0.06);
 
@@ -169,175 +172,84 @@
 /* ============================================================ */
 /* THEME VARIANTS                                                */
 /* ============================================================ */
-/* Each theme restates the xterm palette vars (read by theme.ts). */
+/* Dark is the @theme default; this block only adds its terminal
+   palette. Light overrides surfaces, text, accent shades, state colors,
+   shadows and the terminal palette. ANSI colors stay distinct (they're
+   program output) but muted to sit with the UI. */
 
-html.theme-zinc {
-  --bg-terminal: #0b0c0e;
-  --accent-cyan: #5ccfe6;
-  --accent-pink: #d38aea;
-  --accent-blue: #7b9cff;
-  --green-emerald: #7fd88f;
-  --red-rose: #f07178;
-  --yellow-amber: #f2c46d;
-  --selection-bg: rgba(123, 136, 255, 0.28);
-
-  --text-primary: #e4e4e8;
-  --text-secondary: #a3a4ad;
-  --text-muted: #5c5e67;
-  --surface-input: #1a1b20;
+:root,
+html.theme-dark {
+  --selection-bg: rgba(91, 141, 239, 0.3);
+  --term-bg: #0c0c0e;
+  --term-fg: #d6d6db;
+  --term-cursor: #5b8def;
+  --term-cursor-accent: #0c0c0e;
+  --term-black: #2a2a2e;
+  --term-red: #e5636b;
+  --term-green: #5fb87a;
+  --term-yellow: #d4a54a;
+  --term-blue: #6b9bf0;
+  --term-magenta: #b388e0;
+  --term-cyan: #4fb3c4;
+  --term-white: #c4c4ca;
+  --term-bright-black: #6e6e76;
+  --term-bright-red: #f08a90;
+  --term-bright-green: #7fcf96;
+  --term-bright-yellow: #e6c071;
+  --term-bright-blue: #8db3f5;
+  --term-bright-magenta: #c9a6ec;
+  --term-bright-cyan: #74c7d5;
+  --term-bright-white: #f2f2f4;
 }
 
-/* Midnight — deep navy with cyan accent */
-html.theme-cyberpunk {
-  --color-chrome: #070b14;
-  --color-surface: #0a101c;
-  --color-panel: #0f1725;
-  --color-surface-card: #0f1725;
-  --color-surface-raised: #1a2740;
-  --color-surface-elevated: #1a2740;
-  --color-surface-input: #080d18;
-  --color-surface-subtle: #0d1422;
-  --color-surface-hover: #152033;
-  --color-surface-active: #1a273d;
-  --color-surface-terminal: #070b14;
-
-  --color-border: #1a2538;
-  --color-border-subtle: #131d2e;
-  --color-border-hover: #243350;
-  --color-border-strong: #2d3f60;
-  --color-border-focus: #4cc9f0;
-  --color-border-control: #5f7599;
-  --color-border-floating: #36496e;
-
-  --color-primary: #e6f1ff;
-  --color-secondary: #93a8c7;
-  --color-muted: #8fa3c2;
-  --color-faint: #3b4b66;
-
-  --color-accent: #4cc9f0;
-  --color-accent-hover: #72d6f5;
-  --color-accent-strong: #1fa6d4;
-  --color-accent-muted: rgba(76, 201, 240, 0.14);
-  --color-selected: rgba(76, 201, 240, 0.1); /* selected row / palette item tint (+ 2px accent rail) */
-  --color-on-accent: #04121c;
-  --color-accent-strong-hover: #3bb4de;
-  --color-disabled-fg: #667a9c;
-
-  --bg-terminal: #070b14;
-  --accent-cyan: #4cc9f0;
-  --accent-pink: #f472b6;
-  --accent-blue: #60a5fa;
-  --green-emerald: #34d399;
-  --red-rose: #fb7185;
-  --yellow-amber: #fbbf24;
-  --selection-bg: rgba(76, 201, 240, 0.25);
-
-  --text-primary: #e6f1ff;
-  --text-secondary: #93a8c7;
-  --text-muted: #4b5f80;
-  --surface-input: #131d2e;
-}
-
-/* OLED — true black chrome, stepped workspace surface, brand accent */
-html.theme-oled {
-  --color-chrome: #000000;
-  --color-surface: #08080a;
-  --color-panel: #0f0f12;
-  --color-surface-card: #0f0f12;
-  --color-surface-raised: #18181c;
-  --color-surface-elevated: #18181c;
-  --color-surface-input: #050506;
-  --color-surface-subtle: #0a0a0d;
-  --color-surface-hover: #141418;
-  --color-surface-active: #1c1c22;
-  --color-surface-terminal: #000000;
-
-  --color-border: #1f1f24;
-  --color-border-subtle: #141417;
-  --color-border-hover: #2c2c34;
-  --color-border-strong: #383842;
-  --color-border-focus: #7b88ff;
-  --color-border-control: #6e6e76;
-  --color-border-floating: #3c3c44;
-
-  --color-primary: #f4f4f5;
-  --color-secondary: #a1a1aa;
-  --color-muted: #96969f;
-  --color-faint: #3f3f45;
-
-  --color-accent: #7b88ff;
-  --color-accent-hover: #929dff;
-  --color-accent-strong: #5e6ad2;
-  --color-accent-muted: rgba(123, 136, 255, 0.14);
-  --color-selected: rgba(123, 136, 255, 0.1); /* selected row / palette item tint (+ 2px accent rail) */
-  --color-on-accent: #ffffff;
-  --color-accent-strong-hover: #525ec4;
-  --color-disabled-fg: #6e6e77;
-
-  --bg-terminal: #000000;
-  --accent-cyan: #67e8f9;
-  --accent-pink: #f0abfc;
-  --accent-blue: #93c5fd;
-  --green-emerald: #86efac;
-  --red-rose: #fca5a5;
-  --yellow-amber: #fde68a;
-  --selection-bg: rgba(123, 136, 255, 0.28);
-
-  --text-primary: #f4f4f5;
-  --text-secondary: #a1a1aa;
-  --text-muted: #52525b;
-  --surface-input: #18181b;
-}
-
-/* Paper — warm light theme, high-contrast text and readable terminal palette */
-html.theme-paper {
-  --color-chrome: #ebebe8;
-  --color-surface: #f4f4f0;
+/* Light — neutral grays, same blue accent */
+html.theme-light {
+  --color-chrome: #e9ebef;
+  --color-surface: #f1f2f4;
   --color-panel: #ffffff;
   --color-surface-card: #ffffff;
   --color-surface-raised: #ffffff;
   --color-surface-elevated: #ffffff;
   --color-surface-input: #ffffff;
-  --color-surface-subtle: #eeeee9;
-  --color-surface-hover: #e9e9e4;
-  --color-surface-active: #dfdfd9;
-  --color-surface-terminal: #f4f4f0;
+  --color-surface-subtle: #eceef1;
+  --color-surface-hover: #e6e8ec;
+  --color-surface-active: #dfe2e7;
+  --color-surface-terminal: #ffffff;
 
-  --color-border: #dcdcd6;
-  --color-border-subtle: #e6e6e0;
-  --color-border-hover: #cacac2;
-  --color-border-strong: #b2b2a8;
+  --color-border: #dde0e5;
+  --color-border-subtle: #e7e9ed;
+  --color-border-hover: #cdd1d8;
+  --color-border-strong: #b3b8c1;
   --color-border-focus: #2563eb;
-  --color-border-control: #6e6e76;
-  --color-border-floating: #c4c4bc;
+  --color-border-control: #6b7280;
+  --color-border-floating: #c8ccd4;
 
-  --color-primary: #18181b;
-  --color-secondary: #474950;
-  --color-muted: #52545c;
-  --color-faint: #989aa2;
+  --color-primary: #111827;
+  --color-secondary: #4b5563;
+  --color-muted: #565d6b;
+  --color-faint: #9ca3af;
 
-  --color-accent: #1d4ed8;
-  --color-accent-hover: #2563eb;
-  --color-accent-strong: #1e40af;
-  --color-accent-muted: rgba(29, 78, 216, 0.12);
-  --color-selected: rgba(29, 78, 216, 0.09); /* selected row / palette item tint */
+  --color-accent: #2563eb;
+  --color-accent-hover: #1d4ed8;
+  --color-accent-strong: #2563eb;
+  --color-accent-muted: rgba(37, 99, 235, 0.1);
+  --color-selected: rgba(37, 99, 235, 0.08); /* selected row / palette item tint (+ 2px accent rail) */
   --color-on-accent: #ffffff;
-  --color-accent-strong-hover: #172554;
-  --color-disabled-fg: #75777f;
+  --color-accent-strong-hover: #1d4ed8;
+  --color-disabled-fg: #7b8190;
 
   --color-hover-on-floating: rgba(0, 0, 0, 0.04);
 
   --color-success: #15803d;
   --color-running: #15803d;
-  --color-warning: #9a3412;
+  --color-warning: #b45309;
   --color-error: #b91c1c;
   --color-danger: #b91c1c;
   --color-danger-strong: #b91c1c;
   --color-danger-strong-hover: #991b1b;
   --color-on-danger: #ffffff;
-  --color-overlay: rgba(24, 24, 27, 0.4);
+  --color-overlay: rgba(17, 24, 39, 0.4);
 
-  /* Clean light-mode shadows */
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
   --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
@@ -345,41 +257,27 @@ html.theme-paper {
   --shadow-xl: 0 20px 48px -8px rgba(0, 0, 0, 0.16), 0 8px 20px -4px rgba(0, 0, 0, 0.08);
   --shadow-2xl: 0 24px 56px -12px rgba(0, 0, 0, 0.2);
 
-  /* Xterm terminal palette (read by theme.ts) */
-  --bg-terminal: #f4f4f0;
-  --term-bg: #f4f4f0;
-  --term-fg: #18181b;
-  --term-cursor: #1d4ed8;
-  --term-cursor-accent: #f4f4f0;
-  --term-black: #1c1d21;
-  --term-red: #c53030;
-  --term-green: #15803d;
-  --term-yellow: #b45309;
-  --term-blue: #1d4ed8;
-  --term-magenta: #9333ea;
-  --term-cyan: #0e7490;
-  --term-white: #64748b;
-  --term-bright-black: #64748b;
-  --term-bright-red: #e11d48;
-  --term-bright-green: #16a34a;
-  --term-bright-yellow: #d97706;
-  --term-bright-blue: #2563eb;
-  --term-bright-magenta: #a855f7;
-  --term-bright-cyan: #0891b2;
-  --term-bright-white: #0f172a;
-  --selection-bg: rgba(29, 78, 216, 0.2);
-
-  --text-primary: #18181b;
-  --text-secondary: #474950;
-  --text-muted: #52545c;
-  --surface-input: #ffffff;
-
-  --accent-cyan: #0e7490;
-  --accent-pink: #9333ea;
-  --accent-blue: #1d4ed8;
-  --green-emerald: #15803d;
-  --red-rose: #c53030;
-  --yellow-amber: #b45309;
+  --selection-bg: rgba(37, 99, 235, 0.2);
+  --term-bg: #ffffff;
+  --term-fg: #1f2328;
+  --term-cursor: #2563eb;
+  --term-cursor-accent: #ffffff;
+  --term-black: #24292f;
+  --term-red: #cf222e;
+  --term-green: #116329;
+  --term-yellow: #9a6700;
+  --term-blue: #0969da;
+  --term-magenta: #8250df;
+  --term-cyan: #1b7c83;
+  --term-white: #57606a;
+  --term-bright-black: #57606a;
+  --term-bright-red: #a40e26;
+  --term-bright-green: #1a7f37;
+  --term-bright-yellow: #7d4e00;
+  --term-bright-blue: #218bff;
+  --term-bright-magenta: #a475f9;
+  --term-bright-cyan: #3192aa;
+  --term-bright-white: #24292f;
 }
 
 /* ============================================================ */

@@ -60,7 +60,7 @@
   function reportChips(report: SyncReport): Array<{ label: string; cls: string }> {
     const chips = [
       { n: report.added, label: `${report.added} new`, cls: "badge-success" },
-      { n: report.updated, label: `${report.updated} updated`, cls: "badge-accent" },
+      { n: report.updated, label: `${report.updated} updated`, cls: "badge-neutral" },
       { n: report.unstaled, label: `${report.unstaled} back`, cls: "badge-success" },
       { n: report.stale, label: `${report.stale} missing → stale`, cls: "badge-warning" },
       { n: report.pruned, label: `${report.pruned} pruned`, cls: "badge-error" },

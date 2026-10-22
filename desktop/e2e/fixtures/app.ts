@@ -179,7 +179,6 @@ export const test = base.extend<Fixtures>({
           connections: "Hosts",
           terminals: "Terminals",
           sftp: "Files",
-          tunnels: "Tunnels",
           keys: "Keys",
           audit: "Security check",
           history: "History",

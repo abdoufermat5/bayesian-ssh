@@ -32,7 +32,7 @@ the app's CSP blocks remote fonts, and the UI must look the same offline.
 ┌ titlebar (bg-chrome, 38px): brand · command search (Ctrl/⌘K) · help · window buttons ┐
 ├ sidebar (bg-chrome, 224px / 56px collapsed) ┬ workspace (bg-surface, rounded top-left) ┤
 │ profile switcher                            │ .view                                   │
-│ Hosts · Terminals · Files · Tunnels         │   .view-header  title + count │ actions │
+│ Hosts · Terminals · Files                   │   .view-header  title + count │ actions │
 │ Security: Keys · Security check             │   .view-toolbar search · chips · sort   │
 │ Activity: History · Team: Teams             │   .view-body    scrolling content       │
 │ … agent / Kerberos status · Settings        │                                         │
@@ -62,7 +62,7 @@ Settings sits in a centred `.settings-frame` (960–1040 px), keeps one `.view-h
 
 Empty states use one pattern: `.empty-state` > `.empty-state-icon` + `.empty-state-title` (one sentence) + `.empty-state-action` (one primary action). Don't repeat the view header in it.
 
-Long lists are windowed: the Hosts table mounts only the rows in view (spacer rows keep the scroll height) and the grid mounts cards page by page as you scroll. Reuse that approach for any list that can reach hundreds of rows.
+Long lists are windowed: the Hosts table mounts only the rows in view (spacer rows keep the scroll height). Reuse that approach for any list that can reach hundreds of rows.
 
 ---
 
@@ -93,17 +93,17 @@ All colors are semantic `--color-*` tokens, which generate Tailwind utilities (`
 | `success` / `warning` / `error` (`running`, `danger` aliases) | State only: never decoration |
 | `overlay` | Modal backdrop |
 
-The default theme sets these in the `@theme` block. Each `html.theme-*` class overrides them and also defines the xterm palette variables (`--bg-terminal`, `--accent-*`, `--text-*`, `--selection-bg`) that `lib/utils/theme.ts` reads.
+**Color policy.** One accent, blue, in every theme. It marks the primary action, focus, selection, links and "in progress", nothing else. Labels and badges (team, role, source, counts) are neutral; their icon or text says what they are. `success` / `warning` / `error` mark state only. The only multicolor surface is the terminal, whose ANSI palette is program output; it is muted to sit with the UI.
+
+The `@theme` block is the Dark theme. `html.theme-light` overrides it. Each theme also defines the xterm palette (`--term-*`, `--selection-bg`) that `lib/utils/theme.ts` reads.
 
 | Theme id (persisted) | Name in UI | Character |
 | --- | --- | --- |
-| `zinc` | Graphite | Neutral graphite, periwinkle accent (default) |
-| `cyberpunk` | Midnight | Deep navy, cyan accent |
-| `oled` | OLED black | True black chrome, near-black workspace, periwinkle accent |
-| `paper` | Paper | Light theme, with its own light terminal palette (`--term-*`) so ANSI yellow, cyan and white stay readable |
-| `system` | Match system | Resolves to `paper` or `zinc` from `prefers-color-scheme` and follows changes live; `<html data-theme="system" data-resolved-theme="…">` |
+| `dark` | Dark | Neutral graphite, accent `#5b8def`, primary buttons `#2563eb` (default) |
+| `light` | Light | Neutral light grays, accent and primary buttons `#2563eb` |
+| `system` | Match system | Resolves to `light` or `dark` from `prefers-color-scheme` and follows changes live; `<html data-theme="system" data-resolved-theme="…">` |
 
-`THEME_OPTIONS` in `lib/utils/theme.ts` is the one list of pickable themes (onboarding, Appearance and the palette read it). A stored `slate` (removed) loads as `cyberpunk`.
+`THEME_OPTIONS` in `lib/utils/theme.ts` is the one list of pickable themes (onboarding, Appearance and the palette read it). Themes from earlier versions load as their replacement (`zinc`, `cyberpunk`, `oled`, `slate` → `dark`; `paper` → `light`), in both the Rust settings loader and `normalizeTheme`.
 
 **Density:** `data-density` on `<html>` (`compact` / `comfortable` / `spacious`) sets `--row-height` to 32 / 40 / 48 px. List and table rows use `height: var(--row-height, 40px)`.
 

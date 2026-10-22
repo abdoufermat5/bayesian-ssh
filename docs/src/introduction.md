@@ -21,7 +21,7 @@
 - **Tag-based organization** with grouping and multi-select
 - **Complete connection history** with statistics
 - **SQLite database** for persistence
-- **Desktop GUI** with connections, history, SFTP browser, and tunnels
+- **Desktop GUI** with connections, terminals, history, an SFTP browser and Teams
 
 ## Documentation Overview
 

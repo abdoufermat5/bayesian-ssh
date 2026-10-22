@@ -166,7 +166,7 @@ pub struct AgentStatus {
 #[derive(Serialize, Deserialize, Clone)]
 pub struct DesktopSettings {
     #[serde(default = "default_theme", deserialize_with = "deserialize_theme")]
-    pub theme: String, // "zinc" | "cyberpunk" | "oled" | "paper" | "system"
+    pub theme: String, // "dark" | "light" | "system"
     #[serde(default = "default_density")]
     pub density: String, // "compact" | "comfortable" | "spacious"
     pub auto_start_agent: bool,
@@ -206,8 +206,6 @@ pub struct DesktopSettings {
     pub sftp_default_remote_path: String,
     #[serde(default = "default_enable_sftp")]
     pub enable_sftp: bool,
-    #[serde(default = "default_enable_tunneling")]
-    pub enable_tunneling: bool,
     #[serde(default)]
     pub record_sessions: bool,
     #[serde(default)]
@@ -226,27 +224,24 @@ pub fn default_enable_sftp() -> bool {
     true
 }
 
-pub fn default_enable_tunneling() -> bool {
-    true
-}
-
 pub fn default_timezone() -> String {
     "system".to_string()
 }
 pub fn default_theme() -> String {
-    "zinc".to_string()
+    "dark".to_string()
 }
 
+/// Themes from earlier versions load as the theme that replaced them.
 pub fn deserialize_theme<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
     let s = String::deserialize(deserializer)?;
-    if s == "slate" {
-        Ok("cyberpunk".to_string())
-    } else {
-        Ok(s)
-    }
+    Ok(match s.as_str() {
+        "zinc" | "cyberpunk" | "oled" | "slate" => "dark".to_string(),
+        "paper" => "light".to_string(),
+        _ => s,
+    })
 }
 
 pub fn default_density() -> String {
@@ -300,7 +295,7 @@ impl Default for DesktopSettings {
             .ok()
             .filter(|s| !s.is_empty());
         Self {
-            theme: "zinc".to_string(),
+            theme: default_theme(),
             auto_start_agent: false,
             custom_agent_socket: current_sock,
             kerberos_warn_minutes: default_kerberos_warn_minutes(),
@@ -322,7 +317,6 @@ impl Default for DesktopSettings {
             sftp_show_hidden_files: default_sftp_show_hidden_files(),
             sftp_default_remote_path: default_sftp_default_remote_path(),
             enable_sftp: default_enable_sftp(),
-            enable_tunneling: default_enable_tunneling(),
             record_sessions: false,
             record_tags: Vec::new(),
             density: default_density(),
@@ -401,11 +395,21 @@ mod tests {
     }
 
     #[test]
-    fn settings_migrates_slate_theme_to_cyberpunk() {
-        let mut saved = serde_json::to_value(DesktopSettings::default()).unwrap();
-        saved["theme"] = serde_json::json!("slate");
-        let loaded: DesktopSettings = serde_json::from_value(saved).unwrap();
-        assert_eq!(loaded.theme, "cyberpunk");
+    fn settings_migrate_removed_themes() {
+        for (stored, expected) in [
+            ("zinc", "dark"),
+            ("cyberpunk", "dark"),
+            ("oled", "dark"),
+            ("slate", "dark"),
+            ("paper", "light"),
+            ("system", "system"),
+            ("light", "light"),
+        ] {
+            let mut saved = serde_json::to_value(DesktopSettings::default()).unwrap();
+            saved["theme"] = serde_json::json!(stored);
+            let loaded: DesktopSettings = serde_json::from_value(saved).unwrap();
+            assert_eq!(loaded.theme, expected, "stored {stored}");
+        }
     }
 
     #[test]
@@ -418,5 +422,14 @@ mod tests {
         });
         let loaded: DesktopSettings = serde_json::from_value(saved).unwrap();
         assert_eq!(loaded.density, "comfortable");
+    }
+
+    #[test]
+    fn settings_saved_with_removed_fields_still_load() {
+        // `enable_tunneling` went away with the Tunnels view.
+        let mut saved = serde_json::to_value(DesktopSettings::default()).unwrap();
+        saved["enable_tunneling"] = serde_json::json!(false);
+        let loaded: Result<DesktopSettings, _> = serde_json::from_value(saved);
+        assert!(loaded.is_ok());
     }
 }

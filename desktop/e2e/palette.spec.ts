@@ -91,8 +91,8 @@ test.describe("command palette", () => {
     await app.gotoApp();
     await app.openPalette();
     const dialog = page.getByRole("dialog", { name: "Command palette" });
-    await dialog.getByRole("combobox", { name: "Search commands" }).fill("Theme: OLED");
+    await dialog.getByRole("combobox", { name: "Search commands" }).fill("Theme: Light");
     await page.keyboard.press("Enter");
-    await expect(page.locator("html")).toHaveClass(/theme-oled/);
+    await expect(page.locator("html")).toHaveClass(/theme-light/);
   });
 });

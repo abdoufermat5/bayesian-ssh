@@ -36,7 +36,6 @@ export const VIEW_ORDER: AppTab[] = [
   "connections",
   "terminals",
   "sftp",
-  "tunnels",
   "keys",
   "audit",
   "history",

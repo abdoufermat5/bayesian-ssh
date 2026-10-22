@@ -75,7 +75,7 @@
   ];
   let activeEnv = "default";
   let settings = {
-    theme: "zinc",
+    theme: "dark",
     auto_start_agent: false,
     kerberos_warn_minutes: 15,
     monitor_kerberos: true,
@@ -83,7 +83,6 @@
     default_port: 22,
     timezone: "system",
     enable_sftp: true,
-    enable_tunneling: true,
     onboarding_complete: true,
   };
   let onboardingComplete = false;
@@ -363,12 +362,6 @@
       warnings: window.__BATCH_ENV_WARN ? ["SSH_AUTH_SOCK is not set; key-based hosts may prompt for a passphrase."] : [],
     }),
     count_active_sessions: () => 0,
-    ping_all_connections: () =>
-      conns.map((c, i) => ({
-        connection_id: c.id,
-        success: c.name !== "build-runner",
-        latency_ms: 8 + i * 3,
-      })),
     close_all_ptys: () => 1,
     // Fake PTY lifecycle; set window.__MOCK_DETACHED / __MOCK_POPOUTS.
     spawn_pty: () => null,
