@@ -55,6 +55,12 @@ async-trait = "0.1"
 # bssh Teams wire contract
 bssh-teams-proto = { version = "0.1.0", path = "../teams-proto" }
 
+# HTTPS client for bssh Teams. rustls-no-provider: the ring provider is already
+# in the tree (see russh below); the default feature would pull aws-lc-sys.
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider"] }
+# Provider for reqwest above (installed once in TeamsClient::new).
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+
 # Native SSH
 # ring instead of the default aws-lc-rs: ring is already in the tree via rustls,
 # and aws-lc-sys needs cmake + a C toolchain in every packaging build.

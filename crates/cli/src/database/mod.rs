@@ -22,7 +22,7 @@ pub use search::{Prediction, RankContext, ScoreBreakdown, SearchField};
 pub use session::live_pid;
 pub use source::SourceSummary;
 
-const SCHEMA_VERSION: i32 = 7;
+const SCHEMA_VERSION: i32 = 8;
 
 /// How long a statement waits on a lock held by another process (the CLI
 /// and the desktop app share the same database file) before failing with
@@ -158,6 +158,10 @@ impl Database {
         if current < 7 {
             self.migrate_v7_inventory_sources()?;
             self.set_schema_version(7)?;
+        }
+        if current < 8 {
+            self.migrate_v8_teams_tables()?;
+            self.set_schema_version(8)?;
         }
         Ok(())
     }
@@ -352,6 +356,14 @@ impl Database {
              ALTER TABLE connections ADD COLUMN external_id TEXT;
              ALTER TABLE connections ADD COLUMN stale_since TEXT;",
         )?;
+        Ok(())
+    }
+
+    /// v8: bssh Teams. Encrypted vault copy, wrapped keys, sync outbox and the
+    /// audit chain. No plaintext and no unwrapped key is ever stored here.
+    fn migrate_v8_teams_tables(&self) -> Result<()> {
+        self.conn
+            .execute_batch(crate::services::teams::store::SCHEMA_V8)?;
         Ok(())
     }
 
@@ -591,5 +603,66 @@ mod tests {
             ..Default::default()
         };
         assert!(Database::new(&config).is_err());
+    }
+
+    #[test]
+    fn v7_database_upgrades_to_v8_with_teams_tables() {
+        let dir = tempdir().unwrap();
+        let config = AppConfig {
+            database_path: dir.path().join("test.db"),
+            ..Default::default()
+        };
+        // Build a genuine v7 database by running migrations 1..=7 only.
+        {
+            let db = Database::open(&config).unwrap();
+            db.migrate_v1_create_core_tables().unwrap();
+            db.set_schema_version(1).unwrap();
+            db.migrate_v2_add_sessions_transport().unwrap();
+            db.set_schema_version(2).unwrap();
+            db.migrate_v3_create_tags_and_status().unwrap();
+            db.set_schema_version(3).unwrap();
+            db.migrate_v4_purge_orphans().unwrap();
+            db.set_schema_version(4).unwrap();
+            db.migrate_v5_session_recordings().unwrap();
+            db.set_schema_version(5).unwrap();
+            db.migrate_v6_session_context().unwrap();
+            db.set_schema_version(6).unwrap();
+            db.migrate_v7_inventory_sources().unwrap();
+            db.set_schema_version(7).unwrap();
+            assert_eq!(db.current_schema_version().unwrap(), 7);
+            let teams: i64 = db
+                .conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE name = 'teams_local'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(teams, 0, "v7 has no teams tables");
+            db.add_connection(&sample("keepme")).unwrap();
+        }
+
+        let db = Database::new(&config).unwrap();
+        assert_eq!(db.current_schema_version().unwrap(), 8);
+        for table in [
+            "teams_local",
+            "team_wrapped_keys",
+            "vault_entries",
+            "vault_outbox",
+            "audit_outbox",
+            "audit_chain",
+            "device_keys",
+        ] {
+            let n: i64 = db
+                .conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                    [table],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(n, 1, "missing table {table}");
+        }
+        assert!(db.get_connection("keepme").unwrap().is_some());
     }
 }
