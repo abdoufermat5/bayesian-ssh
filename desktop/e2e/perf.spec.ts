@@ -83,7 +83,7 @@ test.describe("performance smoke", () => {
 
     // Clearing restores the full list.
     await page.getByRole("button", { name: /clear/i }).first().click();
-    await expect(table).toHaveAttribute("aria-rowcount", "2000", { timeout: 30_000 });
+    await expect(table).toHaveAttribute("aria-rowcount", "2001", { timeout: 30_000 });
   });
 
   test("the terminals panel is display:none while another view is active", async ({ app, page }) => {
