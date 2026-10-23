@@ -14,6 +14,47 @@ bastions, Kerberos, file transfers and session history. **bssh Teams** shares co
 with your team, end-to-end encrypted.
 
 **Documentation: [bssh.abdoufermat.dev](https://bssh.abdoufermat.dev)**
+## Features
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="assets/icon-search.svg" width="36" align="left" style="margin-right: 10px;" />
+      <strong>Bayesian Predictive Search</strong><br/>
+      Finds the host you mean. Results are ranked by recency and frequency using Bayesian inference.
+    </td>
+    <td width="50%" valign="top">
+      <img src="assets/icon-connect.svg" width="36" align="left" style="margin-right: 10px;" />
+      <strong>Instant &amp; Secure Connect</strong><br/>
+      Fast session bootstrap with native libssh2 and robust system SSH fallbacks.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="assets/icon-bastion.svg" width="36" align="left" style="margin-right: 10px;" />
+      <strong>Bastions &amp; Kerberos Built-in</strong><br/>
+      Automated jump hosts, multi-hop tunnels, and Kerberos ticket lifecycle handling.
+    </td>
+    <td width="50%" valign="top">
+      <img src="assets/icon-vault.svg" width="36" align="left" style="margin-right: 10px;" />
+      <strong>bssh Teams &amp; E2EE Vault</strong><br/>
+      Share connection inventories with end-to-end zero-knowledge encryption and signed audit logs.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="assets/icon-tui.svg" width="36" align="left" style="margin-right: 10px;" />
+      <strong>Keyboard-First Terminal &amp; Desktop</strong><br/>
+      Full-featured interactive TUI for terminals and a native modern desktop application.
+    </td>
+    <td width="50%" valign="top">
+      <img src="assets/icon-history.svg" width="36" align="left" style="margin-right: 10px;" />
+      <strong>Session History &amp; Analytics</strong><br/>
+      Audit session durations, exit codes, and track connection telemetry over time.
+    </td>
+  </tr>
+</table>
+
 
 ## Install
 

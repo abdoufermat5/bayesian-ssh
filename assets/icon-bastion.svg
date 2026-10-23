@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="bg-bastion" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0e172a"/>
+      <stop offset="100%" stop-color="#060913"/>
+    </linearGradient>
+    <linearGradient id="cyan-blue-bastion" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#2563eb"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#bg-bastion)"/>
+  <rect width="64" height="64" rx="16" fill="none" stroke="#1e293b" stroke-width="1.5"/>
+  <rect x="1.5" y="1.5" width="61" height="61" rx="14.5" fill="none" stroke="url(#cyan-blue-bastion)" stroke-width="1" stroke-opacity="0.4"/>
+
+  <!-- Bastion Gateway Castle / Shield Tower in Center -->
+  <path d="M 24 22 L 24 16 L 28 16 L 28 19 L 32 19 L 32 16 L 36 16 L 36 19 L 40 19 L 40 16 L 44 16 L 44 22 L 42 46 L 26 46 Z" 
+        fill="#0a1428" stroke="#38bdf8" stroke-width="2" stroke-linejoin="round"/>
+  
+  <!-- Gateway Arch -->
+  <path d="M 30 46 L 30 36 C 30 33 34 33 34 36 L 34 46" fill="#1e293b" stroke="#ffffff" stroke-width="1.5"/>
+
+  <!-- Multi-hop Jump Tunnel Vector -->
+  <circle cx="10" cy="34" r="3" fill="#38bdf8"/>
+  <path d="M 13 34 L 25 34" stroke="#38bdf8" stroke-width="1.8" stroke-dasharray="2 2"/>
+
+  <circle cx="54" cy="34" r="3" fill="#10b981"/>
+  <path d="M 42 34 L 51 34" stroke="#10b981" stroke-width="1.8" stroke-dasharray="2 2"/>
+</svg>

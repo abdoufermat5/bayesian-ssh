@@ -1,16 +1,33 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
-  <rect x="4" y="8" width="56" height="48" rx="4" fill="#000" stroke="#444" stroke-width="2"/>
-  <rect x="8" y="12" width="12" height="4" rx="1" fill="#444"/>
-  <rect x="22" y="12" width="12" height="4" rx="1" fill="#555"/>
-  <rect x="36" y="12" width="12" height="4" rx="1" fill="#666"/>
-  
-  <!-- List items -->
-  <rect x="8" y="22" width="48" height="8" rx="2" fill="#333"/>
-  <text x="12" y="29" font-family="monospace" font-size="6" fill="#fff">▶ server-prod</text>
-  
-  <rect x="8" y="32" width="48" height="8" rx="2" fill="transparent"/>
-  <text x="12" y="39" font-family="monospace" font-size="6" fill="#666">  server-staging</text>
-  
-  <rect x="8" y="42" width="48" height="8" rx="2" fill="transparent"/>
-  <text x="12" y="49" font-family="monospace" font-size="6" fill="#666">  database-main</text>
+  <defs>
+    <linearGradient id="bg-tui" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0e172a"/>
+      <stop offset="100%" stop-color="#060913"/>
+    </linearGradient>
+    <linearGradient id="cyan-blue-tui" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#2563eb"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#bg-tui)"/>
+  <rect width="64" height="64" rx="16" fill="none" stroke="#1e293b" stroke-width="1.5"/>
+  <rect x="1.5" y="1.5" width="61" height="61" rx="14.5" fill="none" stroke="url(#cyan-blue-tui)" stroke-width="1" stroke-opacity="0.4"/>
+
+  <!-- Terminal Window -->
+  <rect x="8" y="12" width="48" height="40" rx="6" fill="#080d19" stroke="url(#cyan-blue-tui)" stroke-width="2"/>
+  <!-- Header bar -->
+  <line x1="8" y1="22" x2="56" y2="22" stroke="#1e293b" stroke-width="1.5"/>
+  <circle cx="14" cy="17" r="1.8" fill="#f43f5e"/>
+  <circle cx="19" cy="17" r="1.8" fill="#f59e0b"/>
+  <circle cx="24" cy="17" r="1.8" fill="#10b981"/>
+
+  <!-- Selected row with accent rail -->
+  <rect x="12" y="26" width="40" height="9" rx="2" fill="#172554"/>
+  <line x1="12" y1="26" x2="12" y2="35" stroke="#38bdf8" stroke-width="2.5"/>
+  <path d="M 16 29 L 19 30.5 L 16 32" fill="none" stroke="#38bdf8" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="22" y1="30.5" x2="44" y2="30.5" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+
+  <!-- Sub rows -->
+  <line x1="16" y1="39" x2="38" y2="39" stroke="#64748b" stroke-width="1.5" stroke-linecap="round" stroke-opacity="0.6"/>
+  <line x1="16" y1="45" x2="32" y2="45" stroke="#64748b" stroke-width="1.5" stroke-linecap="round" stroke-opacity="0.4"/>
 </svg>
