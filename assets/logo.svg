@@ -1,99 +1,30 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <defs>
-    <!-- Base Canvas Background -->
-    <linearGradient id="canvasBg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0e1526"/>
-      <stop offset="40%" stop-color="#080c16"/>
-      <stop offset="100%" stop-color="#020408"/>
-    </linearGradient>
+  <!-- Pure matte dark zinc frame -->
+  <rect x="24" y="24" width="464" height="464" rx="96" fill="#09090b" stroke="#27272a" stroke-width="2"/>
 
-    <!-- Edge Bezel -->
-    <linearGradient id="bezelRing" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.8"/>
-      <stop offset="30%" stop-color="#2563eb" stop-opacity="0.3"/>
-      <stop offset="70%" stop-color="#6366f1" stop-opacity="0.2"/>
-      <stop offset="100%" stop-color="#0ea5e9" stop-opacity="0.5"/>
-    </linearGradient>
+  <!-- Mathematical Gaussian Bell Curve (Solid technical hairline) -->
+  <path d="M 88 240 
+           C 152 240, 192 220, 224 150 
+           C 238 120, 248 110, 256 110 
+           C 264 110, 274 120, 288 150 
+           C 320 220, 360 240, 424 240" 
+        fill="none" stroke="#3f3f46" stroke-width="3" stroke-linecap="round"/>
 
-    <!-- Gaussian Area Density Fill -->
-    <linearGradient id="densityFill" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.35"/>
-      <stop offset="40%" stop-color="#2563eb" stop-opacity="0.15"/>
-      <stop offset="80%" stop-color="#1e1b4b" stop-opacity="0.04"/>
-      <stop offset="100%" stop-color="#020408" stop-opacity="0.0"/>
-    </linearGradient>
+  <!-- Prior distribution (dashed wider curve) -->
+  <path d="M 96 240 
+           C 160 240, 196 215, 226 175 
+           C 242 155, 250 150, 256 150 
+           C 262 150, 270 155, 286 175 
+           C 316 215, 352 240, 416 240" 
+        fill="none" stroke="#27272a" stroke-width="2" stroke-dasharray="4 5"/>
 
-    <!-- Main Posterior Curve Gradient -->
-    <linearGradient id="mainCurve" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#0284c7"/>
-      <stop offset="25%" stop-color="#38bdf8"/>
-      <stop offset="50%" stop-color="#bae6fd"/>
-      <stop offset="75%" stop-color="#38bdf8"/>
-      <stop offset="100%" stop-color="#6366f1"/>
-    </linearGradient>
+  <!-- Single peak point at the MAP mode (Bayesian Target Lock) -->
+  <circle cx="256" cy="110" r="7" fill="#2563eb"/>
 
-    <!-- Core Ambient Glow -->
-    <radialGradient id="coreAura" cx="50%" cy="48%" r="45%">
-      <stop offset="0%" stop-color="#0284c7" stop-opacity="0.38"/>
-      <stop offset="45%" stop-color="#1d4ed8" stop-opacity="0.12"/>
-      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
-    </radialGradient>
+  <!-- Clean, bold geometric prompt chevron in pure white -->
+  <path d="M 160 176 L 256 260 L 160 344" 
+        fill="none" stroke="#ffffff" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
 
-    <!-- Peak Mode Highlight Glow -->
-    <radialGradient id="peakAura" cx="50%" cy="34%" r="20%">
-      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.8"/>
-      <stop offset="50%" stop-color="#2563eb" stop-opacity="0.2"/>
-      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
-    </radialGradient>
-
-    <!-- Prompt Shadow -->
-    <filter id="heroShadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.85"/>
-    </filter>
-  </defs>
-
-  <!-- Squircle Base with Double Bezel -->
-  <rect x="18" y="18" width="476" height="476" rx="112" fill="url(#canvasBg)"/>
-  <rect x="18" y="18" width="476" height="476" rx="112" fill="url(#coreAura)"/>
-  <rect x="18" y="18" width="476" height="476" rx="112" fill="none" stroke="url(#bezelRing)" stroke-width="2.5"/>
-  <rect x="25" y="25" width="462" height="462" rx="105" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="1.5"/>
-
-  <!-- Subtle Equipotential Confidence Arcs -->
-  <circle cx="256" cy="170" r="65" fill="none" stroke="rgba(56, 189, 248, 0.15)" stroke-width="1" stroke-dasharray="3 4"/>
-  <circle cx="256" cy="170" r="120" fill="none" stroke="rgba(56, 189, 248, 0.1)" stroke-width="1" stroke-dasharray="3 5"/>
-
-  <!-- Mathematical Baseline & Vertical Center Mean Axis (μ) -->
-  <line x1="56" y1="370" x2="456" y2="370" stroke="rgba(148, 163, 184, 0.22)" stroke-width="1.5"/>
-  <line x1="256" y1="120" x2="256" y2="370" stroke="rgba(56, 189, 248, 0.22)" stroke-width="1.5" stroke-dasharray="4 4"/>
-
-  <!-- Secondary Prior Distribution Curve (Dashed) -->
-  <path d="M 56.0 345.8 L 61.0 343.9 L 66.0 341.9 L 71.0 339.8 L 76.0 337.7 L 81.0 335.4 L 86.0 333.1 L 91.0 330.7 L 96.0 328.2 L 101.0 325.6 L 106.0 323.0 L 111.0 320.3 L 116.0 317.6 L 121.0 314.8 L 126.0 311.9 L 131.0 309.1 L 136.0 306.2 L 141.0 303.3 L 146.0 300.4 L 151.0 297.5 L 156.0 294.6 L 161.0 291.8 L 166.0 289.0 L 171.0 286.3 L 176.0 283.6 L 181.0 281.1 L 186.0 278.6 L 191.0 276.2 L 196.0 274.0 L 201.0 271.9 L 206.0 269.9 L 211.0 268.1 L 216.0 266.5 L 221.0 265.0 L 226.0 263.7 L 231.0 262.6 L 236.0 261.7 L 241.0 260.9 L 246.0 260.4 L 251.0 260.1 L 256.0 260.0 L 261.0 260.1 L 266.0 260.4 L 271.0 260.9 L 276.0 261.7 L 281.0 262.6 L 286.0 263.7 L 291.0 265.0 L 296.0 266.5 L 301.0 268.1 L 306.0 269.9 L 311.0 271.9 L 316.0 274.0 L 321.0 276.2 L 326.0 278.6 L 331.0 281.1 L 336.0 283.6 L 341.0 286.3 L 346.0 289.0 L 351.0 291.8 L 356.0 294.6 L 361.0 297.5 L 366.0 300.4 L 371.0 303.3 L 376.0 306.2 L 381.0 309.1 L 386.0 311.9 L 391.0 314.8 L 396.0 317.6 L 401.0 320.3 L 406.0 323.0 L 411.0 325.6 L 416.0 328.2 L 421.0 330.7 L 426.0 333.1 L 431.0 335.4 L 436.0 337.7 L 441.0 339.8 L 446.0 341.9 L 451.0 343.9 L 456.0 345.8" fill="none" stroke="rgba(148, 163, 184, 0.28)" stroke-width="2" stroke-dasharray="6 6"/>
-  
-  <!-- Smooth Probability Area Under Bell Curve -->
-  <path d="M 56.0 365.8 L 61.0 364.9 L 66.0 363.9 L 71.0 362.6 L 76.0 361.2 L 81.0 359.6 L 86.0 357.7 L 91.0 355.5 L 96.0 353.1 L 101.0 350.3 L 106.0 347.2 L 111.0 343.7 L 116.0 339.8 L 121.0 335.5 L 126.0 330.8 L 131.0 325.7 L 136.0 320.1 L 141.0 314.1 L 146.0 307.7 L 151.0 300.9 L 156.0 293.8 L 161.0 286.2 L 166.0 278.4 L 171.0 270.4 L 176.0 262.1 L 181.0 253.7 L 186.0 245.3 L 191.0 236.9 L 196.0 228.7 L 201.0 220.6 L 206.0 212.9 L 211.0 205.5 L 216.0 198.6 L 221.0 192.3 L 226.0 186.6 L 231.0 181.7 L 236.0 177.6 L 241.0 174.3 L 246.0 171.9 L 251.0 170.5 L 256.0 170.0 L 261.0 170.5 L 266.0 171.9 L 271.0 174.3 L 276.0 177.6 L 281.0 181.7 L 286.0 186.6 L 291.0 192.3 L 296.0 198.6 L 301.0 205.5 L 306.0 212.9 L 311.0 220.6 L 316.0 228.7 L 321.0 236.9 L 326.0 245.3 L 331.0 253.7 L 336.0 262.1 L 341.0 270.4 L 346.0 278.4 L 351.0 286.2 L 356.0 293.8 L 361.0 300.9 L 366.0 307.7 L 371.0 314.1 L 376.0 320.1 L 381.0 325.7 L 386.0 330.8 L 391.0 335.5 L 396.0 339.8 L 401.0 343.7 L 406.0 347.2 L 411.0 350.3 L 416.0 353.1 L 421.0 355.5 L 426.0 357.7 L 431.0 359.6 L 436.0 361.2 L 441.0 362.6 L 446.0 363.9 L 451.0 364.9 L 456.0 365.8 L 456 370 L 56 370 Z" fill="url(#densityFill)"/>
-  
-  <!-- Primary Bayesian Posterior Bell Curve -->
-  <path d="M 56.0 365.8 L 61.0 364.9 L 66.0 363.9 L 71.0 362.6 L 76.0 361.2 L 81.0 359.6 L 86.0 357.7 L 91.0 355.5 L 96.0 353.1 L 101.0 350.3 L 106.0 347.2 L 111.0 343.7 L 116.0 339.8 L 121.0 335.5 L 126.0 330.8 L 131.0 325.7 L 136.0 320.1 L 141.0 314.1 L 146.0 307.7 L 151.0 300.9 L 156.0 293.8 L 161.0 286.2 L 166.0 278.4 L 171.0 270.4 L 176.0 262.1 L 181.0 253.7 L 186.0 245.3 L 191.0 236.9 L 196.0 228.7 L 201.0 220.6 L 206.0 212.9 L 211.0 205.5 L 216.0 198.6 L 221.0 192.3 L 226.0 186.6 L 231.0 181.7 L 236.0 177.6 L 241.0 174.3 L 246.0 171.9 L 251.0 170.5 L 256.0 170.0 L 261.0 170.5 L 266.0 171.9 L 271.0 174.3 L 276.0 177.6 L 281.0 181.7 L 286.0 186.6 L 291.0 192.3 L 296.0 198.6 L 301.0 205.5 L 306.0 212.9 L 311.0 220.6 L 316.0 228.7 L 321.0 236.9 L 326.0 245.3 L 331.0 253.7 L 336.0 262.1 L 341.0 270.4 L 346.0 278.4 L 351.0 286.2 L 356.0 293.8 L 361.0 300.9 L 366.0 307.7 L 371.0 314.1 L 376.0 320.1 L 381.0 325.7 L 386.0 330.8 L 391.0 335.5 L 396.0 339.8 L 401.0 343.7 L 406.0 347.2 L 411.0 350.3 L 416.0 353.1 L 421.0 355.5 L 426.0 357.7 L 431.0 359.6 L 436.0 361.2 L 441.0 362.6 L 446.0 363.9 L 451.0 364.9 L 456.0 365.8" fill="none" stroke="url(#mainCurve)" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
-
-  <!-- Maximum A Posteriori (MAP) Peak Beacon -->
-  <circle cx="256" cy="170" r="38" fill="url(#peakAura)"/>
-  <circle cx="256" cy="170" r="14" fill="#070c18" stroke="#38bdf8" stroke-width="4"/>
-  <circle cx="256" cy="170" r="6" fill="#ffffff"/>
-
-  <!-- HERO CENTER: Bold Command Prompt Chevron '>' & Glowing Cursor '_' -->
-  <g filter="url(#heroShadow)" transform="translate(178, 240)">
-    <!-- Chevron '>' with crisp geometry and rounded caps -->
-    <path d="M 10 10 L 66 55 L 10 100" 
-          fill="none" stroke="#ffffff" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
-    <!-- Cursor Block '_' in bright electric blue -->
-    <rect x="86" y="82" width="66" height="18" rx="5" fill="#38bdf8"/>
-    <rect x="88" y="84" width="62" height="4" rx="2" fill="#e0f2fe" opacity="0.7"/>
-  </g>
-
-  <!-- Baseline Discrete Standard Deviation Nodes (-2σ, -σ, μ, +σ, +2σ) -->
-  <circle cx="112" cy="370" r="4" fill="#64748b"/>
-  <circle cx="184" cy="370" r="5" fill="#38bdf8" opacity="0.75"/>
-  <circle cx="256" cy="370" r="6.5" fill="#38bdf8"/>
-  <circle cx="328" cy="370" r="5" fill="#38bdf8" opacity="0.75"/>
-  <circle cx="400" cy="370" r="4" fill="#64748b"/>
+  <!-- Solid terminal cursor in pure brand blue (#2563eb) -->
+  <rect x="286" y="330" width="66" height="18" rx="5" fill="#2563eb"/>
 </svg>

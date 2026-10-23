@@ -1,187 +1,147 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 580" width="900" height="580">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 560" width="900" height="560">
+  <style>
+    .sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    .mono { font-family: 'JetBrains Mono', SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+  </style>
+
+  <!-- Clean matte background -->
+  <rect width="900" height="560" fill="#09090b"/>
+  <rect x="0.5" y="0.5" width="899" height="559" fill="none" stroke="#27272a" stroke-width="1"/>
+
   <defs>
-    <linearGradient id="archBg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#080c16"/>
-      <stop offset="50%" stop-color="#0c1322"/>
-      <stop offset="100%" stop-color="#050810"/>
-    </linearGradient>
-
-    <linearGradient id="cardGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0d172a"/>
-      <stop offset="100%" stop-color="#070b16"/>
-    </linearGradient>
-
-    <linearGradient id="cyanLine" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#38bdf8"/>
-      <stop offset="100%" stop-color="#2563eb"/>
-    </linearGradient>
-
-    <pattern id="gridDots" width="24" height="24" patternUnits="userSpaceOnUse">
-      <circle cx="12" cy="12" r="0.75" fill="#38bdf8" fill-opacity="0.08"/>
-    </pattern>
-
-    <marker id="arrowBlue" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
-      <path d="M 1 1 L 7 4 L 1 7 Z" fill="#38bdf8"/>
+    <marker id="arrowBlue" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto">
+      <path d="M 1 1 L 6 3.5 L 1 6 Z" fill="#3b82f6"/>
     </marker>
-    <marker id="arrowPurple" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
-      <path d="M 1 1 L 7 4 L 1 7 Z" fill="#818cf8"/>
+    <marker id="arrowMuted" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto">
+      <path d="M 1 1 L 6 3.5 L 1 6 Z" fill="#52525b"/>
     </marker>
   </defs>
 
-  <style>
-    .sans {{ font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }}
-    .mono {{ font-family: 'JetBrains Mono', 'Fira Code', Menlo, Monaco, Consolas, monospace; }}
-  </style>
-
-  <!-- Background -->
-  <rect width="900" height="580" rx="16" fill="url(#archBg)"/>
-  <rect width="900" height="580" rx="16" fill="url(#gridDots)"/>
-  <rect width="900" height="580" rx="16" fill="none" stroke="#1e293b" stroke-width="1.5"/>
-
   <!-- Header -->
-  <g transform="translate(50, 42)">
-    <circle cx="12" cy="12" r="5" fill="#38bdf8"/>
-    <text x="26" y="17" font-size="20" font-weight="800" fill="#f8fafc" class="sans" letter-spacing="-0.01em">BAYESIAN SSH ARCHITECTURE</text>
-    <text x="800" y="17" font-size="12" fill="#64748b" class="mono" text-anchor="end">v2.10 · Core System Design</text>
+  <g transform="translate(48, 36)">
+    <text x="0" y="14" font-size="11" font-weight="600" fill="#71717a" class="mono" letter-spacing="0.15em">BAYESIAN SSH</text>
+    <text x="0" y="38" font-size="20" font-weight="600" fill="#fafafa" class="sans">System Architecture</text>
+    <text x="804" y="38" font-size="12" fill="#52525b" class="mono" text-anchor="end">4-Tier Modular Design</text>
   </g>
 
-  <!-- 1. CLI & GUI PRESENTATION LAYER -->
-  <g transform="translate(50, 75)">
-    <rect width="800" height="95" rx="10" fill="url(#cardGrad)" stroke="#1e3a8a" stroke-width="1.4"/>
-    <rect x="2" y="2" width="796" height="91" rx="8" fill="none" stroke="rgba(56, 189, 248, 0.15)" stroke-width="1"/>
-    <text x="20" y="26" font-size="13" font-weight="700" fill="#38bdf8" class="sans">CLI &amp; DESKTOP UI LAYER</text>
+  <!-- 1. CLI & DESKTOP LAYER -->
+  <g transform="translate(48, 90)">
+    <rect width="804" height="82" rx="6" fill="#111113" stroke="#27272a" stroke-width="1"/>
+    <text x="16" y="22" font-size="11" font-weight="600" fill="#71717a" class="mono">01 / PRESENTATION LAYER</text>
 
-    <!-- Sub-components -->
-    <g transform="translate(20, 38)" class="mono">
-      <!-- Command Blocks -->
-      <g transform="translate(0, 0)">
-        <rect width="110" height="38" rx="6" fill="#080e1e" stroke="#2563eb" stroke-width="1"/>
-        <text x="55" y="23" font-size="11" fill="#f1f5f9" font-weight="600" text-anchor="middle">bssh connect</text>
-      </g>
-      <g transform="translate(120, 0)">
-        <rect width="90" height="38" rx="6" fill="#080e1e" stroke="#1e293b" stroke-width="1"/>
-        <text x="45" y="23" font-size="11" fill="#94a3b8" text-anchor="middle">bssh list</text>
-      </g>
-      <g transform="translate(220, 0)">
-        <rect width="100" height="38" rx="6" fill="#080e1e" stroke="#1e293b" stroke-width="1"/>
-        <text x="50" y="23" font-size="11" fill="#94a3b8" text-anchor="middle">bssh history</text>
-      </g>
-      <g transform="translate(330, 0)">
-        <rect width="110" height="38" rx="6" fill="#080e1e" stroke="#38bdf8" stroke-width="1"/>
-        <text x="55" y="23" font-size="11" fill="#38bdf8" font-weight="600" text-anchor="middle">bssh tui</text>
-      </g>
-      <g transform="translate(450, 0)">
-        <rect width="100" height="38" rx="6" fill="#080e1e" stroke="#1e293b" stroke-width="1"/>
-        <text x="50" y="23" font-size="11" fill="#94a3b8" text-anchor="middle">bssh alias</text>
-      </g>
-      <g transform="translate(560, 0)">
-        <rect width="195" height="38" rx="6" fill="#0b162c" stroke="#3b82f6" stroke-width="1"/>
-        <text x="97" y="23" font-size="11" fill="#a5f3fc" font-weight="600" text-anchor="middle">Desktop GUI (Tauri/Svelte)</text>
-      </g>
+    <g transform="translate(16, 34)" class="mono">
+      <rect width="100" height="32" rx="4" fill="#18181b" stroke="#27272a" stroke-width="1"/>
+      <text x="50" y="20" font-size="11" fill="#f4f4f5" text-anchor="middle">connect</text>
+
+      <rect x="110" width="80" height="32" rx="4" fill="#18181b" stroke="#27272a" stroke-width="1"/>
+      <text x="150" y="20" font-size="11" fill="#a1a1aa" text-anchor="middle">list</text>
+
+      <rect x="200" width="90" height="32" rx="4" fill="#18181b" stroke="#27272a" stroke-width="1"/>
+      <text x="245" y="20" font-size="11" fill="#a1a1aa" text-anchor="middle">history</text>
+
+      <rect x="300" width="80" height="32" rx="4" fill="#18181b" stroke="#3b82f6" stroke-width="1"/>
+      <text x="340" y="20" font-size="11" fill="#3b82f6" font-weight="bold" text-anchor="middle">tui</text>
+
+      <rect x="390" width="80" height="32" rx="4" fill="#18181b" stroke="#27272a" stroke-width="1"/>
+      <text x="430" y="20" font-size="11" fill="#a1a1aa" text-anchor="middle">alias</text>
+
+      <rect x="480" width="292" height="32" rx="4" fill="#18181b" stroke="#27272a" stroke-width="1"/>
+      <text x="626" y="20" font-size="11" fill="#f4f4f5" text-anchor="middle">Desktop GUI (Tauri / Svelte)</text>
     </g>
   </g>
 
-  <!-- Flow Vector Down -->
-  <line x1="450" y1="170" x2="450" y2="198" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrowBlue)"/>
+  <!-- Vector Down -->
+  <line x1="450" y1="172" x2="450" y2="198" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#arrowBlue)"/>
 
-  <!-- 2. CORE SERVICES & PROTOCOL LAYER -->
-  <g transform="translate(50, 202)">
-    <rect width="570" height="95" rx="10" fill="url(#cardGrad)" stroke="#1e293b" stroke-width="1.4"/>
-    <text x="20" y="26" font-size="13" font-weight="700" fill="#818cf8" class="sans">SERVICES &amp; PROTOCOL ORCHESTRATION</text>
+  <!-- 2. SERVICES & PROTOCOL ORCHESTRATION -->
+  <g transform="translate(48, 200)">
+    <rect width="570" height="88" rx="6" fill="#111113" stroke="#27272a" stroke-width="1"/>
+    <text x="16" y="22" font-size="11" font-weight="600" fill="#71717a" class="mono">02 / CORE SERVICES</text>
 
-    <g transform="translate(20, 38)" class="mono">
-      <g transform="translate(0, 0)">
-        <rect width="120" height="38" rx="6" fill="#080e1e" stroke="#1e293b" stroke-width="1"/>
-        <text x="60" y="23" font-size="11" fill="#cbd5e1" text-anchor="middle">SshService</text>
-      </g>
-      <g transform="translate(130, 0)">
-        <rect width="120" height="38" rx="6" fill="#080e1e" stroke="#1e293b" stroke-width="1"/>
-        <text x="60" y="23" font-size="11" fill="#cbd5e1" text-anchor="middle">BastionRouter</text>
-      </g>
-      <g transform="translate(260, 0)">
-        <rect width="120" height="38" rx="6" fill="#080e1e" stroke="#1e293b" stroke-width="1"/>
-        <text x="60" y="23" font-size="11" fill="#cbd5e1" text-anchor="middle">KerberosAuth</text>
-      </g>
-      <g transform="translate(390, 0)">
-        <rect width="140" height="38" rx="6" fill="#080e1e" stroke="#818cf8" stroke-width="1"/>
-        <text x="70" y="23" font-size="11" fill="#a5b4fc" font-weight="600" text-anchor="middle">TeamVault (E2EE)</text>
-      </g>
+    <g transform="translate(16, 34)" class="mono">
+      <rect width="125" height="36" rx="4" fill="#18181b" stroke="#27272a" stroke-width="1"/>
+      <text x="62" y="22" font-size="11" fill="#f4f4f5" text-anchor="middle">SshService</text>
+
+      <rect x="135" width="125" height="36" rx="4" fill="#18181b" stroke="#27272a" stroke-width="1"/>
+      <text x="197" y="22" font-size="11" fill="#a1a1aa" text-anchor="middle">BastionRouter</text>
+
+      <rect x="270" width="125" height="36" rx="4" fill="#18181b" stroke="#27272a" stroke-width="1"/>
+      <text x="332" y="22" font-size="11" fill="#a1a1aa" text-anchor="middle">KerberosAuth</text>
+
+      <rect x="405" width="133" height="36" rx="4" fill="#18181b" stroke="#3b82f6" stroke-width="1"/>
+      <text x="471" y="22" font-size="11" fill="#3b82f6" font-weight="bold" text-anchor="middle">TeamVault (E2EE)</text>
     </g>
   </g>
 
-  <!-- External Infrastructure Node (Right) -->
-  <g transform="translate(640, 202)">
-    <rect width="210" height="225" rx="10" fill="#060a14" stroke="#334155" stroke-width="1.4" stroke-dasharray="4 4"/>
-    <text x="105" y="26" font-size="12" font-weight="700" fill="#94a3b8" class="sans" text-anchor="middle">EXTERNAL TARGETS</text>
+  <!-- External Systems (Right) -->
+  <g transform="translate(638, 200)">
+    <rect width="214" height="212" rx="6" fill="#000000" stroke="#27272a" stroke-width="1" stroke-dasharray="4 4"/>
+    <text x="16" y="22" font-size="11" font-weight="600" fill="#52525b" class="mono">EXTERNAL INTEGRATIONS</text>
 
-    <g transform="translate(18, 42)" class="mono">
-      <rect width="174" height="32" rx="5" fill="#0b1220" stroke="#1e293b" stroke-width="1"/>
-      <text x="87" y="20" font-size="10.5" fill="#38bdf8" text-anchor="middle">SSH (libssh2 / native)</text>
+    <g transform="translate(16, 36)" class="mono">
+      <rect width="182" height="32" rx="4" fill="#121215" stroke="#27272a" stroke-width="1"/>
+      <text x="91" y="20" font-size="10" fill="#d4d4d8" text-anchor="middle">libssh2 / system SSH</text>
 
-      <rect y="42" width="174" height="32" rx="5" fill="#0b1220" stroke="#1e293b" stroke-width="1"/>
-      <text x="87" y="62" font-size="10.5" fill="#f59e0b" text-anchor="middle">Jump Bastions (ProxyJump)</text>
+      <rect y="42" width="182" height="32" rx="4" fill="#121215" stroke="#27272a" stroke-width="1"/>
+      <text x="91" y="62" font-size="10" fill="#d4d4d8" text-anchor="middle">Bastions (ProxyJump)</text>
 
-      <rect y="84" width="174" height="32" rx="5" fill="#0b1220" stroke="#1e293b" stroke-width="1"/>
-      <text x="87" y="104" font-size="10.5" fill="#a855f7" text-anchor="middle">Kerberos KDC (kinit)</text>
+      <rect y="84" width="182" height="32" rx="4" fill="#121215" stroke="#27272a" stroke-width="1"/>
+      <text x="91" y="104" font-size="10" fill="#d4d4d8" text-anchor="middle">Kerberos (kinit / klist)</text>
 
-      <rect y="126" width="174" height="32" rx="5" fill="#0b1220" stroke="#1e293b" stroke-width="1"/>
-      <text x="87" y="146" font-size="10.5" fill="#10b981" text-anchor="middle">bssh-cloud Vault API</text>
+      <rect y="126" width="182" height="32" rx="4" fill="#121215" stroke="#27272a" stroke-width="1"/>
+      <text x="91" y="146" font-size="10" fill="#10b981" text-anchor="middle">bssh-cloud Vault API</text>
     </g>
   </g>
 
-  <!-- Flow Vector Down -->
-  <line x1="335" y1="297" x2="335" y2="325" stroke="#818cf8" stroke-width="2" marker-end="url(#arrowPurple)"/>
+  <!-- Connector to External -->
+  <line x1="618" y1="244" x2="636" y2="244" stroke="#52525b" stroke-width="1.5" stroke-dasharray="3 3" marker-end="url(#arrowMuted)"/>
 
-  <!-- Flow Vector Right (To External) -->
-  <line x1="620" y1="250" x2="638" y2="250" stroke="#64748b" stroke-width="1.5" stroke-dasharray="3 3" marker-end="url(#arrowBlue)"/>
+  <!-- Vector Down -->
+  <line x1="333" y1="288" x2="333" y2="322" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#arrowBlue)"/>
 
   <!-- 3. BAYESIAN PREDICTIVE ENGINE & PERSISTENCE -->
-  <g transform="translate(50, 330)">
-    <rect width="570" height="95" rx="10" fill="url(#cardGrad)" stroke="#1e293b" stroke-width="1.4"/>
-    <text x="20" y="26" font-size="13" font-weight="700" fill="#38bdf8" class="sans">BAYESIAN INFERENCE &amp; SEARCH ENGINE</text>
+  <g transform="translate(48, 324)">
+    <rect width="570" height="88" rx="6" fill="#111113" stroke="#27272a" stroke-width="1"/>
+    <text x="16" y="22" font-size="11" font-weight="600" fill="#71717a" class="mono">03 / BAYESIAN INFERENCE &amp; STORAGE</text>
 
-    <g transform="translate(20, 38)" class="mono">
-      <g transform="translate(0, 0)">
-        <rect width="170" height="38" rx="6" fill="#080e1e" stroke="#0284c7" stroke-width="1"/>
-        <text x="85" y="23" font-size="11" fill="#38bdf8" font-weight="600" text-anchor="middle">BayesianRanker P(H|E)</text>
-      </g>
-      <g transform="translate(180, 0)">
-        <rect width="160" height="38" rx="6" fill="#080e1e" stroke="#1e293b" stroke-width="1"/>
-        <text x="80" y="23" font-size="11" fill="#cbd5e1" text-anchor="middle">FuzzySearchMatcher</text>
-      </g>
-      <g transform="translate(350, 0)">
-        <rect width="180" height="38" rx="6" fill="#080e1e" stroke="#1e293b" stroke-width="1"/>
-        <text x="90" y="23" font-size="11" fill="#cbd5e1" text-anchor="middle">SQLite WAL Storage</text>
-      </g>
+    <g transform="translate(16, 34)" class="mono">
+      <rect width="170" height="36" rx="4" fill="#18181b" stroke="#3b82f6" stroke-width="1"/>
+      <text x="85" y="22" font-size="11" fill="#3b82f6" font-weight="bold" text-anchor="middle">BayesianRanker P(H|E)</text>
+
+      <rect x="180" width="170" height="36" rx="4" fill="#18181b" stroke="#27272a" stroke-width="1"/>
+      <text x="265" y="22" font-size="11" fill="#f4f4f5" text-anchor="middle">FuzzySearchMatcher</text>
+
+      <rect x="360" width="178" height="36" rx="4" fill="#18181b" stroke="#27272a" stroke-width="1"/>
+      <text x="449" y="22" font-size="11" fill="#a1a1aa" text-anchor="middle">SQLite WAL Store</text>
     </g>
   </g>
 
-  <!-- Flow Vector Down -->
-  <line x1="335" y1="425" x2="335" y2="453" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrowBlue)"/>
+  <!-- Vector Down -->
+  <line x1="333" y1="412" x2="333" y2="442" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#arrowBlue)"/>
 
-  <!-- 4. DATA MODEL DOMAIN & PERSISTED ENTITIES -->
-  <g transform="translate(50, 458)">
-    <rect width="800" height="80" rx="10" fill="#060912" stroke="#1e293b" stroke-width="1.2"/>
-    <text x="20" y="24" font-size="12" font-weight="700" fill="#64748b" class="sans">DATA MODEL DOMAIN ENTITIES</text>
+  <!-- 4. DATA DOMAIN ENTITIES -->
+  <g transform="translate(48, 444)">
+    <rect width="804" height="76" rx="6" fill="#0c0d10" stroke="#27272a" stroke-width="1"/>
+    <text x="16" y="20" font-size="10" font-weight="600" fill="#52525b" class="mono">04 / DOMAIN MODELS &amp; DATA STRUCTURES</text>
 
-    <g transform="translate(20, 36)" class="mono">
-      <rect width="120" height="28" rx="4" fill="#0c1424" stroke="#1e293b" stroke-width="1"/>
-      <text x="60" y="18" font-size="10.5" fill="#94a3b8" text-anchor="middle">ConnectionHost</text>
+    <g transform="translate(16, 32)" class="mono">
+      <rect width="120" height="28" rx="3" fill="#141416" stroke="#27272a" stroke-width="1"/>
+      <text x="60" y="18" font-size="10" fill="#a1a1aa" text-anchor="middle">ConnectionHost</text>
 
-      <rect x="132" width="120" height="28" rx="4" fill="#0c1424" stroke="#1e293b" stroke-width="1"/>
-      <text x="192" y="18" font-size="10.5" fill="#94a3b8" text-anchor="middle">SessionHistory</text>
+      <rect x="130" width="120" height="28" rx="3" fill="#141416" stroke="#27272a" stroke-width="1"/>
+      <text x="190" y="18" font-size="10" fill="#a1a1aa" text-anchor="middle">SessionHistory</text>
 
-      <rect x="264" width="120" height="28" rx="4" fill="#0c1424" stroke="#1e293b" stroke-width="1"/>
-      <text x="324" y="18" font-size="10.5" fill="#94a3b8" text-anchor="middle">HostAliasTag</text>
+      <rect x="260" width="120" height="28" rx="3" fill="#141416" stroke="#27272a" stroke-width="1"/>
+      <text x="320" y="18" font-size="10" fill="#a1a1aa" text-anchor="middle">HostAliasTag</text>
 
-      <rect x="396" width="120" height="28" rx="4" fill="#0c1424" stroke="#1e293b" stroke-width="1"/>
-      <text x="456" y="18" font-size="10.5" fill="#94a3b8" text-anchor="middle">ProfileConfig</text>
+      <rect x="390" width="120" height="28" rx="3" fill="#141416" stroke="#27272a" stroke-width="1"/>
+      <text x="450" y="18" font-size="10" fill="#a1a1aa" text-anchor="middle">ProfileConfig</text>
 
-      <rect x="528" width="120" height="28" rx="4" fill="#0c1424" stroke="#1e293b" stroke-width="1"/>
-      <text x="588" y="18" font-size="10.5" fill="#94a3b8" text-anchor="middle">AuditSignature</text>
+      <rect x="520" width="120" height="28" rx="3" fill="#141416" stroke="#27272a" stroke-width="1"/>
+      <text x="580" y="18" font-size="10" fill="#a1a1aa" text-anchor="middle">AuditSignature</text>
 
-      <rect x="660" width="100" height="28" rx="4" fill="#0c1424" stroke="#1e293b" stroke-width="1"/>
-      <text x="710" y="18" font-size="10.5" fill="#94a3b8" text-anchor="middle">VaultSecret</text>
+      <rect x="650" width="122" height="28" rx="3" fill="#141416" stroke="#27272a" stroke-width="1"/>
+      <text x="711" y="18" font-size="10" fill="#a1a1aa" text-anchor="middle">VaultSecret</text>
     </g>
   </g>
 </svg>

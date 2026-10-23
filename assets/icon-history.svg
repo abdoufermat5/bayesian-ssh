@@ -1,31 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
-  <defs>
-    <linearGradient id="bg-hist" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0e172a"/>
-      <stop offset="100%" stop-color="#060913"/>
-    </linearGradient>
-    <linearGradient id="cyan-blue-hist" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#38bdf8"/>
-      <stop offset="100%" stop-color="#2563eb"/>
-    </linearGradient>
-  </defs>
-  <rect width="64" height="64" rx="16" fill="url(#bg-hist)"/>
-  <rect width="64" height="64" rx="16" fill="none" stroke="#1e293b" stroke-width="1.5"/>
-  <rect x="1.5" y="1.5" width="61" height="61" rx="14.5" fill="none" stroke="url(#cyan-blue-hist)" stroke-width="1" stroke-opacity="0.4"/>
-
-  <!-- Circular History Dial -->
-  <circle cx="28" cy="28" r="16" fill="none" stroke="#1e293b" stroke-width="2"/>
-  <!-- Active Arc (Time Passage) -->
-  <path d="M 28 12 A 16 16 0 1 1 14 34" fill="none" stroke="url(#cyan-blue-hist)" stroke-width="2.5" stroke-linecap="round"/>
-  <polyline points="11 28 14 34 20 32" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-
-  <!-- Clock Hands -->
-  <line x1="28" y1="28" x2="28" y2="19" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
-  <line x1="28" y1="28" x2="35" y2="28" stroke="#38bdf8" stroke-width="2" stroke-linecap="round"/>
-  <circle cx="28" cy="28" r="2" fill="#ffffff"/>
-
-  <!-- Activity Histogram Bars (Recency & Frequency Stats) -->
-  <rect x="44" y="42" width="3.5" height="8" rx="1" fill="#334155"/>
-  <rect x="49" y="37" width="3.5" height="13" rx="1" fill="#2563eb"/>
-  <rect x="54" y="32" width="3.5" height="18" rx="1" fill="#38bdf8"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" fill="none">
+  <path d="M 32 14 A 18 18 0 1 1 18 25" stroke="#f4f4f5" stroke-width="2.5" stroke-linecap="round"/>
+  <polyline points="14 18 18 25 25 24" stroke="#f4f4f5" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="32" y1="32" x2="32" y2="22" stroke="#f4f4f5" stroke-width="2" stroke-linecap="round"/>
+  <line x1="32" y1="32" x2="40" y2="32" stroke="#3b82f6" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="32" cy="32" r="2" fill="#f4f4f5"/>
+  <line x1="44" y1="48" x2="44" y2="42" stroke="#52525b" stroke-width="2" stroke-linecap="round"/>
+  <line x1="48" y1="48" x2="48" y2="38" stroke="#71717a" stroke-width="2" stroke-linecap="round"/>
+  <line x1="52" y1="48" x2="52" y2="34" stroke="#3b82f6" stroke-width="2" stroke-linecap="round"/>
 </svg>
