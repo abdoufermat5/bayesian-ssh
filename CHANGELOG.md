@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Organizations** (`bssh org`): an organization owns teams and, with billing, their subscription and seats. `bssh org list` shows each organization (labelled by its owners' emails), your role, its teams and which of them are on this machine; `bssh org show [<org>]` adds the owners, teams and the plan and seat summary; `bssh org create` creates one; `bssh org owners add|remove <org> <email>` manages owners; and `bssh org billing [<org>]` reports, subscribes (`--checkout [--seats N] [--yearly]`) or opens the customer portal (`--manage`). Seats are shared across an organization's teams: someone in several of them takes one seat, and a pending invite holds one. `<org>` is an id prefix or one of its team names, and optional when you have a single organization. `bssh teams create <name> --org <org>` chooses the organization, and `bssh teams billing` points to the organization's billing. One organization is free per account (`bssh org create` explains the rule when refused). A server without the organization endpoints is reported as needing an update.
+
 ## [2.11.0] - 2026-10-23
 
 ### Added

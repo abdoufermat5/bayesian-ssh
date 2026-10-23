@@ -19,6 +19,7 @@ pub mod history;
 pub mod import;
 pub mod key;
 pub mod list;
+pub mod org;
 pub mod ping;
 pub mod predict;
 pub mod proxy;

@@ -144,22 +144,56 @@ What the chain guarantees, against a server that edits its database:
   events before it uploads anything after them. The device notices on its next upload.
   Closing this needs devices to publish signed chain heads elsewhere (future work).
 
+## Organizations
+
+An organization owns teams and, with billing, their subscription and seats. It has no
+name on the server (team names live in the encrypted vault), so clients label it by its
+owners' emails.
+
+- `GET /orgs`: the organizations the caller owns or has a team in, as `OrgInfo`
+  (`org_id`, `my_role`, `owners`, `team_ids`, `created_at`). Owners see every team of
+  the organization; members only their own. `GET /orgs/{id}` returns one.
+- `POST /orgs` (no body): create an empty organization owned by the caller. Refused with
+  `PaymentRequired` while the caller owns another without a live subscription: one free
+  organization per account.
+- `POST /orgs/{id}/owners { email }` (owner): the account must already be an active member
+  of one of the organization's teams. Returns the updated `OrgInfo`.
+  `DELETE /orgs/{id}/owners/{account_id}` (owner): 204; the last owner can't be removed.
+- `POST /teams` accepts `org_id`: the caller must own that organization. Without it the
+  team goes to the oldest organization the caller owns, or to a new one. `TeamInfo.org_id`
+  and `BillingInfo.org_id` say which organization a team belongs to.
+
+Seats are counted per organization: distinct active members across its teams, plus one
+per pending, unexpired invite to an email that isn't a member yet. Someone in three teams
+of the same organization takes one seat. `FREE_SEATS` applies per organization; on a
+server without billing the limit is the organization's `seats` (`teams.seats` is no longer
+read).
+
+- `GET /orgs/{id}/billing` (any member of the organization): `BillingInfo`, with `org_id`.
+- `POST /orgs/{id}/billing/checkout { seats, interval }` (owner): a checkout page URL.
+- `POST /orgs/{id}/billing/portal` (owner): the provider's customer portal.
+
+The team-scoped billing routes (`/teams/{id}/billing…`) still work and act on the team's
+organization. A server older than organizations has no `/orgs` routes and answers 404.
+
 ## Billing
 
-Seats are enforced by the server (perimeter rule P3: no license in the client). A team has
-`free_seats` members for free; above that it needs a subscription for all its seats. The
-client never handles payment data: an admin asks for a provider page and opens it.
+Seats are enforced by the server (perimeter rule P3: no license in the client). Seats
+belong to the organization (see above): its `free_seats` members are free, and above that
+it needs a subscription for all its seats. The client never handles payment data: an owner,
+or a team admin through the team route, asks for a provider page and opens it.
 
-- `GET /teams/{id}/billing` (any member): `BillingInfo`, including `read_only`.
+- `GET /teams/{id}/billing` (any member): `BillingInfo` of the team's organization,
+  including `read_only`.
 - `POST /teams/{id}/billing/checkout { seats, interval }` (admin): a checkout page URL.
   `seats` must cover the seats in use.
 - `POST /teams/{id}/billing/portal` (admin): the provider's customer portal (card,
   invoices, seats, cancellation).
 
-When a subscription lapses and the team has more members than the free seats, it becomes
-**read-only**: pulls, key grants, member removal and audit uploads keep working (nobody is
-locked out of their hosts, and the team can shrink back under the free seats), while pushes
-fail with `PaymentRequired` and invites with `SeatLimit`.
+When a subscription lapses and the organization has more members than the free seats, its
+teams become **read-only**: pulls, key grants, member removal and audit uploads keep
+working (nobody is locked out of their hosts, and the organization can shrink back under
+the free seats), while pushes fail with `PaymentRequired` and invites with `SeatLimit`.
 
 ## Server-side checks (non-exhaustive)
 

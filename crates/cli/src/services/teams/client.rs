@@ -40,6 +40,8 @@ pub enum TeamsError {
     Http { status: u16, body: String },
     #[error("could not decode server response: {0}")]
     Decode(String),
+    #[error("this server doesn't support organizations: it may need an update")]
+    OrgUnsupported,
 }
 
 /// How an API error reads to the user. For billing and provider failures the
@@ -80,6 +82,23 @@ impl TeamsError {
 }
 
 pub type ClientResult<T> = std::result::Result<T, TeamsError>;
+
+/// Servers older than organizations answer `/orgs` with 404 (no route) or 405:
+/// say so instead of showing the response body. The server's 404 may or may
+/// not carry a JSON error, so both shapes map.
+fn org_route(err: TeamsError) -> TeamsError {
+    let missing = match &err {
+        TeamsError::Http { status, .. } | TeamsError::Api { status, .. } => {
+            matches!(*status, 404 | 405)
+        }
+        _ => false,
+    };
+    if missing {
+        TeamsError::OrgUnsupported
+    } else {
+        err
+    }
+}
 
 /// Signs auth challenges. Implemented by [`DeviceKeys`]; tests use a fake.
 pub trait AuthSigner: Send + Sync {
@@ -414,6 +433,75 @@ impl TeamsClient {
         self.post("/invites/accept", req).await
     }
 
+    // -- organizations -------------------------------------------------------
+
+    /// Organizations this account owns or has a team in.
+    pub async fn list_orgs(&self) -> ClientResult<Vec<OrgInfo>> {
+        self.get("/orgs", &[]).await.map_err(org_route)
+    }
+
+    /// A new empty organization owned by this account. Refused with
+    /// `PaymentRequired` while the account owns another without a subscription.
+    pub async fn create_org(&self) -> ClientResult<OrgInfo> {
+        self.post("/orgs", &serde_json::json!({}))
+            .await
+            .map_err(org_route)
+    }
+
+    pub async fn get_org(&self, org_id: Uuid) -> ClientResult<OrgInfo> {
+        self.get(&format!("/orgs/{org_id}"), &[])
+            .await
+            .map_err(org_route)
+    }
+
+    pub async fn add_org_owner(&self, org_id: Uuid, email: &str) -> ClientResult<OrgInfo> {
+        self.post(
+            &format!("/orgs/{org_id}/owners"),
+            &AddOwnerRequest {
+                email: email.to_string(),
+            },
+        )
+        .await
+        .map_err(org_route)
+    }
+
+    pub async fn remove_org_owner(&self, org_id: Uuid, account_id: Uuid) -> ClientResult<()> {
+        self.call(
+            Method::DELETE,
+            &format!("/orgs/{org_id}/owners/{account_id}"),
+            &[],
+            None,
+        )
+        .await
+        .map_err(org_route)?;
+        Ok(())
+    }
+
+    pub async fn org_billing(&self, org_id: Uuid) -> ClientResult<BillingInfo> {
+        self.get(&format!("/orgs/{org_id}/billing"), &[])
+            .await
+            .map_err(org_route)
+    }
+
+    pub async fn org_billing_checkout(
+        &self,
+        org_id: Uuid,
+        req: &CheckoutRequest,
+    ) -> ClientResult<BillingRedirect> {
+        self.post(&format!("/orgs/{org_id}/billing/checkout"), req)
+            .await
+            .map_err(org_route)
+    }
+
+    pub async fn org_billing_portal(&self, org_id: Uuid) -> ClientResult<BillingRedirect> {
+        self.post(
+            &format!("/orgs/{org_id}/billing/portal"),
+            &serde_json::json!({}),
+        )
+        .await
+        .map_err(org_route)
+    }
+
     // -- billing -------------------------------------------------------------
 
     pub async fn billing(&self, team_id: Uuid) -> ClientResult<BillingInfo> {
@@ -653,6 +741,98 @@ mod tests {
             expires_at: Utc::now() + ChronoDuration::seconds(ttl_secs),
         })
         .unwrap()
+    }
+
+    #[test]
+    fn org_routes_on_legacy_servers() {
+        assert!(matches!(
+            org_route(TeamsError::Http {
+                status: 404,
+                body: "no route".into()
+            }),
+            TeamsError::OrgUnsupported
+        ));
+        assert!(matches!(
+            org_route(TeamsError::Http {
+                status: 405,
+                body: String::new()
+            }),
+            TeamsError::OrgUnsupported
+        ));
+        // A real API error (with its code) is kept: it says something useful.
+        let api = TeamsError::Api {
+            status: 403,
+            error: ApiError {
+                code: ErrorCode::Forbidden,
+                message: "not an owner".into(),
+            },
+        };
+        assert!(matches!(org_route(api), TeamsError::Api { .. }));
+        // A JSON 404 (route missing behind a fallback) is the same as a bare one.
+        let api_404 = TeamsError::Api {
+            status: 404,
+            error: ApiError {
+                code: ErrorCode::NotFound,
+                message: "no route".into(),
+            },
+        };
+        assert!(matches!(org_route(api_404), TeamsError::OrgUnsupported));
+    }
+
+    #[tokio::test]
+    async fn org_calls_use_org_routes() {
+        let org = OrgInfo {
+            org_id: Uuid::from_u128(7),
+            my_role: OrgRole::Owner,
+            owners: vec![OrgOwner {
+                account_id: Uuid::from_u128(8),
+                email: "ana@example.com".into(),
+            }],
+            team_ids: vec![],
+            created_at: Utc::now(),
+        };
+        let org_json = serde_json::to_string(&org).unwrap();
+        let owner_json = org_json.clone();
+        let (url, seen) = mock_server(move |i| match i {
+            0 => (200, challenge_json()),
+            1 => (200, token_json("t", 3600)),
+            2 => (200, format!("[{org_json}]")),
+            3 => (200, owner_json.clone()),
+            4 => (
+                404,
+                "{\"code\":\"not_found\",\"message\":\"no route\"}".into(),
+            ),
+            _ => (200, "{}".to_string()),
+        })
+        .await;
+        let client = TeamsClient::new(&url, Uuid::new_v4(), Arc::new(FakeSigner)).unwrap();
+
+        assert_eq!(client.list_orgs().await.unwrap()[0].org_id, org.org_id);
+        assert_eq!(
+            client
+                .add_org_owner(org.org_id, "bo@example.com")
+                .await
+                .unwrap(),
+            org
+        );
+        let err = client.get_org(org.org_id).await.unwrap_err();
+        assert!(matches!(err, TeamsError::OrgUnsupported), "{err}");
+
+        let seen = seen.lock().unwrap();
+        assert!(seen[2].starts_with("GET /v1/orgs HTTP/1.1"), "{}", seen[2]);
+        assert!(
+            seen[3]
+                .starts_with("POST /v1/orgs/00000000-0000-0000-0000-000000000007/owners HTTP/1.1"),
+            "{}",
+            seen[3]
+        );
+        // The mock records headers only: the body's length proves the request.
+        assert!(seen[3].contains("content-length: 26"), "{}", seen[3]);
+        assert!(
+            seen[4].starts_with("GET /v1/orgs/00000000-0000-0000-0000-000000000007 HTTP/1.1"),
+            "{}",
+            seen[4]
+        );
     }
 
     #[test]
