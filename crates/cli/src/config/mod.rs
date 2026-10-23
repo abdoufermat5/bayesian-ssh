@@ -232,7 +232,9 @@ impl AppConfig {
                     cfg.log_level = "warn".to_string();
                 }
                 cfg.log_level_migrated = true;
-                cfg.save()?;
+                // Best effort: a config dir that can't be written must not break
+                // every command; the migration simply runs again next time.
+                let _ = cfg.save();
             }
             cfg
         } else {
