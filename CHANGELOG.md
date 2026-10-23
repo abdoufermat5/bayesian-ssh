@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- After `exit` in a `bssh connect` session, the prompt came back only at the next key press, and that key went to the closed session. Keystrokes are now read on a plain thread instead of Tokio's blocking pool, whose pending read kept the process alive.
+
 ## [2.10.2] - 2026-10-23
 
 ### Changed
