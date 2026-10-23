@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - After `exit` in a `bssh connect` session, the prompt came back only at the next key press, and that key went to the closed session. Keystrokes are now read on a plain thread instead of Tokio's blocking pool, whose pending read kept the process alive.
+### Changed
+- The CLI is quiet by default: `log_level` now defaults to `warn`, so normal runs print only the command's own output instead of `INFO` tracing lines. Existing configs that still hold the old default `info` are switched to `warn` once, on the next run; after that, `bssh config --log-level info` (or `debug`) is kept as an explicit choice. `RUST_LOG=info` also overrides the configured level for a single run.
+
+### Fixed
+- `bssh show web1` (and `connect`, `edit`, ...) now finds `web-prod-1`: a word prefix followed by the digits of a later name segment matches, like `wp1` and `prod1` already did. The digits must be a whole segment, so `web1` does not match `web-prod-10`.
 
 ## [2.10.2] - 2026-10-23
 

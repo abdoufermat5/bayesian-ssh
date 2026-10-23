@@ -229,6 +229,30 @@ impl Database {
             }
         }
 
+        if matches_prefix_and_number(&query, name) {
+            return true;
+        }
+
         false
     }
+}
+
+/// `web1` -> `web-prod-1`: letters that start one name segment, followed by
+/// the digits of a later segment. The digits must equal the whole segment
+/// (`web1` does not match `web-prod-10`) and at least two letters are
+/// required so a bare `w1` cannot match half the inventory.
+fn matches_prefix_and_number(query: &str, name: &str) -> bool {
+    let digits_start = query.trim_end_matches(|c: char| c.is_ascii_digit()).len();
+    let (word, digits) = query.split_at(digits_start);
+    if digits.is_empty() || word.chars().count() < 2 || !word.chars().all(|c| c.is_alphabetic()) {
+        return false;
+    }
+    let segments: Vec<&str> = name
+        .split(&['-', '_', '.', ' '][..])
+        .filter(|s| !s.is_empty())
+        .collect();
+    segments
+        .iter()
+        .enumerate()
+        .any(|(i, seg)| seg.starts_with(word) && segments[i + 1..].contains(&digits))
 }

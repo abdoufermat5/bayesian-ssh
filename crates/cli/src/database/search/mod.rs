@@ -111,4 +111,58 @@ mod tests {
             assert!(!result.as_ref().unwrap().is_empty(), "should find 'web'");
         }
     }
+
+    fn db_with(names: &[&str]) -> (tempfile::TempDir, Database) {
+        let dir = tempdir().unwrap();
+        let config = AppConfig {
+            database_path: dir.path().join("test.db"),
+            ..Default::default()
+        };
+        let db = Database::new(&config).unwrap();
+        for (i, name) in names.iter().enumerate() {
+            let conn = Connection::new(
+                (*name).into(),
+                format!("10.0.0.{}", i + 1),
+                "root".into(),
+                22,
+                None,
+                None,
+                false,
+                None,
+            );
+            db.add_connection(&conn).unwrap();
+        }
+        (dir, db)
+    }
+
+    fn names(db: &Database, query: &str) -> Vec<String> {
+        let mut found: Vec<String> = db
+            .search_connections(query, 10, "bayesian")
+            .unwrap()
+            .into_iter()
+            .map(|c| c.name)
+            .collect();
+        found.sort();
+        found
+    }
+
+    #[test]
+    fn test_fuzzy_prefix_and_number() {
+        let (_dir, db) = db_with(&["web-prod-1", "web-prod-2", "db-prod", "bastion"]);
+        assert_eq!(names(&db, "web1"), ["web-prod-1"]);
+        assert_eq!(names(&db, "wp1"), ["web-prod-1"]);
+        assert_eq!(names(&db, "prod1"), ["web-prod-1"]);
+        assert_eq!(names(&db, "db"), ["db-prod"]);
+        assert!(names(&db, "web3").is_empty());
+        assert!(names(&db, "zzz").is_empty());
+        // Ambiguous: several matches are all returned for the caller to pick.
+        assert_eq!(names(&db, "prod"), ["db-prod", "web-prod-1", "web-prod-2"]);
+    }
+
+    #[test]
+    fn test_prefix_and_number_is_strict() {
+        let (_dir, db) = db_with(&["web-prod-10", "web-prod-1"]);
+        assert_eq!(names(&db, "web1"), ["web-prod-1"]);
+        assert_eq!(names(&db, "web10"), ["web-prod-10"]);
+    }
 }
