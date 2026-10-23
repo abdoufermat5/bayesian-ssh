@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The installer stops when the latest version is already installed (the CLI, and the desktop app unless `--no-gui`): nothing is downloaded and `sudo` doesn't ask for a password. `--force` reinstalls anyway. When only the desktop app is missing, it says it's adding it.
 
 ### Fixed
+- Dependency `tokio` 1.52.3 → 1.54.1 for RUSTSEC-2026-0386 (`AsyncFd::new` violating I/O safety).
 - On Debian 12, Ubuntu 22.04, RHEL 9 and other systems older than glibc 2.39, every command printed `weak version 'GLIBC_2.39' not found`. Release binaries and packages are now built on Ubuntu 22.04; they need glibc 2.34 or newer and print nothing extra.
 
 ## [2.10.3] - 2026-10-23
