@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.12.1] - 2026-10-24
+
 ### Fixed
 - Organization errors are shown in the server's words instead of a generic hint: a non-owner's checkout says "only an owner of the organization can manage billing" (it said "you don't have permission for that in this team"), and removing the last owner says "the organization must keep at least one owner" (it said "that already exists or was already used"). Found by the end-to-end test against the hosted server.
 - `bssh teams billing <team> --checkout/--manage` no longer refuses an organization owner who isn't a team admin: the client checked the old "team admin" rule itself; the server, which knows the owners, now decides.
