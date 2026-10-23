@@ -2,230 +2,58 @@
   <img src="assets/banner.svg" alt="Bayesian SSH Banner" width="100%">
 </p>
 
-# Bayesian SSH - Fast and Easy SSH Session Manager
+# Bayesian SSH
 
-[![Rust](https://img.shields.io/badge/Rust-1.70+-blue.svg)](https://rustup.rs/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![CI](https://github.com/abdoufermat5/bayesian-ssh/workflows/CI/badge.svg)](https://github.com/abdoufermat5/bayesian-ssh/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/docs-bssh.abdoufermat.dev-blue.svg)](https://bssh.abdoufermat.dev)
 
-> **An ultra-fast and intelligent SSH session manager with Bayesian-ranked search, fuzzy matching, Kerberos support, bastion hosts, and advanced history management.**
+An SSH session manager for the terminal and the desktop. Type part of a name and it connects:
+search ranks your connections by how often and how recently you use them, and it handles
+bastions, Kerberos, file transfers and session history. **bssh Teams** shares connections
+with your team, end-to-end encrypted.
 
-## What is Bayesian SSH?
+**Documentation: [bssh.abdoufermat.dev](https://bssh.abdoufermat.dev)**
 
-**Bayesian SSH** transforms your SSH experience with intelligent automation:
+## Install
 
-- **Bayesian-ranked search** - connections ranked by frequency, recency, and match quality
-- **Intelligent fuzzy search** across all commands - find connections by partial names, tags, or patterns
-- **One-click connections** to your servers
-- **Automatic Kerberos** ticket management
-- **Smart bastion host** routing
-- **Tag-based organization** for easy management
-- **Complete connection history** with statistics
-- **SQLite database** for persistence
-
-## Quick Start
-
-### Installation
-
-#### Option 1: One-liner Install (Recommended)
 ```bash
-# Install full package (CLI + Desktop GUI)
 curl -fsSL https://raw.githubusercontent.com/abdoufermat5/bayesian-ssh/main/install.sh | bash
-
-# Server / Headless install (CLI only, no GUI dependencies)
-curl -fsSL https://raw.githubusercontent.com/abdoufermat5/bayesian-ssh/main/install.sh | bash -s -- --no-gui
-
-# Interactive mode
-curl -fsSL https://raw.githubusercontent.com/abdoufermat5/bayesian-ssh/main/install.sh | bash -s -- --interactive
 ```
 
-#### Option 2: Linux Distribution Packages (.deb / .rpm)
-Download pre-built packages from [Releases](https://github.com/abdoufermat5/bayesian-ssh/releases):
+Add `-s -- --no-gui` for the CLI only. `.deb`, `.rpm`, AppImage and checksums are on the
+[releases page](https://github.com/abdoufermat5/bayesian-ssh/releases); there is also a
+[snap](https://snapcraft.io/bayesian-ssh) (`sudo snap install bayesian-ssh`). Other methods,
+release signature checks and updates: [Installation](https://bssh.abdoufermat.dev/start/installation/).
+
+## Quick start
 
 ```bash
-# Debian / Ubuntu / Linux Mint / Pop!_OS (.deb)
-sudo apt install ./bayesian-ssh_2.10.1_amd64.deb
-
-# Fedora / RHEL / CentOS / openSUSE (.rpm)
-sudo dnf install ./bayesian-ssh-2.10.1-1.x86_64.rpm
+bssh import                          # bring in hosts from ~/.ssh/config
+bssh add web-prod web.example.com -u deploy
+bssh connect webprod                 # fuzzy: finds web-prod
+bssh upload -t prod ./app.tar.gz /opt/app/
+bssh history --days 7
+bayesian-ssh-desktop                 # the desktop app
 ```
 
-#### Option 3: Snap Store
-```bash
-sudo snap install bayesian-ssh
-sudo snap connect bayesian-ssh:ssh-keys   # read-only ~/.ssh and /etc/ssh
-sudo snap alias bayesian-ssh bssh         # optional short alias
-```
+`bssh` is the short name for `bayesian-ssh`. Next: the [quick start](https://bssh.abdoufermat.dev/start/quick-start/),
+the [guides](https://bssh.abdoufermat.dev/guides/connections/), [bssh Teams](https://bssh.abdoufermat.dev/teams/overview/)
+and the [CLI reference](https://bssh.abdoufermat.dev/reference/cli/).
 
-The snap includes the CLI and the desktop app. Strict confinement means `~/.ssh`
-is read-only and config lives under `~/snap/bayesian-ssh/current/`; see
-[docs/src/reference/distribution.md](docs/src/reference/distribution.md#snap-store)
-for the full list of limits.
-
-#### Option 4: Build from Source
-```bash
-git clone https://github.com/abdoufermat5/bayesian-ssh.git
-cd bayesian-ssh
-
-# Build & install locally
-make release && make install
-
-# Package .deb and .rpm locally
-make package
-```
-
-#### Verify a release
-Release assets are signed. With `cosign` and the `gh` CLI installed:
+## Build from source
 
 ```bash
-cosign verify-blob --bundle SHA256SUMS.sigstore.json \
-  --certificate-identity-regexp '^https://github\.com/abdoufermat5/bayesian-ssh/\.github/workflows/release\.yml@refs/(tags/v.+|heads/main)$' \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS
-
-sha256sum --ignore-missing -c SHA256SUMS
-
-gh attestation verify bayesian-ssh-linux-x86_64.tar.gz --repo abdoufermat5/bayesian-ssh
+git clone https://github.com/abdoufermat5/bayesian-ssh.git && cd bayesian-ssh
+make release && make install         # `make package` builds .deb and .rpm
 ```
 
-`install.sh` verifies the `cosign` signature automatically when `cosign` is
-installed, and always verifies `SHA256SUMS`.
+## Contributing
 
-#### In-app updates
-The desktop `.AppImage` and the `bayesian-ssh-desktop` `.deb`/`.rpm` from the
-GitHub release update themselves from **Settings → Updates**. The snap, the
-`install.sh` binaries, the unified `bayesian-ssh` packages and source builds are
-updated the way they were installed.
+Pull requests are welcome; open an issue first for anything large. Release notes are in
+[CHANGELOG.md](CHANGELOG.md), and the documentation source is in
+[bssh-docs](https://github.com/abdoufermat5/bssh-docs).
 
-### First Connection
-```bash
-# Add a server
-bayesian-ssh add "My Server" server.company.com
+## License
 
-# Connect instantly
-bayesian-ssh connect "My Server"
-```
-
-## 📖 Basic Usage
-
-### Core Commands
-```bash
-# Connect to a server (with fuzzy search)
-bayesian-ssh connect "Server Name"        # Exact match
-bayesian-ssh connect "webprod"            # Finds "web-prod-server"
-bayesian-ssh connect "prod"               # Shows all production servers
-
-# Manage connections (all with fuzzy search)
-bayesian-ssh edit "webprod"               # Edit connection settings
-bayesian-ssh show "dbprod"                # Show connection details
-bayesian-ssh remove "apigateway"          # Remove connection
-
-# Add new connection
-bayesian-ssh add "Server Name" hostname.com
-
-# List connections
-bayesian-ssh list
-
-# Import from SSH config
-bayesian-ssh import
-
-# Interactive Desktop GUI mode
-bayesian-ssh-desktop                      # Launches the desktop GUI client
-```
-
-### File Transfer
-```bash
-# Upload the same file to several hosts in parallel
-bayesian-ssh upload web1,web2 ./app.tar.gz /opt/app/
-bayesian-ssh upload -t prod ./app.tar.gz /opt/app/     # every host tagged "prod"
-bayesian-ssh upload --all --dry-run ./app.tar.gz /opt/ # preview targets first
-
-# Upload a directory tree to one host
-bayesian-ssh upload web-prod -r ./dist /var/www/app --mode 0o755
-
-# Download a file or directory from a host
-bayesian-ssh download db-prod /var/log/postgres.log ./postgres.log
-bayesian-ssh download db-prod -r /var/backups ./backups
-```
-
-### Session Management
-```bash
-# View session history with stats
-bayesian-ssh history                      # Recent sessions
-bayesian-ssh history -c "prod"            # Filter by connection
-bayesian-ssh history --days 7 --failed    # Last week's failures
-
-# Manage active sessions
-bayesian-ssh close                        # List active sessions
-bayesian-ssh close "Server"               # Close specific session
-bayesian-ssh close --cleanup              # Clean stale sessions
-bayesian-ssh close --all                  # Close all sessions
-```
-
-### Connection Aliases
-```bash
-# Create shortcuts for connections
-bayesian-ssh alias add db prod-database   # 'db' → 'prod-database'
-bayesian-ssh alias add p1 Portail01       # Quick alias
-bayesian-ssh connect db                   # Uses alias
-
-bayesian-ssh alias list                   # Show all aliases
-bayesian-ssh alias remove db              # Remove alias
-```
-
-### Bastion Management
-```bash
-# Use default bastion
-bayesian-ssh add "Server" host.com
-
-# Force direct connection
-bayesian-ssh add "Server" host.com --no-bastion
-
-# Custom bastion
-bayesian-ssh add "Server" host.com --bastion custom-bastion.com
-```
-
-
-### Configuration
-
-The app automatically creates configuration in `~/.config/bayesian-ssh/`:
-
-```bash
-# View current config
-bayesian-ssh config
-
-# Set defaults (Kerberos is disabled by default, current user is used)
-bayesian-ssh config --use-kerberos --default-user customuser
-```
-
-## Documentation
-
-Full documentation is built with [mdBook](https://rust-lang.github.io/mdBook/). To build and view locally:
-
-```bash
-make docs          # Build to docs/book/
-make docs-serve    # Serve locally with live reload
-```
-
-Documentation covers:
-
-- **[Getting Started](docs/src/getting-started/installation.md)** - Installation, quick start, configuration
-- **[User Guide](docs/src/user-guide/connection-management.md)** - Connections, sessions, aliases, desktop GUI, bastion hosts
-- **[Advanced Usage](docs/src/advanced-usage/enterprise.md)** - Enterprise, cloud, CI/CD, security & compliance
-- **[Reference](docs/src/reference/architecture.md)** - Architecture, troubleshooting, changelog
-
-## Changelog
-See [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
-
-##  Contributing
-
-1. **Fork** the project
-2. **Create** a feature branch (`git checkout -b feature/AmazingFeature`)
-3. **Commit** your changes (`git commit -m 'Add AmazingFeature'`)
-4. **Push** to the branch (`git push origin feature/AmazingFeature`)
-5. **Open** a Pull Request
-
-##  License
-
-This project is licensed under **MIT**. See the [LICENSE](LICENSE) file for details.
-
----
+MIT, see [LICENSE](LICENSE).

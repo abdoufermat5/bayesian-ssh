@@ -3,7 +3,7 @@
 /* ============================================================ */
 /* Shared, token-driven classes for every screen. If a pattern
    repeats in markup, it belongs here — never inline a variant.
-   Usage rules: docs/src/design/design-system.md.               */
+   Usage rules: desktop/DESIGN-SYSTEM.md.               */
 
 @layer components {
   /* ================================================================

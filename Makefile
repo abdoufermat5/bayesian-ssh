@@ -1,4 +1,4 @@
-.PHONY: help frontend gui-dev build release test check format lint perimeter hooks e2e install uninstall package flatpak-build snap-build docs clean
+.PHONY: help frontend gui-dev build release test check format lint perimeter hooks e2e install uninstall package flatpak-build snap-build clean
 
 INSTALL_DIR ?= /usr/local/bin
 
@@ -81,9 +81,6 @@ snap-build: ## Build Snap package from a published release (TAG=vX.Y.Z [ARCH=amd
 		exit 1; \
 	fi
 	scripts/snap-stage.sh $(TAG) $(ARCH) && cd target/snap && snapcraft pack
-
-docs: ## Build documentation with mdBook
-	mdbook build
 
 clean: ## Clean build artifacts
 	cargo clean

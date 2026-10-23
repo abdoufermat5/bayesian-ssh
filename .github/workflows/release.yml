@@ -1,7 +1,7 @@
 name: Release
 
 # Push a tag like v2.6.0 to build, sign and publish a release. Every optional
-# channel turns on with its own secret; see docs/src/reference/distribution.md.
+# channel turns on with its own secret; see RELEASING.md.
 on:
   push:
     tags:
