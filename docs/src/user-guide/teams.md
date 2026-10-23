@@ -115,11 +115,19 @@ bssh teams billing platform --manage               # card, invoices, seats, canc
 see your card. In the desktop app, the team's **Members & devices** tab shows the plan and a seat
 meter, with **Upgrade…** or **Manage billing** for admins.
 
-If a subscription ends (cancelled or unpaid) while the team has more members than the free seats,
-the team becomes **read-only**: everyone can still sync and connect to the team's hosts, but
-changes and invites are refused until an admin subscribes again or removes members. A failed
-payment doesn't block anything while Stripe retries it; the desktop app says so and links to the
-billing portal.
+A team becomes **read-only** in two cases: it has no live subscription and more members than the
+free seats (for example after a cancellation or an unpaid invoice), or its subscription has fewer
+paid seats than the team has members (seats were lowered in the billing portal). Everyone can still
+sync and connect to the team's hosts, but changes are refused. `bssh teams billing` says which case
+applies: add seats with `--manage` or remove members for the second; subscribe with `--checkout` or
+remove members down to the free seats for the first. Accepting an invite is refused when the team
+has no free seat. The desktop app shows the same reasons on the card.
+
+`past_due` means a payment failed and Stripe is retrying it: nothing is blocked and the team keeps
+its seats, but update the card with `--manage` (**Manage billing** in the app). A subscription set
+to cancel shows its end date, after which the team falls back to the free plan. Errors from the
+server or from Stripe (for instance "the payment provider is unavailable, try again in a minute")
+are shown as the server wrote them.
 
 A self-hosted server without billing has a fixed number of seats per team, set by its operator.
 

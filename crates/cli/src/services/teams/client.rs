@@ -34,12 +34,24 @@ pub enum TeamsError {
     InvalidUrl(String),
     #[error("network error: {0}")]
     Network(String),
-    #[error("server error {status}: {code:?}: {message}", code = .error.code, message = .error.message)]
+    #[error("{}", api_text(*.status, .error))]
     Api { status: u16, error: ApiError },
     #[error("unexpected response {status}: {body}")]
     Http { status: u16, body: String },
     #[error("could not decode server response: {0}")]
     Decode(String),
+}
+
+/// How an API error reads to the user. For billing and provider failures the
+/// server's message already says what to do (seats, plan, "try again in a
+/// minute"), so it is shown as is, without a status and code prefix.
+fn api_text(status: u16, error: &ApiError) -> String {
+    match error.code {
+        ErrorCode::PaymentRequired | ErrorCode::SeatLimit | ErrorCode::Internal => {
+            error.message.clone()
+        }
+        code => format!("server error {status}: {code:?}: {}", error.message),
+    }
 }
 
 impl TeamsError {
@@ -641,6 +653,40 @@ mod tests {
             expires_at: Utc::now() + ChronoDuration::seconds(ttl_secs),
         })
         .unwrap()
+    }
+
+    #[test]
+    fn billing_errors_show_the_server_message_as_is() {
+        for code in [
+            ErrorCode::PaymentRequired,
+            ErrorCode::SeatLimit,
+            ErrorCode::Internal,
+        ] {
+            let err = TeamsError::Api {
+                status: 402,
+                error: ApiError {
+                    code,
+                    message: "the team has no free seat; ask a team admin".into(),
+                },
+            };
+            assert_eq!(
+                err.to_string(),
+                "the team has no free seat; ask a team admin"
+            );
+            assert_eq!(
+                crate::services::teams::session::explain(&anyhow::Error::new(err)),
+                None,
+                "{code:?}: no hint replaces the server's text"
+            );
+        }
+        let other = TeamsError::Api {
+            status: 409,
+            error: ApiError {
+                code: ErrorCode::Conflict,
+                message: "taken".into(),
+            },
+        };
+        assert!(other.to_string().ends_with(": taken"), "{other}");
     }
 
     #[tokio::test]

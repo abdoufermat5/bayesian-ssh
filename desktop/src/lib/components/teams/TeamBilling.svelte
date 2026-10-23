@@ -4,6 +4,7 @@
   import { CreditCard, ExternalLink, RefreshCw, TriangleAlert } from "lucide-svelte";
   import type { TeamBillingInfo, TeamSummary } from "$lib/types";
   import { notify } from "$lib/stores/notifications.svelte";
+  import { readOnlyReason } from "$lib/utils/billing";
 
   let {
     team,
@@ -22,6 +23,7 @@
 
   /** The fewest seats a subscription can have: what's in use, and more than the free plan. */
   const minSeats = $derived(info ? Math.max(info.seats_used, info.free_seats + 1) : 1);
+  const reason = $derived(info ? readOnlyReason(info) : null);
   const seatsBlocker = $derived.by(() => {
     if (!Number.isInteger(seats) || seats < minSeats) return `At least ${minSeats} seats`;
     if (seats > 1000) return "At most 1000 seats";
@@ -143,18 +145,32 @@
         ></div>
       </div>
 
-      {#if info.status === "past_due"}
-        <p class="m-0 type-meta text-warning">The last payment failed; Stripe is retrying. Update the card in Manage billing.</p>
+      {#if info.plan === "team" && info.cancel_at_period_end && info.current_period_end}
+        <p class="m-0 type-meta">
+          Ends on {day(info.current_period_end)}, then the team falls back to the free plan.
+        </p>
       {/if}
-      {#if info.read_only}
+      {#if info.status === "past_due"}
+        <p class="m-0 type-meta text-warning">
+          Payment failed; Stripe is retrying. {isAdmin ? "Update the card with Manage billing." : "An admin can update the card."}
+        </p>
+      {/if}
+      {#if reason}
         <div class="alert alert-warning" role="alert">
           <TriangleAlert size={16} class="shrink-0" />
           <div class="flex flex-col gap-1">
             <span class="alert-title">This team is read-only</span>
-            <span>
-              It has more members than the free plan and no active subscription. Everyone can still sync and
-              connect; changes are refused until {isAdmin ? "you subscribe or remove members" : "an admin subscribes or removes members"}.
-            </span>
+            {#if reason === "not_enough_seats"}
+              <span>
+                It has more members than paid seats ({info.paid_seats}). Everyone can still sync and connect; changes
+                are refused until {isAdmin ? "you add seats with Manage billing or remove members" : "an admin adds seats or removes members"}.
+              </span>
+            {:else}
+              <span>
+                It has no active subscription and more members than the {info.free_seats} free seats. Everyone can
+                still sync and connect; changes are refused until {isAdmin ? "you subscribe with Upgrade… or remove members down to the free seats" : "an admin subscribes or removes members"}.
+              </span>
+            {/if}
           </div>
         </div>
       {:else if info.billing_enabled && info.plan === "free" && info.seats_used >= info.seat_limit}
