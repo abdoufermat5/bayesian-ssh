@@ -7,13 +7,15 @@
 
 use bayesian_ssh::config::AppConfig;
 use bayesian_ssh::services::teams::audit::EventCheck;
+use bayesian_ssh::services::teams::client::TeamsError;
 use bayesian_ssh::services::teams::crypto::{fingerprint, DeviceKeys};
+use bayesian_ssh::services::teams::orgs;
 use bayesian_ssh::services::teams::session::{
     self, AuditQuery, JoinWith, PreviewDevice, Session, TeamSync,
 };
 use bayesian_ssh::services::teams::TeamsStore;
-use bssh_teams_proto::api::AuditKind;
 use bssh_teams_proto::api::Role;
+use bssh_teams_proto::api::{AuditKind, OrgInfo, OrgRole};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use std::future::Future;
@@ -384,14 +386,21 @@ fn resolve(team: &str) -> anyhow::Result<uuid::Uuid> {
     Ok(session::resolve_team(store.database(), team)?.0)
 }
 
+/// Create a team. `org` is an organization id the caller owns; without it the
+/// server picks the oldest organization the caller owns (or makes one).
 #[tauri::command(async)]
-pub fn teams_create(state: State<'_, TeamsState>, name: String) -> Result<TeamSyncDto, String> {
+pub fn teams_create(
+    state: State<'_, TeamsState>,
+    name: String,
+    org: Option<String>,
+) -> Result<TeamSyncDto, String> {
     let name = name.trim().to_string();
     if name.is_empty() {
         return Err("Team name cannot be empty.".into());
     }
+    let org_id = org.as_deref().map(parse_org).transpose()?;
     with_session(state.unlocked()?, move |s| {
-        Box::pin(async move { Ok(TeamSyncDto::from(&s.create_team(&name).await?)) })
+        Box::pin(async move { Ok(TeamSyncDto::from(&s.create_team_in(&name, org_id).await?)) })
     })
 }
 
@@ -607,6 +616,195 @@ pub fn teams_billing_checkout(
 pub fn teams_billing_portal(state: State<'_, TeamsState>, team: String) -> Result<String, String> {
     with_session(state.unlocked()?, move |s| {
         Box::pin(async move { s.portal_url(resolve(&team)?).await })
+    })
+}
+
+// ── Organizations ───────────────────────────────────────────────────────────
+
+#[derive(Serialize)]
+pub struct OrgTeamDto {
+    team_id: String,
+    /// The local name when this machine knows the team.
+    name: Option<String>,
+    short_id: String,
+}
+
+#[derive(Serialize)]
+pub struct OrgOwnerDto {
+    account_id: String,
+    email: String,
+}
+
+#[derive(Serialize)]
+pub struct OrgDto {
+    org_id: String,
+    short_id: String,
+    /// The owners' emails: organizations have no name on the server.
+    label: String,
+    my_role: OrgRole,
+    owners: Vec<OrgOwnerDto>,
+    teams: Vec<OrgTeamDto>,
+    created_at: DateTime<Utc>,
+}
+
+fn org_dto(org: &OrgInfo, local: &[(uuid::Uuid, String)]) -> OrgDto {
+    OrgDto {
+        org_id: org.org_id.to_string(),
+        short_id: orgs::short_id(&org.org_id),
+        label: orgs::label(org),
+        my_role: org.my_role,
+        owners: org
+            .owners
+            .iter()
+            .map(|o| OrgOwnerDto {
+                account_id: o.account_id.to_string(),
+                email: o.email.clone(),
+            })
+            .collect(),
+        teams: org
+            .team_ids
+            .iter()
+            .map(|id| OrgTeamDto {
+                team_id: id.to_string(),
+                name: local.iter().find(|(t, _)| t == id).map(|(_, n)| n.clone()),
+                short_id: orgs::short_id(id),
+            })
+            .collect(),
+        created_at: org.created_at,
+    }
+}
+
+fn local_names() -> anyhow::Result<Vec<(uuid::Uuid, String)>> {
+    let (store, _) = open_store()?;
+    session::local_team_names(store.database())
+}
+
+fn parse_org(org: &str) -> Result<uuid::Uuid, String> {
+    uuid::Uuid::parse_str(org.trim()).map_err(|_| "Unknown organization id.".to_string())
+}
+
+fn is_org_unsupported(e: &anyhow::Error) -> bool {
+    matches!(
+        e.downcast_ref::<TeamsError>(),
+        Some(TeamsError::OrgUnsupported)
+    )
+}
+
+/// The organizations this account owns or has a team in. `None` when the
+/// server has no organizations (an older server): the page hides that UI.
+#[tauri::command(async)]
+pub fn teams_orgs(state: State<'_, TeamsState>) -> Result<Option<Vec<OrgDto>>, String> {
+    with_session(state.unlocked()?, move |s| {
+        Box::pin(async move {
+            match s.list_orgs().await {
+                Ok(list) => {
+                    let local = local_names()?;
+                    Ok(Some(list.iter().map(|o| org_dto(o, &local)).collect()))
+                }
+                Err(e) if is_org_unsupported(&e) => Ok(None),
+                Err(e) => Err(e),
+            }
+        })
+    })
+}
+
+#[tauri::command(async)]
+pub fn teams_org(state: State<'_, TeamsState>, org: String) -> Result<OrgDto, String> {
+    let org_id = parse_org(&org)?;
+    with_session(state.unlocked()?, move |s| {
+        Box::pin(async move { Ok(org_dto(&s.org_info(org_id).await?, &local_names()?)) })
+    })
+}
+
+#[tauri::command(async)]
+pub fn teams_org_create(state: State<'_, TeamsState>) -> Result<OrgDto, String> {
+    with_session(state.unlocked()?, move |s| {
+        Box::pin(async move { Ok(org_dto(&s.create_org().await?, &local_names()?)) })
+    })
+}
+
+#[tauri::command(async)]
+pub fn teams_org_add_owner(
+    state: State<'_, TeamsState>,
+    org: String,
+    email: String,
+) -> Result<OrgDto, String> {
+    let org_id = parse_org(&org)?;
+    with_session(state.unlocked()?, move |s| {
+        Box::pin(async move {
+            Ok(org_dto(
+                &s.add_org_owner(org_id, &email).await?,
+                &local_names()?,
+            ))
+        })
+    })
+}
+
+/// Remove an owner by email. Returns the organization as it is afterwards.
+#[tauri::command(async)]
+pub fn teams_org_remove_owner(
+    state: State<'_, TeamsState>,
+    org: String,
+    email: String,
+) -> Result<OrgDto, String> {
+    let org_id = parse_org(&org)?;
+    with_session(state.unlocked()?, move |s| {
+        Box::pin(async move {
+            s.remove_org_owner(org_id, &email).await?;
+            Ok(org_dto(&s.org_info(org_id).await?, &local_names()?))
+        })
+    })
+}
+
+#[tauri::command(async)]
+pub fn teams_org_billing(
+    state: State<'_, TeamsState>,
+    org: String,
+) -> Result<bssh_teams_proto::api::BillingInfo, String> {
+    let org_id = parse_org(&org)?;
+    with_session(state.unlocked()?, move |s| {
+        Box::pin(async move { s.org_billing(org_id).await })
+    })
+}
+
+/// A Stripe Checkout URL for the organization (owner); the page opens it in the browser.
+#[tauri::command(async)]
+pub fn teams_org_billing_checkout(
+    state: State<'_, TeamsState>,
+    org: String,
+    seats: Option<u32>,
+    yearly: bool,
+) -> Result<String, String> {
+    use bssh_teams_proto::api::BillingInterval;
+    let org_id = parse_org(&org)?;
+    with_session(state.unlocked()?, move |s| {
+        Box::pin(async move {
+            let seats = match seats {
+                Some(n) => n,
+                None => {
+                    let info = s.org_billing(org_id).await?;
+                    info.seats_used.max(info.free_seats + 1)
+                }
+            };
+            let interval = if yearly {
+                BillingInterval::Year
+            } else {
+                BillingInterval::Month
+            };
+            s.org_checkout_url(org_id, seats, interval).await
+        })
+    })
+}
+
+/// The Stripe Customer Portal URL of the organization (owner).
+#[tauri::command(async)]
+pub fn teams_org_billing_portal(
+    state: State<'_, TeamsState>,
+    org: String,
+) -> Result<String, String> {
+    let org_id = parse_org(&org)?;
+    with_session(state.unlocked()?, move |s| {
+        Box::pin(async move { s.org_portal_url(org_id).await })
     })
 }
 

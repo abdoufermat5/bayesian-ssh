@@ -4,6 +4,7 @@
   import { Lock, LogIn, Plus, RefreshCw, Users } from "lucide-svelte";
   import type {
     Connection,
+    OrgSummary,
     TeamAttention,
     TeamJoin,
     TeamsStatus,
@@ -26,6 +27,7 @@
   import TeamsUnlock from "./teams/TeamsUnlock.svelte";
   import TeamsHome from "./teams/TeamsHome.svelte";
   import TeamPage from "./teams/TeamPage.svelte";
+  import OrgPage from "./teams/OrgPage.svelte";
   import CreateTeamModal from "./teams/CreateTeamModal.svelte";
   import JoinTeamModal from "./teams/JoinTeamModal.svelte";
   import { plural, type ParsedInvite, type TeamTab } from "./teams/teams";
@@ -47,11 +49,15 @@
   let syncing = $state<string | null>(null);
   let openTeamId = $state<string | null>(null);
   let openTab = $state<TeamTab>("hosts");
+  /** null until loaded, and when the server has no organizations (the UI is hidden). */
+  let orgs = $state.raw<OrgSummary[] | null>(null);
+  let openOrgId = $state<string | null>(null);
   let modal = $state<"create" | "join" | null>(null);
   /** Invite pasted during setup, to pre-fill the join once the device is set up. */
   let joinSeed = $state.raw<ParsedInvite | null>(null);
 
   const teams = $derived(status?.teams ?? []);
+  const openOrg = $derived(orgs?.find((o) => o.org_id === openOrgId) ?? null);
   const openTeam = $derived(teams.find((t) => t.team_id === openTeamId) ?? null);
   const teamSourceIds = $derived(new Set(teams.map((t) => t.source_id)));
   const localConnections = $derived(connections.filter((c) => !c.source_id || !teamSourceIds.has(c.source_id)));
@@ -68,6 +74,15 @@
       loadError = String(err);
     } finally {
       loading = false;
+    }
+  }
+
+  async function loadOrgs() {
+    if (!status?.unlocked) return;
+    try {
+      orgs = await invoke<OrgSummary[] | null>("teams_orgs");
+    } catch {
+      // Offline or an older app backend: keep what we had.
     }
   }
 
@@ -236,11 +251,14 @@
   async function lock() {
     await invoke("teams_lock");
     attention = {};
+    orgs = null;
+    openOrgId = null;
     openTeamId = null;
     await refresh();
   }
 
   function openTeamPage(teamId: string, tab: TeamTab = "hosts") {
+    openOrgId = null;
     openTab = tab;
     openTeamId = teamId;
   }
@@ -251,6 +269,7 @@
     await refresh();
     openTeamPage(teamId);
     void checkAttention();
+    void loadOrgs();
   }
 
   async function onJoined(join: TeamJoin) {
@@ -259,7 +278,13 @@
     const team = status?.teams.find((t) => t.team_id === join.team_id);
     if (team) setWaitingKey(team, true);
     void checkAttention();
+    void loadOrgs();
   }
+
+  // Organizations load once Teams is unlocked.
+  $effect(() => {
+    if (status?.unlocked) untrack(() => void loadOrgs());
+  });
 
   // Poll while the view is open and unlocked (the view unmounts when hidden).
   $effect(() => {
@@ -356,6 +381,13 @@
       />
     {:else if !status.unlocked}
       <TeamsUnlock identity={status.identity} onUnlocked={(next) => (status = next)} />
+    {:else if openOrg}
+      <OrgPage
+        org={openOrg}
+        onBack={() => (openOrgId = null)}
+        onOpenTeam={(id) => openTeamPage(id)}
+        onChanged={() => void loadOrgs()}
+      />
     {:else if openTeam}
       {#key openTeam.team_id}
         <TeamPage
@@ -384,6 +416,7 @@
     {:else}
       <TeamsHome
         {status}
+        {orgs}
         {attention}
         {waitingForKey}
         {syncing}
@@ -391,13 +424,14 @@
         onSync={syncTeam}
         onCreate={() => (modal = "create")}
         onJoin={() => (modal = "join")}
+        onOpenOrg={(org) => (openOrgId = org.org_id)}
       />
     {/if}
   </div>
 </div>
 
 {#if status?.unlocked && status.identity && modal === "create"}
-  <CreateTeamModal onClose={() => (modal = null)} {onCreated} />
+  <CreateTeamModal {orgs} onClose={() => (modal = null)} {onCreated} />
 {:else if status?.unlocked && status.identity && modal === "join"}
   <JoinTeamModal
     identity={status.identity}

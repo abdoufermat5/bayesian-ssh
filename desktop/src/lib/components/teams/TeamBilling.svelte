@@ -2,17 +2,26 @@
   import { invoke } from "@tauri-apps/api/core";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { CreditCard, ExternalLink, RefreshCw, TriangleAlert } from "lucide-svelte";
-  import type { TeamBillingInfo, TeamSummary } from "$lib/types";
+  import type { OrgSummary, TeamBillingInfo, TeamSummary } from "$lib/types";
   import { notify } from "$lib/stores/notifications.svelte";
   import { readOnlyReason } from "$lib/utils/billing";
 
+  /**
+   * The card of a team (`team`), or of an organization (`orgId`, on its own page).
+   * A team of an organization shows the organization's seats and sends owners
+   * to the organization's checkout and portal.
+   */
   let {
     team,
-    isAdmin,
+    orgId,
+    isAdmin = false,
   }: {
-    team: TeamSummary;
-    isAdmin: boolean;
+    team?: TeamSummary;
+    orgId?: string;
+    isAdmin?: boolean;
   } = $props();
+
+  let org = $state.raw<OrgSummary | null>(null);
 
   let info = $state.raw<TeamBillingInfo | null>(null);
   let error = $state<string | null>(null);
@@ -24,6 +33,12 @@
   /** The fewest seats a subscription can have: what's in use, and more than the free plan. */
   const minSeats = $derived(info ? Math.max(info.seats_used, info.free_seats + 1) : 1);
   const reason = $derived(info ? readOnlyReason(info) : null);
+  /** The organization that owns the seats, when the server has them. */
+  const seatsOrgId = $derived(orgId ?? info?.org_id ?? null);
+  /** Who may subscribe and open the portal: an owner of the organization, else an admin of a team without one. */
+  const canManage = $derived(seatsOrgId ? org?.my_role === "owner" : isAdmin);
+  const orgOwners = $derived(org?.label ?? "its owners");
+  const who = $derived(seatsOrgId ? "an organization owner" : "an admin");
   const seatsBlocker = $derived.by(() => {
     if (!Number.isInteger(seats) || seats < minSeats) return `At least ${minSeats} seats`;
     if (seats > 1000) return "At most 1000 seats";
@@ -34,7 +49,11 @@
     busy = true;
     error = null;
     try {
-      info = await invoke<TeamBillingInfo>("teams_billing", { team: team.team_id });
+      info = orgId
+        ? await invoke<TeamBillingInfo>("teams_org_billing", { org: orgId })
+        : await invoke<TeamBillingInfo>("teams_billing", { team: team!.team_id });
+      const id = orgId ?? info.org_id;
+      org = id ? await invoke<OrgSummary>("teams_org", { org: id }).catch(() => null) : null;
     } catch (err) {
       error = String(err);
     } finally {
@@ -43,7 +62,8 @@
   }
 
   $effect(() => {
-    void team.team_id;
+    void team?.team_id;
+    void orgId;
     void load();
   });
 
@@ -56,10 +76,16 @@
   async function open(command: "teams_billing_checkout" | "teams_billing_portal") {
     busy = true;
     try {
-      const url = await invoke<string>(
-        command,
-        command === "teams_billing_checkout" ? { team: team.team_id, seats, yearly } : { team: team.team_id },
-      );
+      const checkout = command === "teams_billing_checkout";
+      const url = seatsOrgId
+        ? await invoke<string>(
+            checkout ? "teams_org_billing_checkout" : "teams_org_billing_portal",
+            checkout ? { org: seatsOrgId, seats, yearly } : { org: seatsOrgId },
+          )
+        : await invoke<string>(
+            command,
+            checkout ? { team: team!.team_id, seats, yearly } : { team: team!.team_id },
+          );
       await openUrl(url).catch(() => window.open(url, "_blank", "noopener,noreferrer"));
       upgrading = false;
       notify(
@@ -111,12 +137,12 @@
               {/if}
             </span>
             <span class="type-meta">
-              {info.seats_used} of {info.seat_limit} seats used (members and pending invites){#if info.current_period_end && info.plan === "team"}
+              {info.seats_used} of {info.seat_limit} seats used ({seatsOrgId ? "people in its teams" : "members"} and pending invites){#if info.current_period_end && info.plan === "team"}
                 · {info.cancel_at_period_end ? "ends" : "renews"} {day(info.current_period_end)}{/if}
             </span>
           {/if}
         </div>
-        {#if isAdmin && info.billing_enabled}
+        {#if canManage && info.billing_enabled}
           {#if info.plan === "team" || info.status}
             <button type="button" class="btn btn-secondary btn-sm" onclick={() => open("teams_billing_portal")} disabled={busy}>
               <ExternalLink size={14} />
@@ -145,37 +171,48 @@
         ></div>
       </div>
 
+      {#if seatsOrgId}
+        <p class="m-0 type-meta" data-testid="org-seats-note">
+          {#if orgId}
+            Seats are shared by the organization's teams: someone in several of them takes one seat.
+          {:else}
+            Seats are shared by the team's organization ({orgOwners}): someone in several of its teams takes one seat.
+          {/if}
+          {#if !canManage && org}Billing is managed by its owners: {orgOwners}.{/if}
+        </p>
+      {/if}
+
       {#if info.plan === "team" && info.cancel_at_period_end && info.current_period_end}
         <p class="m-0 type-meta">
-          Ends on {day(info.current_period_end)}, then the team falls back to the free plan.
+          Ends on {day(info.current_period_end)}, then {orgId ? "the organization" : "the team"} falls back to the free plan.
         </p>
       {/if}
       {#if info.status === "past_due"}
         <p class="m-0 type-meta text-warning">
-          Payment failed; Stripe is retrying. {isAdmin ? "Update the card with Manage billing." : "An admin can update the card."}
+          Payment failed; Stripe is retrying. {canManage ? "Update the card with Manage billing." : `${who[0].toUpperCase()}${who.slice(1)} can update the card.`}
         </p>
       {/if}
       {#if reason}
         <div class="alert alert-warning" role="alert">
           <TriangleAlert size={16} class="shrink-0" />
           <div class="flex flex-col gap-1">
-            <span class="alert-title">This team is read-only</span>
+            <span class="alert-title">{orgId ? "This organization is read-only" : "This team is read-only"}</span>
             {#if reason === "not_enough_seats"}
               <span>
                 It has more members than paid seats ({info.paid_seats}). Everyone can still sync and connect; changes
-                are refused until {isAdmin ? "you add seats with Manage billing or remove members" : "an admin adds seats or removes members"}.
+                are refused until {canManage ? "you add seats with Manage billing or remove members" : `${who} adds seats or removes members`}.
               </span>
             {:else}
               <span>
                 It has no active subscription and more members than the {info.free_seats} free seats. Everyone can
-                still sync and connect; changes are refused until {isAdmin ? "you subscribe with Upgrade… or remove members down to the free seats" : "an admin subscribes or removes members"}.
+                still sync and connect; changes are refused until {canManage ? "you subscribe with Upgrade… or remove members down to the free seats" : `${who} subscribes or removes members`}.
               </span>
             {/if}
           </div>
         </div>
       {:else if info.billing_enabled && info.plan === "free" && info.seats_used >= info.seat_limit}
         <p class="m-0 type-meta">
-          All free seats are taken{isAdmin ? ": upgrade to invite more people" : ": an admin can upgrade the team"}.
+          All free seats are taken{canManage ? ": upgrade to invite more people" : `: ${who} can upgrade`}.
         </p>
       {/if}
 
@@ -203,8 +240,8 @@
             </fieldset>
           </div>
           <p class="m-0 type-meta">
-            Every seat of the team is billed, from the first. Payment happens on Stripe's page in your browser; this app
-            never sees your card. CLI: <code class="select-text">bssh teams billing {team.name} --checkout --seats {seats}{yearly ? " --yearly" : ""}</code>
+            Every seat of {seatsOrgId ? "the organization" : "the team"} is billed, from the first. Payment happens on Stripe's page in your browser; this app
+            never sees your card. CLI: <code class="select-text">{seatsOrgId ? `bssh org billing ${org?.short_id ?? seatsOrgId.slice(0, 8)}` : `bssh teams billing ${team?.name}`} --checkout --seats {seats}{yearly ? " --yearly" : ""}</code>
           </p>
           <div class="flex items-center gap-2">
             <button type="submit" class="btn btn-primary btn-sm" disabled={busy || !!seatsBlocker} title={seatsBlocker ?? undefined}>

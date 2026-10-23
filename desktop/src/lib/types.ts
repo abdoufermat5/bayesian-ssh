@@ -382,6 +382,21 @@ export interface TeamBillingInfo {
   cancel_at_period_end: boolean;
   /** More members than the free seats and no active subscription: changes are refused. */
   read_only: boolean;
+  /** Set when the server has organizations: seats are counted for this organization. */
+  org_id?: string | null;
+}
+
+/** `teams_orgs()` / `teams_org(org)`: an organization (backend `OrgDto`). It has no name: label it by its owners. */
+export interface OrgSummary {
+  org_id: string;
+  short_id: string;
+  /** The owners' emails, e.g. "ana@example.com, bo@example.com". */
+  label: string;
+  my_role: "owner" | "member";
+  owners: { account_id: string; email: string }[];
+  /** `name` is the local name when this machine knows the team. */
+  teams: { team_id: string; name: string | null; short_id: string }[];
+  created_at: string;
 }
 
 export interface TeamPreviewDevice {
