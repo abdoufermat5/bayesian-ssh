@@ -57,6 +57,11 @@ gh attestation verify bayesian-ssh-linux-x86_64.tar.gz --repo abdoufermat5/bayes
 `install.sh` runs the `cosign verify-blob` check automatically when `cosign` is
 installed, and always verifies `SHA256SUMS` with `sha256sum -c`.
 
+`install.sh` is itself a release asset, listed in the signed `SHA256SUMS`. The docs
+site (bssh-docs) publishes the latest release's copy at
+`https://bssh.abdoufermat.dev/install.sh` after checking it against `SHA256SUMS`; its
+workflow runs daily and on demand, so a new release reaches that URL within a day.
+
 ## In-app updater
 
 The desktop app checks for updates under **Settings → Updates** and installs
