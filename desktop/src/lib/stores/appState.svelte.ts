@@ -76,6 +76,9 @@ export class AppStateStore {
   environments = $state.raw<EnvInfo[]>([]);
   activeEnv = $state("default");
   connections = $state.raw<Connection[]>([]);
+  /** Every host of the active profile, ignoring the Hosts search box and tag
+   *  chip. Feeds the palette, launchers and pickers that need the full set. */
+  allConnections = $state.raw<Connection[]>([]);
   searchQuery = $state("");
   selectedTag = $state<string | null>(null);
   stats = $state.raw<ConnectionStats | null>(null);
@@ -169,7 +172,7 @@ export class AppStateStore {
   // doesn't shrink while a search or tag filter is active.
   allTags = $derived.by(() => {
     const tagsSet = new Set<string>(Object.keys(this.stats?.by_tag ?? {}));
-    this.connections.forEach((c) => c.tags.forEach((t) => tagsSet.add(t)));
+    this.allConnections.forEach((c) => c.tags.forEach((t) => tagsSet.add(t)));
     return Array.from(tagsSet).sort();
   });
 
@@ -180,7 +183,7 @@ export class AppStateStore {
   /** Kerberos is opt-in: its indicator and expiry warnings only matter once a
    *  connection authenticates with it (new connections inherit the
    *  "Kerberos by default" setting, so it is covered too). */
-  kerberosInUse = $derived(this.connections.some((conn) => conn.use_kerberos));
+  kerberosInUse = $derived(this.allConnections.some((conn) => conn.use_kerberos));
 
   showTerminalsPanel = $derived(
     this.activeTab === "terminals" ||
@@ -519,15 +522,34 @@ export class AppStateStore {
   // Bumped on every connections fetch so a slow, older response (e.g. for a
   // previous search query) can never overwrite a newer one.
   private connectionsRequestSeq = 0;
+  // Same guard for the unfiltered list, which a search must not invalidate.
+  private allConnectionsRequestSeq = 0;
 
-  loadConnections = async () => {
+  private hasConnectionFilter = () => Boolean(this.searchQuery.trim() || this.selectedTag);
+
+  /** Reloads the Hosts list. `refreshAll` also refreshes `allConnections`; the
+   *  debounced search passes false so typing never costs an extra query. */
+  loadConnections = async (refreshAll = true) => {
     const seq = ++this.connectionsRequestSeq;
+    const allSeq = refreshAll ? ++this.allConnectionsRequestSeq : this.allConnectionsRequestSeq;
     try {
-      const result = await invoke<Connection[]>("get_connections", {
-        query: this.searchQuery,
-        tagFilter: this.selectedTag,
-      });
-      if (seq === this.connectionsRequestSeq) this.connections = result;
+      const filtered = this.hasConnectionFilter();
+      const [result, everything] = await Promise.all([
+        invoke<Connection[]>("get_connections", {
+          query: this.searchQuery,
+          tagFilter: this.selectedTag,
+        }),
+        filtered && refreshAll
+          ? invoke<Connection[]>("get_connections", { query: "", tagFilter: null })
+          : null,
+      ]);
+      if (everything && allSeq === this.allConnectionsRequestSeq) this.allConnections = everything;
+      if (seq !== this.connectionsRequestSeq) return;
+      this.connections = result;
+      if (!filtered) {
+        this.allConnectionsRequestSeq++;
+        this.allConnections = result;
+      }
     } catch (e: unknown) {
       notify(String(e), "error");
     }
@@ -541,17 +563,19 @@ export class AppStateStore {
     if (this.searchTimer) clearTimeout(this.searchTimer);
     this.searchTimer = setTimeout(() => {
       this.searchTimer = null;
-      void this.loadConnections();
+      void this.loadConnections(false);
     }, 150);
   }
 
   reloadConnectionsAfterMutation = async () => {
     const seq = ++this.connectionsRequestSeq;
+    const allSeq = ++this.allConnectionsRequestSeq;
     try {
       const allConnections = await invoke<Connection[]>("get_connections", {
         query: "",
         tagFilter: null,
       });
+      if (allSeq === this.allConnectionsRequestSeq) this.allConnections = allConnections;
 
       if (this.searchQuery.trim() || this.selectedTag) {
         const filtered = await invoke<Connection[]>("get_connections", {

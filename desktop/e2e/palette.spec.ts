@@ -95,4 +95,21 @@ test.describe("command palette", () => {
     await page.keyboard.press("Enter");
     await expect(page.locator("html")).toHaveClass(/theme-light/);
   });
+
+  test("searches every host even when the Hosts view is filtered", async ({ app, page }) => {
+    await app.gotoApp();
+    await page.locator(".search-input").fill("api");
+    await expect(page.locator("tbody tr", { hasText: "prod-api-01" })).toHaveCount(1);
+    await expect(page.locator("tbody tr", { hasText: "gpu-trainer" })).toHaveCount(0);
+
+    await app.openPalette();
+    const dialog = page.getByRole("dialog", { name: "Command palette" });
+    await dialog.getByRole("combobox", { name: "Search commands" }).fill("gpu");
+    await expect(dialog.getByRole("option", { name: /gpu-trainer/ })).toBeVisible();
+    await expect(dialog.getByText(/No results for/)).toHaveCount(0);
+
+    // The Hosts view keeps its filtered list.
+    await page.keyboard.press("Escape");
+    await expect(page.locator("tbody tr", { hasText: "gpu-trainer" })).toHaveCount(0);
+  });
 });

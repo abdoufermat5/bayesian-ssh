@@ -175,7 +175,7 @@
 
     listen("connect-host", async (event) => {
       const hostName = event.payload as string;
-      const conn = appState.connections.find((c) => c.name === hostName);
+      const conn = appState.allConnections.find((c) => c.name === hostName);
       if (conn) {
         await appState.handleConnect(conn);
       }
@@ -286,11 +286,11 @@
       {:else if appState.activeTab === "history"}
         <HistoryView history={appState.history} timezone={appState.settings.timezone} />
       {:else if appState.activeTab === "keys"}
-        <KeysView connections={appState.connections} />
+        <KeysView connections={appState.allConnections} />
       {:else if appState.activeTab === "audit"}
         <AuditView />
       {:else if appState.activeTab === "teams"}
-        <TeamsView connections={appState.connections} onConnectionsChanged={() => void appState.loadConnections()} />
+        <TeamsView connections={appState.allConnections} onConnectionsChanged={() => void appState.loadConnections()} />
       {:else if appState.activeTab === "settings"}
         <SettingsView
           bind:settings={appState.settings}
@@ -306,7 +306,7 @@
         />
       {:else if appState.activeTab === "sftp" && appState.settings.enable_sftp !== false}
         <SFTPView
-          connections={appState.connections}
+          connections={appState.allConnections}
           onOpenUpload={(connectionId, remoteDir) =>
             openUploadModal(connectionId ? [connectionId] : [], remoteDir)}
         />
@@ -317,7 +317,7 @@
       {#if appState.showTerminalsPanel}
         <div class="view" class:hidden={appState.activeTab !== "terminals"}>
           <TerminalsView
-            connections={appState.connections}
+            connections={appState.allConnections}
             bind:searchQuery={appState.searchQuery}
             onCloseAll={appState.requestCloseAllSessions}
             onManageSessions={appState.openSessionManager}
@@ -426,13 +426,13 @@
 
 <BatchExecModal
   show={showBatchExecModal}
-  connections={appState.connections}
+  connections={appState.allConnections}
   onClose={() => (showBatchExecModal = false)}
 />
 
 <UploadModal
   show={showUploadModal}
-  connections={appState.connections}
+  connections={appState.allConnections}
   initialConnectionIds={uploadConnectionIds}
   initialRemoteDir={uploadRemoteDir}
   onClose={() => (showUploadModal = false)}
@@ -456,7 +456,7 @@
 
 <CommandPalette
   open={showCommandPalette}
-  connections={appState.connections}
+  connections={appState.allConnections}
   activeTab={appState.activeTab}
   settings={appState.settings}
   onClose={() => (showCommandPalette = false)}
