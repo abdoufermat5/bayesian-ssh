@@ -595,9 +595,26 @@ impl SshTransport for RusshTransport {
 
         enable_raw_mode().map_err(|e| TransportError::Permanent(anyhow!("raw mode: {e}")))?;
 
-        let mut stdin = tokio::io::stdin();
+        // Keystrokes come from a plain thread, not `tokio::io::stdin()`: Tokio reads stdin
+        // on its blocking pool, and the read still pending when the remote shell exits kept
+        // the runtime, and so the process, alive until the next key press.
+        let (stdin_tx, mut stdin_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(32);
+        std::thread::spawn(move || {
+            use std::io::Read;
+            let mut stdin = std::io::stdin();
+            let mut buf = [0u8; 4096];
+            loop {
+                match stdin.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        if stdin_tx.blocking_send(buf[..n].to_vec()).is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
+        });
         let mut stdout = tokio::io::stdout();
-        let mut buf = [0u8; 4096];
         let mut stdin_closed = false;
         let mut exit_code = 0i32;
         let mut carry = crate::services::pty::Utf8Carry::default();
@@ -608,10 +625,10 @@ impl SshTransport for RusshTransport {
 
         loop {
             tokio::select! {
-                r = stdin.read(&mut buf), if !stdin_closed => {
-                    match r {
-                        Ok(0) | Err(_) => { stdin_closed = true; let _ = channel.eof().await; }
-                        Ok(n) => { let _ = channel.data(&buf[..n]).await; }
+                data = stdin_rx.recv(), if !stdin_closed => {
+                    match data {
+                        None => { stdin_closed = true; let _ = channel.eof().await; }
+                        Some(d) => { let _ = channel.data(d.as_slice()).await; }
                     }
                 }
                 _ = async {
