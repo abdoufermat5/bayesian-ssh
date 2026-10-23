@@ -983,7 +983,14 @@ impl<'a> Session<'a> {
                 params![team_id.to_string(), device.device_id.to_string()],
             )?;
         }
-        self.sync_team(team_id, Vec::new()).await
+        // The member is gone server-side whatever happens next: say so, so a
+        // failed rotation isn't read as a failed removal.
+        self.sync_team(team_id, Vec::new()).await.map_err(|e| {
+            anyhow!(
+                "{email} is removed from the team, but {e:#}. Until the key is rotated, \
+                 nobody can push; `bssh teams sync` rotates it once that is fixed"
+            )
+        })
     }
 
     /// New key version for the remaining, approved devices. Queued edits
