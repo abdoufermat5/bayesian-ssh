@@ -675,7 +675,10 @@ impl<'a> Session<'a> {
         let initial_key =
             crypto::wrap_team_key(team_id, &tk, &me, self.identity.device_id, &self.keys)?;
         self.client
-            .create_team(&CreateTeamRequest { initial_key })
+            .create_team(&CreateTeamRequest {
+                initial_key,
+                org_id: None,
+            })
             .await?;
         self.store.upsert_team(&TeamLocal {
             team_id,

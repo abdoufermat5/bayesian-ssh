@@ -53,6 +53,7 @@ mod tests {
             current_period_end: None,
             cancel_at_period_end: false,
             read_only,
+            org_id: None,
         }
     }
 
