@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.3] - 2026-10-23
+
 ### Changed
 - The CLI is quiet by default: `log_level` now defaults to `warn`, so normal runs print only the command's own output instead of `INFO` tracing lines. Existing configs that still hold the old default `info` are switched to `warn` once, on the next run; after that, `bssh config --log-level info` (or `debug`) is kept as an explicit choice. `RUST_LOG=info` also overrides the configured level for a single run.
 
