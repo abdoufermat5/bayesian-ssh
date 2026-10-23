@@ -15,7 +15,7 @@ fn parse_log_level(level: &str) -> LevelFilter {
         "warn" | "warning" => LevelFilter::WARN,
         "error" => LevelFilter::ERROR,
         "off" | "none" => LevelFilter::OFF,
-        _ => LevelFilter::INFO, // Default to INFO for invalid values
+        _ => LevelFilter::WARN, // Default to WARN for invalid values
     }
 }
 
@@ -34,7 +34,11 @@ async fn main() -> anyhow::Result<()> {
 
     if !is_completions {
         // Initialize logging with the configured log level and environment prefix
-        let log_level = parse_log_level(&config.log_level);
+        // `RUST_LOG=info` (or debug, ...) overrides the configured level.
+        let log_level = match std::env::var("RUST_LOG") {
+            Ok(level) if !level.trim().is_empty() => parse_log_level(level.trim()),
+            _ => parse_log_level(&config.log_level),
+        };
 
         // Use a custom format block to prepend the [environment] tag to logs
         let format = tracing_subscriber::fmt::format()

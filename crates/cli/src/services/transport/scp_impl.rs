@@ -118,8 +118,11 @@ pub async fn scp_upload(
     remote_path: &str,
     recursive: bool,
 ) -> Result<()> {
-    let argv = build_scp_argv(conn, local, remote_path, recursive, Direction::Upload)?;
-    run_scp(&argv).await
+    let mut argv = build_scp_argv(conn, local, remote_path, recursive, Direction::Upload)?;
+    // The caller owns the terminal (progress bars): silence scp's own meter
+    // and capture its diagnostics instead of letting them scribble over it.
+    quiet_scp_argv(&mut argv);
+    run_scp(&argv, true).await
 }
 
 /// Download `remote_path` from the target to `local`.
@@ -130,7 +133,7 @@ pub async fn scp_download(
     recursive: bool,
 ) -> Result<()> {
     let argv = build_scp_argv(conn, local, remote_path, recursive, Direction::Download)?;
-    run_scp(&argv).await
+    run_scp(&argv, false).await
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -236,10 +239,42 @@ fn build_scp_argv(
     Ok(argv)
 }
 
-async fn run_scp(argv: &[String]) -> Result<()> {
+/// Add `-q` (no progress meter, no ssh chatter) right after the program name.
+fn quiet_scp_argv(argv: &mut Vec<String>) {
+    if !argv.iter().any(|a| a == "-q") {
+        argv.insert(1, "-q".into());
+    }
+}
+
+/// Run scp. When `capture` is set, stdout is discarded and stderr is captured
+/// into the returned error instead of being written to the terminal.
+async fn run_scp(argv: &[String], capture: bool) -> Result<()> {
     let (cmd_name, args) = argv.split_first().expect("argv non-empty");
 
     info!("running: {} {}", cmd_name, args.join(" "));
+
+    if capture {
+        let output = TokioCommand::new(cmd_name)
+            .args(args)
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .output()
+            .await
+            .context("failed to spawn scp process")?;
+        if output.status.success() {
+            info!("scp completed successfully");
+            return Ok(());
+        }
+        let code = output.status.code().unwrap_or(-1);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = stderr.trim();
+        return Err(if stderr.is_empty() {
+            anyhow::anyhow!("scp exited with code {code}")
+        } else {
+            anyhow::anyhow!("scp exited with code {code}: {stderr}")
+        });
+    }
 
     let status = TokioCommand::new(cmd_name)
         .args(args)
@@ -263,6 +298,14 @@ async fn run_scp(argv: &[String]) -> Result<()> {
 mod tests {
     use super::*;
     use std::path::Path;
+
+    #[test]
+    fn quiet_flag_inserted_once() {
+        let mut argv = vec!["scp".to_string(), "-O".to_string()];
+        quiet_scp_argv(&mut argv);
+        quiet_scp_argv(&mut argv);
+        assert_eq!(argv, ["scp", "-q", "-O"]);
+    }
 
     fn conn(kerb: bool, bastion: Option<&str>) -> Connection {
         Connection::new(

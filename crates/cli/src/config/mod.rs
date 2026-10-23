@@ -96,6 +96,10 @@ pub struct AppConfig {
     pub use_kerberos_by_default: bool,
     pub ssh_config_path: Option<PathBuf>,
     pub log_level: String,
+    /// Set once the pre-2.10.3 default `log_level = "info"` has been
+    /// migrated to `"warn"`. After that, `"info"` is an explicit choice.
+    #[serde(default)]
+    pub log_level_migrated: bool,
     pub auto_save_history: bool,
     pub max_history_size: usize,
     #[serde(default = "default_search_mode")]
@@ -220,6 +224,18 @@ impl AppConfig {
             let mut cfg: AppConfig = serde_json::from_str(&content)
                 .with_context(|| format!("parse config file '{}'", config_file.display()))?;
             cfg.environment = environment.clone();
+            // `info` used to be the default, so a stored `info` is almost
+            // always that default and not a choice. Quiet it once; later
+            // `config --log-level info` sticks because the flag is set.
+            if !cfg.log_level_migrated {
+                if cfg.log_level.eq_ignore_ascii_case("info") {
+                    cfg.log_level = "warn".to_string();
+                }
+                cfg.log_level_migrated = true;
+                // Best effort: a config dir that can't be written must not break
+                // every command; the migration simply runs again next time.
+                let _ = cfg.save();
+            }
             cfg
         } else {
             let cfg = Self::default_for_env(&environment);
@@ -259,7 +275,8 @@ impl AppConfig {
             default_port: 22,
             use_kerberos_by_default: false,
             ssh_config_path: dirs::home_dir().map(|h| h.join(".ssh/config")),
-            log_level: "info".to_string(),
+            log_level: "warn".to_string(),
+            log_level_migrated: true,
             auto_save_history: true,
             max_history_size: 1000,
             search_mode: "bayesian".to_string(),
@@ -424,5 +441,20 @@ mod tests {
             assert!(AppConfig::validate_env_name(name).is_err(), "{name:?}");
         }
         assert!(AppConfig::validate_env_name(&"a".repeat(65)).is_err());
+    }
+
+    #[test]
+    fn default_log_level_is_warn() {
+        let cfg = AppConfig::default();
+        assert_eq!(cfg.log_level, "warn");
+        assert!(cfg.log_level_migrated);
+    }
+
+    #[test]
+    fn legacy_config_without_flag_is_not_marked_migrated() {
+        let mut v = serde_json::to_value(AppConfig::default()).unwrap();
+        v.as_object_mut().unwrap().remove("log_level_migrated");
+        let cfg: AppConfig = serde_json::from_value(v).unwrap();
+        assert!(!cfg.log_level_migrated);
     }
 }

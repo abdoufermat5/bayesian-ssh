@@ -394,6 +394,10 @@ pub enum Commands {
     #[command(
         long_about = "Parse an OpenSSH config file or encrypted JSON backup and import each host as a connection.\n\
             Defaults to ~/.ssh/config when --file is omitted.\n\n\
+            Imported keys: HostName, User, Port, IdentityFile, ProxyJump and ProxyCommand\n\
+            (only 'ssh -W %h:%p <host>'). ProxyJump becomes the bastion: an alias defined in\n\
+            the same file is resolved to its HostName/User/Port, 'none' means direct, and for a\n\
+            chain only the first hop is kept (with a warning).\n\n\
             Examples:\n\
               bssh import\n\
               bssh import -f backup.enc --passphrase secret\n\

@@ -96,9 +96,9 @@ impl SubprocessTransport {
     /// instead.
     pub(crate) fn build_exec_argv(conn: &Connection, command: &str, shkc: &str) -> Vec<String> {
         let mut argv: Vec<String> = vec!["ssh".into()];
-        argv.push("-tt".into());
-        argv.push("-o".into());
-        argv.push("RequestTTY=force".into());
+        // Non-interactive: no remote PTY. A forced TTY makes ssh print
+        // "Connection to <host> closed." and merges remote stderr into stdout.
+        argv.push("-T".into());
         if conn.use_kerberos {
             argv.push("-K".into());
         }
@@ -116,7 +116,7 @@ impl SubprocessTransport {
             argv.push("-o".into());
             argv.push(format!(
                 "ProxyCommand={}",
-                jump_proxy_command(conn, " -tt -o RequestTTY=force", shkc)
+                jump_proxy_command(conn, " -T", shkc)
             ));
         }
         argv.push("-p".into());
@@ -738,6 +738,22 @@ mod tests {
         assert!(!argv.contains(&"-K".to_string()));
         assert!(!argv.contains(&"-i".to_string()));
         assert!(!argv.contains(&"-J".to_string()));
+    }
+
+    #[test]
+    fn exec_argv_never_forces_tty() {
+        for bastion in [None, Some("b.example")] {
+            let argv = SubprocessTransport::build_exec_argv(
+                &c(false, bastion, None),
+                "uptime",
+                "accept-new",
+            );
+            assert!(argv.contains(&"-T".to_string()));
+            assert!(!argv.contains(&"-t".to_string()));
+            assert!(!argv.contains(&"-tt".to_string()));
+            assert!(!argv.iter().any(|a| a.contains("RequestTTY=force")));
+            assert!(!argv.iter().any(|a| a.contains(" -tt")));
+        }
     }
 
     #[test]

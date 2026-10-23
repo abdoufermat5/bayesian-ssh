@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- The CLI is quiet by default: `log_level` now defaults to `warn`, so normal runs print only the command's own output instead of `INFO` tracing lines. Existing configs that still hold the old default `info` are switched to `warn` once, on the next run; after that, `bssh config --log-level info` (or `debug`) is kept as an explicit choice. `RUST_LOG=info` also overrides the configured level for a single run.
+
+### Fixed
+- After `exit` in a `bssh connect` session, the prompt came back only at the next key press, and that key went to the closed session. Keystrokes are now read on a plain thread instead of Tokio's blocking pool, whose pending read kept the process alive.
+- `bssh show web1` (and `connect`, `edit`, ...) now finds `web-prod-1`: a word prefix followed by the digits of a later name segment matches, like `wp1` and `prod1` already did. The digits must be a whole segment, so `web1` does not match `web-prod-10`.
+- `bssh import` and `ssh-config` inventory sources now honour `ProxyJump`, so imported hosts behind a bastion connect through it instead of failing direct. `user@host:port`, plain hosts and aliases defined in the same config are resolved to their HostName/User/Port; `ProxyJump none` imports a direct connection; and a `ProxyCommand ssh -W %h:%p <host>` is treated like `ProxyJump`. Only one bastion is supported: for a chain (`ProxyJump a,b`) the first hop is kept and a warning names the ignored hops. Other `ProxyCommand` forms are not imported and print a warning.
+- The desktop command palette (Ctrl+K), the Terminals "New session" launcher, the Files host picker, the Keys pickers and the batch run and upload host lists now always cover every host of the active profile. They no longer shrink to whatever the Hosts search box or tag filter currently shows.
+- `bssh exec` on a host reached through a bastion no longer forces a remote terminal. It used to print `Connection to <host> closed.` under `[STDERR]` and merge the command's stderr into stdout; output now matches direct hosts.
+- `bssh upload` to a host reached through a bastion (sent over SCP) no longer leaves stale `0 B/0 B` progress rows. SCP's own progress meter is silenced and the host ends on one status line, such as `✔ 20.0 MiB (via SCP)`. SCP errors are now reported in the result instead of being printed over the progress bars.
+
 ## [2.10.2] - 2026-10-23
 
 ### Changed

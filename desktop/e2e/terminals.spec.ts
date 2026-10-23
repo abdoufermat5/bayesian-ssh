@@ -289,3 +289,17 @@ test.describe("terminals — tab shortcuts", () => {
     await expect(tabs.nth(1)).toContainText("prod-api-02");
   });
 });
+
+test.describe("terminals — New session launcher", () => {
+  test("lists every host even when the Hosts view is filtered", async ({ app, page }) => {
+    await app.gotoApp();
+    await page.locator(".search-input").fill("api");
+    await expect(page.locator("tbody tr", { hasText: "gpu-trainer" })).toHaveCount(0);
+
+    await page.locator("tbody tr", { hasText: "prod-api-01" }).click();
+    await page.keyboard.press("Enter");
+    await expect(page.locator('[role="tab"]')).toHaveCount(1);
+    await page.getByRole("button", { name: "New session" }).click();
+    await expect(page.getByRole("option", { name: /gpu-trainer/ })).toBeVisible();
+  });
+});

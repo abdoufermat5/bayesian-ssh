@@ -235,6 +235,13 @@ pub async fn execute_upload(
 
 fn finish_bar(bar: &ProgressBar, result: &HostUploadResult) {
     let via = if result.via_scp { " (via SCP)" } else { "" };
+    if result.via_scp {
+        // SCP reports no byte progress: drop the empty `0 B/0 B` bar so the
+        // host ends on one clean status line.
+        bar.set_style(
+            ProgressStyle::with_template("{prefix:>20} {msg}").expect("valid indicatif template"),
+        );
+    }
     if result.ok {
         bar.finish_with_message(format!("✔ {}{via}", format_bytes(result.bytes)));
     } else {
