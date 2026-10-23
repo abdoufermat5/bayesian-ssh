@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.svg" alt="Bayesian SSH Banner" width="100%">
+  <img src="assets/banner.svg" alt="Bayesian SSH: every host, one keystroke away" width="100%">
 </p>
 
 # Bayesian SSH
@@ -14,47 +14,47 @@ bastions, Kerberos, file transfers and session history. **bssh Teams** shares co
 with your team, end-to-end encrypted.
 
 **Documentation: [bssh.abdoufermat.dev](https://bssh.abdoufermat.dev)**
+
 ## Features
 
 <table>
   <tr>
     <td width="50%" valign="top">
-      <img src="assets/icon-search.svg" width="36" align="left" style="margin-right: 10px;" />
-      <strong>Bayesian Predictive Search</strong><br/>
-      Finds the host you mean. Results are ranked by recency and frequency using Bayesian inference.
+      <img src="assets/icon-search.svg" width="28" height="28" align="left" alt="">
+      &nbsp;<strong>Finds the host you mean</strong><br>
+      &nbsp;Type part of a name, a tag or an abbreviation. Hosts are ranked by how often, how recently and in what context you use them; <code>bssh why</code> explains a ranking.
     </td>
     <td width="50%" valign="top">
-      <img src="assets/icon-connect.svg" width="36" align="left" style="margin-right: 10px;" />
-      <strong>Instant &amp; Secure Connect</strong><br/>
-      Fast session bootstrap with native libssh2 and robust system SSH fallbacks.
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <img src="assets/icon-bastion.svg" width="36" align="left" style="margin-right: 10px;" />
-      <strong>Bastions &amp; Kerberos Built-in</strong><br/>
-      Automated jump hosts, multi-hop tunnels, and Kerberos ticket lifecycle handling.
-    </td>
-    <td width="50%" valign="top">
-      <img src="assets/icon-vault.svg" width="36" align="left" style="margin-right: 10px;" />
-      <strong>bssh Teams &amp; E2EE Vault</strong><br/>
-      Share connection inventories with end-to-end zero-knowledge encryption and signed audit logs.
+      <img src="assets/icon-terminal.svg" width="28" height="28" align="left" alt="">
+      &nbsp;<strong>Command line and desktop</strong><br>
+      &nbsp;The same hosts in <code>bssh</code> and in the desktop app: terminal tabs, file transfer, a command palette.
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <img src="assets/icon-tui.svg" width="36" align="left" style="margin-right: 10px;" />
-      <strong>Keyboard-First Terminal &amp; Desktop</strong><br/>
-      Full-featured interactive TUI for terminals and a native modern desktop application.
+      <img src="assets/icon-bastion.svg" width="28" height="28" align="left" alt="">
+      &nbsp;<strong>Bastions and Kerberos</strong><br>
+      &nbsp;Jump hosts per connection or by default, <code>ProxyJump</code> picked up from <code>~/.ssh/config</code>, Kerberos tickets handled for you.
     </td>
     <td width="50%" valign="top">
-      <img src="assets/icon-history.svg" width="36" align="left" style="margin-right: 10px;" />
-      <strong>Session History &amp; Analytics</strong><br/>
-      Audit session durations, exit codes, and track connection telemetry over time.
+      <img src="assets/icon-fleet.svg" width="28" height="28" align="left" alt="">
+      &nbsp;<strong>Every host at once</strong><br>
+      &nbsp;Run a command or upload files across every host with a tag, in parallel, with one summary.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="assets/icon-history.svg" width="28" height="28" align="left" alt="">
+      &nbsp;<strong>Session history</strong><br>
+      &nbsp;Who connected where, for how long, and how it ended. Sessions can be recorded and replayed.
+    </td>
+    <td width="50%" valign="top">
+      <img src="assets/icon-vault.svg" width="28" height="28" align="left" alt="">
+      &nbsp;<strong>bssh Teams</strong><br>
+      &nbsp;Share connections with your team through a vault encrypted on your devices, with a signed audit log.
     </td>
   </tr>
 </table>
-
 
 ## Install
 

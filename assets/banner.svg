@@ -1,110 +1,51 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" width="1200" height="300">
-  <style>
-    .sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
-    .mono { font-family: 'JetBrains Mono', SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
-  </style>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 360" width="1200" height="360" role="img" aria-label="Bayesian SSH: every host, one keystroke away">
+  <defs>
+    <style>
+      .sans { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Helvetica, Arial, sans-serif; }
+      .mono { font-family: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace; }
+    </style>
+  </defs>
+  <rect x="0.5" y="0.5" width="1199" height="359" rx="14" fill="#111113" stroke="#26262b"/>
 
-  <!-- Clean matte background -->
-  <rect width="1200" height="300" fill="#09090b"/>
-  <rect x="0.5" y="0.5" width="1199" height="299" fill="none" stroke="#27272a" stroke-width="1"/>
-
-  <!-- ==================== LEFT COLUMN: TYPOGRAPHY & HERO ==================== -->
-  <g transform="translate(56, 42)">
-    <!-- Category Label -->
-    <text x="0" y="14" font-size="11" font-weight="600" fill="#71717a" class="mono" letter-spacing="0.15em">BAYESIAN SSH</text>
-
-    <!-- Main Title Headline -->
-    <text x="0" y="58" font-size="32" font-weight="600" fill="#fafafa" class="sans" letter-spacing="-0.025em">Every host, one keystroke away.</text>
-
-    <!-- Subtitle -->
-    <text x="0" y="94" font-size="14" fill="#a1a1aa" class="sans">Intelligent SSH session manager for terminal and desktop.</text>
-    <text x="0" y="116" font-size="14" fill="#a1a1aa" class="sans">Ranks connections by Bayesian inference. Built-in bastions,</text>
-    <text x="0" y="138" font-size="14" fill="#a1a1aa" class="sans">Kerberos tickets, and end-to-end encrypted team vaults.</text>
-
-    <!-- Feature tags: minimal hairline text -->
-    <g transform="translate(0, 168)" class="mono">
-      <text x="0" y="12" font-size="11" fill="#3b82f6">01</text>
-      <text x="20" y="12" font-size="11" fill="#d4d4d8">Predictive ranking</text>
-      
-      <text x="164" y="12" font-size="11" fill="#71717a">/</text>
-      <text x="180" y="12" font-size="11" fill="#3b82f6">02</text>
-      <text x="200" y="12" font-size="11" fill="#d4d4d8">Bastions &amp; Kerberos</text>
-
-      <text x="360" y="12" font-size="11" fill="#71717a">/</text>
-      <text x="376" y="12" font-size="11" fill="#3b82f6">03</text>
-      <text x="396" y="12" font-size="11" fill="#d4d4d8">E2EE Team Vault</text>
-    </g>
-
-    <!-- Install command box -->
-    <g transform="translate(0, 202)" class="mono">
-      <rect width="480" height="38" rx="6" fill="#121215" stroke="#27272a" stroke-width="1"/>
-      <text x="14" y="24" font-size="12" fill="#71717a">$</text>
-      <text x="30" y="24" font-size="12" fill="#f4f4f5">curl -fsSL https://bssh.abdoufermat.dev/install.sh | bash</text>
-    </g>
+  <!-- Mark and name -->
+  <g transform="translate(64 56) scale(0.0703)">
+    <rect x="16" y="16" width="480" height="480" rx="112" fill="#1b1b1f"/>
+    <path d="M136 168 L232 256 L136 344" fill="none" stroke="#ffffff" stroke-width="46" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="280" y="168" width="96" height="176" rx="14" fill="#5b8def"/>
   </g>
+  <text x="112" y="82" class="sans" font-size="17" font-weight="600" fill="#e6e6e9">Bayesian SSH</text>
 
-  <!-- ==================== RIGHT COLUMN: AUTHENTIC MINIMAL TERMINAL ==================== -->
-  <g transform="translate(590, 36)">
-    <!-- Terminal window container -->
-    <rect width="554" height="228" rx="8" fill="#000000" stroke="#27272a" stroke-width="1"/>
+  <!-- Headline -->
+  <text class="sans" font-size="40" font-weight="700" fill="#ffffff" letter-spacing="-0.5">
+    <tspan x="64" y="138">Every host,</tspan>
+    <tspan x="64" y="184">one keystroke away.</tspan>
+  </text>
+  <text class="sans" font-size="16" fill="#a1a1aa">
+    <tspan x="64" y="220">An SSH session manager for the terminal and the desktop:</tspan>
+    <tspan x="64" y="243">search ranked by how you work, bastions and Kerberos,</tspan>
+    <tspan x="64" y="266">and end-to-end encrypted sharing with your team.</tspan>
+  </text>
 
-    <!-- Window header bar -->
-    <rect width="554" height="32" rx="8" fill="#0c0d10"/>
-    <rect y="24" width="554" height="8" fill="#0c0d10"/>
-    <line x1="0" y1="32" x2="554" y2="32" stroke="#1c1c1f" stroke-width="1"/>
+  <!-- Install -->
+  <rect x="64" y="290" width="492" height="38" rx="8" fill="#18181b" stroke="#2c2c33"/>
+  <text x="80" y="314" class="mono" font-size="13" fill="#e6e6e9"><tspan fill="#5b8def">$</tspan> curl -fsSL https://bssh.abdoufermat.dev/install.sh | bash</text>
 
-    <!-- Muted window dots -->
-    <circle cx="18" cy="16" r="4" fill="#27272a"/>
-    <circle cx="32" cy="16" r="4" fill="#27272a"/>
-    <circle cx="46" cy="16" r="4" fill="#27272a"/>
-
-    <text x="277" y="20" font-size="11" fill="#71717a" class="mono" text-anchor="middle">bssh — session manager</text>
-
-    <!-- Terminal Content -->
-    <g transform="translate(18, 52)" class="mono">
-      <!-- Prompt -->
-      <text x="0" y="14" font-size="12" fill="#71717a">$</text>
-      <text x="16" y="14" font-size="12" fill="#f4f4f5">bssh connect prod</text>
-      <rect x="160" y="3" width="7" height="14" fill="#3b82f6"/>
-
-      <!-- Ranked Host Results -->
-      <!-- Row 1: Selected / Active -->
-      <g transform="translate(0, 30)">
-        <rect x="-6" y="0" width="530" height="38" rx="4" fill="#14151a"/>
-        <line x1="-6" y1="0" x2="-6" y2="38" stroke="#3b82f6" stroke-width="2.5"/>
-        
-        <text x="6" y="24" font-size="12" fill="#3b82f6" font-weight="bold">▶</text>
-        <text x="24" y="24" font-size="11" fill="#3b82f6" font-weight="bold">0.98</text>
-        <text x="64" y="24" font-size="12" fill="#ffffff" font-weight="600">web-prod-01.us-east.aws</text>
-        
-        <text x="320" y="24" font-size="11" fill="#a1a1aa">2m ago</text>
-        <text x="400" y="24" font-size="11" fill="#71717a">via bastion-01</text>
-      </g>
-
-      <!-- Row 2 -->
-      <g transform="translate(0, 76)">
-        <text x="24" y="16" font-size="11" fill="#52525b">0.84</text>
-        <text x="64" y="16" font-size="12" fill="#a1a1aa">web-prod-02.us-east.aws</text>
-        <text x="320" y="16" font-size="11" fill="#52525b">1h ago</text>
-        <text x="400" y="16" font-size="11" fill="#52525b">direct</text>
-      </g>
-
-      <!-- Row 3 -->
-      <g transform="translate(0, 102)">
-        <text x="24" y="16" font-size="11" fill="#3f3f46">0.41</text>
-        <text x="64" y="16" font-size="12" fill="#71717a">db-prod-replica.internal</text>
-        <text x="320" y="16" font-size="11" fill="#3f3f46">2d ago</text>
-        <text x="400" y="16" font-size="11" fill="#3f3f46">via bastion-01</text>
-      </g>
-    </g>
-
-    <!-- Terminal Footer -->
-    <g transform="translate(18, 204)" class="mono">
-      <line x1="-6" y1="0" x2="524" y2="0" stroke="#1c1c1f" stroke-width="1"/>
-      <text x="0" y="15" font-size="10" fill="#52525b">Enter: connect</text>
-      <text x="130" y="15" font-size="10" fill="#3f3f46">Tab: actions</text>
-      <text x="240" y="15" font-size="10" fill="#3f3f46">Ctrl+K: palette</text>
-      <text x="380" y="15" font-size="10" fill="#3f3f46">?: help</text>
+  <!-- Terminal -->
+  <g transform="translate(604 40)">
+    <rect x="0" y="0" width="556" height="280" rx="10" fill="#0b0b0d" stroke="#2c2c33"/>
+    <path d="M0 10 a10 10 0 0 1 10 -10 h536 a10 10 0 0 1 10 10 v24 h-556 z" fill="#18181b"/>
+    <circle cx="20" cy="17" r="5" fill="#3f3f46"/><circle cx="38" cy="17" r="5" fill="#3f3f46"/><circle cx="56" cy="17" r="5" fill="#3f3f46"/>
+    <text x="278" y="22" text-anchor="middle" class="mono" font-size="12" fill="#71717a">~/work</text>
+    <g class="mono" font-size="13.5" fill="#d4d4d8">
+      <text x="20" y="62"><tspan fill="#5b8def">$</tspan> bssh connect prod</text>
+      <text x="20" y="88" fill="#a1a1aa">Found 3 similar connections for 'prod':</text>
+      <text x="36" y="116"><tspan fill="#71717a">1.</tspan> <tspan fill="#ffffff">web-prod-1</tspan> <tspan fill="#71717a">(web-prod-1.eu-west.internal)</tspan></text>
+      <text x="60" y="135" fill="#71717a">Tags: prod, web (last used: 2 minutes ago)</text>
+      <text x="36" y="161"><tspan fill="#71717a">2.</tspan> <tspan fill="#ffffff">web-prod-2</tspan> <tspan fill="#71717a">(web-prod-2.eu-west.internal)</tspan></text>
+      <text x="60" y="180" fill="#71717a">Tags: prod, web (last used: 3 hours ago)</text>
+      <text x="36" y="206"><tspan fill="#71717a">3.</tspan> <tspan fill="#ffffff">db-prod</tspan> <tspan fill="#71717a">(db-prod.internal, via bastion)</tspan></text>
+      <text x="60" y="225" fill="#71717a">Tags: prod, db (last used: 2 days ago)</text>
+      <text x="20" y="256">Select connection to connect [1-3, 's', 'q']: <tspan fill="#ffffff">1</tspan><tspan fill="#5b8def">█</tspan></text>
     </g>
   </g>
 </svg>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import BrandMark from "./BrandMark.svelte";
   interface Props {
     title?: string;
     subtitle?: string;
@@ -12,11 +13,7 @@
   role="status"
   aria-live="polite"
 >
-  <svg viewBox="0 0 20 20" class="size-10" aria-hidden="true">
-    <rect width="20" height="20" rx="5" fill="var(--color-accent)" />
-    <path d="M5.5 7l3 3-3 3" fill="none" stroke="var(--color-on-accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-    <path d="M10.5 13.25h4" stroke="var(--color-on-accent)" stroke-width="1.8" stroke-linecap="round" />
-  </svg>
+  <BrandMark class="size-10" />
 
   <div class="flex flex-col gap-1">
     <h1 class="m-0 text-sm font-semibold text-primary">{title}</h1>

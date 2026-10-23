@@ -1,4 +1,5 @@
 <script lang="ts">
+  import BrandMark from "./BrandMark.svelte";
   import { Command, HelpCircle, Search } from "lucide-svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { GLOBAL_SHORTCUTS } from "$lib/shortcuts";
@@ -42,11 +43,7 @@
 
 <header class="titlebar" data-tauri-drag-region>
   <div class="flex min-w-0 items-center gap-2.5" data-tauri-drag-region>
-    <svg viewBox="0 0 20 20" class="size-[18px] shrink-0" aria-hidden="true">
-      <rect width="20" height="20" rx="5" fill="var(--color-accent)" />
-      <path d="M5.5 7l3 3-3 3" fill="none" stroke="var(--color-on-accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-      <path d="M10.5 13.25h4" stroke="var(--color-on-accent)" stroke-width="1.8" stroke-linecap="round" />
-    </svg>
+    <BrandMark class="size-[18px] shrink-0" />
     <span class="pointer-events-none truncate text-sm font-semibold tracking-[-0.01em] text-primary">
       Bayesian SSH
     </span>
