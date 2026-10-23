@@ -2,7 +2,7 @@
 // WCAG contrast regression check for the design tokens.
 // Parses src/lib/styles/tokens.css per theme (the @theme block is the
 // default Dark theme, html.theme-light overrides it) and
-// asserts the contrast rules documented in docs/src/design/design-system.md.
+// asserts the contrast rules documented in desktop/DESIGN-SYSTEM.md.
 // Exit code 1 on any failure.
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";

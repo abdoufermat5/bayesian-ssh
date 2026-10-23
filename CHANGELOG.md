@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Documentation moved to [bssh.abdoufermat.dev](https://bssh.abdoufermat.dev) (source: the bssh-docs repository). The mdBook in `docs/`, `book.toml`, `make docs` and the CI job that published it are gone; the README is now a short landing page that links to the site.
+- Maintainer notes kept in the repository: release channels in `RELEASING.md`, the desktop design rules in `desktop/DESIGN-SYSTEM.md`.
+
 ## [2.10.1] - 2026-10-23
 
 ### Changed

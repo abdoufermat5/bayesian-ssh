@@ -11,7 +11,7 @@ name: Snap
 #
 # Publishing needs the SNAPCRAFT_STORE_CREDENTIALS secret. Without it the snap
 # is still built and kept as a workflow artifact, and the publish step leaves a
-# ::notice:: in the run summary. See docs/src/reference/distribution.md.
+# ::notice:: in the run summary. See RELEASING.md.
 on:
   workflow_call:
     inputs:
@@ -93,7 +93,7 @@ jobs:
             echo "configured=true" >> "$GITHUB_OUTPUT"
           else
             echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::SNAPCRAFT_STORE_CREDENTIALS is not set; the snap was built but not published. Set the secret to publish (see docs/src/reference/distribution.md)."
+            echo "::notice::SNAPCRAFT_STORE_CREDENTIALS is not set; the snap was built but not published. Set the secret to publish (see RELEASING.md)."
           fi
 
       # Plain versions go to `stable`, prereleases (a '-' in the version) to

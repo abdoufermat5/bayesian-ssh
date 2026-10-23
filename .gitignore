@@ -43,8 +43,6 @@ config.local.json
 *-completion.elv
 
 # Documentation build artifacts
-docs/_build/
-docs/book/
 site/
 
 # Temporary files
