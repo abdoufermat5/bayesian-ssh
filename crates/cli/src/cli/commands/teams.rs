@@ -3,6 +3,7 @@ use crate::cli::TeamsCommands;
 use crate::config::AppConfig;
 use crate::services::teams::audit::EventCheck;
 use crate::services::teams::billing::{self, ReadOnlyReason};
+use crate::services::teams::orgs;
 use crate::services::teams::session::{
     self, AuditQuery, JoinWith, PendingDevice, Session, TeamAudit, TeamSync,
 };
@@ -14,7 +15,7 @@ use zeroize::Zeroizing;
 /// Env var read instead of prompting, for scripts.
 const PASSPHRASE_ENV: &str = "BSSH_TEAMS_PASSPHRASE";
 
-fn passphrase(new: bool) -> Result<Zeroizing<String>> {
+pub(crate) fn passphrase(new: bool) -> Result<Zeroizing<String>> {
     if let Ok(p) = std::env::var(PASSPHRASE_ENV) {
         if !p.is_empty() {
             return Ok(Zeroizing::new(p));
@@ -91,9 +92,20 @@ async fn run(command: TeamsCommands, store: &TeamsStore, config: &AppConfig) -> 
             println!("Fingerprint: {}", s.my_fingerprint());
         }
 
-        TeamsCommands::Create { name } => {
+        TeamsCommands::Create { name, org } => {
             let s = Session::open(store, config, &passphrase(false)?)?;
-            let sync = s.create_team(&name).await?;
+            let org_id = match org {
+                Some(org) => {
+                    let visible = s.list_orgs().await?;
+                    Some(orgs::select(
+                        &visible,
+                        Some(&org),
+                        &session::local_team_names(db)?,
+                    )?)
+                }
+                None => None,
+            };
+            let sync = s.create_team_in(&name, org_id).await?;
             println!(
                 "✅ Created team '{name}' ({}); you're its admin.",
                 sync.team_id
@@ -373,7 +385,18 @@ async fn run(command: TeamsCommands, store: &TeamsStore, config: &AppConfig) -> 
                 return Ok(());
             }
             let info = s.billing(team_id).await?;
-            print_billing(&source.name, &info);
+            print_billing(
+                &source.name,
+                &info,
+                &format!("bssh teams billing {}", source.name),
+            );
+            if let Some(org_id) = info.org_id {
+                println!();
+                println!(
+                    "   Seats are shared by this team's organization ({}); see `bssh org billing`.",
+                    orgs::short_id(&org_id)
+                );
+            }
         }
 
         TeamsCommands::Audit {
@@ -606,11 +629,11 @@ fn print_sync(name: &str, sync: &TeamSync) {
     }
 }
 
-fn print_billing(team: &str, info: &bssh_teams_proto::api::BillingInfo) {
+pub(crate) fn print_billing(label: &str, info: &bssh_teams_proto::api::BillingInfo, hint: &str) {
     use bssh_teams_proto::api::Plan;
     if !info.billing_enabled {
         println!(
-            "💳 {team}: {} of {} seats used (this server has no billing)",
+            "💳 {label}: {} of {} seats used (this server has no billing)",
             info.seats_used, info.seat_limit
         );
         return;
@@ -627,7 +650,7 @@ fn print_billing(team: &str, info: &bssh_teams_proto::api::BillingInfo) {
             }
         ),
     };
-    println!("💳 {team}: {plan}");
+    println!("💳 {label}: {plan}");
     println!(
         "   {} of {} seats used (members and pending invites)",
         info.seats_used, info.seat_limit
@@ -635,14 +658,14 @@ fn print_billing(team: &str, info: &bssh_teams_proto::api::BillingInfo) {
     if let Some(end) = info.current_period_end.filter(|_| info.plan == Plan::Team) {
         let date = end.format("%Y-%m-%d");
         if info.cancel_at_period_end {
-            println!("   Ends on {date}, then the team falls back to the free plan.");
+            println!("   Ends on {date}, then it falls back to the free plan.");
         } else {
             println!("   Renews on {date}");
         }
     }
     match info.status.as_deref() {
         Some("past_due") => println!(
-            "   ⚠️  Payment failed, Stripe is retrying: update the card with `bssh teams billing {team} --manage`."
+            "   ⚠️  Payment failed, Stripe is retrying: update the card with `{hint} --manage`."
         ),
         Some(status) if !billing::is_live(Some(status)) => {
             println!("   Subscription status: {status}")
@@ -659,7 +682,7 @@ fn print_billing(team: &str, info: &bssh_teams_proto::api::BillingInfo) {
             println!(
                 "   Members can still sync and connect; changes are refused until an admin adds seats"
             );
-            println!("   (`bssh teams billing {team} --manage`) or removes members.");
+            println!("   (`{hint} --manage`) or removes members.");
         }
         Some(ReadOnlyReason::NoSubscription) => {
             println!();
@@ -670,20 +693,18 @@ fn print_billing(team: &str, info: &bssh_teams_proto::api::BillingInfo) {
             println!(
                 "   Members can still sync and connect; changes are refused until an admin subscribes"
             );
-            println!(
-                "   (`bssh teams billing {team} --checkout`) or removes members down to the free seats."
-            );
+            println!("   (`{hint} --checkout`) or removes members down to the free seats.");
         }
         None if info.plan == Plan::Free && info.seats_used >= info.seat_limit => {
             println!();
-            println!("   All free seats are taken. More: `bssh teams billing {team} --checkout`.");
+            println!("   All free seats are taken. More: `{hint} --checkout`.");
         }
         None => {}
     }
 }
 
 /// Opens a URL in the default browser; the URL is printed first, so this may fail quietly.
-fn open_in_browser(url: &str) {
+pub(crate) fn open_in_browser(url: &str) {
     let mut cmd = if cfg!(target_os = "macos") {
         std::process::Command::new("open")
     } else if cfg!(target_os = "windows") {

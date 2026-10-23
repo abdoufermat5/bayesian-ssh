@@ -104,7 +104,10 @@ async fn teams_end_to_end() {
     let initial_key =
         crypto::wrap_team_key(team_id, &tk1, &admin.info, admin.id, &admin.keys()).unwrap();
     let team = admin_api
-        .create_team(&CreateTeamRequest { initial_key })
+        .create_team(&CreateTeamRequest {
+            initial_key,
+            org_id: None,
+        })
         .await
         .unwrap();
     assert_eq!(team.my_role, Role::Admin);

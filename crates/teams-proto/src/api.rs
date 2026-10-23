@@ -148,15 +148,23 @@ pub enum Role {
 /// `POST /v1/teams`. The creator becomes the first admin. `initial_key` is
 /// the team key (version 1) wrapped to the creator's own device and signed by
 /// it; the team has no name on the server (names live inside the vault).
+///
+/// `org_id`: the organization the team belongs to; the caller must own it.
+/// Without it the team goes to the oldest organization the caller owns, or to
+/// a new one when they own none.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreateTeamRequest {
     pub initial_key: WrappedKey,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub org_id: Option<Uuid>,
 }
 
 /// `GET /v1/teams` returns `Vec<TeamInfo>`; `GET /v1/teams/{team_id}` one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TeamInfo {
     pub team_id: Uuid,
+    /// The seat limit invites are checked against (the organization's, when
+    /// the server has billing).
     pub seats: u32,
     pub member_count: u32,
     pub current_key_version: u32,
@@ -164,6 +172,54 @@ pub struct TeamInfo {
     pub rotation_required: bool,
     pub my_role: Role,
     pub created_at: DateTime<Utc>,
+    /// `None` from a server without organizations.
+    #[serde(default)]
+    pub org_id: Option<Uuid>,
+}
+
+// ── Organizations ────────────────────────────────────────────────────────────
+//
+// An organization owns teams, and with billing, the subscription and seats:
+// a person in several of its teams takes one seat. Like teams, it has no name
+// on the server; clients name it after its owners.
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OrgRole {
+    /// Manages billing and owners, creates teams in the organization.
+    Owner,
+    /// Belongs to at least one of its teams.
+    Member,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OrgOwner {
+    pub account_id: Uuid,
+    pub email: String,
+}
+
+/// `GET /v1/orgs` returns `Vec<OrgInfo>`: the organizations the caller owns or
+/// has a team in. `GET /v1/orgs/{org_id}` one.
+/// `POST /v1/orgs` (no body) creates an empty one owned by the caller; refused
+/// with `PaymentRequired` while they own another without a subscription (one
+/// free organization per account).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OrgInfo {
+    pub org_id: Uuid,
+    pub my_role: OrgRole,
+    pub owners: Vec<OrgOwner>,
+    /// Owners see every team; members only theirs.
+    pub team_ids: Vec<Uuid>,
+    pub created_at: DateTime<Utc>,
+}
+
+/// `POST /v1/orgs/{org_id}/owners` (owner): the account must be an active
+/// member of one of the organization's teams. Returns the updated `OrgInfo`.
+/// `DELETE /v1/orgs/{org_id}/owners/{account_id}` (owner) returns 204; the
+/// last owner can't be removed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AddOwnerRequest {
+    pub email: String,
 }
 
 /// `GET /v1/teams/{team_id}/members` returns `Vec<Member>`.
@@ -365,7 +421,10 @@ pub enum BillingInterval {
     Year,
 }
 
-/// `GET /v1/teams/{team_id}/billing` (any member).
+/// `GET /v1/orgs/{org_id}/billing` (any member of the organization), or
+/// `GET /v1/teams/{team_id}/billing` (any team member) for the team's
+/// organization. With billing, seats are counted across the organization:
+/// distinct members of its teams plus pending invites to new people.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BillingInfo {
     /// False on a server without billing (self-hosted): `seat_limit` is fixed.
@@ -385,9 +444,15 @@ pub struct BillingInfo {
     /// More members than the free seats and no active subscription: pushes
     /// and invites fail with `PaymentRequired`/`SeatLimit` until paid.
     pub read_only: bool,
+    /// The organization this billing belongs to; `None` from a server without
+    /// organizations.
+    #[serde(default)]
+    pub org_id: Option<Uuid>,
 }
 
-/// `POST /v1/teams/{team_id}/billing/checkout` (admin): start a subscription.
+/// `POST /v1/orgs/{org_id}/billing/checkout` (owner): start a subscription.
+/// `POST /v1/teams/{team_id}/billing/checkout` does the same for the team's
+/// organization; the caller must own it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CheckoutRequest {
     /// At least the seats in use (members plus pending invites).

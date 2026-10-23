@@ -10,6 +10,7 @@
 //! - [`store`]: local SQLite tables (schema v8): ciphertext, wrapped keys,
 //!   outbox, audit chain.
 //! - [`billing`]: why a team is read-only, from the server's billing info.
+//! - [`orgs`]: how organizations are labelled and selected (`bssh org`).
 //! - [`client`]: the HTTPS client for the `/v1` API.
 //! - [`sync`]: the local-first sync engine.
 //! - [`session`]: the workflows behind `bssh teams` (identity, invites,
@@ -26,6 +27,7 @@ pub mod billing;
 pub mod client;
 pub mod codec;
 pub mod crypto;
+pub mod orgs;
 pub mod session;
 pub mod store;
 pub mod sync;

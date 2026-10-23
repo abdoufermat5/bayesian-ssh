@@ -456,6 +456,26 @@ pub enum Commands {
         command: TeamsCommands,
     },
 
+    /// Manage organizations: owners, teams, billing
+    #[command(
+        long_about = "An organization owns teams and, on servers with billing, their\n\
+            subscription and seats. Seats are counted per organization: someone in\n\
+            several of its teams takes one seat, and a pending invite holds one.\n\n\
+            An organization has no name on the server; it is shown by its owners'\n\
+            emails. Owners manage billing and owners, and create teams in it.",
+        after_help = "Examples:\n\
+          bssh org list\n\
+          bssh org show\n\
+          bssh org owners add platform ana@example.com\n\
+          bssh org billing --checkout --seats 8\n\
+          bssh org billing --manage\n\
+          bssh teams create infra --org platform"
+    )]
+    Org {
+        #[command(subcommand)]
+        command: OrgCommands,
+    },
+
     /// Manage multi-environment profiles (separate connection databases)
     Env {
         #[command(subcommand)]
@@ -818,6 +838,60 @@ mod tests {
     use clap::Parser;
 
     #[test]
+    fn org_commands_parse() {
+        assert!(Cli::try_parse_from(["bssh", "org", "list"]).is_ok());
+        assert!(Cli::try_parse_from(["bssh", "org", "show"]).is_ok());
+        assert!(Cli::try_parse_from(["bssh", "org", "show", "platform"]).is_ok());
+        assert!(Cli::try_parse_from(["bssh", "org", "create"]).is_ok());
+        assert!(Cli::try_parse_from([
+            "bssh",
+            "org",
+            "owners",
+            "add",
+            "platform",
+            "bo@example.com"
+        ])
+        .is_ok());
+        assert!(Cli::try_parse_from([
+            "bssh",
+            "org",
+            "owners",
+            "remove",
+            "platform",
+            "bo@example.com"
+        ])
+        .is_ok());
+        assert!(
+            Cli::try_parse_from(["bssh", "teams", "create", "infra", "--org", "platform"]).is_ok()
+        );
+
+        let cli =
+            Cli::try_parse_from(["bssh", "org", "billing", "--checkout", "--seats", "8"]).unwrap();
+        match cli.command {
+            Some(Commands::Org {
+                command:
+                    OrgCommands::Billing {
+                        org,
+                        checkout,
+                        seats,
+                        yearly,
+                        manage,
+                    },
+            }) => {
+                assert_eq!(org, None);
+                assert!(checkout);
+                assert_eq!(seats, Some(8));
+                assert!(!yearly);
+                assert!(!manage);
+            }
+            _ => panic!("expected `org billing`"),
+        }
+        // `--manage` and `--checkout` are alternatives, and seats need checkout.
+        assert!(Cli::try_parse_from(["bssh", "org", "billing", "--manage", "--checkout"]).is_err());
+        assert!(Cli::try_parse_from(["bssh", "org", "billing", "--seats", "4"]).is_err());
+    }
+
+    #[test]
     fn parse_octal_bounds() {
         assert_eq!(parse_octal("0o644"), Ok(0o644));
         assert_eq!(parse_octal("755"), Ok(0o755));
@@ -867,6 +941,10 @@ pub enum TeamsCommands {
     Create {
         /// Team name, also used as its source name in `bssh list`
         name: String,
+        /// Organization to create it in: an id prefix or one of its team names
+        /// (default: the oldest organization you own, or a new one)
+        #[arg(long, value_name = "ORG")]
+        org: Option<String>,
     },
     /// List the teams on this machine
     List,
@@ -957,4 +1035,52 @@ pub enum TeamsCommands {
         #[arg(long)]
         limit: Option<u32>,
     },
+}
+
+#[derive(Subcommand)]
+pub enum OrgCommands {
+    /// List the organizations you can see
+    List,
+    /// Show an organization's owners, teams and seats
+    Show {
+        /// Organization id prefix or one of its team names (default: your only organization)
+        org: Option<String>,
+    },
+    /// Create an empty organization; one is free per account
+    Create,
+    /// Manage an organization's owners (owner)
+    Owners {
+        #[command(subcommand)]
+        command: OrgOwnerCommands,
+    },
+    /// Show an organization's plan and seats; subscribe or manage the subscription (owner)
+    #[command(after_help = "Examples:\n\
+      bssh org billing                                  plan, seats, renewal\n\
+      bssh org billing --checkout --seats 8             subscribe for 8 seats (monthly)\n\
+      bssh org billing --checkout --yearly              yearly, as many seats as in use\n\
+      bssh org billing --manage                         card, invoices, seats, cancel")]
+    Billing {
+        /// Organization id prefix or one of its team names (default: your only organization)
+        org: Option<String>,
+        /// Open a checkout page to subscribe the organization (owner)
+        #[arg(long, conflicts_with = "manage")]
+        checkout: bool,
+        /// Seats to subscribe for (default: the seats in use, at least one above the free plan)
+        #[arg(long, requires = "checkout")]
+        seats: Option<u32>,
+        /// Pay yearly instead of monthly
+        #[arg(long, requires = "checkout")]
+        yearly: bool,
+        /// Open the billing portal: card, invoices, seats, cancellation (owner)
+        #[arg(long)]
+        manage: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum OrgOwnerCommands {
+    /// Make a member of one of its teams an owner (owner)
+    Add { org: String, email: String },
+    /// Remove an owner (owner); the last owner can't be removed
+    Remove { org: String, email: String },
 }
