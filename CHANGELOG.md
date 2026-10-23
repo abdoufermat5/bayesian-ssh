@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `bssh show web1` (and `connect`, `edit`, ...) now finds `web-prod-1`: a word prefix followed by the digits of a later name segment matches, like `wp1` and `prod1` already did. The digits must be a whole segment, so `web1` does not match `web-prod-10`.
+- `bssh import` and `ssh-config` inventory sources now honour `ProxyJump`, so imported hosts behind a bastion connect through it instead of failing direct. `user@host:port`, plain hosts and aliases defined in the same config are resolved to their HostName/User/Port; `ProxyJump none` imports a direct connection; and a `ProxyCommand ssh -W %h:%p <host>` is treated like `ProxyJump`. Only one bastion is supported: for a chain (`ProxyJump a,b`) the first hop is kept and a warning names the ignored hops. Other `ProxyCommand` forms are not imported and print a warning.
 
 ## [2.10.2] - 2026-10-23
 
