@@ -2,6 +2,7 @@ use crate::cli::utils::confirm;
 use crate::cli::TeamsCommands;
 use crate::config::AppConfig;
 use crate::services::teams::audit::EventCheck;
+use crate::services::teams::billing::{self, ReadOnlyReason};
 use crate::services::teams::session::{
     self, AuditQuery, JoinWith, PendingDevice, Session, TeamAudit, TeamSync,
 };
@@ -617,30 +618,52 @@ fn print_billing(team: &str, info: &bssh_teams_proto::api::BillingInfo) {
         info.seats_used, info.seat_limit
     );
     if let Some(end) = info.current_period_end.filter(|_| info.plan == Plan::Team) {
-        let what = if info.cancel_at_period_end {
-            "Ends"
+        let date = end.format("%Y-%m-%d");
+        if info.cancel_at_period_end {
+            println!("   Ends on {date}, then the team falls back to the free plan.");
         } else {
-            "Renews"
-        };
-        println!("   {what} on {}", end.format("%Y-%m-%d"));
+            println!("   Renews on {date}");
+        }
     }
-    if let Some(status) = info
-        .status
-        .as_deref()
-        .filter(|s| !matches!(*s, "active" | "trialing"))
-    {
-        println!("   Subscription status: {status}");
+    match info.status.as_deref() {
+        Some("past_due") => println!(
+            "   ⚠️  Payment failed, Stripe is retrying: update the card with `bssh teams billing {team} --manage`."
+        ),
+        Some(status) if !billing::is_live(Some(status)) => {
+            println!("   Subscription status: {status}")
+        }
+        _ => {}
     }
-    if info.read_only {
-        println!();
-        println!("⚠️  Read-only: more members than the free plan and no active subscription.");
-        println!(
-            "   Members can still sync and connect; changes are refused until an admin subscribes"
-        );
-        println!("   (`bssh teams billing {team} --checkout`) or removes members.");
-    } else if info.plan == Plan::Free && info.seats_used >= info.seat_limit {
-        println!();
-        println!("   All free seats are taken. More: `bssh teams billing {team} --checkout`.");
+    match billing::read_only_reason(info) {
+        Some(ReadOnlyReason::NotEnoughSeats) => {
+            println!();
+            println!(
+                "⚠️  Read-only: more members than paid seats ({} paid).",
+                info.paid_seats
+            );
+            println!(
+                "   Members can still sync and connect; changes are refused until an admin adds seats"
+            );
+            println!("   (`bssh teams billing {team} --manage`) or removes members.");
+        }
+        Some(ReadOnlyReason::NoSubscription) => {
+            println!();
+            println!(
+                "⚠️  Read-only: no active subscription, and more members than the {} free seats.",
+                info.free_seats
+            );
+            println!(
+                "   Members can still sync and connect; changes are refused until an admin subscribes"
+            );
+            println!(
+                "   (`bssh teams billing {team} --checkout`) or removes members down to the free seats."
+            );
+        }
+        None if info.plan == Plan::Free && info.seats_used >= info.seat_limit => {
+            println!();
+            println!("   All free seats are taken. More: `bssh teams billing {team} --checkout`.");
+        }
+        None => {}
     }
 }
 

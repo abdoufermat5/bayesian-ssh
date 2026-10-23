@@ -615,9 +615,37 @@ test.describe("Teams billing, member of a read-only team", () => {
     await page.getByRole("tab", { name: /Members & devices/ }).click();
     const card = page.getByRole("region", { name: "Plan and seats" });
     await expect(card.getByRole("alert")).toContainText("This team is read-only");
+    await expect(card.getByRole("alert")).toContainText("no active subscription");
     await expect(card.getByRole("alert")).toContainText("an admin subscribes or removes members");
     await expect(card.getByRole("button", { name: "Upgrade…" })).toHaveCount(0);
     await expect(card.getByRole("button", { name: "Manage billing" })).toHaveCount(0);
   });
 });
 
+
+test.describe("Teams billing, admin of a team with too few paid seats", () => {
+  test.use({
+    mockOptions: {
+      overrides: {
+        ...adminOverrides,
+        teams_billing: () => ({
+          billing_enabled: true, plan: "team", free_seats: 3, paid_seats: 4, seat_limit: 4, seats_used: 6,
+          status: "past_due", interval: "month", current_period_end: "2026-12-01T00:00:00Z", cancel_at_period_end: true, read_only: true,
+        }),
+      },
+    },
+  });
+
+  test("names the cause, the failed payment and the end of the plan", async ({ app, page }) => {
+    await app.gotoApp();
+    await app.nav("Teams");
+    await page.getByRole("button", { name: "platform", exact: true }).click();
+    await page.getByRole("tab", { name: /Members & devices/ }).click();
+    const card = page.getByRole("region", { name: "Plan and seats" });
+    await expect(card.getByRole("alert")).toContainText("more members than paid seats (4)");
+    await expect(card.getByRole("alert")).toContainText("add seats with Manage billing or remove members");
+    await expect(card).toContainText("Payment failed; Stripe is retrying. Update the card with Manage billing.");
+    await expect(card).toContainText("then the team falls back to the free plan");
+    await expect(card.getByRole("button", { name: "Manage billing" })).toBeVisible();
+  });
+});

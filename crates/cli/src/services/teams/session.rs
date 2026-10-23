@@ -1328,16 +1328,12 @@ fn server_message(e: TeamsError) -> anyhow::Error {
     }
 }
 
-/// Map a server error to a short, actionable message for the CLI.
+/// Map a server error to a short, actionable message for the CLI. Billing
+/// and provider errors (`PaymentRequired`, `SeatLimit`, `Internal`) get no
+/// hint: the server's own message names the exact fix and is shown as is.
 pub fn explain(err: &anyhow::Error) -> Option<&'static str> {
     let code = err.downcast_ref::<TeamsError>()?.code()?;
     Some(match code {
-        ErrorCode::SeatLimit => {
-            "the team has no free seat left: an admin can add seats with `bssh teams billing <team> --checkout` (or `--manage` for a subscription)"
-        }
-        ErrorCode::PaymentRequired => {
-            "the team is read-only: it has more members than its free seats and no active subscription; an admin can subscribe with `bssh teams billing <team> --checkout`"
-        }
         ErrorCode::Unauthorized => "the server rejected this device's credentials",
         ErrorCode::Forbidden => "you don't have permission for that in this team",
         ErrorCode::Conflict => "that already exists or was already used",

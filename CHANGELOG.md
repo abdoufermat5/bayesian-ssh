@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `bssh teams billing` and the desktop **Plan and seats** card now say why a team is read-only: more members than paid seats (add seats with `--manage` or **Manage billing**, or remove members), or no active subscription (subscribe, or remove members down to the free seats).
+- A `past_due` subscription is shown as a failed payment that Stripe is retrying, with a pointer to `--manage`; a subscription set to cancel shows its end date and that the team then falls back to the free plan.
+
+### Fixed
+- Billing and payment-provider errors from the server (`PaymentRequired`, `SeatLimit`, and Stripe failures) are shown verbatim, in the CLI and the desktop app, instead of a generic hint that could be wrong for the actual cause.
+
 ## [2.10.0] - 2026-10-23
 
 ### Added
