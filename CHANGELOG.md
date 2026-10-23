@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.2] - 2026-10-23
+
 ### Changed
 - The installer is easier to read: it says what it will do before `sudo` asks for a password (install, update from version X, or reinstall), shows a progress bar for downloads, reports the signature check, and prints errors with what to do next. Colors follow `NO_COLOR` and are off when the output isn't a terminal.
 - The installer has a short address: `curl -fsSL https://bssh.abdoufermat.dev/install.sh | bash`. `install.sh` is now attached to each release and covered by the signed `SHA256SUMS`; the docs site serves the latest release's copy.
