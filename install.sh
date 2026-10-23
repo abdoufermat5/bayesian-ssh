@@ -5,6 +5,7 @@
 # the desktop app (bayesian-ssh-desktop, with menu entry and icon).
 # Usage: curl -fsSL https://bssh.abdoufermat.dev/install.sh | bash
 # CLI only (servers): ... | bash -s -- --no-gui
+# Reinstall even when up to date: ... | bash -s -- --force
 # Choose interactively: ... | bash -s -- --interactive
 
 set -e
@@ -22,6 +23,8 @@ trap 'rm -rf "$TEMP_DIR"' EXIT
 INTERACTIVE=false
 # The desktop app is installed alongside the CLI unless --no-gui is given.
 INSTALL_GUI=true
+# Reinstall even when the latest version is already installed.
+FORCE=false
 SUDO_CMD=""
 SIGNATURE="not checked (install cosign to verify it)"
 
@@ -55,6 +58,7 @@ Usage: install.sh [--no-gui] [--interactive]
   (default)      the CLI (bayesian-ssh, bssh) and the desktop app
   --no-gui       the CLI only, for servers and headless machines
   --interactive  choose between pre-built and source installs
+  --force        reinstall even if the latest version is already installed
 
 Installs to ${INSTALL_DIR} (sudo is used if needed). Set NO_COLOR=1 for plain output.
 Docs: ${DOCS_URL}/start/installation/
@@ -70,6 +74,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --no-gui)
             INSTALL_GUI=false
+            shift
+            ;;
+        --force)
+            FORCE=true
             shift
             ;;
         -h|--help)
@@ -280,6 +288,14 @@ install_gui() {
     check_gui_runtime
 }
 
+# The latest version is installed: the CLI reports it and, unless --no-gui, the
+# desktop app is there too (both come from the same release).
+up_to_date() {
+    [ "$(installed_version)" = "$VERSION" ] || return 1
+    [ "$INSTALL_GUI" = true ] && [ ! -x "${INSTALL_DIR}/${GUI_NAME}" ] && return 1
+    return 0
+}
+
 # What is about to happen, before sudo asks for a password.
 show_plan() {
     local what="the CLI and the desktop app" current
@@ -288,7 +304,12 @@ show_plan() {
     if [ -z "$current" ]; then
         info "Installing ${what}, version ${VERSION}, for ${OS}-${ARCH}"
     elif [ "$current" = "$VERSION" ]; then
-        info "Reinstalling ${what}, version ${VERSION} (already installed)"
+        if [ "$FORCE" = true ]; then
+            info "Reinstalling ${what}, version ${VERSION} (--force)"
+        else
+            # Only the desktop app was missing.
+            info "Adding the desktop app, version ${VERSION} (the CLI is already up to date)"
+        fi
     else
         info "Updating ${what} from ${current} to ${VERSION}"
     fi
@@ -300,6 +321,12 @@ install_prebuilt() {
     [ "$OS" = "linux" ] || die "pre-built releases are only published for Linux" \
         "Build from source instead: ${DOCS_URL}/start/installation/"
     get_latest_release
+    # Nothing to download, and no reason for sudo to ask for a password.
+    if [ "$FORCE" != true ] && up_to_date; then
+        printf '%sBayesian SSH %s is already installed and up to date.%s\n' "$GREEN$BOLD" "$VERSION" "$NC"
+        info "Reinstall anyway with --force (… | bash -s -- --force)."
+        exit 0
+    fi
     resolve_sudo
     show_plan
     echo

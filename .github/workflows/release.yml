@@ -328,6 +328,7 @@ jobs:
             echo "curl -fsSL https://bssh.abdoufermat.dev/install.sh | bash"
             echo "# or"
             echo "sudo snap install bayesian-ssh"
+            echo "# apt and dnf repositories: https://bssh.abdoufermat.dev/start/installation/"
             echo '```'
             echo
             echo "### Verify"
@@ -369,6 +370,42 @@ jobs:
             --arg pub_date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson platforms "$platforms" \
             '{version: $version, notes: $notes, pub_date: $pub_date, platforms: $platforms}' > release/latest.json
           jq '.platforms | keys' release/latest.json
+
+      # Command-line-only packages for servers and headless machines, from the
+      # binaries built above, for both architectures (no second build).
+      - name: CLI-only .deb and .rpm
+        env:
+          VERSION: ${{ needs.gate.outputs.version }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq rpm apt-utils createrepo-c
+          for arch in x86_64 aarch64; do
+            scripts/package-cli.sh "release/${BIN_NAME}-linux-${arch}" "$arch" "$VERSION" release
+          done
+
+      # The apt and dnf repository served at https://bssh.abdoufermat.dev/apt and /rpm
+      # (bssh-docs unpacks bssh-repo.tar.gz), signed with REPO_GPG_KEY. Without the
+      # secret the release goes on and only the repository is missing.
+      - name: Package repository
+        env:
+          VERSION: ${{ needs.gate.outputs.version }}
+          REPO_GPG_KEY: ${{ secrets.REPO_GPG_KEY }}
+        run: |
+          if [ -z "$REPO_GPG_KEY" ]; then
+            echo "::notice::REPO_GPG_KEY is not set: no apt/dnf repository for this release (see RELEASING.md)."
+            exit 0
+          fi
+          export GNUPGHOME="$(mktemp -d)"
+          printf '%s\n' "$REPO_GPG_KEY" | gpg --batch --import 2>/dev/null
+          KEY="$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr/ { print $10; exit }')"
+          mkdir repo-pkgs
+          # The packages a package manager may update: unified and CLI-only. The
+          # bayesian-ssh-desktop bundles update themselves and stay out.
+          cp "release/${BIN_NAME}_${VERSION}_amd64.deb" "release/${BIN_NAME}-${VERSION}-1.x86_64.rpm" \
+             release/${BIN_NAME}-cli_${VERSION}_*.deb release/${BIN_NAME}-cli-${VERSION}-1.*.rpm repo-pkgs/
+          scripts/build-repo.sh repo-pkgs repo-out "$KEY"
+          tar -C repo-out -czf release/bssh-repo.tar.gz .
+          rm -rf "$GNUPGHOME"
 
       # The installer ships with the release, so SHA256SUMS (signed below) covers
       # it; the docs site serves this copy at https://bssh.abdoufermat.dev/install.sh.

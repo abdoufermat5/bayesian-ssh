@@ -124,6 +124,8 @@ Architecture: ${DEB_ARCH}
 Maintainer: Abdoufermat5 <abdoufermat5@users.noreply.github.com>
 Section: utils
 Priority: optional
+Conflicts: bayesian-ssh-cli
+Replaces: bayesian-ssh-cli
 Homepage: https://github.com/abdoufermat5/bayesian-ssh
 Description: Fast and lightweight SSH session manager with Kerberos support
  Bayesian SSH (bssh) is a smart, high-performance SSH session manager featuring
@@ -165,6 +167,7 @@ Summary:        Fast and lightweight SSH session manager with Kerberos support
 License:        MIT
 URL:            https://github.com/abdoufermat5/bayesian-ssh
 BuildArch:      ${RPM_ARCH}
+Conflicts:      bayesian-ssh-cli
 
 %description
 Bayesian SSH (bssh) is a smart, high-performance SSH session manager featuring
