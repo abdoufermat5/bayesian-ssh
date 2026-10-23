@@ -1,85 +1,51 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" width="1200" height="300">
-  <!-- Background - pure black -->
-  <rect width="1200" height="300" fill="#000000"/>
-  
-  <!-- Matrix-style grid -->
-  <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
-    <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#0a0a0a" stroke-width="0.5"/>
-  </pattern>
-  <rect width="1200" height="300" fill="url(#grid)"/>
-  
-  <!-- Falling code effect - left side -->
-  <text x="50" y="30" font-family="monospace" font-size="10" fill="#1a1a1a">01100010 01110011</text>
-  <text x="30" y="50" font-family="monospace" font-size="10" fill="#1a1a1a">ssh -J bastion</text>
-  <text x="60" y="70" font-family="monospace" font-size="10" fill="#222">kinit user@REALM</text>
-  <text x="20" y="90" font-family="monospace" font-size="10" fill="#1a1a1a">Connection::new()</text>
-  <text x="70" y="110" font-family="monospace" font-size="10" fill="#222">10101110 11001</text>
-  <text x="40" y="200" font-family="monospace" font-size="10" fill="#1a1a1a">ratatui::Frame</text>
-  <text x="60" y="220" font-family="monospace" font-size="10" fill="#222">tokio::spawn</text>
-  <text x="30" y="240" font-family="monospace" font-size="10" fill="#1a1a1a">rusqlite::params!</text>
-  <text x="50" y="260" font-family="monospace" font-size="10" fill="#222">11100101 00110</text>
-  
-  <!-- Falling code effect - right side -->
-  <text x="1050" y="40" font-family="monospace" font-size="10" fill="#1a1a1a">fuzzy_search()</text>
-  <text x="1080" y="60" font-family="monospace" font-size="10" fill="#222">00110 10101</text>
-  <text x="1030" y="80" font-family="monospace" font-size="10" fill="#1a1a1a">ProxyJump=%h</text>
-  <text x="1060" y="100" font-family="monospace" font-size="10" fill="#222">impl Session</text>
-  <text x="1040" y="200" font-family="monospace" font-size="10" fill="#1a1a1a">async fn main</text>
-  <text x="1070" y="220" font-family="monospace" font-size="10" fill="#222">vec!["prod"]</text>
-  <text x="1050" y="240" font-family="monospace" font-size="10" fill="#1a1a1a">01001 11010</text>
-  <text x="1080" y="260" font-family="monospace" font-size="10" fill="#222">#[derive(Clone)]</text>
-  
-  <!-- Terminal prompt decoration -->
-  <text x="200" y="80" font-family="monospace" font-size="14" fill="#333">$</text>
-  <text x="220" y="80" font-family="monospace" font-size="14" fill="#444">bssh connect prod</text>
-  <text x="200" y="100" font-family="monospace" font-size="12" fill="#333">▶ Connecting to web-prod-server...</text>
-  
-  <!-- Main title with terminal aesthetic -->
-  <rect x="300" y="115" width="600" height="80" rx="4" fill="#0a0a0a" stroke="#333" stroke-width="2"/>
-  
-  <!-- Terminal dots -->
-  <circle cx="320" cy="130" r="5" fill="#444"/>
-  <circle cx="340" cy="130" r="5" fill="#555"/>
-  <circle cx="360" cy="130" r="5" fill="#666"/>
-  
-  <!-- ASCII art style title -->
-  <text x="600" y="165" font-family="'Courier New', monospace" font-size="48" font-weight="bold" fill="#ffffff" text-anchor="middle" letter-spacing="8">
-    BAYESIAN SSH
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 360" width="1200" height="360" role="img" aria-label="Bayesian SSH: every host, one keystroke away">
+  <defs>
+    <style>
+      .sans { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Helvetica, Arial, sans-serif; }
+      .mono { font-family: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace; }
+    </style>
+  </defs>
+  <rect x="0.5" y="0.5" width="1199" height="359" rx="14" fill="#111113" stroke="#26262b"/>
+
+  <!-- Mark and name -->
+  <g transform="translate(64 56) scale(0.0703)">
+    <rect x="16" y="16" width="480" height="480" rx="112" fill="#1b1b1f"/>
+    <path d="M136 168 L232 256 L136 344" fill="none" stroke="#ffffff" stroke-width="46" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="280" y="168" width="96" height="176" rx="14" fill="#5b8def"/>
+  </g>
+  <text x="112" y="82" class="sans" font-size="17" font-weight="600" fill="#e6e6e9">Bayesian SSH</text>
+
+  <!-- Headline -->
+  <text class="sans" font-size="40" font-weight="700" fill="#ffffff" letter-spacing="-0.5">
+    <tspan x="64" y="138">Every host,</tspan>
+    <tspan x="64" y="184">one keystroke away.</tspan>
   </text>
-  
-  <!-- Cursor blink -->
-  <rect x="870" y="140" width="12" height="35" fill="#fff">
-    <animate attributeName="opacity" values="1;0;1" dur="1s" repeatCount="indefinite"/>
-  </rect>
-  
-  <!-- Tagline -->
-  <text x="600" y="230" font-family="monospace" font-size="16" fill="#666" text-anchor="middle">
-    [ Smart SSH Connection Manager ]
+  <text class="sans" font-size="16" fill="#a1a1aa">
+    <tspan x="64" y="220">An SSH session manager for the terminal and the desktop:</tspan>
+    <tspan x="64" y="243">search ranked by how you work, bastions and Kerberos,</tspan>
+    <tspan x="64" y="266">and end-to-end encrypted sharing with your team.</tspan>
   </text>
-  
-  <!-- Feature tags - monochrome -->
-  <rect x="260" y="250" width="90" height="24" rx="3" fill="none" stroke="#444" stroke-width="1"/>
-  <text x="305" y="267" font-family="monospace" font-size="11" fill="#888" text-anchor="middle">fuzzy</text>
-  
-  <rect x="360" y="250" width="90" height="24" rx="3" fill="none" stroke="#444" stroke-width="1"/>
-  <text x="405" y="267" font-family="monospace" font-size="11" fill="#888" text-anchor="middle">tui</text>
-  
-  <rect x="460" y="250" width="90" height="24" rx="3" fill="none" stroke="#444" stroke-width="1"/>
-  <text x="505" y="267" font-family="monospace" font-size="11" fill="#888" text-anchor="middle">kerberos</text>
-  
-  <rect x="560" y="250" width="90" height="24" rx="3" fill="none" stroke="#444" stroke-width="1"/>
-  <text x="605" y="267" font-family="monospace" font-size="11" fill="#888" text-anchor="middle">bastion</text>
-  
-  <rect x="660" y="250" width="90" height="24" rx="3" fill="none" stroke="#444" stroke-width="1"/>
-  <text x="705" y="267" font-family="monospace" font-size="11" fill="#888" text-anchor="middle">history</text>
-  
-  <rect x="760" y="250" width="90" height="24" rx="3" fill="none" stroke="#444" stroke-width="1"/>
-  <text x="805" y="267" font-family="monospace" font-size="11" fill="#888" text-anchor="middle">aliases</text>
-  
-  <!-- Rust crab minimal -->
-  <text x="950" y="267" font-family="monospace" font-size="12" fill="#555">🦀 Rust</text>
-  
-  <!-- Connection lines decoration -->
-  <line x1="0" y1="298" x2="1200" y2="298" stroke="#222" stroke-width="2"/>
-  <line x1="0" y1="2" x2="1200" y2="2" stroke="#222" stroke-width="2"/>
+
+  <!-- Install -->
+  <rect x="64" y="290" width="492" height="38" rx="8" fill="#18181b" stroke="#2c2c33"/>
+  <text x="80" y="314" class="mono" font-size="13" fill="#e6e6e9"><tspan fill="#5b8def">$</tspan> curl -fsSL https://bssh.abdoufermat.dev/install.sh | bash</text>
+
+  <!-- Terminal -->
+  <g transform="translate(604 40)">
+    <rect x="0" y="0" width="556" height="280" rx="10" fill="#0b0b0d" stroke="#2c2c33"/>
+    <path d="M0 10 a10 10 0 0 1 10 -10 h536 a10 10 0 0 1 10 10 v24 h-556 z" fill="#18181b"/>
+    <circle cx="20" cy="17" r="5" fill="#3f3f46"/><circle cx="38" cy="17" r="5" fill="#3f3f46"/><circle cx="56" cy="17" r="5" fill="#3f3f46"/>
+    <text x="278" y="22" text-anchor="middle" class="mono" font-size="12" fill="#71717a">~/work</text>
+    <g class="mono" font-size="13.5" fill="#d4d4d8">
+      <text x="20" y="62"><tspan fill="#5b8def">$</tspan> bssh connect prod</text>
+      <text x="20" y="88" fill="#a1a1aa">Found 3 similar connections for 'prod':</text>
+      <text x="36" y="116"><tspan fill="#71717a">1.</tspan> <tspan fill="#ffffff">web-prod-1</tspan> <tspan fill="#71717a">(web-prod-1.eu-west.internal)</tspan></text>
+      <text x="60" y="135" fill="#71717a">Tags: prod, web (last used: 2 minutes ago)</text>
+      <text x="36" y="161"><tspan fill="#71717a">2.</tspan> <tspan fill="#ffffff">web-prod-2</tspan> <tspan fill="#71717a">(web-prod-2.eu-west.internal)</tspan></text>
+      <text x="60" y="180" fill="#71717a">Tags: prod, web (last used: 3 hours ago)</text>
+      <text x="36" y="206"><tspan fill="#71717a">3.</tspan> <tspan fill="#ffffff">db-prod</tspan> <tspan fill="#71717a">(db-prod.internal, via bastion)</tspan></text>
+      <text x="60" y="225" fill="#71717a">Tags: prod, db (last used: 2 days ago)</text>
+      <text x="20" y="256">Select connection to connect [1-3, 's', 'q']: <tspan fill="#ffffff">1</tspan><tspan fill="#5b8def">█</tspan></text>
+    </g>
+  </g>
 </svg>

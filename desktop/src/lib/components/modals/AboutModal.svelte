@@ -1,4 +1,5 @@
 <script lang="ts">
+  import BrandMark from "../BrandMark.svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { X, ExternalLink } from "lucide-svelte";
@@ -42,11 +43,7 @@
   <ModalShell open={show} title="About Bayesian SSH" {onClose} width="md">
     <div class="modal-header">
       <div class="flex min-w-0 items-center gap-3">
-        <svg viewBox="0 0 20 20" class="size-9 shrink-0" aria-hidden="true">
-          <rect width="20" height="20" rx="5" fill="var(--color-accent)" />
-          <path d="M5.5 7l3 3-3 3" fill="none" stroke="var(--color-on-accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-          <path d="M10.5 13.25h4" stroke="var(--color-on-accent)" stroke-width="1.6" stroke-linecap="round" />
-        </svg>
+        <BrandMark class="size-9 shrink-0" />
         <div class="min-w-0">
           <h2 class="modal-title">Bayesian SSH</h2>
           <p class="modal-subtitle tabular-nums">
