@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- The installer stops when the latest version is already installed (the CLI, and the desktop app unless `--no-gui`): nothing is downloaded and `sudo` doesn't ask for a password. `--force` reinstalls anyway. When only the desktop app is missing, it says it's adding it.
+
 ## [2.10.3] - 2026-10-23
 
 ### Changed
