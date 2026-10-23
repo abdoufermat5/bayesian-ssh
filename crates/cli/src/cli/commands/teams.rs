@@ -409,6 +409,22 @@ async fn run(command: TeamsCommands, store: &TeamsStore, config: &AppConfig) -> 
 
         TeamsCommands::Remove { team, email } => {
             let (team_id, source) = session::resolve_team(db, &team)?;
+            let s = Session::open(store, config, &passphrase(false)?)?;
+            let preview = s.remove_preview(team_id, &email).await?;
+            if !preview.blocking.is_empty() {
+                println!(
+                    "⚠️  These devices were never approved on this machine, so the team key can't be \
+                     rotated yet:"
+                );
+                for d in &preview.blocking {
+                    println!("   {} {} ({})", d.email, d.name, d.fingerprint);
+                }
+                println!(
+                    "   {email} is still removed; nobody can push until you approve them \
+                     (`bssh teams grant {}`) and sync.",
+                    source.name
+                );
+            }
             if !confirm(
                 &format!(
                     "Remove {email} from '{}' and rotate the team key?",
@@ -419,7 +435,6 @@ async fn run(command: TeamsCommands, store: &TeamsStore, config: &AppConfig) -> 
                 println!("Cancelled.");
                 return Ok(());
             }
-            let s = Session::open(store, config, &passphrase(false)?)?;
             let sync = s.remove(team_id, &email).await?;
             println!("✅ Removed {email} from '{}'.", source.name);
             print_sync(&source.name, &sync);

@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A `past_due` subscription is shown as a failed payment that Stripe is retrying, with a pointer to `--manage`; a subscription set to cancel shows its end date and that the team then falls back to the free plan.
 
 ### Fixed
+- `bssh teams remove` no longer looks like it failed when the key rotation can't run (devices never approved on this machine): the member is removed server-side, and the message now says so and how to finish the rotation. The devices that would block it are listed before the confirmation.
 - Billing and payment-provider errors from the server (`PaymentRequired`, `SeatLimit`, and Stripe failures) are shown verbatim, in the CLI and the desktop app, instead of a generic hint that could be wrong for the actual cause.
 
 ## [2.10.0] - 2026-10-23
