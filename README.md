@@ -64,8 +64,9 @@ curl -fsSL https://bssh.abdoufermat.dev/install.sh | bash
 
 Add `-s -- --no-gui` for the CLI only. `.deb`, `.rpm`, AppImage and checksums are on the
 [releases page](https://github.com/abdoufermat5/bayesian-ssh/releases); there is also a
-[snap](https://snapcraft.io/bayesian-ssh) (`sudo snap install bayesian-ssh`). Other methods,
-release signature checks and updates: [Installation](https://bssh.abdoufermat.dev/start/installation/).
+[snap](https://snapcraft.io/bayesian-ssh) (`sudo snap install bayesian-ssh`), and apt/dnf
+repositories that update with the rest of your system. All the methods, release signature
+checks and updates: [Installation](https://bssh.abdoufermat.dev/start/installation/).
 
 ## Quick start
 

@@ -17,6 +17,8 @@ ever echoed to the log.
 | GitHub release | `build`, `packages`, `release` | `GITHUB_TOKEN` (built in) | Binaries, bundles, unified `.deb`/`.rpm`, `SHA256SUMS`, provenance attestations, and `latest.json` when updater keys are set |
 | In-app updater | `gate`, `build` | `TAURI_SIGNING_PRIVATE_KEY` secret **and** `BAYESIAN_SSH_UPDATER_PUBLIC_KEY` variable | Signed updater artifacts and `latest.json` |
 | Unified packages | `packages` | none | `bayesian-ssh_<version>_amd64.deb` and `.rpm` combining the CLI and the desktop GUI |
+| CLI-only packages | `release` | none | `bayesian-ssh-cli` `.deb`/`.rpm` for amd64 and arm64, from the binaries `build` made |
+| apt / dnf repository | `release`, then bssh-docs | `REPO_GPG_KEY` secret | `bssh-repo.tar.gz`, served at `https://bssh.abdoufermat.dev/apt` and `/rpm` |
 | Snap Store | `snap` | `SNAPCRAFT_STORE_CREDENTIALS` | An amd64 + arm64 snap on the Snap Store (`stable`, or `candidate` for prereleases) |
 | Flatpak / Flathub | — (manual) | none | A PR to Flathub from the manifest in the repo |
 
@@ -118,6 +120,52 @@ Old installs only trust the key compiled into them, so rotation strands them:
 they keep checking for updates with the old public key, the new signatures do
 not verify, and they can never install a release signed with the new key. They
 must reinstall a build that embeds the new key before in-app updates work again.
+
+## Package repository (apt, dnf, zypper)
+
+Users add the repository once and then update with their package manager (see
+the docs' Installation page). It carries the latest release of `bayesian-ssh`
+(CLI and desktop, amd64) and `bayesian-ssh-cli` (CLI only, amd64 and arm64),
+not the self-updating `bayesian-ssh-desktop` bundles.
+
+How it is built:
+
+- the `release` job packages `bayesian-ssh-cli` with `scripts/package-cli.sh`;
+- with `REPO_GPG_KEY` set, `scripts/build-repo.sh` builds the APT tree (signed
+  `InRelease` and `Release.gpg`) and the RPM tree (every `.rpm` signed, signed
+  `repomd.xml`, a `bssh.repo` file), plus the public key as `bssh.asc` and
+  `bssh.gpg`, and the job attaches it all as `bssh-repo.tar.gz`, listed in the
+  cosign-signed `SHA256SUMS`;
+- the bssh-docs deploy (on push, daily, or `gh workflow run Docs -R
+  abdoufermat5/bssh-docs`) unpacks the newest release that has
+  `bssh-repo.tar.gz`, after checking the signature and checksum. A release built
+  without the key leaves the previous repository in place.
+
+### Signing key (first time)
+
+An RSA 4096 key, without a passphrase (CI signs unattended), that never expires:
+users pin it once, and an expiry or a new key breaks every machine until it is
+fetched again. ed25519 isn't used because RHEL 8's rpm can't verify it.
+
+```bash
+export GNUPGHOME="$(mktemp -d)"
+gpg --batch --passphrase '' --quick-gen-key \
+  "Bayesian SSH packages <abdoufermat5@users.noreply.github.com>" rsa4096 sign never
+gpg --armor --export-secret-keys | gh secret set REPO_GPG_KEY -R abdoufermat5/bayesian-ssh
+gpg --fingerprint          # note it: users can check bssh.asc against it
+# keep an offline copy (password manager), it can't be recovered from GitHub:
+#   gpg --armor --export-secret-keys > bssh-repo-key.asc
+rm -rf "$GNUPGHOME"; unset GNUPGHOME
+```
+
+The next release builds the repository; run the Docs workflow to publish it
+right away.
+
+### Rotating the key
+
+Only if it leaks: set a new `REPO_GPG_KEY`, cut a release, and tell users to
+fetch `bssh.gpg` (apt) or re-import `bssh.asc` (dnf, zypper) again: until they
+do, their updates fail the signature check.
 
 ## Snap Store
 

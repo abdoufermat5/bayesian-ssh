@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **apt and dnf repositories**: add `https://bssh.abdoufermat.dev/apt` (Debian, Ubuntu) or `/rpm` (Fedora, RHEL, openSUSE) once, then install and update with the system's package manager. Signed with the project's GPG key (RSA 4096): `InRelease`/`Release.gpg`, signed `.rpm` files and `repomd.xml`. Built by the release when `REPO_GPG_KEY` is set and published by the docs site.
+- **`bayesian-ssh-cli` package**: the command line without the desktop app, as `.deb` and `.rpm` for amd64 and arm64, for servers and headless machines. It replaces `bayesian-ssh` and the other way round.
+
+### Changed
+- New brand: one mark (a prompt chevron and a block cursor on a graphite tile) for the app icons, the desktop title bar and the docs, one outline icon set, and a README banner whose terminal shows the real `bssh connect` picker.
+- The installer stops when the latest version is already installed (the CLI, and the desktop app unless `--no-gui`): nothing is downloaded and `sudo` doesn't ask for a password. `--force` reinstalls anyway. When only the desktop app is missing, it says it's adding it.
+
 ### Fixed
 - On Debian 12, Ubuntu 22.04, RHEL 9 and other systems older than glibc 2.39, every command printed `weak version 'GLIBC_2.39' not found`. Release binaries and packages are now built on Ubuntu 22.04; they need glibc 2.34 or newer and print nothing extra.
 
