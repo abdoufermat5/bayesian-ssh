@@ -325,7 +325,7 @@ jobs:
             echo "### Install"
             echo
             echo '```bash'
-            echo "curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | bash"
+            echo "curl -fsSL https://bssh.abdoufermat.dev/install.sh | bash"
             echo "# or"
             echo "sudo snap install bayesian-ssh"
             echo '```'
@@ -369,6 +369,11 @@ jobs:
             --arg pub_date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson platforms "$platforms" \
             '{version: $version, notes: $notes, pub_date: $pub_date, platforms: $platforms}' > release/latest.json
           jq '.platforms | keys' release/latest.json
+
+      # The installer ships with the release, so SHA256SUMS (signed below) covers
+      # it; the docs site serves this copy at https://bssh.abdoufermat.dev/install.sh.
+      - name: Attach install.sh
+        run: cp install.sh release/install.sh
 
       - name: Produce SHA256SUMS
         run: |

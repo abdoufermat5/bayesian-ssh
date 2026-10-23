@@ -18,7 +18,7 @@ with your team, end-to-end encrypted.
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/abdoufermat5/bayesian-ssh/main/install.sh | bash
+curl -fsSL https://bssh.abdoufermat.dev/install.sh | bash
 ```
 
 Add `-s -- --no-gui` for the CLI only. `.deb`, `.rpm`, AppImage and checksums are on the

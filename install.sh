@@ -3,7 +3,7 @@
 # Bayesian SSH Installer
 # Downloads the latest release and installs the CLI (bayesian-ssh + bssh) and
 # the desktop app (bayesian-ssh-desktop, with menu entry and icon).
-# Usage: curl -fsSL https://raw.githubusercontent.com/abdoufermat5/bayesian-ssh/main/install.sh | bash
+# Usage: curl -fsSL https://bssh.abdoufermat.dev/install.sh | bash
 # CLI only (servers): ... | bash -s -- --no-gui
 # Choose interactively: ... | bash -s -- --interactive
 
