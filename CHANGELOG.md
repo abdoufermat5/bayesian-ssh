@@ -7,11 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.1] - 2026-10-23
+
 ### Changed
 - `bssh teams billing` and the desktop **Plan and seats** card now say why a team is read-only: more members than paid seats (add seats with `--manage` or **Manage billing**, or remove members), or no active subscription (subscribe, or remove members down to the free seats).
 - A `past_due` subscription is shown as a failed payment that Stripe is retrying, with a pointer to `--manage`; a subscription set to cancel shows its end date and that the team then falls back to the free plan.
 
 ### Fixed
+- Dependency `ctutils` 0.4.3 → 0.4.5 for RUSTSEC-2026-0385 (non-constant-time mask generation and `u128` comparisons), pulled in through the crypto stack (`aes-gcm`, `pkcs8`, `ed25519`).
 - `bssh teams remove` no longer looks like it failed when the key rotation can't run (devices never approved on this machine): the member is removed server-side, and the message now says so and how to finish the rotation. The devices that would block it are listed before the confirmation.
 - Billing and payment-provider errors from the server (`PaymentRequired`, `SeatLimit`, and Stripe failures) are shown verbatim, in the CLI and the desktop app, instead of a generic hint that could be wrong for the actual cause.
 
