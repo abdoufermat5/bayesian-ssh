@@ -23,7 +23,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use bssh_teams_proto::api::{
     AcceptInviteRequest, AuditKind, BillingInfo, BillingInterval, CheckoutRequest,
     ConnectionRecord, CreateAccountRequest, CreateInviteRequest, CreateTeamRequest, DeviceInfo,
-    ErrorCode, Invite, Member, PutKeysRequest, Role, TeamInfo, VaultPayload,
+    ErrorCode, Invite, Member, OrgInfo, PutKeysRequest, Role, TeamInfo, VaultPayload,
 };
 use bssh_teams_proto::wire::{Fixed, PublicKey32};
 use chrono::{DateTime, Utc};
@@ -409,6 +409,15 @@ pub fn local_teams(db: &Database) -> Result<Vec<(Uuid, Source)>> {
         .collect())
 }
 
+/// Every team this machine knows, as `(team_id, local name)`. Organizations
+/// are named by their teams in `<org>` arguments.
+pub fn local_team_names(db: &Database) -> Result<Vec<(Uuid, String)>> {
+    Ok(local_teams(db)?
+        .into_iter()
+        .map(|(team_id, source)| (team_id, source.name))
+        .collect())
+}
+
 /// Find a team by its local name, or by a prefix of its id.
 pub fn resolve_team(db: &Database, name_or_id: &str) -> Result<(Uuid, Source)> {
     let teams = local_teams(db)?;
@@ -666,6 +675,13 @@ impl<'a> Session<'a> {
 
     /// Create a team named `name` with this device as its admin and trust root.
     pub async fn create_team(&self, name: &str) -> Result<TeamSync> {
+        self.create_team_in(name, None).await
+    }
+
+    /// Create a team in `org_id` (the caller must own it). With `None` the
+    /// server puts it in the oldest organization the caller owns, or in a new
+    /// one.
+    pub async fn create_team_in(&self, name: &str, org_id: Option<Uuid>) -> Result<TeamSync> {
         if self.db().get_source(name)?.is_some() {
             bail!("a source named '{name}' already exists; pick another team name");
         }
@@ -677,7 +693,7 @@ impl<'a> Session<'a> {
         self.client
             .create_team(&CreateTeamRequest {
                 initial_key,
-                org_id: None,
+                org_id,
             })
             .await?;
         self.store.upsert_team(&TeamLocal {
@@ -872,6 +888,81 @@ impl<'a> Session<'a> {
         let members = self.client.list_members(team_id).await?;
         self.remember_authors(team_id, &members)?;
         Ok(members)
+    }
+
+    // -- organizations -------------------------------------------------------
+
+    /// Organizations this account owns or has a team in.
+    pub async fn list_orgs(&self) -> Result<Vec<OrgInfo>> {
+        Ok(self.client.list_orgs().await?)
+    }
+
+    /// Create an empty organization owned by this account. The free plan
+    /// covers one per account: a second one needs a subscription.
+    pub async fn create_org(&self) -> Result<OrgInfo> {
+        match self.client.create_org().await {
+            Ok(org) => Ok(org),
+            Err(e) if e.code() == Some(ErrorCode::PaymentRequired) => Err(anyhow!(e).context(
+                "one organization is free per account: subscribe to your existing one \
+                 (`bssh org billing <org> --checkout`) to create another, or create teams in it",
+            )),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    pub async fn org_info(&self, org_id: Uuid) -> Result<OrgInfo> {
+        Ok(self.client.get_org(org_id).await?)
+    }
+
+    /// Add an owner (the server requires them to be in one of its teams).
+    pub async fn add_org_owner(&self, org_id: Uuid, email: &str) -> Result<OrgInfo> {
+        let email = email.trim().to_lowercase();
+        Ok(self.client.add_org_owner(org_id, &email).await?)
+    }
+
+    /// Remove an owner, resolving the email to an account id from the
+    /// organization's owner list (the server takes an account id).
+    pub async fn remove_org_owner(&self, org_id: Uuid, email: &str) -> Result<OrgInfo> {
+        let email = email.trim().to_lowercase();
+        let org = self.client.get_org(org_id).await?;
+        let account_id = org
+            .owners
+            .iter()
+            .find(|o| o.email == email)
+            .map(|o| o.account_id)
+            .ok_or_else(|| anyhow!("{email} is not an owner of this organization"))?;
+        self.client.remove_org_owner(org_id, account_id).await?;
+        Ok(org)
+    }
+
+    /// Plan and seats of an organization (any member).
+    pub async fn org_billing(&self, org_id: Uuid) -> Result<BillingInfo> {
+        Ok(self.client.org_billing(org_id).await?)
+    }
+
+    /// A provider checkout page for the organization's subscription (owner).
+    pub async fn org_checkout_url(
+        &self,
+        org_id: Uuid,
+        seats: u32,
+        interval: BillingInterval,
+    ) -> Result<String> {
+        let redirect = self
+            .client
+            .org_billing_checkout(org_id, &CheckoutRequest { seats, interval })
+            .await
+            .map_err(server_message)?;
+        Ok(redirect.url)
+    }
+
+    /// The organization's customer portal: card, invoices, seats, cancellation (owner).
+    pub async fn org_portal_url(&self, org_id: Uuid) -> Result<String> {
+        let redirect = self
+            .client
+            .org_billing_portal(org_id)
+            .await
+            .map_err(server_message)?;
+        Ok(redirect.url)
     }
 
     /// Pending invites, which hold seats until accepted or expired. Only
