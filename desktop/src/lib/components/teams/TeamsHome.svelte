@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { LogIn, Plus, RefreshCw, Users } from "lucide-svelte";
-  import type { TeamAttention, TeamsStatus, TeamSummary } from "$lib/types";
+  import { Building2, LogIn, Plus, RefreshCw, Users } from "lucide-svelte";
+  import type { OrgSummary, TeamAttention, TeamsStatus, TeamSummary } from "$lib/types";
   import { getAttention, TEAM_ATTENTION } from "$lib/stores/attention.svelte";
   import { formatRelative } from "$lib/utils/timezone";
   import Fingerprint from "./Fingerprint.svelte";
@@ -9,6 +9,7 @@
 
   let {
     status,
+    orgs = null,
     attention,
     waitingForKey,
     syncing,
@@ -16,8 +17,11 @@
     onSync,
     onCreate,
     onJoin,
+    onOpenOrg,
   }: {
     status: TeamsStatus;
+    /** null when the server has no organizations: that section is hidden. */
+    orgs?: OrgSummary[] | null;
     attention: Record<string, TeamAttention>;
     /** Teams whose last sync or attention check says this device has no key yet. */
     waitingForKey: (teamId: string) => boolean;
@@ -27,6 +31,7 @@
     onSync: (team: TeamSummary) => void;
     onCreate: () => void;
     onJoin: () => void;
+    onOpenOrg?: (org: OrgSummary) => void;
   } = $props();
 
   type Flag = { label: string; tone: "error" | "warning" | "accent" };
@@ -157,5 +162,39 @@
         </tbody>
       </table>
     </div>
+  {/if}
+
+  {#if orgs && orgs.length > 0}
+    <section class="flex flex-col gap-2" aria-labelledby="orgs-heading">
+      <h3 id="orgs-heading" class="section-heading flex items-center gap-1.5">
+        <Building2 size={14} /> Organizations
+      </h3>
+      <div class="table-wrap overflow-x-auto">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Organization (owners)</th>
+              <th>Role</th>
+              <th>Teams</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each orgs as org (org.org_id)}
+              <tr>
+                <td>
+                  <button type="button" class="link font-medium" onclick={() => onOpenOrg?.(org)}>{org.label}</button>
+                </td>
+                <td>
+                  <span class="badge {org.my_role === 'owner' ? 'badge-accent' : 'badge-neutral'}">
+                    {org.my_role === "owner" ? "Owner" : "Member"}
+                  </span>
+                </td>
+                <td class="tabular-nums">{org.teams.length}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    </section>
   {/if}
 </div>

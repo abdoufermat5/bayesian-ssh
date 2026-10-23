@@ -996,7 +996,7 @@ pub enum TeamsCommands {
     },
     /// List a team's members and their devices
     Members { team: String },
-    /// Show a team's plan and seats; subscribe or manage the subscription (admin)
+    /// Show the plan and seats of a team's organization; subscribe or manage the subscription (organization owner)
     #[command(after_help = "Examples:\n\
       bssh teams billing platform                       plan, seats, renewal\n\
       bssh teams billing platform --checkout --seats 8  subscribe for 8 seats (monthly)\n\
@@ -1004,7 +1004,7 @@ pub enum TeamsCommands {
       bssh teams billing platform --manage              card, invoices, seats, cancel")]
     Billing {
         team: String,
-        /// Open a checkout page to subscribe the team (admin)
+        /// Open a checkout page to subscribe the team's organization (owner)
         #[arg(long, conflicts_with = "manage")]
         checkout: bool,
         /// Seats to subscribe for (default: the seats in use, at least one above the free plan)
@@ -1013,7 +1013,7 @@ pub enum TeamsCommands {
         /// Pay yearly instead of monthly
         #[arg(long, requires = "checkout")]
         yearly: bool,
-        /// Open the billing portal: card, invoices, seats, cancellation (admin)
+        /// Open the billing portal: card, invoices, seats, cancellation (owner)
         #[arg(long)]
         manage: bool,
     },
