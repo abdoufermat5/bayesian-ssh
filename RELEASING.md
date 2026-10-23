@@ -24,8 +24,11 @@ A tag with a pre-release suffix (`v2.6.0-rc.1`) is published as a GitHub
 pre-release, and its snap goes to the `candidate` channel instead of `stable`.
 Everything else is identical.
 
-All Linux builds run on `ubuntu-24.04` / `ubuntu-24.04-arm` pinned runners: the
-snap base (`core24`) must ship the glibc those binaries were linked against.
+The binaries and packages are built on `ubuntu-22.04` / `ubuntu-22.04-arm` pinned
+runners (glibc 2.35), the oldest glibc the desktop's WebKitGTK 4.1 builds against.
+They run on Debian 12, Ubuntu 22.04, RHEL 9 and newer, and in the snap's `core24`
+base. Built on 24.04 they referenced glibc 2.39 symbols, and older systems printed
+a loader warning on every run. The snap itself still builds on 24.04 (`core24`).
 
 ## Release signing
 

@@ -99,14 +99,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Pinned to 24.04: the snap base (core24) must ship the glibc these
-        # binaries were linked against.
+        # Pinned to 22.04 (glibc 2.35): binaries linked there run on Debian 12,
+        # Ubuntu 22.04, RHEL 9 and the snap's core24 alike. Built on 24.04 they
+        # reference glibc 2.39 symbols, and older systems print a loader warning on
+        # every run. Don't move these forward without checking the oldest target.
         include:
-          - runner: ubuntu-24.04
+          - runner: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             os_name: linux
             arch: x86_64
-          - runner: ubuntu-24.04-arm
+          - runner: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
             os_name: linux
             arch: aarch64
@@ -238,7 +240,8 @@ jobs:
   packages:
     name: Build unified .deb & .rpm
     needs: gate
-    runs-on: ubuntu-24.04
+    # Same glibc floor as the build matrix: this compiles the CLI and the desktop app.
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4

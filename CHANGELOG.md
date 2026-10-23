@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- On Debian 12, Ubuntu 22.04, RHEL 9 and other systems older than glibc 2.39, every command printed `weak version 'GLIBC_2.39' not found`. Release binaries and packages are now built on Ubuntu 22.04; they need glibc 2.34 or newer and print nothing extra.
+
 ## [2.10.3] - 2026-10-23
 
 ### Changed
