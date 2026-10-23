@@ -863,23 +863,24 @@ impl<'a> Session<'a> {
         seats: u32,
         interval: BillingInterval,
     ) -> Result<String> {
-        self.require_admin(team_id).await?;
+        // No client-side role check: billing belongs to the team's organization,
+        // and only the server knows who owns it (a team admin may not be an owner).
         let redirect = self
             .client
             .billing_checkout(team_id, &CheckoutRequest { seats, interval })
             .await
-            .map_err(server_message)?;
+            .map_err(org_message)?;
         Ok(redirect.url)
     }
 
-    /// The Stripe Customer Portal of the team: card, invoices, seats, cancellation (admin).
+    /// The Stripe Customer Portal of the team's organization: card, invoices,
+    /// seats, cancellation (organization owner).
     pub async fn portal_url(&self, team_id: Uuid) -> Result<String> {
-        self.require_admin(team_id).await?;
         let redirect = self
             .client
             .billing_portal(team_id)
             .await
-            .map_err(server_message)?;
+            .map_err(org_message)?;
         Ok(redirect.url)
     }
 
@@ -906,7 +907,7 @@ impl<'a> Session<'a> {
                 "one organization is free per account: subscribe to your existing one \
                  (`bssh org billing <org> --checkout`) to create another, or create teams in it",
             )),
-            Err(e) => Err(e.into()),
+            Err(e) => Err(org_message(e)),
         }
     }
 
@@ -917,7 +918,10 @@ impl<'a> Session<'a> {
     /// Add an owner (the server requires them to be in one of its teams).
     pub async fn add_org_owner(&self, org_id: Uuid, email: &str) -> Result<OrgInfo> {
         let email = email.trim().to_lowercase();
-        Ok(self.client.add_org_owner(org_id, &email).await?)
+        self.client
+            .add_org_owner(org_id, &email)
+            .await
+            .map_err(org_message)
     }
 
     /// Remove an owner, resolving the email to an account id from the
@@ -931,8 +935,12 @@ impl<'a> Session<'a> {
             .find(|o| o.email == email)
             .map(|o| o.account_id)
             .ok_or_else(|| anyhow!("{email} is not an owner of this organization"))?;
-        self.client.remove_org_owner(org_id, account_id).await?;
-        Ok(org)
+        self.client
+            .remove_org_owner(org_id, account_id)
+            .await
+            .map_err(org_message)?;
+        // As it is now: callers label the organization by its remaining owners.
+        Ok(self.client.get_org(org_id).await?)
     }
 
     /// Plan and seats of an organization (any member).
@@ -951,7 +959,7 @@ impl<'a> Session<'a> {
             .client
             .org_billing_checkout(org_id, &CheckoutRequest { seats, interval })
             .await
-            .map_err(server_message)?;
+            .map_err(org_message)?;
         Ok(redirect.url)
     }
 
@@ -961,7 +969,7 @@ impl<'a> Session<'a> {
             .client
             .org_billing_portal(org_id)
             .await
-            .map_err(server_message)?;
+            .map_err(org_message)?;
         Ok(redirect.url)
     }
 
@@ -1418,11 +1426,19 @@ impl<'a> Session<'a> {
     }
 }
 
-/// Keep the server's own wording for errors whose message says what to fix
-/// (billing rules: seats, plan, existing subscription).
-fn server_message(e: TeamsError) -> anyhow::Error {
+/// Keep the server's wording for billing and organization requests, `Forbidden` and
+/// `Conflict` included: those messages name the rule ("only an owner of the
+/// organization can manage billing", "the organization must keep at least one
+/// owner"), which the generic hints of [`explain`] would hide. Credentials and
+/// version errors keep their hint.
+fn org_message(e: TeamsError) -> anyhow::Error {
     match &e {
-        TeamsError::Api { error, .. } if e.code() != Some(ErrorCode::Forbidden) => {
+        TeamsError::Api { error, .. }
+            if !matches!(
+                e.code(),
+                Some(ErrorCode::Unauthorized | ErrorCode::ClientTooOld)
+            ) =>
+        {
             anyhow!("{}", error.message)
         }
         _ => e.into(),
@@ -1446,6 +1462,44 @@ pub fn explain(err: &anyhow::Error) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn api_error(status: u16, code: ErrorCode, message: &str) -> TeamsError {
+        TeamsError::Api {
+            status,
+            error: bssh_teams_proto::api::ApiError {
+                code,
+                message: message.into(),
+            },
+        }
+    }
+
+    #[test]
+    fn org_errors_keep_the_server_rule() {
+        let forbidden = org_message(api_error(
+            403,
+            ErrorCode::Forbidden,
+            "only an owner of the organization can manage billing",
+        ));
+        assert_eq!(
+            forbidden.to_string(),
+            "only an owner of the organization can manage billing"
+        );
+        assert_eq!(explain(&forbidden), None, "no generic hint over it");
+
+        let last_owner = org_message(api_error(
+            409,
+            ErrorCode::Conflict,
+            "the organization must keep at least one owner",
+        ));
+        assert_eq!(
+            last_owner.to_string(),
+            "the organization must keep at least one owner"
+        );
+
+        // Credentials keep their actionable hint.
+        let unauthorized = org_message(api_error(401, ErrorCode::Unauthorized, "unauthorized"));
+        assert!(explain(&unauthorized).is_some());
+    }
 
     fn pk(b: u8) -> PublicKey32 {
         PublicKey32::from([b; 32])
