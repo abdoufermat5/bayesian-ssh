@@ -500,6 +500,10 @@ fn print_audit(team: &str, log: &TeamAudit) {
                 AuditKind::SessionEnd => "session end",
                 AuditKind::VaultRead => "vault read",
                 AuditKind::VaultWrite => "vault write",
+                AuditKind::AiCall => "ai call",
+                AuditKind::AiApproval => "ai approval",
+                AuditKind::AiChange => "ai change",
+                AuditKind::AiRun => "ai run",
             };
             let ok = match l.check {
                 EventCheck::Valid => "✓",

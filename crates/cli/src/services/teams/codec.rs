@@ -3,7 +3,7 @@
 
 use super::crypto::{self, DeviceKeys, TeamKey};
 use anyhow::{anyhow, Result};
-use bssh_teams_proto::api::{AuditEvent, EncryptedEntry, VaultPayload, WrappedKey};
+use bssh_teams_proto::api::{AuditDetail, AuditEvent, EncryptedEntry, VaultPayload, WrappedKey};
 use bssh_teams_proto::wire::PublicKey32;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -35,6 +35,19 @@ pub trait VaultCodec {
     /// Whether `device_id` is a known device of this team (current or former
     /// member). Entries from unknown authors are rejected on pull.
     fn knows_author(&self, device_id: Uuid) -> bool;
+
+    /// Encrypt `plaintext` as the detail of `event` under the team's audit
+    /// key (bssh AI events). Only the production codec supports it.
+    fn seal_audit_detail(&self, event: &AuditEvent, plaintext: &[u8]) -> Result<AuditDetail> {
+        let _ = (event, plaintext);
+        Err(anyhow!("this codec cannot encrypt audit details"))
+    }
+
+    /// Decrypt the detail of `event` (its signature is the caller's to check).
+    fn open_audit_detail(&self, event: &AuditEvent) -> Result<Vec<u8>> {
+        let _ = event;
+        Err(anyhow!("this codec cannot decrypt audit details"))
+    }
 }
 
 /// Production codec: delegates to [`crypto`].
@@ -229,6 +242,28 @@ impl VaultCodec for CryptoCodec {
 
     fn knows_author(&self, device_id: Uuid) -> bool {
         self.author_keys.contains_key(&device_id)
+    }
+
+    fn seal_audit_detail(&self, event: &AuditEvent, plaintext: &[u8]) -> Result<AuditDetail> {
+        Ok(crypto::seal_audit_detail(
+            self.team_id,
+            self.newest()?,
+            event,
+            plaintext,
+        )?)
+    }
+
+    fn open_audit_detail(&self, event: &AuditEvent) -> Result<Vec<u8>> {
+        let version = event
+            .detail
+            .as_ref()
+            .map(|d| d.key_version)
+            .ok_or_else(|| anyhow!("audit event has no detail"))?;
+        let key = self
+            .team_keys
+            .get(&version)
+            .ok_or_else(|| anyhow!("no team key for version {version}"))?;
+        Ok(crypto::open_audit_detail(self.team_id, key, event)?.to_vec())
     }
 }
 

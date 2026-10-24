@@ -261,23 +261,12 @@ fn key32(b: Vec<u8>) -> Result<PublicKey32> {
     Ok(Fixed(a))
 }
 
-fn kind_str(kind: AuditKind) -> &'static str {
-    match kind {
-        AuditKind::SessionStart => "session_start",
-        AuditKind::SessionEnd => "session_end",
-        AuditKind::VaultRead => "vault_read",
-        AuditKind::VaultWrite => "vault_write",
-    }
+pub(crate) fn kind_str(kind: AuditKind) -> &'static str {
+    kind.as_str()
 }
 
-fn kind_from_str(s: &str) -> Option<AuditKind> {
-    Some(match s {
-        "session_start" => AuditKind::SessionStart,
-        "session_end" => AuditKind::SessionEnd,
-        "vault_read" => AuditKind::VaultRead,
-        "vault_write" => AuditKind::VaultWrite,
-        _ => return None,
-    })
+pub(crate) fn kind_from_str(s: &str) -> Option<AuditKind> {
+    AuditKind::parse(s)
 }
 
 // ── Identity ────────────────────────────────────────────────────────────────
@@ -1519,6 +1508,7 @@ mod tests {
 
     fn member(n: u128, email: &str, devices: Vec<DeviceInfo>) -> Member {
         Member {
+            kind: Default::default(),
             member_id: Uuid::from_u128(1000 + n),
             account_id: Uuid::from_u128(2000 + n),
             email: email.into(),

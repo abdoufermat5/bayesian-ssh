@@ -591,6 +591,14 @@ pub struct RelayMessage {
     pub signature: Signature64,
 }
 
+/// Response of `POST …/relay`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RelayAck {
+    pub message_id: Uuid,
+    /// The queue position; pass it as `after` to skip past this message.
+    pub seq: u64,
+}
+
 /// `GET /v1/teams/{team_id}/relay?kind=&request_id=&after=&wait=`: unexpired
 /// messages addressed to the calling device with `seq > after`, ascending.
 /// With nothing to return, waits up to `wait` seconds (default 0, max 30) for
