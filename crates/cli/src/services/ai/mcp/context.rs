@@ -272,12 +272,12 @@ impl RunContext {
     /// A control-socket failure is logged and the run continues without it (approvals then
     /// only work in-client), it never stops the run.
     pub fn spawn_control(self: &Arc<Self>, broker: Arc<LocalBroker>, info: RunInfo) {
-        let dir = ai_dir(&self.config).join("runs");
-        if let Err(e) = std::fs::create_dir_all(&dir) {
-            warn!("control socket dir {}: {e}", dir.display());
+        let ai = ai_dir(&self.config);
+        if let Err(e) = crate::services::ai::control_client::ensure_runs_dir(&ai) {
+            warn!("control socket dir: {e:#}");
             return;
         }
-        let socket = dir.join(format!("{}.sock", self.run_id));
+        let socket = crate::services::ai::control_client::socket_path(&ai, &self.run_id);
         let ctx = self.clone();
         let events = self.events.clone();
         let stop_rx = self.stop_tx.subscribe();

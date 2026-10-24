@@ -19,9 +19,55 @@ pub struct RunHello {
     pub started_at: String,
 }
 
-/// Directory holding the per-run sockets.
+/// Longest socket path we create: `sun_path` is 108 bytes on Linux (104 on macOS), NUL included.
+const MAX_SOCKET_PATH: usize = 100;
+/// `/<run_id>.sock` with a v4 UUID.
+const SOCKET_NAME_LEN: usize = 1 + 36 + ".sock".len();
+
+/// Directory holding the per-run sockets: `<ai_dir>/runs`, unless socket paths there would be
+/// too long for a Unix socket (deep homes, long environment names). Then a short per-user
+/// directory, `$XDG_RUNTIME_DIR/bssh-ai/<hash of ai_dir>` (or `<tmp>/bssh-ai-<user>/<hash>`).
+/// The choice depends only on `ai_dir`, so servers and clients always agree.
 pub fn runs_dir(ai_dir: &Path) -> PathBuf {
-    ai_dir.join("runs")
+    let default = ai_dir.join("runs");
+    if default.as_os_str().len() + SOCKET_NAME_LEN <= MAX_SOCKET_PATH {
+        return default;
+    }
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(ai_dir.as_os_str().as_encoded_bytes());
+    let tag: String = digest[..6].iter().map(|b| format!("{b:02x}")).collect();
+    let base = match std::env::var_os("XDG_RUNTIME_DIR").filter(|d| !d.is_empty()) {
+        Some(rt) => PathBuf::from(rt).join("bssh-ai"),
+        None => std::env::temp_dir().join(format!("bssh-ai-{}", whoami::username())),
+    };
+    base.join(tag)
+}
+
+/// Create `runs_dir(ai_dir)` with mode 0700. For the short path outside `ai_dir`, its parent
+/// too, and both must be real directories owned by the same user as `ai_dir`'s parent: the
+/// sockets inside accept approvals.
+pub fn ensure_runs_dir(ai_dir: &Path) -> Result<PathBuf> {
+    let dir = runs_dir(ai_dir);
+    std::fs::create_dir_all(&dir).with_context(|| format!("create {}", dir.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let owner = std::fs::metadata(ai_dir.parent().unwrap_or(ai_dir))
+            .map(|m| m.uid())
+            .ok();
+        let mut dirs = vec![dir.clone()];
+        if !dir.starts_with(ai_dir) {
+            dirs.extend(dir.parent().map(Path::to_path_buf));
+        }
+        for d in dirs {
+            let meta = std::fs::symlink_metadata(&d)?;
+            if !meta.is_dir() || owner.is_some_and(|uid| meta.uid() != uid) {
+                bail!("{} is not a directory owned by you", d.display());
+            }
+            std::fs::set_permissions(&d, std::fs::Permissions::from_mode(0o700))?;
+        }
+    }
+    Ok(dir)
 }
 
 /// Socket path for a run.
@@ -507,5 +553,36 @@ mod tests {
         std::fs::write(runs_dir(tmp.path()).join("a.sock"), "").unwrap();
         std::fs::write(runs_dir(tmp.path()).join("b.txt"), "").unwrap();
         assert_eq!(list_sockets(tmp.path()).len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod socket_path_tests {
+    use super::*;
+
+    #[test]
+    fn short_ai_dirs_keep_their_runs_dir() {
+        let ai = Path::new("/tmp/bssh-test/ai");
+        assert_eq!(runs_dir(ai), ai.join("runs"));
+    }
+
+    #[test]
+    fn long_ai_dirs_get_a_short_stable_socket_dir() {
+        let ai = Path::new(
+            "/home/asadiakhou/.config/bayesian-ssh/environments/a-long-environment-name/ai",
+        );
+        let dir = runs_dir(ai);
+        assert!(!dir.starts_with(ai));
+        assert_eq!(dir, runs_dir(ai), "server and clients must agree");
+        let sock = socket_path(ai, "6d6397f0-01bf-4655-a5a5-c5d2ae1dbc09");
+        assert!(
+            sock.as_os_str().len() <= MAX_SOCKET_PATH,
+            "{}",
+            sock.display()
+        );
+        let other = Path::new(
+            "/home/asadiakhou/.config/bayesian-ssh/environments/another-long-environment/ai",
+        );
+        assert_ne!(runs_dir(other), dir);
     }
 }
