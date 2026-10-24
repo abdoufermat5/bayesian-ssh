@@ -32,6 +32,8 @@ pub enum AiCommands {
     Serve(AiArgsServe),
     /// Issue a short-lived gateway token for an agent identity
     Token(AiArgsToken),
+    /// Follow what agents do, live, and answer approval requests
+    Watch(AiArgsWatch),
 }
 
 #[derive(Args, Debug)]
@@ -221,4 +223,17 @@ pub struct AiArgsToken {
     pub agent: String,
     #[arg(long, default_value = "1h")]
     pub ttl: String,
+}
+
+#[derive(Args, Debug)]
+pub struct AiArgsWatch {
+    /// Only this run (id or unique prefix)
+    #[arg(long)]
+    pub run: Option<String>,
+    /// Only calls on this host
+    #[arg(long)]
+    pub host: Option<String>,
+    /// One event per line as JSON; no prompts, no raw mode
+    #[arg(long)]
+    pub json: bool,
 }

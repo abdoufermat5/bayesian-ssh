@@ -18,6 +18,7 @@ pub mod setup;
 pub mod status;
 pub mod stop;
 pub mod token;
+pub mod watch;
 
 pub async fn execute(command: AiCommands, config: AppConfig) -> Result<()> {
     match command {
@@ -35,5 +36,6 @@ pub async fn execute(command: AiCommands, config: AppConfig) -> Result<()> {
         AiCommands::Ca(a) => ca::execute(a, config).await,
         AiCommands::Serve(a) => serve::execute(a, config).await,
         AiCommands::Token(a) => token::execute(a, config).await,
+        AiCommands::Watch(a) => watch::execute(a, config).await,
     }
 }

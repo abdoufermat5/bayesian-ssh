@@ -29,6 +29,8 @@ pub mod install;
 pub mod report;
 // The look shared by every AI surface
 pub mod ui;
+// One line per event: the feed of `bssh ai watch` and `bssh ai log`
+pub mod feed;
 // Teams agents and gateway
 pub mod gateway;
 pub mod teams;
