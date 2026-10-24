@@ -168,6 +168,9 @@ pub struct AiArgsDoctor {
     pub target: Option<String>,
     #[arg(short = 't', long)]
     pub tag: Option<String>,
+    /// Policy whose write paths drive the sudoers suggestions
+    #[arg(long, default_value = "default")]
+    pub policy: String,
     #[arg(long)]
     pub json: bool,
 }
