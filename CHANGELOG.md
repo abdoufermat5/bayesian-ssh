@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tool schemas no longer carry non-standard number formats (`uint64`…), which made Claude Code print a warning per field.
 - Approval cards say why the policy asks, show what a read that needs approval would read, name the real risk of checks and undo steps, show a diff once, and read `reload nginx.service` for service steps. `nginx -s reload` reads as reloading nginx.
 - `bssh ai watch` follows terminal resizes instead of wrapping every line.
+- The approval card in `bssh ai watch` counts a plan's file edits: a plan that edits a config and reloads a service no longer reads as only the reload.
 - A change plan that stops at a failed step says so, with the earlier steps still done, instead of "not applied".
 
 ## [2.13.2] - 2026-10-24

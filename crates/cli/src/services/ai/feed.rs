@@ -612,10 +612,32 @@ fn request_effects(req: &ApprovalRequest) -> Option<Effects> {
             .collect(),
         ApprovalSubject::Access { .. } => return None,
     };
-    if analyses.is_empty() {
+    // File edits have no command to parse, but they are what a change does too.
+    let edits: Vec<String> = match &req.subject {
+        ApprovalSubject::Call { call, .. } if call.tool == super::types::ToolName::EditFile => {
+            call.path.iter().cloned().collect()
+        }
+        ApprovalSubject::Plan { plan, .. } => plan
+            .steps
+            .iter()
+            .filter_map(|s| match &s.action {
+                super::types::StepAction::EditFile { path, .. } => Some(path.clone()),
+                _ => None,
+            })
+            .collect(),
+        _ => Vec::new(),
+    };
+    if analyses.is_empty() && edits.is_empty() {
         return None;
     }
     let mut all = Effects::default();
+    if !edits.is_empty() {
+        all.items.push(effects::Effect {
+            verb: effects::Verb::Edits,
+            targets: edits,
+            dest: None,
+        });
+    }
     for (command, a) in analyses {
         let e = effects::effects_for(command, a);
         all.items.extend(e.items);
@@ -988,6 +1010,29 @@ mod tests {
             expires_at: at(17, 29, 12).to_rfc3339(),
             reason: String::new(),
         }
+    }
+
+    #[test]
+    fn a_plan_card_counts_file_edits() {
+        let mut req = plan_request();
+        if let ApprovalSubject::Plan { plan, analyses, .. } = &mut req.subject {
+            plan.steps.insert(
+                0,
+                Step {
+                    id: "step-0".into(),
+                    host: Some("web-1".into()),
+                    action: StepAction::EditFile {
+                        path: "/etc/app/app.env".into(),
+                        patch: "-PORT=8081\n+PORT=8080\n".into(),
+                    },
+                },
+            );
+            analyses.insert(0, None);
+        }
+        let mut c = ctx();
+        let text = request_lines(&Style::plain(), &req, &mut c, at(17, 24, 40), true).join("\n");
+        assert!(text.contains("edits 1 path"), "{text}");
+        assert!(text.contains("moves 1 path"), "{text}");
     }
 
     #[test]
