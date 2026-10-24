@@ -85,3 +85,13 @@ indicatif = "0.17"
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 ed25519-dalek = { version = "2", features = ["zeroize"] }
 hkdf = "0.12"
+
+# bssh AI (W4)
+# MCP server. W8 adds "transport-streamable-http-server" for `bssh ai serve`.
+rmcp = { version = "3.7.0", features = ["server", "macros", "transport-io", "elicitation"] }
+schemars = "1"
+diffy = "0.4"
+
+[dev-dependencies]
+# In-process MCP client for the round-trip tests.
+rmcp = { version = "3.7.0", features = ["client", "server", "macros", "transport-io", "elicitation"] }
