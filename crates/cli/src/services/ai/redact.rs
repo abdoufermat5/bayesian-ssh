@@ -456,6 +456,7 @@ mod tests {
     }
 
     fn fake_slack_token() -> String {
+        // Assembled at run time so secret scanners do not flag the fixture.
         format!("xoxb-{}-{}", "1234".repeat(3), "abcd".repeat(6))
     }
 
