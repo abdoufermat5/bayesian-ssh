@@ -1545,7 +1545,7 @@ fn denial_and_errors_name_next_step_and_nothing_ran() {
     assert_eq!(r.is_error, Some(true));
     let t = &r.content[0].as_text().unwrap().text;
     assert!(!t.contains("{\""));
-    assert!(t.contains("Denied by bssh. touch writes, and run_readonly only reads. Nothing ran."));
+    assert!(t.contains("Denied by bssh: touch writes, and run_readonly only reads. Nothing ran."));
     assert!(
         t.contains("To change something, describe it with propose_change; a person approves it.")
     );

@@ -229,13 +229,18 @@ impl BsshMcp {
 fn steps_to_effects(steps: &[Value]) -> effects::Effects {
     use effects::{Effect, Effects, Verb};
     let mut combined = Effects::default();
-    for step in steps {
+    // What the change does: its steps, not the checks (`verify-*`) or the undo (`rollback-*`),
+    // so the agent reads the same summary as the approver.
+    for step in steps
+        .iter()
+        .filter(|s| s["id"].as_str().is_none_or(|id| id.starts_with("step-")))
+    {
         let kind = step["kind"].as_str().unwrap_or("");
         match kind {
             "run" => {
                 if let Some(cmd) = step["detail"]["command"].as_str() {
                     let a = crate::services::ai::analyzer::ShellAnalyzer.analyze(cmd);
-                    let e = effects::effects(&a);
+                    let e = effects::effects_for(cmd, &a);
                     combined.items.extend(e.items);
                     combined.deletes |= e.deletes;
                     combined.sudo |= e.sudo;
@@ -1111,7 +1116,7 @@ pub fn render_tool_error(_tool: &str, err: &ToolError) -> String {
             } else {
                 "To request access, use request_access; to propose changes, use propose_change."
             };
-            format!("Denied by bssh. {clean}. Nothing ran.\n{next}")
+            format!("Denied by bssh: {clean}. Nothing ran.\n{next}")
         }
         ToolError::Invalid(msg) => {
             let clean = msg.trim_end_matches('.');

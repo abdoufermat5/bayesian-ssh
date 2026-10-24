@@ -36,7 +36,7 @@ pub async fn execute(args: AiArgsLog, config: AppConfig) -> Result<()> {
 
     let events: Vec<_> = entries
         .iter()
-        .filter(|e| event_run(&e.event) == id)
+        .filter(|e| feed::event_run_id(&e.event) == id)
         .take(args.limit.max(1) * 1000)
         .collect();
     if args.json {
@@ -56,19 +56,6 @@ pub async fn execute(args: AiArgsLog, config: AppConfig) -> Result<()> {
         );
     }
     Ok(())
-}
-
-fn event_run(e: &crate::services::ai::types::AiEvent) -> String {
-    use crate::services::ai::types::AiEvent::*;
-    match e {
-        RunStarted { run_id, .. }
-        | Approval { run_id, .. }
-        | Result { run_id, .. }
-        | Change { run_id, .. }
-        | CircuitBreaker { run_id, .. }
-        | RunEnded { run_id, .. } => run_id.clone(),
-        Call { call, .. } => call.run_id.clone(),
-    }
 }
 
 /// A run's events in the `bssh ai watch` line format, each at its own time. Nothing is

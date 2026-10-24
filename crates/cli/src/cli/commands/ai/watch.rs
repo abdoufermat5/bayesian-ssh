@@ -181,6 +181,11 @@ mod unix_impl {
         pending: Vec<Pending>,
         seen_requests: HashSet<String>,
         first_header: bool,
+        /// Events shown from the audit log on joining a run, so the same event arriving on
+        /// the live stream is not shown twice.
+        replayed: HashSet<String>,
+        /// Runs whose end has been shown.
+        ended: HashSet<String>,
     }
 
     impl Watcher {
@@ -247,7 +252,28 @@ mod unix_impl {
         }
 
         fn event(&mut self, ev: AiEvent) {
-            let now = Utc::now();
+            if let Ok(key) = serde_json::to_string(&ev) {
+                if self.replayed.remove(&key) {
+                    return;
+                }
+            }
+            self.event_at(ev, Utc::now());
+        }
+
+        /// What the run did before `watch` joined it, from the audit log, at its own times.
+        fn replay(&mut self, events: Vec<(chrono::DateTime<Utc>, AiEvent)>) {
+            for (at, ev) in events {
+                if let Ok(key) = serde_json::to_string(&ev) {
+                    self.replayed.insert(key);
+                }
+                self.event_at(ev, at);
+            }
+        }
+
+        fn event_at(&mut self, ev: AiEvent, now: chrono::DateTime<Utc>) {
+            if let AiEvent::RunEnded { run_id, .. } = &ev {
+                self.ended.insert(run_id.clone());
+            }
             let ok = self.host_ok(&ev);
             // Always feed the context, so later lines know their call even when hidden.
             let line = event_line(&self.style, &ev, &mut self.ctx, now);
@@ -388,12 +414,37 @@ mod unix_impl {
         }
 
         fn gone(&mut self, run_id: &str) {
+            // The socket closed without a RunEnded on the stream: say so anyway.
+            if self.runs.contains_key(run_id) && !self.ended.contains(run_id) {
+                self.event_at(
+                    AiEvent::RunEnded {
+                        run_id: run_id.to_string(),
+                        reason: "client disconnected".into(),
+                    },
+                    Utc::now(),
+                );
+            }
             self.runs.remove(run_id);
             self.pending.retain(|p| p.run_id != run_id);
             if !self.json {
                 self.print(&[]);
             }
         }
+    }
+
+    /// A run's events so far, from the audit log, with the time each was written.
+    fn earlier_events(config: &AppConfig, run_id: &str) -> Vec<(chrono::DateTime<Utc>, AiEvent)> {
+        let Ok(entries) = crate::services::ai::audit::read_entries(config) else {
+            return Vec::new();
+        };
+        entries
+            .into_iter()
+            .filter(|e| crate::services::ai::feed::event_run_id(&e.event) == run_id)
+            .filter_map(|e| {
+                let at = chrono::DateTime::parse_from_rfc3339(&e.ts).ok()?;
+                Some((at.with_timezone(&Utc), e.event))
+            })
+            .collect()
     }
 
     /// One run: subscribe, replay what waits, then relay messages and send commands.
@@ -514,6 +565,8 @@ mod unix_impl {
             pending: Vec::new(),
             seen_requests: HashSet::new(),
             first_header: true,
+            replayed: HashSet::new(),
+            ended: HashSet::new(),
         };
         if !args.json && list_sockets(&dir).is_empty() {
             w.print(&[
@@ -545,7 +598,11 @@ mod unix_impl {
                 msg = rx.recv() => {
                     let Some(msg) = msg else { break };
                     match msg {
-                        Msg::Joined { hello, cmd } => w.joined(hello, cmd),
+                        Msg::Joined { hello, cmd } => {
+                            let run_id = hello.run_id.clone();
+                            w.joined(hello, cmd);
+                            w.replay(earlier_events(&config, &run_id));
+                        }
                         Msg::Skipped { socket, retry } => {
                             if retry {
                                 known.remove(&socket);

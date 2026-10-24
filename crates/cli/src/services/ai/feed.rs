@@ -275,7 +275,14 @@ impl FeedLine {
             left.push_str(&ui::pad(&self.host, w));
             used += w;
         }
-        let meta_w = ui::display_width(&self.meta);
+        // The meta wins over the text but never runs past the line: keep 8 columns of text.
+        let meta_max = width.saturating_sub(used + 8 + 2).max(10);
+        let meta = if ui::display_width(&self.meta) > meta_max {
+            ui::truncate(&self.meta, meta_max)
+        } else {
+            self.meta.clone()
+        };
+        let meta_w = ui::display_width(&meta);
         let gap = if meta_w > 0 { 2 } else { 0 };
         let avail = width.saturating_sub(used + meta_w + gap).max(8);
         let text = ui::truncate(&self.text, avail);
@@ -289,13 +296,26 @@ impl FeedLine {
         format!(
             "{left}{}{}",
             " ".repeat(fill),
-            style.paint(self.meta_tone, &self.meta)
+            style.paint(self.meta_tone, &meta)
         )
     }
 }
 
 fn clock_of(now: DateTime<Utc>) -> String {
     ui::clock(&now.to_rfc3339())
+}
+
+/// The run an event belongs to.
+pub fn event_run_id(ev: &AiEvent) -> &str {
+    match ev {
+        AiEvent::RunStarted { run_id, .. }
+        | AiEvent::Approval { run_id, .. }
+        | AiEvent::Result { run_id, .. }
+        | AiEvent::Change { run_id, .. }
+        | AiEvent::CircuitBreaker { run_id, .. }
+        | AiEvent::RunEnded { run_id, .. } => run_id,
+        AiEvent::Call { call, .. } => &call.run_id,
+    }
 }
 
 /// The line for an event, or `None` when it adds nothing (a successful result, a run start).
@@ -1102,6 +1122,22 @@ mod tests {
         .unwrap();
         assert_eq!(ui::display_width(&l), 60, "{l}");
         assert!(l.ends_with('…') && !l.contains('\x1b'), "{l}");
+    }
+
+    #[test]
+    fn a_long_meta_is_cut_to_the_line() {
+        let mut c = FeedContext::with_width(80);
+        let ev = deny(
+            call(
+                "c",
+                ToolName::RunReadonly,
+                Some("web-1"),
+                Some("touch /var/tmp/x"),
+            ),
+            &"this host has no read-only jail and the command is not read-only ".repeat(3),
+        );
+        let l = line(&ev, &mut c, at(1, 0, 0)).unwrap();
+        assert!(ui::display_width(&l) <= 80 && l.ends_with('…'), "{l}");
     }
 
     #[test]
