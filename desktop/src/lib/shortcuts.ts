@@ -40,6 +40,7 @@ export const VIEW_ORDER: AppTab[] = [
   "audit",
   "history",
   "teams",
+  "ai",
 ];
 
 export function viewDigit(tab: AppTab): string | null {

@@ -246,6 +246,23 @@
   .code-block {
     @apply overflow-x-auto rounded-md border border-border bg-surface-input px-3 py-2 font-mono text-xs leading-relaxed text-secondary;
   }
+  /* Unified diff in AI approvals. The +/- prefix carries the meaning; the tint
+     only supports it. Lines never wrap, so a long one scrolls instead. */
+  .diff {
+    @apply overflow-x-auto rounded-md border border-border bg-surface-input py-1 font-mono text-xs leading-relaxed text-secondary;
+  }
+  .diff-line {
+    @apply block min-w-max whitespace-pre px-3;
+  }
+  .diff-add {
+    @apply bg-success/12 text-primary;
+  }
+  .diff-del {
+    @apply bg-error/12 text-primary;
+  }
+  .diff-hunk {
+    @apply text-muted;
+  }
 
   /* ================================================================
      APP SHELL

@@ -1,4 +1,5 @@
 import {
+  Bot,
   Clock,
   HardDrive,
   KeyRound,
@@ -21,6 +22,7 @@ export const VIEW_META: Record<
   audit: { label: "Security check", icon: ShieldCheck },
   history: { label: "History", icon: Clock },
   teams: { label: "Teams", icon: Users },
+  ai: { label: "AI agents", icon: Bot },
 };
 
 /** Whether the settings turn this view off (Files can be disabled). */

@@ -137,6 +137,7 @@ export type AppTab =
   | "keys"
   | "audit"
   | "teams"
+  | "ai"
   | "settings";
 export type NotificationType = "success" | "error" | "info";
 
@@ -424,4 +425,206 @@ export interface TeamRemovePreview {
   blocking: TeamPreviewDevice[];
   /** Team hosts the removed member has already synced (they keep copies). */
   shared_hosts: number;
+}
+
+// ── bssh AI (backend: crates/gui/src/commands/ai.rs; shapes of crates/cli/src/services/ai/types.rs) ──
+
+export type AiRiskTag =
+  | "read"
+  | "write"
+  | "service-change"
+  | "destructive"
+  | "privilege"
+  | "network"
+  | "exfil-risk"
+  | "unknown";
+
+export type AiTier = "in-client" | "out-of-band" | "two-person";
+
+export type AiToolName =
+  | "list_hosts"
+  | "host_info"
+  | "observe"
+  | "read_file"
+  | "search_logs"
+  | "run_readonly"
+  | "run_many"
+  | "propose_change"
+  | "apply_change"
+  | "edit_file"
+  | "service"
+  | "run"
+  | "undo"
+  | "status"
+  | "request_access";
+
+export interface AiSimpleCommand {
+  program: string;
+  args: string[];
+  wrappers: string[];
+  writes_to: string[];
+  tags: AiRiskTag[];
+  rule: string | null;
+}
+
+export interface AiAnalysis {
+  commands: AiSimpleCommand[];
+  tags: AiRiskTag[];
+  unknown_reason: string | null;
+}
+
+export interface AiToolCall {
+  run_id: string;
+  call_id: string;
+  tool: AiToolName;
+  host: string | null;
+  command: string | null;
+  path: string | null;
+  /** Raw arguments exactly as the agent sent them. Untrusted. */
+  args: unknown;
+}
+
+export type AiDecision =
+  | { decision: "allow"; reason: string }
+  | { decision: "ask"; tier: AiTier; reason: string }
+  | { decision: "deny"; reason: string };
+
+export type AiStepAction =
+  | { run: { command: string } }
+  | { edit_file: { path: string; patch: string } }
+  | { service: { unit: string; action: "start" | "stop" | "restart" | "reload" } }
+  | { undo: { step: string } };
+
+export interface AiStep {
+  id: string;
+  host: string | null;
+  action: AiStepAction;
+}
+
+export interface AiChangePlan {
+  change_id: string;
+  run_id: string;
+  title: string;
+  /** Written by the agent: show it labelled "The agent says". */
+  reason: string;
+  steps: AiStep[];
+  verify: AiStep[];
+  rollback: AiStep[];
+}
+
+export interface AiScope {
+  tags: string[];
+  hosts: string[];
+}
+
+export type AiApprovalSubject =
+  | { kind: "call"; call: AiToolCall; analysis: AiAnalysis | null }
+  | { kind: "plan"; plan: AiChangePlan; plan_hash: string; analyses: (AiAnalysis | null)[] }
+  | { kind: "access"; scope: AiScope; reason: string; duration: string };
+
+export interface AiApprovalRequest {
+  request_id: string;
+  run_id: string;
+  /** MCP client name and version, self-reported. */
+  client: string;
+  tier: AiTier;
+  subject: AiApprovalSubject;
+  created_at: string;
+  expires_at: string;
+}
+
+export interface AiGrant {
+  grant_id: string;
+  run_id: string | null;
+  tool: AiToolName;
+  hosts: string;
+  target: string | null;
+  expires_at: string;
+}
+
+export type AiApprovalOutcome =
+  | { outcome: "approved"; by: string; channel: string; grant: AiGrant | null }
+  | { outcome: "denied"; by: string; reason: string | null }
+  | { outcome: "expired" };
+
+export interface AiRedaction {
+  kind: string;
+  count: number;
+}
+
+export type AiEvent =
+  | { event: "run_started"; run_id: string; client: string; on_behalf_of: string; policy: string; policy_hash: string }
+  | { event: "call"; call: AiToolCall; decision: AiDecision }
+  | { event: "approval"; request_id: string; run_id: string; outcome: AiApprovalOutcome }
+  | {
+      event: "result";
+      run_id: string;
+      call_id: string;
+      exit_code: number | null;
+      output_sha256: string;
+      redactions: AiRedaction[];
+    }
+  | {
+      event: "change";
+      run_id: string;
+      change_id: string;
+      plan_hash: string;
+      applied: boolean;
+      undo_point: string | null;
+    }
+  | { event: "circuit_breaker"; run_id: string; reason: string }
+  | { event: "run_ended"; run_id: string; reason: string };
+
+/** One event of a run as the desktop received it (`ai_run_events`, `ai://event`). */
+export interface AiStoredEvent {
+  /** 1-based per run; used to drop duplicates. */
+  seq: number;
+  /** RFC 3339, when the desktop received it. */
+  at: string;
+  event: AiEvent;
+}
+
+/** `ai_list_runs()` and the `ai://runs` event. */
+export interface AiRun {
+  run_id: string;
+  client: string;
+  policy: string;
+  started_at: string;
+  on_behalf_of: string | null;
+  /** Calls seen since the desktop connected. */
+  calls: number;
+  denied: number;
+  pending: AiApprovalRequest[];
+  grants: AiGrant[];
+  /** The run's socket is open: Stop and approvals work. */
+  connected: boolean;
+  /** Reason from the run's `run_ended` event. */
+  ended: string | null;
+}
+
+export interface AiBudgets {
+  calls_per_min: number;
+  changes_per_run: number;
+  run_ttl: string;
+  max_denials_per_min: number;
+}
+
+/** `config.ai.policies[name]`. */
+export interface AiPolicy {
+  profile: "observe" | "operate" | "oncall";
+  scope: AiScope;
+  approval: { default: AiTier; in_client: string[]; two_person: string[] };
+  read_paths: string[];
+  deny_paths: string[];
+  write_paths: string[];
+  deny: string[];
+  budgets: AiBudgets;
+  redact: { vault_secrets: boolean; patterns: string };
+}
+
+/** `ai_settings()`: the read-only part of `config.ai`. */
+export interface AiSettingsView {
+  policies: Record<string, AiPolicy>;
+  record_output: boolean;
+  approval_timeout_secs: number;
 }

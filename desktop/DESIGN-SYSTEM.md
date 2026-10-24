@@ -154,6 +154,7 @@ Run it with `cd desktop && npm run check:contrast`; it prints one row per check 
 | Badges | `.badge` + `-neutral` `-accent` `-success` `-warning` `-error`, `.badge-mono`; `.count`; `.tag` (static label); `.kbd` | Badges are 20px, rounded-sm, never pills |
 | Status | `.status-dot` + `-success` `-warning` `-error` `-offline` `-running`, `-sm`, `.status-dot-live` | |
 | Text | `.section-label`, `.link`, `.mono`, `.code-block` | |
+| Diff | `.diff` > `.diff-line` + `-add` `-del` `-hunk` (`DiffView` component) | The +/- prefix carries the meaning, the tint only supports it. Make the `.diff` region focusable so long lines scroll by keyboard |
 | Containers | `.panel` (+ `-header` `-title` `-body`), `.card` `.card-interactive` `.card-selected`, `.stat` (+ `-label` `-value`), `.divider` | |
 | Tables | `.table-wrap > table.data-table`; `tr.is-selected`; `.row-actions` | Actions are revealed on row hover, selection and focus |
 | Navigation | `.segmented` `.segmented-item(-active)`, `.chip(-active)`, `.tabs` `.tab(-active)` | |

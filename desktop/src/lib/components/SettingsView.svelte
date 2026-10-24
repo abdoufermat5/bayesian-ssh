@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Layers, Lock, Network, Palette, RefreshCw, TerminalSquare } from "lucide-svelte";
+  import { Bot, Layers, Lock, Network, Palette, RefreshCw, TerminalSquare } from "lucide-svelte";
   import type { DesktopSettings, EnvInfo, WorkspaceInfo } from "$lib/types";
   import {
     SETTINGS_SECTIONS,
@@ -17,6 +17,7 @@
   import SectionToggles from "./settings/SectionToggles.svelte";
   import SourcesSettings from "./settings/SourcesSettings.svelte";
   import UpdatesSettings from "./settings/UpdatesSettings.svelte";
+  import AiSettings from "./settings/AiSettings.svelte";
 
   interface Props {
     settings: DesktopSettings;
@@ -51,6 +52,7 @@
     privacy: Lock,
     appearance: Palette,
     sources: RefreshCw,
+    ai: Bot,
   } as const;
 
   const LEADS: Record<SettingsSectionId, string> = {
@@ -60,6 +62,7 @@
     privacy: "What the app keeps about your sessions, and how much it logs.",
     appearance: "Theme, density and how dates are displayed.",
     sources: "Where hosts are imported from, and this installation's version and update channel.",
+    ai: "The policies that limit what AI agents may do on your hosts. Read-only here.",
   };
 
   // A request from elsewhere (command palette, a status link) is taken on
@@ -140,6 +143,8 @@
           {:else if active === "sources"}
             <SourcesSettings />
             <UpdatesSettings />
+          {:else if active === "ai"}
+            <AiSettings />
           {/if}
         </div>
       </div>
