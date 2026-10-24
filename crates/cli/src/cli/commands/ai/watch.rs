@@ -214,7 +214,15 @@ mod unix_impl {
             }
         }
 
+        /// The terminal may have been resized since the last line: draw to its width now.
+        fn fit(&mut self) {
+            if self.tty {
+                self.ctx.width = ui::width();
+            }
+        }
+
         fn joined(&mut self, hello: RunHello, cmd: mpsc::UnboundedSender<ClientMsg>) {
+            self.fit();
             self.ctx.note_run(&hello.run_id, &hello.client);
             let header = RunHeader {
                 client: hello.client.clone(),
@@ -276,6 +284,7 @@ mod unix_impl {
         }
 
         fn event_at(&mut self, ev: AiEvent, now: chrono::DateTime<Utc>) {
+            self.fit();
             if let AiEvent::RunEnded { run_id, .. } = &ev {
                 self.ended.insert(run_id.clone());
             }
@@ -314,6 +323,7 @@ mod unix_impl {
         }
 
         fn request(&mut self, run_id: String, request: ApprovalRequest) {
+            self.fit();
             if !self.seen_requests.insert(request.request_id.clone()) || self.json {
                 return;
             }
