@@ -45,6 +45,11 @@ pub enum ServerMsg {
         client: String,
         policy: String,
         started_at: String,
+        /// Absent from older servers.
+        #[serde(default)]
+        on_behalf_of: String,
+        #[serde(default)]
+        hosts: Vec<String>,
     },
     Pending {
         requests: Vec<ApprovalRequest>,

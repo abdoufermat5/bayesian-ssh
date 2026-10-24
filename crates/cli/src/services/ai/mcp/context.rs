@@ -247,6 +247,8 @@ impl RunContext {
             client: "unknown".into(),
             policy: policy_name.to_string(),
             started_at: now_rfc3339(),
+            on_behalf_of: whoami::username(),
+            hosts: Vec::new(),
         };
         let broker = Arc::new(LocalBroker::new(
             store.clone(),
@@ -267,6 +269,12 @@ impl RunContext {
             elicitor: Some(elicitor),
         };
         let ctx = Self::with_run_id(run_id, config, policy_name.to_string(), policy, deps);
+        let mut info = info;
+        info.hosts = ctx
+            .visible_hosts()
+            .await
+            .map(|hosts| hosts.into_iter().map(|c| c.name).collect())
+            .unwrap_or_default();
         ctx.spawn_control(broker, info);
         Ok(ctx)
     }

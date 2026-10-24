@@ -1266,6 +1266,8 @@ mod tests {
 
     fn hello() -> RunHello {
         RunHello {
+            on_behalf_of: "ana".into(),
+            hosts: vec!["web-1".into()],
             run_id: "dddbee19-f151-4ee0-8473-93924f35e1d4".into(),
             client: "opencode".into(),
             policy: "default".into(),

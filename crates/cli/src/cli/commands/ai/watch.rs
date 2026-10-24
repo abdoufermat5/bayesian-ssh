@@ -220,8 +220,13 @@ mod unix_impl {
                 client: hello.client.clone(),
                 run_id: hello.run_id.clone(),
                 policy: hello.policy.clone(),
-                on_behalf_of: whoami::username(),
-                hosts: Vec::new(),
+                // Servers older than these fields send them empty.
+                on_behalf_of: if hello.on_behalf_of.is_empty() {
+                    whoami::username()
+                } else {
+                    hello.on_behalf_of.clone()
+                },
+                hosts: hello.hosts.clone(),
                 started_at: hello.started_at.clone(),
             };
             self.runs.insert(hello.run_id.clone(), Run { hello, cmd });

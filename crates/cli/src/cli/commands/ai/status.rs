@@ -41,7 +41,7 @@ pub async fn execute(args: AiArgsStatus, config: AppConfig) -> Result<()> {
         let pending = c.pending().await.unwrap_or_default();
         let grants = c.grants().await.unwrap_or_default();
         let run_id = &c.hello.run_id;
-        let mut on_behalf_of = None;
+        let mut on_behalf_of = Some(c.hello.on_behalf_of.clone()).filter(|o| !o.is_empty());
         let mut hosts = Vec::new();
         let mut calls = 0;
         for e in entries.iter().filter(|e| event_run_id(&e.event) == run_id) {
@@ -49,7 +49,7 @@ pub async fn execute(args: AiArgsStatus, config: AppConfig) -> Result<()> {
                 AiEvent::RunStarted {
                     on_behalf_of: obo, ..
                 } => {
-                    on_behalf_of = Some(obo.clone());
+                    on_behalf_of.get_or_insert_with(|| obo.clone());
                 }
                 AiEvent::Call { call, .. } => {
                     calls += 1;
@@ -68,6 +68,10 @@ pub async fn execute(args: AiArgsStatus, config: AppConfig) -> Result<()> {
                     on_behalf_of = Some(r.on_behalf_of);
                 }
             }
+        }
+        // Hosts it has touched; before its first call, the hosts in its scope.
+        if hosts.is_empty() {
+            hosts = c.hello.hosts.clone();
         }
         active.push(ActiveRun {
             run: c.hello.clone(),
@@ -184,6 +188,8 @@ mod tests {
         let r = StatusReport {
             active: vec![ActiveRun {
                 run: RunHello {
+                    on_behalf_of: "ana".into(),
+                    hosts: vec!["web-1".into()],
                     run_id: "dddbee19-f151-4ee0-8473-93924f35e1d4".into(),
                     client: "opencode 2.1.2".into(),
                     policy: "default".into(),
@@ -210,6 +216,8 @@ mod tests {
         let r = StatusReport {
             active: vec![ActiveRun {
                 run: RunHello {
+                    on_behalf_of: "ana".into(),
+                    hosts: vec!["web-1".into()],
                     run_id: "run1".into(),
                     client: "c".into(),
                     policy: "p".into(),
