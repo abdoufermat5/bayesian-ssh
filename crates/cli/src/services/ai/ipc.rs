@@ -22,6 +22,8 @@ pub enum ClientMsg {
     /// Start receiving `ServerMsg::Event` for every new event.
     Subscribe,
     ListPending,
+    /// Active grants of this run (answered with `ServerMsg::Grants`). Added by W3.
+    ListGrants,
     Decide {
         request_id: String,
         outcome: ApprovalOutcome,
