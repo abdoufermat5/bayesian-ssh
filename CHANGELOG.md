@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `bssh connect` to a host that isn't saved failed with `FOREIGN KEY constraint failed` before opening the session. Direct connections work again; they aren't kept in the session history, since there is no saved host to attach them to.
+
 ## [2.13.1] - 2026-10-24
 
 ### Fixed
