@@ -8,14 +8,81 @@ use tracing::info;
 use crate::cli::utils::{resolve_connection, MAX_PARALLEL_HOSTS};
 use crate::config::AppConfig;
 use crate::models::Connection;
-use crate::services::transport::execute_with_fallback;
+use crate::services::transport::{execute_with_fallback, ExecOptions, LimitedOutput};
 use crate::services::SshService;
+use std::time::Duration;
+
+/// Exit status `bssh exec --timeout` reports for a command it killed (same as timeout(1)).
+const TIMEOUT_EXIT_CODE: i32 = 124;
+
+/// Limits from `--timeout` / `--max-output`.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CliLimits {
+    pub timeout: Option<Duration>,
+    /// Per stream, per host.
+    pub max_output_bytes: Option<usize>,
+}
+
+impl CliLimits {
+    fn options(self) -> ExecOptions {
+        ExecOptions {
+            timeout: self.timeout,
+            max_output_bytes: self.max_output_bytes,
+            ..ExecOptions::default()
+        }
+    }
+}
+
+/// Run `cmd` on one host with the transport fallback policy.
+async fn run_on(
+    conn: &Connection,
+    config: &AppConfig,
+    cmd: &str,
+    opts: &ExecOptions,
+) -> Result<LimitedOutput, crate::services::transport::TransportError> {
+    execute_with_fallback(conn, config, |transport| {
+        let conn = conn.clone();
+        let cmd = cmd.to_string();
+        let opts = opts.clone();
+        Box::pin(async move { transport.exec_limited(&conn, &cmd, &opts).await })
+    })
+    .await
+}
+
+/// The process exit status for one host's result: the remote code, 124 on timeout.
+/// Out-of-range codes (e.g. -1, 256) map to 1 rather than wrapping to a false success.
+fn exit_status(out: &LimitedOutput) -> i32 {
+    if out.timed_out {
+        return TIMEOUT_EXIT_CODE;
+    }
+    match out.exit_code {
+        Some(0) => 0,
+        Some(c) if (1..=255).contains(&c) => c,
+        _ => 1,
+    }
+}
+
+fn limits_notes(out: &LimitedOutput, limits: CliLimits) -> Vec<String> {
+    let mut notes = Vec::new();
+    if out.truncated {
+        if let Some(n) = limits.max_output_bytes {
+            notes.push(format!("output truncated at {n} bytes per stream"));
+        }
+    }
+    if out.timed_out {
+        if let Some(t) = limits.timeout {
+            notes.push(format!("timed out after {}s", t.as_secs()));
+        }
+    }
+    notes
+}
 
 pub async fn execute(
     target: Option<String>,
     all: bool,
     tag: Option<String>,
     dry_run: bool,
+    limits: CliLimits,
     command: Vec<String>,
     config: AppConfig,
 ) -> Result<()> {
@@ -56,13 +123,10 @@ pub async fn execute(
     if targets.len() == 1 {
         let connection = &targets[0];
         info!("exec '{}' on {}", cmd_str, connection.host);
-        let output = execute_with_fallback(connection, &config, |transport| {
-            let conn = connection.clone();
-            let cmd = cmd_str.clone();
-            Box::pin(async move { transport.exec(&conn, &cmd).await })
-        })
-        .await
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let opts = limits.options();
+        let output = run_on(connection, &config, &cmd_str, &opts)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
 
         if !output.stdout.is_empty() {
             std::io::stdout().write_all(&output.stdout)?;
@@ -73,16 +137,13 @@ pub async fn execute(
         if !output.stderr.is_empty() {
             std::io::stderr().write_all(&output.stderr)?;
         }
+        for note in limits_notes(&output, limits) {
+            eprintln!("bssh: {note}");
+        }
 
-        if output.exit_code != 0 {
-            // Propagate the remote status. The OS keeps only the low 8 bits,
-            // so map out-of-range codes (e.g. -1, 256) to 1 rather than
-            // letting them wrap to a false success.
-            let code = if (1..=255).contains(&output.exit_code) {
-                output.exit_code
-            } else {
-                1
-            };
+        let code = exit_status(&output);
+        if code != 0 {
+            // Propagate the remote status (or 124 on timeout).
             std::process::exit(code);
         }
         return Ok(());
@@ -100,16 +161,12 @@ pub async fn execute(
     for conn in targets {
         let cfg = config.clone();
         let cmd = cmd_str.clone();
+        let opts = limits.options();
         let semaphore = Arc::clone(&semaphore);
         set.spawn(async move {
             // The semaphore is never closed, so acquire cannot fail.
             let _permit = semaphore.acquire_owned().await.ok();
-            let res = execute_with_fallback(&conn, &cfg, |transport| {
-                let c = conn.clone();
-                let cm = cmd.clone();
-                Box::pin(async move { transport.exec(&c, &cm).await })
-            })
-            .await;
+            let res = run_on(&conn, &cfg, &cmd, &opts).await;
             (conn, res)
         });
     }
@@ -139,8 +196,14 @@ pub async fn execute(
                 if !output.stderr.is_empty() {
                     eprintln!("[STDERR]\n{}", String::from_utf8_lossy(&output.stderr));
                 }
-                println!("(Exit Code: {})\n", output.exit_code);
-                if output.exit_code != 0 {
+                for note in limits_notes(&output, limits) {
+                    println!("({note})");
+                }
+                match output.exit_code {
+                    Some(code) if !output.timed_out => println!("(Exit Code: {code})\n"),
+                    _ => println!("(Exit Code: none)\n"),
+                }
+                if exit_status(&output) != 0 {
                     failed += 1;
                 }
             }

@@ -209,8 +209,16 @@ impl Cli {
                 all,
                 tag,
                 dry_run,
+                timeout,
+                max_output,
                 command,
-            } => commands::exec::execute(target, all, tag, dry_run, command, config).await,
+            } => {
+                let limits = commands::exec::CliLimits {
+                    timeout: timeout.map(std::time::Duration::from_secs),
+                    max_output_bytes: max_output.map(|n| usize::try_from(n).unwrap_or(usize::MAX)),
+                };
+                commands::exec::execute(target, all, tag, dry_run, limits, command, config).await
+            }
             Commands::Upload {
                 args,
                 all,
