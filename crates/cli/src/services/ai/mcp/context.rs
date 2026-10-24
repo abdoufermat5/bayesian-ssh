@@ -254,7 +254,7 @@ impl RunContext {
         let deps = RunDeps {
             hosts: Arc::new(DbHosts::new(&config)),
             files: Arc::new(SftpFiles::new(&config)),
-            executor: Arc::new(AiExecutor::new(&config)),
+            executor: Arc::new(AiExecutor::new(&config).with_read_paths(policy.read_paths.clone())),
             broker: broker.clone(),
             analyzer: Arc::new(ShellAnalyzer::new()),
             redactor,
@@ -284,11 +284,13 @@ impl RunContext {
         tokio::spawn(async move {
             match serve_control(socket, info, broker, events, stop_rx).await {
                 // A client sent Stop.
-                Ok(()) => {
+                Ok(Some(reason)) => {
                     if !ctx.is_stopped() {
-                        ctx.stop("stopped from the control socket");
+                        ctx.stop(&format!("stopped from the control socket: {reason}"));
                     }
                 }
+                // The run's own stop flag fired: nothing left to do.
+                Ok(None) => {}
                 Err(e) => warn!("control socket: {e:#}"),
             }
         });

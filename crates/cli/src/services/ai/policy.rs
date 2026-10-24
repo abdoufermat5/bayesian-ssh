@@ -303,9 +303,10 @@ fn command_lines(call: &ToolCall, analysis: Option<&Analysis>) -> Vec<String> {
     out
 }
 
-/// Local stand-in for `super::analyzer::matches_deny` (W2). It matches each pattern against
+/// Text matcher for deny patterns, used when a call has no analysis (or the AST matcher
+/// misses). It matches each pattern against
 /// the whole command line or its leading words (`"rm -rf /"` also hits `rm -rf / --x`).
-/// Replace the body with a call to W2's AST-based matcher when it lands.
+/// The AST matcher (`super::analyzer::matches_deny`) runs first.
 fn matches_deny_fallback(
     patterns: &[String],
     call: &ToolCall,
@@ -556,8 +557,16 @@ impl DefaultPolicyEngine {
             }
         }
 
-        // 5. deny patterns
-        if let Some(pat) = matches_deny_fallback(&policy.deny, call, analysis) {
+        // 5. deny patterns: on the parsed commands when there is an analysis, so quoting,
+        // wrappers and `/bin/rm` can't dodge them; the text matcher covers the rest.
+        let ast_hit = analysis.and_then(|a| {
+            policy
+                .deny
+                .iter()
+                .find(|p| super::analyzer::matches_deny(p, a))
+                .cloned()
+        });
+        if let Some(pat) = ast_hit.or_else(|| matches_deny_fallback(&policy.deny, call, analysis)) {
             return deny(format!("deny: the command matches '{pat}'"));
         }
 

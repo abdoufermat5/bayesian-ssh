@@ -144,10 +144,27 @@ fn render_text(report: &DoctorReport, policy_error: Option<String>) -> String {
             );
         }
     }
-    let _ = writeln!(
-        s,
-        "  skip  agent client config (not checked by this build; `bssh ai install` sets it up)"
-    );
+    let clients: Vec<_> = crate::services::ai::install::detected_clients()
+        .into_iter()
+        .filter(|c| c.present)
+        .collect();
+    if clients.is_empty() {
+        let _ = writeln!(
+            s,
+            "  skip  no agent client found (Claude Code, Codex, Cursor, VS Code, Claude Desktop)"
+        );
+    }
+    for c in clients {
+        let name = c.client.name();
+        if c.configured {
+            let _ = writeln!(s, "  ok    {name} uses bssh ({})", c.config_path.display());
+        } else {
+            let _ = writeln!(
+                s,
+                "  warn  {name} is not set up: run `bssh ai install {name}`"
+            );
+        }
+    }
     if let Some(e) = policy_error {
         let _ = writeln!(
             s,
