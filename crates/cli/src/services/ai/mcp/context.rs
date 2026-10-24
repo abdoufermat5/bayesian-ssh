@@ -247,6 +247,8 @@ impl RunContext {
             client: "unknown".into(),
             policy: policy_name.to_string(),
             started_at: now_rfc3339(),
+            on_behalf_of: whoami::username(),
+            hosts: Vec::new(),
         };
         let broker = Arc::new(LocalBroker::new(
             store.clone(),
@@ -267,6 +269,12 @@ impl RunContext {
             elicitor: Some(elicitor),
         };
         let ctx = Self::with_run_id(run_id, config, policy_name.to_string(), policy, deps);
+        let mut info = info;
+        info.hosts = ctx
+            .visible_hosts()
+            .await
+            .map(|hosts| hosts.into_iter().map(|c| c.name).collect())
+            .unwrap_or_default();
         ctx.spawn_control(broker, info);
         Ok(ctx)
     }
@@ -741,6 +749,7 @@ impl RunContext {
         mode: ExecMode,
         limits: ExecLimits,
     ) -> Result<Executed, ToolError> {
+        let jailed = matches!(mode, ExecMode::Jailed(_));
         let raw = self
             .deps
             .executor
@@ -757,7 +766,13 @@ impl RunContext {
         };
         let digest =
             sha256_hex(format!("{}\n--stderr--\n{}", result.stdout, result.stderr).as_bytes());
-        self.emit_result(call, result.exit_code, digest, redactions.clone());
+        self.emit_result(
+            call,
+            result.exit_code,
+            digest,
+            redactions.clone(),
+            Some((result.duration_ms, jailed)),
+        );
         if let Err(e) =
             report::record_output(&self.config, &self.run_id, &call.call_id, command, &result)
         {
@@ -772,6 +787,7 @@ impl RunContext {
         exit_code: Option<i32>,
         output_sha256: String,
         redactions: Vec<Redaction>,
+        timing: Option<(u64, bool)>,
     ) {
         let ev = AiEvent::Result {
             run_id: self.run_id.clone(),
@@ -779,6 +795,8 @@ impl RunContext {
             exit_code,
             output_sha256,
             redactions,
+            duration_ms: timing.map(|t| t.0),
+            jailed: timing.map(|t| t.1),
         };
         if let Err(e) = self.emit(&ev) {
             warn!("audit Result: {e:#}");
@@ -788,7 +806,7 @@ impl RunContext {
     /// Redact free text (file contents, log lines) and audit its `Result`.
     pub fn redact_text(&self, call: &ToolCall, text: &str) -> (String, Vec<Redaction>) {
         let (out, reds) = self.deps.redactor.redact(text);
-        self.emit_result(call, None, sha256_hex(out.as_bytes()), reds.clone());
+        self.emit_result(call, None, sha256_hex(out.as_bytes()), reds.clone(), None);
         (out, reds)
     }
 

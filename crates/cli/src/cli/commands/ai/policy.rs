@@ -7,54 +7,143 @@ use crate::services::ai::policy::{self, DefaultPolicyEngine};
 use crate::services::ai::store::AiStore;
 use crate::services::ai::types::{
     Analysis, Analyzer, Decision, Enforcement, HostFacts, Policy, PolicyEngine, Profile, Scope,
-    ToolCall, ToolName,
+    Tier, ToolCall, ToolName,
 };
+use crate::services::ai::ui::{self, Glyph, Style, Tone};
 use crate::services::SshService;
 use anyhow::{bail, Context, Result};
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
-/// Commands longer than this are shortened in the test table.
-const MAX_COMMAND_WIDTH: usize = 60;
-
 pub async fn execute(args: AiArgsPolicy, config: AppConfig) -> Result<()> {
     match args.command {
         AiPolicyCommands::List => {
-            print!("{}", render_list(&config.ai.policies));
+            print!("{}", render_list(&Style::terminal(), &config.ai.policies));
             Ok(())
         }
         AiPolicyCommands::Show { name } => {
             let policy = policy::resolve(&config, &name)
                 .map_err(|e| anyhow::anyhow!("policy '{name}': {e}"))?;
-            println!("{}", serde_json::to_string_pretty(&policy)?);
+            print!("{}", render_show(&Style::terminal(), &name, &policy));
             Ok(())
         }
         AiPolicyCommands::Test { file, policy, host } => {
-            run_test(&config, &file, &policy, host.as_deref()).await
+            run_test(&Style::terminal(), &config, &file, &policy, host.as_deref()).await
         }
     }
 }
 
 /// `bssh ai policy list`: one policy per line, plus the built-in default.
-pub(crate) fn render_list(policies: &BTreeMap<String, Policy>) -> String {
-    let width = policies
-        .keys()
+pub(crate) fn render_list(style: &Style, policies: &BTreeMap<String, Policy>) -> String {
+    let mut names: Vec<&str> = policies.keys().map(|s| s.as_str()).collect();
+    if !policies.contains_key("default") {
+        names.push("default");
+    }
+    let width = names
+        .iter()
         .map(|name| name.chars().count())
         .max()
-        .unwrap_or(0);
+        .unwrap_or(7)
+        .max(7);
     let mut out = String::new();
     for (name, policy) in policies {
         out.push_str(&format!(
-            "{:<width$}  {:<8}  {}\n",
-            name,
-            profile_label(&policy.profile),
-            scope_summary(&policy.scope)
+            "{}  {}  {}\n",
+            ui::pad(name, width),
+            ui::pad(profile_label(&policy.profile), 8),
+            scope_summary(style, &policy.scope)
         ));
     }
     if !policies.contains_key("default") {
-        out.push_str("default  (built-in observe)\n");
+        out.push_str(&format!(
+            "{}  {}  (built-in)\n",
+            ui::pad("default", width),
+            ui::pad("observe", 8)
+        ));
     }
+    out
+}
+
+/// `bssh ai policy show`: human-readable policy details.
+pub(crate) fn render_show(style: &Style, name: &str, policy: &Policy) -> String {
+    let mut out = String::new();
+    let header = style.facts(&[
+        &format!("policy {name}"),
+        &format!("profile {}", profile_label(&policy.profile)),
+    ]);
+    out.push_str(&format!("{header}\n\n"));
+
+    let label_w = 10;
+    let mut row = |label: &str, val: &str| {
+        let l = style.paint(Tone::Dim, label);
+        out.push_str(&format!("  {}  {val}\n", ui::pad(&l, label_w)));
+    };
+
+    row("scope", &scope_summary(style, &policy.scope));
+
+    let default_tier = match policy.approval.default {
+        Tier::InClient => "in-client",
+        Tier::OutOfBand => "out-of-band",
+        Tier::TwoPerson => "two-person",
+    };
+    let mut app_parts = vec![format!("default: {default_tier}")];
+    if !policy.approval.in_client.is_empty() {
+        app_parts.push(format!(
+            "in-client on tags: {}",
+            policy.approval.in_client.join(", ")
+        ));
+    }
+    if !policy.approval.two_person.is_empty() {
+        app_parts.push(format!(
+            "two-person on tags: {}",
+            policy.approval.two_person.join(", ")
+        ));
+    }
+    row(
+        "approval",
+        &style.facts(&app_parts.iter().map(|s| s.as_str()).collect::<Vec<_>>()),
+    );
+
+    let reads = if policy.read_paths.is_empty() {
+        "any in scope".to_string()
+    } else {
+        policy.read_paths.join(", ")
+    };
+    row("reads", &reads);
+
+    let writes = if policy.write_paths.is_empty() {
+        "none".to_string()
+    } else {
+        policy.write_paths.join(", ")
+    };
+    row("writes", &writes);
+
+    let mut denies = policy.deny_paths.clone();
+    denies.extend(policy.deny.iter().cloned());
+    let denies_str = if denies.is_empty() {
+        "none".to_string()
+    } else {
+        denies.join(", ")
+    };
+    row("denies", &denies_str);
+
+    let budgets_str = style.facts(&[
+        &format!("{} calls/min", policy.budgets.calls_per_min),
+        &format!("{} changes/run", policy.budgets.changes_per_run),
+        &format!("{} denials/min", policy.budgets.max_denials_per_min),
+        &format!("{} ttl", policy.budgets.run_ttl),
+    ]);
+    row("budgets", &budgets_str);
+
+    let redact_v = if policy.redact.vault_secrets {
+        "vault secrets: yes"
+    } else {
+        "vault secrets: no"
+    };
+    let redact_p = format!("patterns: {}", policy.redact.patterns);
+    row("redact", &style.facts(&[redact_v, &redact_p]));
+
     out
 }
 
@@ -66,7 +155,7 @@ fn profile_label(profile: &Profile) -> &'static str {
     }
 }
 
-fn scope_summary(scope: &Scope) -> String {
+fn scope_summary(style: &Style, scope: &Scope) -> String {
     let mut parts = Vec::new();
     if !scope.tags.is_empty() {
         parts.push(format!("tags: {}", scope.tags.join(", ")));
@@ -77,7 +166,7 @@ fn scope_summary(scope: &Scope) -> String {
     if parts.is_empty() {
         "no hosts".to_string()
     } else {
-        parts.join("; ")
+        style.facts(&parts.iter().map(|s| s.as_str()).collect::<Vec<_>>())
     }
 }
 
@@ -227,56 +316,90 @@ pub(crate) fn count_mismatches(rows: &[TestOutcome]) -> usize {
 }
 
 /// Shorten a command to at most `max` characters, counting characters not bytes.
+#[cfg(test)]
 pub(crate) fn truncate_command(command: &str, max: usize) -> String {
-    if command.chars().count() <= max {
-        return command.to_string();
+    ui::truncate(command, max)
+}
+
+fn test_badge(style: &Style, expect: Option<ExpectedDecision>, got: &Decision) -> String {
+    match expect {
+        Some(_) => {
+            if is_mismatch(expect, got) {
+                style.paint(Tone::Bad, &format!("{} fail", style.glyph(Glyph::Bad)))
+            } else {
+                style.paint(Tone::Ok, &format!("{} pass", style.glyph(Glyph::Ok)))
+            }
+        }
+        None => style.paint(Tone::Dim, "-"),
     }
-    if max <= 3 {
-        return command.chars().take(max).collect();
-    }
-    let mut out: String = command.chars().take(max - 3).collect();
-    out.push_str("...");
-    out
 }
 
 /// Aligned table of the evaluated lines and a final summary.
-pub(crate) fn render_test_table(rows: &[TestOutcome]) -> String {
+pub(crate) fn render_test_table(style: &Style, rows: &[TestOutcome]) -> String {
     let line_width = rows
         .iter()
         .map(|row| row.line_no.to_string().len())
         .max()
         .unwrap_or(1)
-        .max("#".len());
+        .max(1);
+
+    let term_width = ui::width();
+    let badge_width = 6;
+    let expect_width = 6;
+    let got_width = 5;
+
+    let fixed_overhead = line_width + 2 + badge_width + 2 + expect_width + 2 + got_width + 2 + 25;
+    let max_cmd_w = term_width.saturating_sub(fixed_overhead).clamp(25, 70);
+
     let command_width = rows
         .iter()
-        .map(|row| {
-            truncate_command(&row.command, MAX_COMMAND_WIDTH)
-                .chars()
-                .count()
-        })
+        .map(|row| ui::display_width(&ui::truncate(&row.command, max_cmd_w)))
         .max()
         .unwrap_or(0)
-        .max("COMMAND".len());
+        .max(7);
+
     let mut out = String::new();
     out.push_str(&format!(
-        "{:<line_width$}  {:<6}  {:<5}  {:<command_width$}  (reason)\n",
-        "#", "EXPECT", "GOT", "COMMAND"
+        "{}  {}  {}  {}  {}  {}\n",
+        ui::pad(&style.label("#"), line_width),
+        ui::pad(&style.label("result"), badge_width),
+        ui::pad(&style.label("expect"), expect_width),
+        ui::pad(&style.label("got"), got_width),
+        ui::pad(&style.label("command"), command_width),
+        style.label("reason")
     ));
+
     for row in rows {
+        let badge = test_badge(style, row.expect, &row.got);
+        let cmd = ui::truncate(&row.command, max_cmd_w);
+        let reason = style.paint(Tone::Dim, &format!("({})", decision_reason(&row.got)));
         out.push_str(&format!(
-            "{:<line_width$}  {:<6}  {:<5}  {:<command_width$}  ({})\n",
-            row.line_no,
-            expected_label(row.expect),
-            decision_kind(&row.got),
-            truncate_command(&row.command, MAX_COMMAND_WIDTH),
-            decision_reason(&row.got),
+            "{}  {}  {}  {}  {}  {}\n",
+            ui::pad(&row.line_no.to_string(), line_width),
+            ui::pad(&badge, badge_width),
+            ui::pad(expected_label(row.expect), expect_width),
+            ui::pad(decision_kind(&row.got), got_width),
+            ui::pad(&cmd, command_width),
+            reason,
         ));
     }
-    out.push_str(&format!(
-        "{} commands, {} mismatches\n",
-        rows.len(),
-        count_mismatches(rows)
-    ));
+
+    let mismatches = count_mismatches(rows);
+    let summary = if mismatches == 0 {
+        format!(
+            "{} {} commands, 0 mismatches\n",
+            style.mark(Glyph::Ok),
+            rows.len()
+        )
+    } else {
+        format!(
+            "{} {} commands, {} mismatch(es)\n",
+            style.mark(Glyph::Bad),
+            rows.len(),
+            mismatches
+        )
+    };
+    out.push_str(&summary);
     out
 }
 
@@ -301,6 +424,7 @@ pub(crate) fn evaluate_lines(
 }
 
 async fn run_test(
+    style: &Style,
     config: &AppConfig,
     file: &str,
     policy_name: &str,
@@ -321,7 +445,7 @@ async fn run_test(
         let call = test_tool_call(line, &facts, analysis);
         Ok(engine.decide(&policy, &call, Some(analysis), &facts))
     })?;
-    print!("{}", render_test_table(&rows));
+    print!("{}", render_test_table(style, &rows));
     let mismatches = count_mismatches(&rows);
     if mismatches > 0 {
         bail!("{mismatches} mismatch(es)");
@@ -586,10 +710,10 @@ mod tests {
     #[test]
     fn truncate_is_char_safe() {
         assert_eq!(truncate_command("abc", 3), "abc");
-        assert_eq!(truncate_command("abcd", 3), "abc");
+        assert_eq!(truncate_command("abcd", 3), "ab…");
         assert_eq!(
             truncate_command(&"é".repeat(61), 60),
-            format!("{}...", "é".repeat(57))
+            format!("{}…", "é".repeat(59))
         );
     }
 
@@ -616,45 +740,63 @@ mod tests {
             ),
             outcome(3, "rm -rf /", None, deny("destructive")),
         ];
-        let text = render_test_table(&rows);
+        let text = render_test_table(&Style::plain(), &rows);
         let lines: Vec<&str> = text.lines().collect();
         assert_eq!(lines.len(), 5);
-        assert!(lines[0].starts_with("#  EXPECT  GOT    COMMAND"));
-        assert!(lines[0].ends_with("(reason)"));
-        assert!(lines[1].starts_with("1  allow   allow  ls -la"));
-        assert!(lines[2].starts_with("2  deny    ask    systemctl restart nginx"));
-        assert!(lines[3].starts_with("3  -       deny   rm -rf /"));
-        assert_eq!(lines[4], "3 commands, 1 mismatches");
+        assert!(lines[0].starts_with("#  RESULT  EXPECT  GOT    COMMAND"));
+        assert!(lines[0].ends_with("REASON"));
+        assert!(lines[1].starts_with("1  ✓ pass  allow   allow  ls -la"));
+        assert!(lines[2].starts_with("2  ✗ fail  deny    ask    systemctl restart nginx"));
+        assert!(lines[3].starts_with("3  -       -       deny   rm -rf /"));
+        assert_eq!(lines[4], "✗ 3 commands, 1 mismatch(es)");
 
-        let reason_column = lines[1].rfind('(').unwrap();
+        let reason_col = ui::display_width(&lines[1][..lines[1].rfind('(').unwrap()]);
         for line in &lines[1..4] {
-            assert_eq!(line.rfind('('), Some(reason_column));
+            assert_eq!(
+                ui::display_width(&line[..line.rfind('(').unwrap()]),
+                reason_col
+            );
         }
     }
 
     #[test]
     fn table_shows_reasons() {
         let rows = vec![outcome(1, "ls", None, allow("within read paths"))];
-        let text = render_test_table(&rows);
+        let text = render_test_table(&Style::plain(), &rows);
         assert!(text.contains("(within read paths)"));
         assert!(text.contains("1 commands, 0 mismatches"));
     }
 
     #[test]
     fn table_handles_no_rows() {
-        let text = render_test_table(&[]);
+        let text = render_test_table(&Style::plain(), &[]);
         let lines: Vec<&str> = text.lines().collect();
-        assert_eq!(lines[0], "#  EXPECT  GOT    COMMAND  (reason)");
-        assert_eq!(lines[1], "0 commands, 0 mismatches");
+        assert!(lines[0].starts_with("#  RESULT  EXPECT  GOT"));
+        assert_eq!(lines[1], "✓ 0 commands, 0 mismatches");
     }
 
     #[test]
     fn table_truncates_long_commands() {
-        let command = "a".repeat(80);
+        let command = "a".repeat(120);
         let rows = vec![outcome(1, &command, None, allow("r"))];
-        let text = render_test_table(&rows);
-        assert!(text.contains(&format!("{}...", "a".repeat(57))));
-        assert!(!text.contains(&"a".repeat(61)));
+        let text = render_test_table(&Style::plain(), &rows);
+        assert!(text.contains('…'));
+        assert!(!text.contains(&"a".repeat(100)));
+    }
+
+    #[test]
+    fn table_colored_has_ansi_escapes() {
+        let rows = vec![
+            outcome(1, "ls", Some(ExpectedDecision::Allow), allow("ok")),
+            outcome(2, "rm", Some(ExpectedDecision::Allow), deny("denied")),
+        ];
+        let style = Style {
+            color: true,
+            unicode: true,
+        };
+        let text = render_test_table(&style, &rows);
+        assert!(text.contains("\x1b[32m✓ pass\x1b[0m"));
+        assert!(text.contains("\x1b[31m✗ fail\x1b[0m"));
     }
 
     // ------------------------------------------------------------ evaluation
@@ -759,8 +901,8 @@ mod tests {
 
     #[test]
     fn list_shows_the_builtin_default_when_missing() {
-        let text = render_list(&BTreeMap::new());
-        assert_eq!(text, "default  (built-in observe)\n");
+        let text = render_list(&Style::plain(), &BTreeMap::new());
+        assert_eq!(text, "default  observe   (built-in)\n");
     }
 
     #[test]
@@ -773,10 +915,10 @@ mod tests {
         policy.scope.tags = vec!["prod".to_string()];
         policy.scope.hosts = vec!["web-1".to_string(), "db-1".to_string()];
         policies.insert("prod".to_string(), policy);
-        let text = render_list(&policies);
+        let text = render_list(&Style::plain(), &policies);
         assert_eq!(
             text,
-            "prod  operate   tags: prod; hosts: web-1, db-1\ndefault  (built-in observe)\n"
+            "prod     operate   tags: prod · hosts: web-1, db-1\ndefault  observe   (built-in)\n"
         );
     }
 
@@ -791,15 +933,71 @@ mod tests {
                 ..Policy::default()
             },
         );
-        let text = render_list(&policies);
+        let text = render_list(&Style::plain(), &policies);
         assert!(text.contains("default  observe   no hosts\n"));
         assert!(text.contains("oncall   oncall    no hosts\n"));
-        assert!(!text.contains("(built-in observe)"));
+        assert!(!text.contains("(built-in)"));
+    }
+
+    #[test]
+    fn list_colored_has_dim_dot() {
+        let mut policies = BTreeMap::new();
+        let mut policy = Policy::default();
+        policy.scope.tags = vec!["prod".to_string()];
+        policy.scope.hosts = vec!["web-1".to_string()];
+        policies.insert("prod".to_string(), policy);
+        let style = Style {
+            color: true,
+            unicode: true,
+        };
+        let text = render_list(&style, &policies);
+        assert!(text.contains("\x1b[90m·\x1b[0m"));
     }
 
     #[test]
     fn scope_summary_empty() {
-        assert_eq!(scope_summary(&Scope::default()), "no hosts");
+        assert_eq!(
+            scope_summary(&Style::plain(), &Scope::default()),
+            "no hosts"
+        );
+    }
+
+    #[test]
+    fn show_formats_policy_fields() {
+        let mut policy = Policy {
+            profile: Profile::Operate,
+            ..Policy::default()
+        };
+        policy.scope.tags = vec!["prod".to_string()];
+        policy.scope.hosts = vec!["web-1".to_string()];
+        policy.approval.in_client = vec!["staging".to_string()];
+        policy.approval.two_person = vec!["prod".to_string()];
+        policy.read_paths = vec!["/var/log/*".to_string()];
+        policy.write_paths = vec!["/var/www/*".to_string()];
+        policy.deny_paths = vec!["/etc/shadow".to_string()];
+        policy.deny = vec!["reboot".to_string()];
+
+        let text = render_show(&Style::plain(), "prod", &policy);
+        assert!(text.contains("policy prod · profile operate"));
+        assert!(text.contains("scope       tags: prod · hosts: web-1"));
+        assert!(text.contains("approval    default: out-of-band · in-client on tags: staging · two-person on tags: prod"));
+        assert!(text.contains("reads       /var/log/*"));
+        assert!(text.contains("writes      /var/www/*"));
+        assert!(text.contains("denies      /etc/shadow, reboot"));
+        assert!(text.contains("budgets     30 calls/min · 10 changes/run · 5 denials/min · 2h ttl"));
+        assert!(text.contains("redact      vault secrets: yes · patterns: default"));
+    }
+
+    #[test]
+    fn show_colored_has_ansi_escapes() {
+        let policy = Policy::default();
+        let style = Style {
+            color: true,
+            unicode: true,
+        };
+        let text = render_show(&style, "default", &policy);
+        assert!(text.contains("\x1b[90mscope\x1b[0m"));
+        assert!(text.contains("\x1b[90mbudgets\x1b[0m"));
     }
 
     #[test]

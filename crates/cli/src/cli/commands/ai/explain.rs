@@ -3,15 +3,16 @@
 use crate::cli::parser_ai::AiArgsExplain;
 use crate::config::AppConfig;
 use crate::services::ai::analyzer::ShellAnalyzer;
+use crate::services::ai::effects::{effects, Verb};
 use crate::services::ai::policy::{self, DefaultPolicyEngine};
 use crate::services::ai::store::AiStore;
 use crate::services::ai::types::{
     Analysis, Analyzer, Decision, Enforcement, HostFacts, PolicyEngine, RiskTag, SimpleCommand,
     Tier, ToolCall, ToolName,
 };
+use crate::services::ai::ui::{self, Glyph, Style, Tone, Verdict};
 use crate::services::SshService;
 use anyhow::{bail, Result};
-use std::collections::BTreeSet;
 use std::sync::Arc;
 
 pub async fn execute(args: AiArgsExplain, config: AppConfig) -> Result<()> {
@@ -26,10 +27,12 @@ pub async fn execute(args: AiArgsExplain, config: AppConfig) -> Result<()> {
 
     let facts = host_facts(&config, args.host.as_deref()).await?;
     let (_, report) = explain_report(
+        &Style::terminal(),
         &analyzer,
         &command,
         &args.policy,
         args.host.as_deref(),
+        &facts.tags,
         |analysis| decide(&config, &args.policy, &facts, &command, analysis),
     );
     print!("{report}");
@@ -49,26 +52,31 @@ pub(crate) fn command_string(parts: &[String]) -> String {
 /// Render the analysis and the decision. Any decision failure is shown as an
 /// unavailable policy instead of failing the command.
 pub(crate) fn explain_report(
+    style: &Style,
     analyzer: &dyn Analyzer,
     command: &str,
     policy_name: &str,
     host: Option<&str>,
+    host_tags: &[String],
     decide: impl FnOnce(&Analysis) -> Result<Decision>,
 ) -> (Analysis, String) {
     let analysis = analyzer.analyze(command);
     let text = match decide(&analysis) {
         Ok(decision) => render_explain(
+            style,
             command,
             &analysis,
             &PolicySection::Resolved {
                 name: policy_name,
                 host,
+                host_tags,
                 decision: &decision,
             },
         ),
         Err(error) => {
             let error = error.to_string();
             render_explain(
+                style,
                 command,
                 &analysis,
                 &PolicySection::Unavailable { error: &error },
@@ -83,6 +91,7 @@ pub(crate) enum PolicySection<'a> {
     Resolved {
         name: &'a str,
         host: Option<&'a str>,
+        host_tags: &'a [String],
         decision: &'a Decision,
     },
     Unavailable {
@@ -90,116 +99,232 @@ pub(crate) enum PolicySection<'a> {
     },
 }
 
-/// Human-readable explain output, one short line per fact.
+/// Human-readable explain output: verdict line, policy reason, and parsed commands.
 pub(crate) fn render_explain(
-    command: &str,
+    style: &Style,
+    _command: &str,
     analysis: &Analysis,
     policy: &PolicySection<'_>,
 ) -> String {
     let mut out = String::new();
-    out.push_str(&format!("command: {command}\n"));
-    out.push_str(&format!("tags:    {}\n", tags_label(&analysis.tags)));
-    if let Some(reason) = &analysis.unknown_reason {
-        out.push_str(&format!("unknown: {reason}\n"));
-    }
-    out.push_str("commands:\n");
-    for (index, simple) in analysis.commands.iter().enumerate() {
-        out.push_str(&format!("  {}. {}\n", index + 1, simple_line(simple)));
-        out.push_str(&format!(
-            "     {:<9} {}\n",
-            "tags:",
-            tags_label(&simple.tags)
-        ));
-        if !simple.wrappers.is_empty() {
-            out.push_str(&format!(
-                "     {:<9} {}\n",
-                "wrappers:",
-                simple.wrappers.join(", ")
-            ));
-        }
-        if !simple.writes_to.is_empty() {
-            out.push_str(&format!(
-                "     {:<9} {}\n",
-                "writes:",
-                simple.writes_to.join(", ")
-            ));
-        }
-        if let Some(rule) = &simple.rule {
-            out.push_str(&format!("     {:<9} {rule}\n", "rule:"));
-        }
-    }
-    match policy {
+
+    let (verdict_str, plain_sentence) = match policy {
+        PolicySection::Resolved { decision, .. } => match decision {
+            Decision::Allow { .. } => (style.verdict(Verdict::Allow), "runs without asking"),
+            Decision::Deny { .. } => (style.verdict(Verdict::Deny), "nobody is asked"),
+            Decision::Ask { tier, .. } => {
+                let sentence = match tier {
+                    Tier::InClient => "a person approves it, in the client",
+                    Tier::OutOfBand => "a person approves it, outside the agent",
+                    Tier::TwoPerson => "two people approve it, outside the agent",
+                };
+                (style.verdict(Verdict::Ask), sentence)
+            }
+        },
+        PolicySection::Unavailable { .. } => (
+            if style.color {
+                style.paint(
+                    Tone::Bad,
+                    &format!("{} unavailable", style.glyph(Glyph::Bad)),
+                )
+            } else {
+                "[unavailable]".to_string()
+            },
+            "policy unavailable",
+        ),
+    };
+    let left = format!("{verdict_str}  {plain_sentence}");
+
+    let right = match policy {
         PolicySection::Resolved {
             name,
             host,
-            decision,
+            host_tags,
+            ..
         } => {
-            out.push_str(&format!(
-                "policy:  {}  host: {}\n",
-                name,
-                host.unwrap_or("-")
-            ));
-            out.push_str(&format!(
-                "decision: {} - {}\n",
-                decision_label(decision),
-                decision_reason(decision)
-            ));
+            let host_part = match host {
+                Some(h) if !h.is_empty() => {
+                    if host_tags.is_empty() {
+                        h.to_string()
+                    } else {
+                        format!("{h} ({})", host_tags.join(", "))
+                    }
+                }
+                _ => String::new(),
+            };
+            let policy_part = format!("policy {name}");
+            if host_part.is_empty() {
+                policy_part
+            } else {
+                style.facts(&[&host_part, &policy_part])
+            }
+        }
+        PolicySection::Unavailable { .. } => String::new(),
+    };
+
+    let term_width = ui::width();
+    let left_w = ui::display_width(&left);
+    let right_w = ui::display_width(&right);
+    if right_w > 0 && left_w + 2 + right_w <= term_width {
+        let spaces = term_width - left_w - right_w;
+        out.push_str(&format!("{left}{}{right}\n", " ".repeat(spaces)));
+    } else if right_w > 0 {
+        out.push_str(&format!("{left}  {right}\n"));
+    } else {
+        out.push_str(&format!("{left}\n"));
+    }
+
+    match policy {
+        PolicySection::Resolved { decision, .. } => {
+            let reason = decision_reason(decision);
+            if !reason.is_empty() {
+                out.push_str(&format!("       {}\n", style.paint(Tone::Dim, reason)));
+            }
         }
         PolicySection::Unavailable { error } => {
-            out.push_str(&format!("policy:  unavailable ({error})\n"));
+            out.push_str(&format!("       {}\n", style.paint(Tone::Dim, error)));
         }
     }
+
+    if analysis.commands.is_empty() {
+        out.push('\n');
+        if let Some(reason) = &analysis.unknown_reason {
+            out.push_str(&format!(
+                "  The analyzer could not parse the command: {reason}\n"
+            ));
+        } else {
+            out.push_str("  The analyzer could not parse the command\n");
+        }
+        return out;
+    }
+
+    out.push('\n');
+
+    struct CmdRow {
+        idx: String,
+        cmd: String,
+        verb: &'static str,
+        risks: String,
+        rule: Option<String>,
+    }
+
+    let max_idx_w = analysis.commands.len().to_string().len().max(1);
+    let mut rows = Vec::with_capacity(analysis.commands.len());
+    for (i, simple) in analysis.commands.iter().enumerate() {
+        let idx = format!("  {:>width$}  ", i + 1, width = max_idx_w);
+        let cmd = simple_command_string(simple);
+        let verb = command_verb(simple);
+        let risks = style.risks(&simple.tags);
+        let rule = simple.rule.clone();
+        rows.push(CmdRow {
+            idx,
+            cmd,
+            verb,
+            risks,
+            rule,
+        });
+    }
+
+    let idx_col_w = max_idx_w + 4;
+    let max_verb_w = rows
+        .iter()
+        .map(|r| ui::display_width(r.verb))
+        .max()
+        .unwrap_or(0);
+    let max_risks_w = rows
+        .iter()
+        .map(|r| ui::display_width(&r.risks))
+        .max()
+        .unwrap_or(0);
+    let has_rules = rows.iter().any(|r| r.rule.is_some());
+    let max_rule_w = if has_rules {
+        rows.iter()
+            .filter_map(|r| r.rule.as_ref())
+            .map(|rule| ui::display_width(&format!("rule {rule}")))
+            .max()
+            .unwrap_or(0)
+    } else {
+        0
+    };
+
+    let fixed_overhead = idx_col_w
+        + 3
+        + max_verb_w
+        + (if max_risks_w > 0 { 3 + max_risks_w } else { 0 })
+        + (if has_rules { 3 + max_rule_w } else { 0 });
+    let max_cmd_len = term_width.saturating_sub(fixed_overhead).max(20);
+
+    let max_cmd_w = rows
+        .iter()
+        .map(|r| ui::display_width(&ui::truncate(&r.cmd, max_cmd_len)))
+        .max()
+        .unwrap_or(0);
+
+    for r in &rows {
+        let cmd_truncated = ui::truncate(&r.cmd, max_cmd_len);
+        let cmd_padded = ui::pad(&cmd_truncated, max_cmd_w);
+        let verb_padded = ui::pad(r.verb, max_verb_w);
+
+        if has_rules {
+            let risks_padded = ui::pad(&r.risks, max_risks_w);
+            if let Some(rule) = &r.rule {
+                let rule_str = style.paint(Tone::Dim, &format!("rule {rule}"));
+                out.push_str(&format!(
+                    "{}{cmd_padded}   {verb_padded}   {risks_padded}   {rule_str}\n",
+                    r.idx
+                ));
+            } else {
+                out.push_str(&format!(
+                    "{}{cmd_padded}   {verb_padded}   {risks_padded}\n",
+                    r.idx
+                ));
+            }
+        } else if max_risks_w > 0 {
+            out.push_str(&format!(
+                "{}{cmd_padded}   {verb_padded}   {}\n",
+                r.idx, r.risks
+            ));
+        } else {
+            out.push_str(&format!("{}{cmd_padded}   {verb_padded}\n", r.idx));
+        }
+    }
+
+    if let Some(reason) = &analysis.unknown_reason {
+        out.push_str(&format!(
+            "\n  The analyzer could not parse the full command: {reason}\n"
+        ));
+    }
+
     out
 }
 
-fn simple_line(simple: &SimpleCommand) -> String {
-    if simple.args.is_empty() {
-        simple.program.clone()
+fn simple_command_string(simple: &SimpleCommand) -> String {
+    let mut parts = Vec::new();
+    for w in &simple.wrappers {
+        parts.push(w.as_str());
+    }
+    parts.push(&simple.program);
+    for a in &simple.args {
+        parts.push(a.as_str());
+    }
+    parts.join(" ")
+}
+
+fn command_verb(simple: &SimpleCommand) -> &'static str {
+    let single_analysis = Analysis {
+        commands: vec![simple.clone()],
+        tags: simple.tags.clone(),
+        unknown_reason: None,
+    };
+    let eff = effects(&single_analysis);
+    if let Some(item) = eff.items.first() {
+        item.verb.word()
+    } else if simple.tags.contains(&RiskTag::Read) && !simple.tags.contains(&RiskTag::Write) {
+        "reads"
     } else {
-        format!("{} {}", simple.program, simple.args.join(" "))
+        Verb::Runs.word()
     }
 }
-
-fn tags_label(tags: &BTreeSet<RiskTag>) -> String {
-    if tags.is_empty() {
-        return "none".to_string();
-    }
-    tags.iter()
-        .map(|tag| tag_label(*tag))
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-fn tag_label(tag: RiskTag) -> &'static str {
-    match tag {
-        RiskTag::Read => "read",
-        RiskTag::Write => "write",
-        RiskTag::ServiceChange => "service-change",
-        RiskTag::Destructive => "destructive",
-        RiskTag::Privilege => "privilege",
-        RiskTag::Network => "network",
-        RiskTag::ExfilRisk => "exfil-risk",
-        RiskTag::Unknown => "unknown",
-    }
-}
-
-fn tier_label(tier: Tier) -> &'static str {
-    match tier {
-        Tier::InClient => "in-client",
-        Tier::OutOfBand => "out-of-band",
-        Tier::TwoPerson => "two-person",
-    }
-}
-
-/// `allow`, `ask (tier)` or `deny`.
-pub(crate) fn decision_label(decision: &Decision) -> String {
-    match decision {
-        Decision::Allow { .. } => "allow".to_string(),
-        Decision::Ask { tier, .. } => format!("ask ({})", tier_label(*tier)),
-        Decision::Deny { .. } => "deny".to_string(),
-    }
-}
-
 pub(crate) fn decision_reason(decision: &Decision) -> &str {
     match decision {
         Decision::Allow { reason } | Decision::Ask { reason, .. } | Decision::Deny { reason } => {
@@ -261,6 +386,7 @@ async fn host_facts(config: &AppConfig, name: Option<&str>) -> Result<HostFacts>
 mod tests {
     use super::*;
     use crate::services::ai::types::SimpleCommand;
+    use std::collections::BTreeSet;
     use std::sync::Mutex;
 
     fn simple(program: &str, args: &[&str]) -> SimpleCommand {
@@ -286,10 +412,6 @@ mod tests {
         }
     }
 
-    fn label(decision: &Decision) -> String {
-        decision_label(decision)
-    }
-
     #[test]
     fn command_string_uses_one_argument_verbatim() {
         let parts = vec!["echo 'a  b'".to_string()];
@@ -308,107 +430,18 @@ mod tests {
     }
 
     #[test]
-    fn tags_label_is_none_when_empty() {
-        assert_eq!(tags_label(&BTreeSet::new()), "none");
-    }
-
-    #[test]
-    fn tags_label_follows_set_order() {
-        assert_eq!(
-            tags_label(&tags(&[RiskTag::Network, RiskTag::Read, RiskTag::Write])),
-            "read, write, network"
-        );
-    }
-
-    #[test]
-    fn every_tag_has_a_label() {
-        assert_eq!(tag_label(RiskTag::Read), "read");
-        assert_eq!(tag_label(RiskTag::Write), "write");
-        assert_eq!(tag_label(RiskTag::ServiceChange), "service-change");
-        assert_eq!(tag_label(RiskTag::Destructive), "destructive");
-        assert_eq!(tag_label(RiskTag::Privilege), "privilege");
-        assert_eq!(tag_label(RiskTag::Network), "network");
-        assert_eq!(tag_label(RiskTag::ExfilRisk), "exfil-risk");
-        assert_eq!(tag_label(RiskTag::Unknown), "unknown");
-    }
-
-    #[test]
-    fn allow_label_has_no_tier() {
-        assert_eq!(
-            label(&Decision::Allow {
-                reason: "read".into()
-            }),
-            "allow"
-        );
-    }
-
-    #[test]
-    fn ask_label_names_each_tier() {
-        assert_eq!(
-            label(&Decision::Ask {
-                tier: Tier::InClient,
-                reason: "r".into()
-            }),
-            "ask (in-client)"
-        );
-        assert_eq!(
-            label(&Decision::Ask {
-                tier: Tier::OutOfBand,
-                reason: "r".into()
-            }),
-            "ask (out-of-band)"
-        );
-        assert_eq!(
-            label(&Decision::Ask {
-                tier: Tier::TwoPerson,
-                reason: "r".into()
-            }),
-            "ask (two-person)"
-        );
-    }
-
-    #[test]
-    fn deny_label_is_plain() {
-        assert_eq!(
-            label(&Decision::Deny {
-                reason: "nope".into()
-            }),
-            "deny"
-        );
-    }
-
-    #[test]
-    fn decision_reason_is_exposed_for_every_variant() {
-        assert_eq!(
-            decision_reason(&Decision::Allow { reason: "a".into() }),
-            "a"
-        );
-        assert_eq!(
-            decision_reason(&Decision::Ask {
-                tier: Tier::OutOfBand,
-                reason: "b".into()
-            }),
-            "b"
-        );
-        assert_eq!(decision_reason(&Decision::Deny { reason: "c".into() }), "c");
-    }
-
-    #[test]
     fn render_minimal_analysis() {
         let text = render_explain(
+            &Style::plain(),
             "ls",
             &empty_analysis(),
             &PolicySection::Unavailable {
                 error: "policy::resolve: not implemented yet",
             },
         );
-        assert_eq!(
-            text,
-            "command: ls\n\
-             tags:    none\n\
-             commands:\n\
-             policy:  unavailable (policy::resolve: not implemented yet)\n"
-        );
+        assert!(text.contains("[unavailable]  policy unavailable"));
+        assert!(text.contains("policy::resolve: not implemented yet"));
+        assert!(text.contains("The analyzer could not parse the command"));
     }
 
     #[test]
@@ -417,97 +450,204 @@ mod tests {
         analysis.tags = tags(&[RiskTag::Unknown]);
         analysis.unknown_reason = Some("contains eval".to_string());
         let text = render_explain(
+            &Style::plain(),
             "eval $x",
             &analysis,
             &PolicySection::Unavailable { error: "e" },
         );
-        assert!(text.contains("unknown: contains eval\n"));
-        assert!(text.contains("tags:    unknown\n"));
+        assert!(text.contains("The analyzer could not parse the command: contains eval"));
     }
 
     #[test]
     fn render_full_report_aligns_columns() {
-        let mut restart = simple("systemctl", &["restart", "nginx"]);
-        restart.wrappers = vec!["sudo".to_string(), "timeout".to_string()];
-        restart.writes_to = vec!["/etc/nginx/nginx.conf".to_string()];
-        restart.tags = tags(&[RiskTag::Write, RiskTag::Privilege]);
-        restart.rule = Some("systemctl-restart".to_string());
+        let mut rm = simple("rm", &["-rf", "/var/www/releases/2026-08-14"]);
+        rm.wrappers = vec!["sudo".to_string()];
+        rm.tags = tags(&[RiskTag::Destructive, RiskTag::Privilege]);
+        rm.rule = Some("rm".to_string());
 
-        let mut cat = simple("cat", &["/etc/hosts"]);
-        cat.tags = tags(&[RiskTag::Read]);
+        let mut reload = simple("systemctl", &["reload", "nginx"]);
+        reload.tags = tags(&[RiskTag::ServiceChange]);
+        reload.rule = Some("systemctl".to_string());
 
         let analysis = Analysis {
-            commands: vec![restart, cat],
-            tags: tags(&[RiskTag::Read, RiskTag::Network]),
+            commands: vec![rm, reload],
+            tags: tags(&[
+                RiskTag::Destructive,
+                RiskTag::Privilege,
+                RiskTag::ServiceChange,
+            ]),
             unknown_reason: None,
         };
         let decision = Decision::Ask {
             tier: Tier::OutOfBand,
-            reason: "write outside read paths".to_string(),
+            reason: "Changes the host, and the default policy asks for every change.".to_string(),
         };
+        let host_tags = vec!["staging".to_string()];
         let text = render_explain(
-            "sudo systemctl restart nginx",
+            &Style::plain(),
+            "sudo rm -rf ...",
             &analysis,
             &PolicySection::Resolved {
                 name: "default",
                 host: Some("web-1"),
+                host_tags: &host_tags,
                 decision: &decision,
             },
         );
-        let expected = concat!(
-            "command: sudo systemctl restart nginx\n",
-            "tags:    read, network\n",
-            "commands:\n",
-            "  1. systemctl restart nginx\n",
-            "     tags:     write, privilege\n",
-            "     wrappers: sudo, timeout\n",
-            "     writes:   /etc/nginx/nginx.conf\n",
-            "     rule:     systemctl-restart\n",
-            "  2. cat /etc/hosts\n",
-            "     tags:     read\n",
-            "policy:  default  host: web-1\n",
-            "decision: ask (out-of-band) - write outside read paths\n",
-        );
-        assert_eq!(text, expected);
+        assert!(text.contains("[ask]  a person approves it, outside the agent"));
+        assert!(text.contains("web-1 (staging) · policy default"));
+        assert!(text.contains("Changes the host, and the default policy asks for every change."));
+        assert!(text.contains("1  sudo rm -rf /var/www/"));
+        assert!(text.contains("deletes"));
+        assert!(text.contains("destructive · privilege"));
+        assert!(text.contains("rule rm"));
+        assert!(text.contains("2  systemctl reload nginx"));
+        assert!(text.contains("reloads"));
+        assert!(text.contains("service"));
+        assert!(text.contains("rule systemctl"));
     }
 
     #[test]
-    fn render_omits_empty_optional_command_fields() {
+    fn render_colored_has_ansi_escapes() {
+        let mut rm = simple("rm", &["-rf", "/var/www"]);
+        rm.wrappers = vec!["sudo".to_string()];
+        rm.tags = tags(&[RiskTag::Destructive]);
+        let analysis = Analysis {
+            commands: vec![rm],
+            tags: tags(&[RiskTag::Destructive]),
+            unknown_reason: None,
+        };
+        let decision = Decision::Ask {
+            tier: Tier::OutOfBand,
+            reason: "changes host".to_string(),
+        };
+        let style = Style {
+            color: true,
+            unicode: true,
+        };
+        let text = render_explain(
+            &style,
+            "sudo rm -rf /var/www",
+            &analysis,
+            &PolicySection::Resolved {
+                name: "default",
+                host: Some("web-1"),
+                host_tags: &[],
+                decision: &decision,
+            },
+        );
+        assert!(text.contains("\x1b[33m◆ ask\x1b[0m"));
+        assert!(text.contains("\x1b[90mchanges host\x1b[0m"));
+    }
+
+    #[test]
+    fn render_verdict_sentences_for_each_case() {
+        let style = Style::plain();
+        let analysis = empty_analysis();
+
+        // Allow
+        let allow_dec = Decision::Allow {
+            reason: "read".into(),
+        };
+        let text = render_explain(
+            &style,
+            "ls",
+            &analysis,
+            &PolicySection::Resolved {
+                name: "default",
+                host: None,
+                host_tags: &[],
+                decision: &allow_dec,
+            },
+        );
+        assert!(text.contains("[allow]  runs without asking"));
+
+        // Deny
+        let deny_dec = Decision::Deny {
+            reason: "forbidden".into(),
+        };
+        let text = render_explain(
+            &style,
+            "ls",
+            &analysis,
+            &PolicySection::Resolved {
+                name: "default",
+                host: None,
+                host_tags: &[],
+                decision: &deny_dec,
+            },
+        );
+        assert!(text.contains("[deny]  nobody is asked"));
+
+        // Ask in-client
+        let ask_client = Decision::Ask {
+            tier: Tier::InClient,
+            reason: "r".into(),
+        };
+        let text = render_explain(
+            &style,
+            "ls",
+            &analysis,
+            &PolicySection::Resolved {
+                name: "default",
+                host: None,
+                host_tags: &[],
+                decision: &ask_client,
+            },
+        );
+        assert!(text.contains("[ask]  a person approves it, in the client"));
+
+        // Ask two-person
+        let ask_2p = Decision::Ask {
+            tier: Tier::TwoPerson,
+            reason: "r".into(),
+        };
+        let text = render_explain(
+            &style,
+            "ls",
+            &analysis,
+            &PolicySection::Resolved {
+                name: "default",
+                host: None,
+                host_tags: &[],
+                decision: &ask_2p,
+            },
+        );
+        assert!(text.contains("[ask]  two people approve it, outside the agent"));
+    }
+
+    #[test]
+    fn render_omits_rule_when_none() {
         let mut analysis = empty_analysis();
         analysis.commands.push(simple("ls", &[]));
-        let text = render_explain("ls", &analysis, &PolicySection::Unavailable { error: "e" });
-        assert!(text.contains("  1. ls\n     tags:     none\n"));
-        assert!(!text.contains("wrappers:"));
-        assert!(!text.contains("writes:"));
-        assert!(!text.contains("rule:"));
+        let text = render_explain(
+            &Style::plain(),
+            "ls",
+            &analysis,
+            &PolicySection::Unavailable { error: "e" },
+        );
+        assert!(text.contains("1  ls"));
+        assert!(!text.contains("rule"));
     }
 
     #[test]
-    fn render_writes_only() {
-        let mut command = simple("tee", &["out.txt"]);
-        command.writes_to = vec!["out.txt".to_string(), "log.txt".to_string()];
-        let mut analysis = empty_analysis();
-        analysis.commands.push(command);
-        let text = render_explain("tee", &analysis, &PolicySection::Unavailable { error: "e" });
-        assert!(text.contains("     writes:   out.txt, log.txt\n"));
-    }
-
-    #[test]
-    fn render_host_dash_when_no_host() {
+    fn render_host_without_tags() {
         let decision = Decision::Allow {
             reason: "read-only".to_string(),
         };
         let text = render_explain(
+            &Style::plain(),
             "ls",
             &empty_analysis(),
             &PolicySection::Resolved {
                 name: "default",
-                host: None,
+                host: Some("web-1"),
+                host_tags: &[],
                 decision: &decision,
             },
         );
-        assert!(text.contains("policy:  default  host: -\n"));
-        assert!(text.contains("decision: allow - read-only\n"));
+        assert!(text.contains("web-1 · policy default"));
+        assert!(text.contains("[allow]  runs without asking"));
     }
 
     #[test]
@@ -516,10 +656,15 @@ mod tests {
         for program in ["a", "b", "c"] {
             analysis.commands.push(simple(program, &[]));
         }
-        let text = render_explain("x", &analysis, &PolicySection::Unavailable { error: "e" });
-        assert!(text.contains("  1. a\n"));
-        assert!(text.contains("  2. b\n"));
-        assert!(text.contains("  3. c\n"));
+        let text = render_explain(
+            &Style::plain(),
+            "x",
+            &analysis,
+            &PolicySection::Unavailable { error: "e" },
+        );
+        assert!(text.contains("1  a"));
+        assert!(text.contains("2  b"));
+        assert!(text.contains("3  c"));
     }
 
     #[test]
@@ -536,34 +681,40 @@ mod tests {
             seen: Mutex::new(Vec::new()),
             analysis,
         };
-        let (got, text) = explain_report(&analyzer, "ls -la", "default", Some("db-1"), |_| {
-            Ok(Decision::Allow {
-                reason: "read".to_string(),
-            })
-        });
-        assert_eq!(got.commands[0].program, "ls");
-        let expected = concat!(
-            "command: ls -la\n",
-            "tags:    read\n",
-            "commands:\n",
-            "  1. ls -la\n",
-            "     tags:     read\n",
-            "policy:  default  host: db-1\n",
-            "decision: allow - read\n",
+        let (got, text) = explain_report(
+            &Style::plain(),
+            &analyzer,
+            "ls -la",
+            "default",
+            Some("db-1"),
+            &[],
+            |_| {
+                Ok(Decision::Allow {
+                    reason: "read".to_string(),
+                })
+            },
         );
-        assert_eq!(text, expected);
+        assert_eq!(got.commands[0].program, "ls");
+        assert!(text.contains("[allow]  runs without asking"));
+        assert!(text.contains("db-1 · policy default"));
+        assert!(text.contains("1  ls -la"));
         assert_eq!(analyzer.seen.lock().unwrap().as_slice(), ["ls -la"]);
     }
 
     #[test]
     fn explain_report_turns_decision_errors_into_unavailable() {
-        let (_, text) = explain_report(&ShellAnalyzer::new(), "ls", "default", None, |_| {
-            bail!("store locked")
-        });
-        assert!(text.contains("policy:  unavailable (store locked)\n"));
-        assert!(!text.contains("decision:"));
+        let (_, text) = explain_report(
+            &Style::plain(),
+            &ShellAnalyzer::new(),
+            "ls",
+            "default",
+            None,
+            &[],
+            |_| bail!("store locked"),
+        );
+        assert!(text.contains("[unavailable]  policy unavailable"));
+        assert!(text.contains("store locked"));
     }
-
     #[test]
     fn tool_call_marks_read_only_commands() {
         let analysis = Analysis {

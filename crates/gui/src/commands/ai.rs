@@ -728,6 +728,7 @@ mod sock {
                         client,
                         policy,
                         started_at,
+                        ..
                     },
                 ) => {
                     if version != IPC_VERSION {
@@ -1079,6 +1080,8 @@ mod tests {
                                 client: "Claude Code 2.0".into(),
                                 policy: "default".into(),
                                 started_at: "2026-10-24T10:00:00Z".into(),
+                                on_behalf_of: "ana".into(),
+                                hosts: vec!["web-1".into()],
                             }),
                             "subscribe" => Some(ServerMsg::Ok),
                             "list_pending" => Some(ServerMsg::Pending { requests: vec![] }),

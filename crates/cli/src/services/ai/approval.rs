@@ -35,6 +35,9 @@ pub struct RunInfo {
     pub client: String,
     pub policy: String,
     pub started_at: String,
+    pub on_behalf_of: String,
+    /// Hosts in the run's scope when it started.
+    pub hosts: Vec<String>,
 }
 
 /// A request waiting for a human.
@@ -498,6 +501,8 @@ async fn handle_conn(
                 client: broker.client(),
                 policy: run.policy.clone(),
                 started_at: run.started_at.clone(),
+                on_behalf_of: run.on_behalf_of.clone(),
+                hosts: run.hosts.clone(),
             };
             if send_msg(&mut wr, &reply).await.is_err() {
                 return;
@@ -627,6 +632,8 @@ pub(crate) mod tests {
 
     pub(crate) fn run_info() -> RunInfo {
         RunInfo {
+            on_behalf_of: "ana".into(),
+            hosts: vec!["web-1".into()],
             run_id: "run1".into(),
             client: "test-client".into(),
             policy: "default".into(),

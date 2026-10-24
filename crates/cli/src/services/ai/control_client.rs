@@ -17,6 +17,12 @@ pub struct RunHello {
     pub client: String,
     pub policy: String,
     pub started_at: String,
+    /// Empty when the server predates it. Left out of `bssh ai status --json`, which keeps
+    /// its shape.
+    #[serde(skip_serializing)]
+    pub on_behalf_of: String,
+    #[serde(skip_serializing)]
+    pub hosts: Vec<String>,
 }
 
 /// Longest socket path we create: `sun_path` is 108 bytes on Linux (104 on macOS), NUL included.
@@ -124,6 +130,8 @@ mod unix_impl {
                     client: String::new(),
                     policy: String::new(),
                     started_at: String::new(),
+                    on_behalf_of: String::new(),
+                    hosts: Vec::new(),
                 },
                 socket: socket.to_path_buf(),
                 reader: BufReader::new(rd).lines(),
@@ -140,6 +148,8 @@ mod unix_impl {
                     client,
                     policy,
                     started_at,
+                    on_behalf_of,
+                    hosts,
                     ..
                 } => {
                     me.hello = RunHello {
@@ -147,6 +157,8 @@ mod unix_impl {
                         client,
                         policy,
                         started_at,
+                        on_behalf_of,
+                        hosts,
                     };
                     Ok(me)
                 }
@@ -347,6 +359,8 @@ mod tests {
         let mut c = ControlClient::connect(&sock, "test").await.unwrap();
         assert_eq!(c.hello.run_id, "run1");
         assert_eq!(c.hello.client, "test-client");
+        assert_eq!(c.hello.on_behalf_of, "ana");
+        assert_eq!(c.hello.hosts, vec!["web-1".to_string()]);
         assert!(c.pending().await.unwrap().is_empty());
 
         let b = s.broker.clone();

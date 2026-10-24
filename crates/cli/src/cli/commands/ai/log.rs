@@ -2,30 +2,21 @@
 
 use crate::cli::parser_ai::AiArgsLog;
 use crate::config::AppConfig;
+use crate::services::ai::feed::{self, FeedContext};
+use crate::services::ai::types::AiEvent;
+use crate::services::ai::ui::{self, Style};
 use crate::services::ai::{audit, report};
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 
 pub async fn execute(args: AiArgsLog, config: AppConfig) -> Result<()> {
     let Some(run) = args.run else {
         let runs = report::list_runs(&config, args.limit)?;
         if args.json {
             println!("{}", serde_json::to_string_pretty(&runs)?);
-        } else if runs.is_empty() {
-            println!("No agent runs recorded yet.");
         } else {
-            for r in runs {
-                println!(
-                    "{}  {}  client={} policy={} calls={} denials={} changes={}{}",
-                    r.run_id,
-                    r.started.as_deref().unwrap_or("-"),
-                    r.client.as_deref().unwrap_or("-"),
-                    r.policy.as_deref().unwrap_or("-"),
-                    r.calls,
-                    r.denials,
-                    r.changes,
-                    if r.ended.is_some() { "" } else { "  (open)" }
-                );
-            }
+            let style = Style::terminal();
+            print!("{}", report::render_runs(&style, &runs, chrono::Utc::now()));
         }
         return Ok(());
     };
@@ -37,14 +28,15 @@ pub async fn execute(args: AiArgsLog, config: AppConfig) -> Result<()> {
         if args.json {
             println!("{}", r.to_json()?);
         } else {
-            print!("{}", r.to_text());
+            let style = Style::terminal();
+            print!("{}", r.render(&style, chrono::Utc::now()));
         }
         return Ok(());
     }
 
     let events: Vec<_> = entries
         .iter()
-        .filter(|e| event_run(&e.event) == id)
+        .filter(|e| feed::event_run_id(&e.event) == id)
         .take(args.limit.max(1) * 1000)
         .collect();
     if args.json {
@@ -54,77 +46,105 @@ pub async fn execute(args: AiArgsLog, config: AppConfig) -> Result<()> {
             .collect();
         println!("{}", serde_json::to_string_pretty(&v)?);
     } else {
-        for e in events {
-            println!("#{} {} {}", e.seq, e.ts, one_line(&e.event));
-        }
+        let events: Vec<(String, AiEvent)> = events
+            .into_iter()
+            .map(|e| (e.ts.clone(), e.event.clone()))
+            .collect();
+        print!(
+            "{}",
+            render_events(&Style::terminal(), &events, ui::width())
+        );
     }
     Ok(())
 }
 
-fn event_run(e: &crate::services::ai::types::AiEvent) -> String {
-    use crate::services::ai::types::AiEvent::*;
-    match e {
-        RunStarted { run_id, .. }
-        | Approval { run_id, .. }
-        | Result { run_id, .. }
-        | Change { run_id, .. }
-        | CircuitBreaker { run_id, .. }
-        | RunEnded { run_id, .. } => run_id.clone(),
-        Call { call, .. } => call.run_id.clone(),
+/// A run's events in the `bssh ai watch` line format, each at its own time. Nothing is
+/// folded and asks get their own line: this is the record.
+fn render_events(style: &Style, events: &[(String, AiEvent)], width: usize) -> String {
+    let mut ctx = FeedContext::with_width(width);
+    ctx.show_asks = true;
+    let mut out = String::new();
+    let mut last = Utc::now();
+    for (ts, ev) in events {
+        let at = DateTime::parse_from_rfc3339(ts)
+            .map(|t| t.with_timezone(&Utc))
+            .unwrap_or(last);
+        last = at;
+        if let Some(l) = feed::event_line(style, ev, &mut ctx, at) {
+            out.push_str(&l);
+            out.push('\n');
+        }
     }
+    // Reads whose result was never recorded.
+    for l in ctx.take_held(last, chrono::Duration::zero()) {
+        out.push_str(&l.render(style, width));
+        out.push('\n');
+    }
+    out
 }
 
-fn one_line(e: &crate::services::ai::types::AiEvent) -> String {
-    use crate::services::ai::types::{AiEvent::*, ApprovalOutcome, Decision};
-    match e {
-        RunStarted {
-            client,
-            on_behalf_of,
-            policy,
-            ..
-        } => format!("run started: {client} on behalf of {on_behalf_of}, policy {policy}"),
-        Call { call, decision } => {
-            let d = match decision {
-                Decision::Allow { reason } => format!("allow ({reason})"),
-                Decision::Ask { reason, .. } => format!("ask ({reason})"),
-                Decision::Deny { reason } => format!("deny ({reason})"),
-            };
-            format!(
-                "call {} {} {} -> {}",
-                call.call_id,
-                call.host.as_deref().unwrap_or("-"),
-                call.command
-                    .as_deref()
-                    .or(call.path.as_deref())
-                    .unwrap_or(""),
-                d
-            )
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::services::ai::types::{Decision, ToolCall, ToolName};
+
+    fn call(id: &str, command: &str, decision: Decision) -> AiEvent {
+        AiEvent::Call {
+            call: ToolCall {
+                run_id: "r1".into(),
+                call_id: id.into(),
+                tool: ToolName::RunReadonly,
+                host: Some("web-1".into()),
+                command: Some(command.into()),
+                path: None,
+                args: Default::default(),
+            },
+            decision,
         }
-        Approval {
-            request_id,
-            outcome,
-            ..
-        } => match outcome {
-            ApprovalOutcome::Approved { by, channel, .. } => {
-                format!("approval {request_id}: approved by {by} via {channel}")
-            }
-            ApprovalOutcome::Denied { by, .. } => format!("approval {request_id}: denied by {by}"),
-            ApprovalOutcome::Expired => format!("approval {request_id}: expired"),
-        },
-        Result {
-            call_id, exit_code, ..
-        } => format!("result {call_id}: exit {exit_code:?}"),
-        Change {
-            change_id,
-            plan_hash,
-            applied,
-            undo_point,
-            ..
-        } => format!(
-            "change {change_id} plan {plan_hash} applied={applied} undo={}",
-            undo_point.as_deref().unwrap_or("-")
-        ),
-        CircuitBreaker { reason, .. } => format!("circuit breaker: {reason}"),
-        RunEnded { reason, .. } => format!("run ended: {reason}"),
+    }
+
+    #[test]
+    fn events_read_like_the_watch_feed() {
+        let ts = "2026-10-24T17:23:42Z".to_string();
+        let events = vec![
+            (
+                ts.clone(),
+                call(
+                    "c1",
+                    "df -h /var/www",
+                    Decision::Allow {
+                        reason: "read-only".into(),
+                    },
+                ),
+            ),
+            (
+                ts.clone(),
+                AiEvent::Result {
+                    run_id: "r1".into(),
+                    call_id: "c1".into(),
+                    exit_code: Some(0),
+                    output_sha256: String::new(),
+                    redactions: vec![],
+                    duration_ms: Some(180),
+                    jailed: Some(true),
+                },
+            ),
+            (
+                ts.clone(),
+                call(
+                    "c2",
+                    "touch /var/tmp/x",
+                    Decision::Deny {
+                        reason: "writes in a read-only call".into(),
+                    },
+                ),
+            ),
+        ];
+        let out = render_events(&Style::plain(), &events, 100);
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines.len(), 2, "{out}");
+        assert!(lines[0].contains("✓ read") && lines[0].ends_with("0.2 s · jail"));
+        assert!(lines[1].contains("✗ read") && lines[1].contains("denied"));
+        assert!(!out.contains("Some(") && !out.contains("c1"));
     }
 }

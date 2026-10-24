@@ -8,6 +8,7 @@ pub mod types;
 pub mod exec;
 // Command analysis and redaction
 pub mod analyzer;
+pub mod effects;
 pub mod redact;
 // Policy, approvals, runs
 pub mod approval;
@@ -26,6 +27,10 @@ pub mod jail;
 pub mod audit;
 pub mod install;
 pub mod report;
+// The look shared by every AI surface
+pub mod ui;
+// One line per event: the feed of `bssh ai watch` and `bssh ai log`
+pub mod feed;
 // Teams agents and gateway
 pub mod gateway;
 pub mod teams;

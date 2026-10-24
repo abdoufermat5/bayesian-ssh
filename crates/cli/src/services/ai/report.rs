@@ -4,13 +4,14 @@
 
 use super::audit::{read_entries, AuditEntry};
 use super::types::{AiEvent, ApprovalOutcome, Decision, ExecResult, Redaction};
+use super::ui::{self, Glyph, Style, Tone};
 use crate::config::AppConfig;
 use crate::services::recording::{recordings_dir, Recorder};
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::path::PathBuf;
-
 // ---------------------------------------------------------------- recordings
 
 fn safe_part(s: &str) -> String {
@@ -169,8 +170,21 @@ pub struct ReportChange {
     pub plan_hash: String,
     pub applied: bool,
     pub undo_point: Option<String>,
+    #[serde(skip_serializing, default)]
+    pub title: Option<String>,
+    #[serde(skip_serializing, default)]
+    pub approved_by: Option<String>,
+    #[serde(skip_serializing, default)]
+    pub approved_channel: Option<String>,
+    #[serde(skip_serializing, default)]
+    pub approved_at: Option<String>,
+    #[serde(skip_serializing, default)]
+    pub steps_ok: Option<(usize, usize)>,
+    #[serde(skip_serializing, default)]
+    pub checks_ok: Option<(usize, usize)>,
+    #[serde(skip_serializing, default)]
+    pub undone: bool,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RunReport {
     pub run_id: String,
@@ -365,6 +379,13 @@ pub fn build_report(entries: &[AuditEntry], run_id: &str) -> RunReport {
                 plan_hash: plan_hash.clone(),
                 applied: *applied,
                 undo_point: undo_point.clone(),
+                title: None,
+                approved_by: None,
+                approved_channel: None,
+                approved_at: None,
+                steps_ok: None,
+                checks_ok: None,
+                undone: false,
             }),
             AiEvent::CircuitBreaker { reason, .. } => r.circuit_breaker.push(reason.clone()),
             AiEvent::RunEnded { reason, .. } => {
@@ -378,6 +399,13 @@ pub fn build_report(entries: &[AuditEntry], run_id: &str) -> RunReport {
         .into_iter()
         .map(|(kind, count)| Redaction { kind, count })
         .collect();
+    for c in &mut r.changes {
+        if let Some(app) = r.approvals.iter().find(|a| a.outcome == "approved") {
+            c.approved_by = app.by.clone();
+            c.approved_channel = app.channel.clone();
+            c.approved_at = Some(app.ts.clone());
+        }
+    }
     r
 }
 
@@ -390,7 +418,63 @@ pub fn run_report(config: &AppConfig, run_id: &str) -> Result<RunReport> {
         .iter()
         .filter_map(|p| p.file_name().and_then(|n| n.to_str()).map(String::from))
         .collect();
+    enrich_changes_from_disk(config, &id, &mut r.changes, &r.approvals);
     Ok(r)
+}
+
+fn enrich_changes_from_disk(
+    config: &AppConfig,
+    run_id: &str,
+    changes: &mut [ReportChange],
+    approvals: &[ReportApproval],
+) {
+    let changes_dir = crate::services::ai::ai_dir(config)
+        .join("changes")
+        .join(run_id);
+    for c in changes.iter_mut() {
+        let path = changes_dir.join(format!("{}.json", c.change_id));
+        if let Ok(data) = std::fs::read(&path) {
+            if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&data) {
+                if let Some(title) = v["plan"]["title"].as_str() {
+                    c.title = Some(title.to_string());
+                }
+                if let Some(by) = v["approved_by"].as_str() {
+                    c.approved_by = Some(by.to_string());
+                }
+                if v["state"].as_str() == Some("undone") {
+                    c.undone = true;
+                }
+                if let Some(steps) = v["record"]["steps"].as_array() {
+                    let ok_count = steps
+                        .iter()
+                        .filter(|s| s["ok"].as_bool() == Some(true))
+                        .count();
+                    c.steps_ok = Some((ok_count, steps.len()));
+                }
+                if let Some(verify) = v["record"]["verify"].as_array() {
+                    let ok_count = verify
+                        .iter()
+                        .filter(|s| s["ok"].as_bool() == Some(true))
+                        .count();
+                    c.checks_ok = Some((ok_count, verify.len()));
+                }
+            }
+        }
+        if c.approved_by.is_none() {
+            if let Some(app) = approvals.iter().find(|a| a.outcome == "approved") {
+                c.approved_by = app.by.clone();
+                c.approved_channel = app.channel.clone();
+                c.approved_at = Some(app.ts.clone());
+            }
+        } else if c.approved_at.is_none() {
+            if let Some(app) = approvals.iter().find(|a| a.outcome == "approved") {
+                if c.approved_channel.is_none() {
+                    c.approved_channel = app.channel.clone();
+                }
+                c.approved_at = Some(app.ts.clone());
+            }
+        }
+    }
 }
 
 impl RunReport {
@@ -398,104 +482,279 @@ impl RunReport {
         Ok(serde_json::to_string_pretty(self)?)
     }
 
-    pub fn to_text(&self) -> String {
-        use std::fmt::Write;
-        let mut s = String::new();
-        let dash = |o: &Option<String>| o.clone().unwrap_or_else(|| "-".into());
-        let _ = writeln!(s, "Run {}", self.run_id);
-        let _ = writeln!(
-            s,
-            "  client: {}  on behalf of: {}  policy: {} ({})",
-            dash(&self.client),
-            dash(&self.on_behalf_of),
-            dash(&self.policy),
-            dash(&self.policy_hash)
-        );
-        let _ = writeln!(
-            s,
-            "  started: {}  ended: {} ({})",
-            dash(&self.started),
-            dash(&self.ended),
-            dash(&self.end_reason)
-        );
-        let hosts = if self.hosts.is_empty() {
-            "-".to_string()
-        } else {
-            self.hosts.join(", ")
-        };
-        let _ = writeln!(s, "  hosts: {hosts}");
-        let _ = writeln!(s, "\nCalls ({})", self.calls.len());
-        for c in &self.calls {
-            let what = c.command.as_deref().or(c.path.as_deref()).unwrap_or("");
-            let exit = c
-                .exit_code
-                .map(|e| format!(" exit {e}"))
-                .unwrap_or_default();
-            let _ = writeln!(
-                s,
-                "  #{} {} {} [{}]{} {} ({})",
-                c.seq,
-                c.tool,
-                c.host.as_deref().unwrap_or("-"),
-                c.decision,
-                exit,
-                what,
-                c.reason
-            );
-        }
-        let _ = writeln!(s, "\nApprovals ({})", self.approvals.len());
-        for a in &self.approvals {
-            let _ = writeln!(
-                s,
-                "  #{} {} {} by {} via {}{}",
-                a.seq,
-                a.request_id,
-                a.outcome,
-                a.by.as_deref().unwrap_or("-"),
-                a.channel.as_deref().unwrap_or("-"),
-                a.reason
-                    .as_ref()
-                    .map(|r| format!(" ({r})"))
-                    .unwrap_or_default()
-            );
-        }
-        let _ = writeln!(s, "\nChanges ({})", self.changes.len());
-        for c in &self.changes {
-            let _ = writeln!(
-                s,
-                "  #{} {} plan {} {} undo point: {}",
-                c.seq,
-                c.change_id,
-                c.plan_hash,
-                if c.applied { "applied" } else { "not applied" },
-                c.undo_point.as_deref().unwrap_or("-")
-            );
-        }
-        let _ = writeln!(s, "\nDenials ({})", self.denials.len());
-        for d in &self.denials {
-            let _ = writeln!(s, "  {d}");
-        }
-        let _ = writeln!(s, "\nRedactions");
-        if self.redactions.is_empty() {
-            let _ = writeln!(s, "  none");
-        }
-        for x in &self.redactions {
-            let _ = writeln!(s, "  {}: {}", x.kind, x.count);
-        }
-        if !self.circuit_breaker.is_empty() {
-            let _ = writeln!(s, "\nCircuit breaker tripped");
-            for c in &self.circuit_breaker {
-                let _ = writeln!(s, "  {c}");
-            }
-        }
-        if !self.recordings.is_empty() {
-            let _ = writeln!(s, "\nRecordings");
-            for r in &self.recordings {
-                let _ = writeln!(s, "  {r}");
-            }
-        }
-        s
+    pub fn render(&self, style: &Style, now: DateTime<Utc>) -> String {
+        render_report(self, style, now)
     }
+
+    pub fn to_text(&self) -> String {
+        self.render(&Style::terminal(), Utc::now())
+    }
+}
+
+pub fn render_report(report: &RunReport, style: &Style, now: DateTime<Utc>) -> String {
+    use std::fmt::Write;
+    let mut out = String::new();
+
+    // 1. Header line: agent · run · on behalf of · policy
+    let agent = report.client.as_deref().unwrap_or("-");
+    let run_str = format!("run {}", ui::short_id(&report.run_id));
+    let obo_str = format!(
+        "on behalf of {}",
+        report.on_behalf_of.as_deref().unwrap_or("-")
+    );
+    let policy_str = format!("policy {}", report.policy.as_deref().unwrap_or("-"));
+    let header_facts = style.facts(&[agent, &run_str, &obo_str, &policy_str]);
+    let _ = writeln!(out, "{header_facts}");
+
+    // 2. Time line: day_clock start → clock end (duration) · hosts
+    let arrow = style.glyph(Glyph::Arrow);
+    let time_part = match (report.started.as_deref(), report.ended.as_deref()) {
+        (Some(start), Some(end)) => {
+            let start_str = ui::day_clock(start, now);
+            let end_str = ui::clock(end);
+            let dur_str = match (
+                DateTime::parse_from_rfc3339(start),
+                DateTime::parse_from_rfc3339(end),
+            ) {
+                (Ok(s), Ok(e)) => {
+                    let ms = (e - s).num_milliseconds().max(0) as u64;
+                    format!(" ({})", ui::duration_ms(ms))
+                }
+                _ => String::new(),
+            };
+            format!("{start_str} {arrow} {end_str}{dur_str}")
+        }
+        (Some(start), None) => {
+            let start_str = ui::day_clock(start, now);
+            format!("{start_str} {arrow} running")
+        }
+        (None, Some(end)) => {
+            let end_str = ui::clock(end);
+            format!("- {arrow} {end_str}")
+        }
+        (None, None) => "-".to_string(),
+    };
+    let hosts_str = if report.hosts.is_empty() {
+        "no hosts in scope".to_string()
+    } else {
+        format!("hosts {}", report.hosts.join(", "))
+    };
+    let time_line = style.facts(&[&time_part, &hosts_str]);
+    let _ = writeln!(out, "{time_line}");
+
+    // 3. Totals line with colored counts
+    let total_calls = report.calls.len();
+    let calls_str = format!(
+        "{} call{}",
+        total_calls,
+        if total_calls == 1 { "" } else { "s" }
+    );
+    let allowed_count = report
+        .calls
+        .iter()
+        .filter(|c| c.decision == "allow")
+        .count();
+    let allowed_str = style.paint(Tone::Ok, &format!("{allowed_count} allowed"));
+    let denied_count = report
+        .calls
+        .iter()
+        .filter(|c| c.decision == "deny")
+        .count()
+        .max(report.denials.len());
+    let denied_str = if denied_count > 0 {
+        style.paint(Tone::Bad, &format!("{denied_count} denied"))
+    } else {
+        "0 denied".to_string()
+    };
+    let approved_count = report
+        .approvals
+        .iter()
+        .filter(|a| a.outcome == "approved")
+        .count();
+    // Every call is allowed, asked or denied, so the counts add up to the total.
+    let asked_count = report.calls.iter().filter(|c| c.decision == "ask").count();
+    let approved_str = if asked_count > 0 {
+        style.paint(
+            Tone::Warn,
+            &format!("{asked_count} asked, {approved_count} approved"),
+        )
+    } else if approved_count > 0 {
+        style.paint(Tone::Ok, &format!("{approved_count} approved"))
+    } else {
+        "0 asked".to_string()
+    };
+
+    let changes_summary = if report.changes.is_empty() {
+        "0 changes".to_string()
+    } else if report.changes.len() == 1 {
+        let c = &report.changes[0];
+        let state_str = if c.undone {
+            ", undone"
+        } else if c.applied {
+            ", applied"
+        } else {
+            ", not applied"
+        };
+        let undo_str = if c.undo_point.is_some() && !c.undone {
+            ", undo kept"
+        } else {
+            ""
+        };
+        format!("1 change{state_str}{undo_str}")
+    } else {
+        let applied = report.changes.iter().filter(|c| c.applied).count();
+        let undo_kept = report
+            .changes
+            .iter()
+            .filter(|c| c.undo_point.is_some() && !c.undone)
+            .count();
+        format!(
+            "{} changes, {applied} applied, {undo_kept} undo kept",
+            report.changes.len()
+        )
+    };
+
+    let _ = writeln!(
+        out,
+        "{calls_str}  {allowed_str}  {approved_str}  {denied_str}   {changes_summary}"
+    );
+
+    // 4. Section CHANGES
+    let _ = writeln!(out, "\n{}", style.label("CHANGES"));
+    if report.changes.is_empty() {
+        let _ = writeln!(out, "  none");
+    } else {
+        for c in &report.changes {
+            let mark = if c.undone {
+                style.mark(Glyph::Undo)
+            } else if c.applied {
+                style.mark(Glyph::Ok)
+            } else {
+                style.mark(Glyph::Bad)
+            };
+            let short_id = ui::short_id(&c.change_id);
+            let title = c.title.as_deref().unwrap_or_else(|| {
+                if !c.plan_hash.is_empty() {
+                    &c.plan_hash
+                } else {
+                    "change"
+                }
+            });
+            let title_display = if c.title.is_some() {
+                title.to_string()
+            } else {
+                format!("plan {title}")
+            };
+            let _ = writeln!(out, "  {mark} {short_id}  {title_display}");
+
+            let mut details = Vec::new();
+            let approved_str;
+            if let Some(by) = &c.approved_by {
+                let channel_str = match &c.approved_channel {
+                    // `ana@cli via cli` says it twice.
+                    Some(ch) if ch != "in-band" && !by.ends_with(&format!("@{ch}")) => {
+                        format!(" via {ch}")
+                    }
+                    _ => String::new(),
+                };
+                let at_str = match &c.approved_at {
+                    Some(at) => format!(" at {}", ui::clock(at)),
+                    None => String::new(),
+                };
+                approved_str = format!("approved by {by}{channel_str}{at_str}");
+                details.push(approved_str.as_str());
+            }
+
+            let steps_str;
+            if let Some((ok, total)) = c.steps_ok {
+                steps_str = format!("step {ok}/{total} ok");
+                details.push(&steps_str);
+            }
+            let checks_str;
+            if let Some((ok, total)) = c.checks_ok {
+                checks_str = format!("checks {ok}/{total} ok");
+                details.push(&checks_str);
+            }
+
+            let undo_str;
+            if c.undone {
+                details.push("undone");
+            } else if c.applied {
+                if c.undo_point.is_some() {
+                    undo_str = format!("undo with bssh ai undo {short_id}");
+                    details.push(&undo_str);
+                }
+            } else {
+                details.push("not applied");
+            }
+
+            if !details.is_empty() {
+                let _ = writeln!(out, "    {}", style.facts(&details));
+            }
+        }
+    }
+
+    // 5. Section DENIED (time, kind in words, host, command, reason)
+    let _ = writeln!(out, "\n{}", style.label("DENIED"));
+    let denied_calls: Vec<&ReportCall> = report
+        .calls
+        .iter()
+        .filter(|c| c.decision == "deny")
+        .collect();
+    if denied_calls.is_empty() && report.denials.is_empty() {
+        let _ = writeln!(out, "  none");
+    } else if !denied_calls.is_empty() {
+        for c in denied_calls {
+            let time = ui::clock(&c.ts);
+            let kind = ui::tool_kind_in_words(&c.tool);
+            let host = c.host.as_deref().unwrap_or("-");
+            let cmd = c.command.as_deref().or(c.path.as_deref()).unwrap_or("");
+            let _ = writeln!(out, "  {time}  {kind}  {host}  {cmd} · {}", c.reason);
+        }
+    } else {
+        for d in &report.denials {
+            let _ = writeln!(out, "  {d}");
+        }
+    }
+
+    // 6. Section REDACTED (counts by kind or 'nothing')
+    let _ = writeln!(out, "\n{}", style.label("REDACTED"));
+    if report.redactions.is_empty() {
+        let _ = writeln!(out, "  nothing");
+    } else {
+        for r in &report.redactions {
+            let _ = writeln!(out, "  {}: {}", r.kind, r.count);
+        }
+    }
+
+    // 7. Section RECORDINGS (a count and 'bssh ai replay <run> <call>' — never list the files)
+    let _ = writeln!(out, "\n{}", style.label("RECORDINGS"));
+    if report.recordings.is_empty() {
+        let _ = writeln!(out, "  none");
+    } else {
+        let count = report.recordings.len();
+        let count_str = format!("{} recording{}", count, if count == 1 { "" } else { "s" });
+        let _ = writeln!(
+            out,
+            "  {} {} bssh ai replay {} <call>",
+            count_str,
+            style.glyph(Glyph::Dot),
+            ui::short_id(&report.run_id)
+        );
+    }
+
+    // 8. Section ALL CALLS ('bssh ai log <run>')
+    let _ = writeln!(out, "\n{}", style.label("ALL CALLS"));
+    let _ = writeln!(out, "  bssh ai log {}", ui::short_id(&report.run_id));
+
+    if !report.circuit_breaker.is_empty() {
+        let _ = writeln!(out, "\n{}", style.label("CIRCUIT BREAKER TRIPPED"));
+        for cb in &report.circuit_breaker {
+            let _ = writeln!(out, "  {cb}");
+        }
+    }
+
+    out
 }
 
 /// One line per run for `bssh ai log`.
@@ -509,6 +768,8 @@ pub struct RunSummary {
     pub calls: usize,
     pub denials: usize,
     pub changes: usize,
+    #[serde(skip_serializing, default)]
+    pub end_reason: Option<String>,
 }
 
 /// Runs, most recent first, at most `limit`.
@@ -527,12 +788,143 @@ pub fn list_runs(config: &AppConfig, limit: usize) -> Result<Vec<RunSummary>> {
                 calls: r.calls.len(),
                 denials: r.denials.len(),
                 changes: r.changes.len(),
+                end_reason: r.end_reason,
             }
         })
         .collect();
     v.reverse();
     v.truncate(limit);
     Ok(v)
+}
+
+pub fn render_runs(style: &Style, runs: &[RunSummary], now: DateTime<Utc>) -> String {
+    use std::fmt::Write;
+    if runs.is_empty() {
+        return "No agent runs recorded yet.\n".to_string();
+    }
+
+    struct Row {
+        run: String,
+        agent: String,
+        started: String,
+        calls: String,
+        denied_raw: String,
+        denied_styled: String,
+        changes: String,
+        state: String,
+    }
+
+    let mut rows = Vec::with_capacity(runs.len());
+    for r in runs {
+        let run = ui::short_id(&r.run_id);
+        let agent = r.client.as_deref().unwrap_or("-").to_string();
+        let started = r
+            .started
+            .as_deref()
+            .map(|s| ui::day_clock(s, now))
+            .unwrap_or_else(|| "-".into());
+        let calls = r.calls.to_string();
+        let denied_raw = r.denials.to_string();
+        let denied_styled = if r.denials > 0 {
+            style.paint(Tone::Bad, &denied_raw)
+        } else {
+            denied_raw.clone()
+        };
+        let changes = r.changes.to_string();
+        let state = if let Some(ended) = &r.ended {
+            let t = ui::clock_hm(ended);
+            match &r.end_reason {
+                Some(reason) if !reason.is_empty() => format!("ended {t}, {reason}"),
+                _ => format!("ended {t}"),
+            }
+        } else {
+            format!("{} running", style.mark(Glyph::Running))
+        };
+
+        rows.push(Row {
+            run,
+            agent,
+            started,
+            calls,
+            denied_raw,
+            denied_styled,
+            changes,
+            state,
+        });
+    }
+
+    let w_run = rows
+        .iter()
+        .map(|r| ui::display_width(&r.run))
+        .max()
+        .unwrap_or(0)
+        .max("RUN".len());
+    let w_agent = rows
+        .iter()
+        .map(|r| ui::display_width(&r.agent))
+        .max()
+        .unwrap_or(0)
+        .max("AGENT".len());
+    let w_started = rows
+        .iter()
+        .map(|r| ui::display_width(&r.started))
+        .max()
+        .unwrap_or(0)
+        .max("STARTED".len());
+    let w_calls = rows
+        .iter()
+        .map(|r| ui::display_width(&r.calls))
+        .max()
+        .unwrap_or(0)
+        .max("CALLS".len());
+    let w_denied = rows
+        .iter()
+        .map(|r| ui::display_width(&r.denied_raw))
+        .max()
+        .unwrap_or(0)
+        .max("DENIED".len());
+    let w_changes = rows
+        .iter()
+        .map(|r| ui::display_width(&r.changes))
+        .max()
+        .unwrap_or(0)
+        .max("CHANGES".len());
+
+    let header = format!(
+        "{}   {}   {}   {:>w_calls$}   {:>w_denied$}   {:>w_changes$}   STATE",
+        ui::pad("RUN", w_run),
+        ui::pad("AGENT", w_agent),
+        ui::pad("STARTED", w_started),
+        "CALLS",
+        "DENIED",
+        "CHANGES",
+    );
+
+    let mut out = String::new();
+    let _ = writeln!(out, "{}", style.paint(Tone::Dim, &header));
+
+    for r in &rows {
+        let w_d = ui::display_width(&r.denied_styled);
+        let denied_padded = if w_d < w_denied {
+            format!("{}{}", " ".repeat(w_denied - w_d), r.denied_styled)
+        } else {
+            r.denied_styled.clone()
+        };
+
+        let _ = writeln!(
+            out,
+            "{}   {}   {}   {:>w_calls$}   {}   {:>w_changes$}   {}",
+            ui::pad(&r.run, w_run),
+            ui::pad(&r.agent, w_agent),
+            ui::pad(&r.started, w_started),
+            r.calls,
+            denied_padded,
+            r.changes,
+            r.state
+        );
+    }
+
+    out
 }
 
 #[cfg(test)]
@@ -577,6 +969,8 @@ mod tests {
                 },
             },
             AiEvent::Result {
+                duration_ms: None,
+                jailed: None,
                 run_id: "run-1".into(),
                 call_id: "c1".into(),
                 exit_code: Some(0),
@@ -720,5 +1114,177 @@ mod tests {
         record_output(&c, "r", "c", "true", &res()).unwrap();
         assert!(!old.exists());
         assert!(keep.exists(), "only ai-*.cast files are pruned");
+    }
+
+    #[test]
+    fn render_runs_plain_and_color() {
+        let now = DateTime::parse_from_rfc3339("2026-10-24T18:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let s_plain = Style::plain();
+        assert_eq!(
+            render_runs(&s_plain, &[], now),
+            "No agent runs recorded yet.\n"
+        );
+
+        let runs = vec![
+            RunSummary {
+                run_id: "dddbee19-f151-4ee0-8473-93924f35e1d4".into(),
+                client: Some("opencode 2.1.2".into()),
+                policy: Some("default".into()),
+                started: Some("2026-10-24T17:23:00Z".into()),
+                ended: Some("2026-10-24T17:25:00Z".into()),
+                calls: 38,
+                denials: 1,
+                changes: 1,
+                end_reason: Some("client left".into()),
+            },
+            RunSummary {
+                run_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890".into(),
+                client: Some("cursor".into()),
+                policy: Some("strict".into()),
+                started: Some("2026-10-24T17:50:00Z".into()),
+                ended: None,
+                calls: 4,
+                denials: 0,
+                changes: 0,
+                end_reason: None,
+            },
+        ];
+
+        let out = render_runs(&s_plain, &runs, now);
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines.len(), 3);
+        assert!(lines[0].starts_with("RUN        AGENT"));
+        assert!(lines[0].contains("STATE"));
+        let start1 = ui::day_clock("2026-10-24T17:23:00Z", now);
+        let end1 = ui::clock_hm("2026-10-24T17:25:00Z");
+        let start2 = ui::day_clock("2026-10-24T17:50:00Z", now);
+        let exp1 = format!("dddbee19   opencode 2.1.2   {start1}      38        1         1   ended {end1}, client left");
+        assert!(
+            lines[1].contains(&exp1),
+            "\nACTUAL:   {:?}\nEXPECTED: {:?}",
+            lines[1],
+            exp1
+        );
+        let exp2 =
+            format!("a1b2c3d4   cursor           {start2}       4        0         0   ● running");
+        assert!(
+            lines[2].contains(&exp2),
+            "\nACTUAL:   {:?}\nEXPECTED: {:?}",
+            lines[2],
+            exp2
+        );
+
+        let s_color = Style {
+            color: true,
+            unicode: true,
+        };
+        let out_color = render_runs(&s_color, &runs, now);
+        assert!(out_color.contains("\x1b[31m1\x1b[0m"));
+        assert!(out_color.contains("\x1b[34m●\x1b[0m running"));
+    }
+
+    #[test]
+    fn render_report_plain_matches_brief_structure() {
+        let now = DateTime::parse_from_rfc3339("2026-10-24T18:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let s = Style::plain();
+
+        let r = RunReport {
+            run_id: "dddbee19-f151-4ee0-8473-93924f35e1d4".into(),
+            client: Some("opencode 2.1.2".into()),
+            on_behalf_of: Some("ana".into()),
+            policy: Some("default".into()),
+            policy_hash: Some("abc".into()),
+            started: Some("2026-10-24T17:23:00Z".into()),
+            ended: Some("2026-10-24T17:25:10Z".into()),
+            end_reason: Some("client left".into()),
+            hosts: vec!["web-1".into()],
+            calls: vec![
+                ReportCall {
+                    seq: 1,
+                    ts: "2026-10-24T17:23:58Z".into(),
+                    call_id: "c1".into(),
+                    tool: "run_readonly".into(),
+                    host: Some("web-1".into()),
+                    command: Some("touch /var/tmp/.bssh_write_test".into()),
+                    path: None,
+                    decision: "deny".into(),
+                    reason: "writes in a read-only call".into(),
+                    exit_code: None,
+                    output_sha256: None,
+                    redactions: vec![],
+                },
+                ReportCall {
+                    seq: 2,
+                    ts: "2026-10-24T17:24:00Z".into(),
+                    call_id: "c2".into(),
+                    tool: "run_readonly".into(),
+                    host: Some("web-1".into()),
+                    command: Some("du -xah /var/www".into()),
+                    path: None,
+                    decision: "allow".into(),
+                    reason: "read".into(),
+                    exit_code: Some(0),
+                    output_sha256: None,
+                    redactions: vec![],
+                },
+            ],
+            approvals: vec![ReportApproval {
+                seq: 3,
+                ts: "2026-10-24T17:24:44Z".into(),
+                request_id: "req1".into(),
+                outcome: "approved".into(),
+                by: Some("ana".into()),
+                channel: Some("in-band".into()),
+                reason: None,
+            }],
+            changes: vec![ReportChange {
+                seq: 4,
+                ts: "2026-10-24T17:24:47Z".into(),
+                change_id: "change-696de2f2".into(),
+                plan_hash: "486c2f5a".into(),
+                applied: true,
+                undo_point: Some("undo-point-1".into()),
+                title: Some(
+                    "Free 228 MB on web-1 /var/www (archive 3 old releases + stale bundle)".into(),
+                ),
+                approved_by: Some("ana".into()),
+                approved_channel: Some("in-band".into()),
+                approved_at: Some("2026-10-24T17:24:44Z".into()),
+                steps_ok: Some((1, 1)),
+                checks_ok: Some((2, 2)),
+                undone: false,
+            }],
+            denials: vec!["run_readonly touch: writes in a read-only call".into()],
+            redactions: vec![],
+            circuit_breaker: vec![],
+            recordings: vec!["ai-dddbee19-c1.cast".into()],
+        };
+
+        let text = r.render(&s, now);
+        assert!(text.contains("opencode 2.1.2 · run dddbee19 · on behalf of ana · policy default"));
+        let start_str = ui::day_clock("2026-10-24T17:23:00Z", now);
+        let end_str = ui::clock("2026-10-24T17:25:10Z");
+        assert!(text.contains(&format!(
+            "{start_str} → {end_str} (2 min 10 s) · hosts web-1"
+        )));
+        assert!(text
+            .contains("2 calls  1 allowed  1 approved  1 denied   1 change, applied, undo kept"));
+        assert!(text.contains("CHANGES\n  ✓ 696de2f2  Free 228 MB on web-1 /var/www (archive 3 old releases + stale bundle)"));
+        let at_str = ui::clock("2026-10-24T17:24:44Z");
+        assert!(text.contains(&format!("approved by ana at {at_str} · step 1/1 ok · checks 2/2 ok · undo with bssh ai undo 696de2f2")));
+        let deny_time = ui::clock("2026-10-24T17:23:58Z");
+        assert!(text.contains(&format!("DENIED\n  {deny_time}  read  web-1  touch /var/tmp/.bssh_write_test · writes in a read-only call")));
+        assert!(text.contains("REDACTED\n  nothing"));
+        assert!(text.contains("RECORDINGS\n  1 recording · bssh ai replay dddbee19 <call>"));
+        assert!(!text.contains(".cast"), "never list recording file names");
+        assert!(text.contains("ALL CALLS\n  bssh ai log dddbee19"));
+        assert!(
+            !text.contains("exit Some"),
+            "never leak Debug representations"
+        );
     }
 }

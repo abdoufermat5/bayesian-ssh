@@ -487,6 +487,12 @@ pub enum AiEvent {
         exit_code: Option<i32>,
         output_sha256: String,
         redactions: Vec<Redaction>,
+        /// Commands only. Absent from events written before it existed.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        duration_ms: Option<u64>,
+        /// Whether the command ran in the host's read-only jail.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        jailed: Option<bool>,
     },
     Change {
         run_id: String,
