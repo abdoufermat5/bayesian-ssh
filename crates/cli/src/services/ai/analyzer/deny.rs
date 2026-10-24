@@ -81,7 +81,7 @@ fn command_matches(words: &[String], cmd: &SimpleCommand) -> bool {
         }
         let Some(found) = cmd_pos[cursor.min(cmd_pos.len())..]
             .iter()
-            .position(|a| glob_match(p, a) || glob_match(p, &normalize(a)))
+            .position(|a| path_glob(p, a) || path_glob(p, &normalize(a)))
         else {
             return false;
         };
@@ -118,6 +118,40 @@ fn flag_present(flag: &str, short_letters: &str, args: &[String]) -> bool {
                 .iter()
                 .any(|(al, long)| *al == l && args.iter().any(|a| arg_matches(a, long)))
     })
+}
+
+/// Glob for pattern arguments, the way a shell matches paths: `*` and `?` never match `/`,
+/// and `**` matches across directories. So `rm -rf /*` covers `/`, `/*` and a top-level
+/// directory such as `/var`, but not `/var/www/cache`, which goes through the normal
+/// decision (usually ask) instead; `dd of=/dev/**` covers every device path.
+fn path_glob(pat: &str, text: &str) -> bool {
+    if pat.contains("**") {
+        return glob_match(pat, text);
+    }
+    let p: Vec<char> = pat.chars().collect();
+    let t: Vec<char> = text.chars().collect();
+    let (mut pi, mut ti) = (0usize, 0usize);
+    let (mut star, mut mark) = (None::<usize>, 0usize);
+    while ti < t.len() {
+        if pi < p.len() && p[pi] != '*' && (p[pi] == t[ti] || (p[pi] == '?' && t[ti] != '/')) {
+            pi += 1;
+            ti += 1;
+        } else if pi < p.len() && p[pi] == '*' {
+            star = Some(pi);
+            mark = ti;
+            pi += 1;
+        } else if let Some(s) = star.filter(|_| t[mark] != '/') {
+            pi = s + 1;
+            mark += 1;
+            ti = mark;
+        } else {
+            return false;
+        }
+    }
+    while pi < p.len() && p[pi] == '*' {
+        pi += 1;
+    }
+    pi == p.len()
 }
 
 /// `//`, `/.`, `/*` and `/..` are the root directory for deny purposes.

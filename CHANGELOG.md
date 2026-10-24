@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- bssh AI: the built-in deny rule `rm -rf /*` refused every `rm -rf` on an absolute path, so `sudo rm -rf /var/www/cache` was denied outright instead of asking for approval. Deny patterns now match paths the way a shell does: `*` and `?` stay within one directory and `**` crosses directories. `rm -rf /*` still refuses `/` and top-level directories such as `/var`; the built-in device rule is now `dd of=/dev/**`, so nested device paths like `/dev/disk/by-id/…` stay denied. The text matcher only applies to commands bssh can't fully parse.
+
+### Changed
+- Desktop: the sidebar no longer prints a shortcut number next to each section. The shortcuts still work and are shown in each item's tooltip.
+
 ## [2.13.0] - 2026-10-24
 
 ### Added
