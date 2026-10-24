@@ -1,4 +1,4 @@
-//! `bssh ai status`. Owner: W3.
+//! `bssh ai status`.
 //!
 //! Active runs (from their control sockets): pending approvals and grants; plus the most
 //! recent runs from the runs database.

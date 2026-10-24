@@ -1,6 +1,6 @@
 //! `BsshMcp`: the rmcp `ServerHandler`, and the MCP side of approvals (elicitation).
 //!
-//! Owner: W4.
+//!
 
 use super::context::{RunContext, ToolError};
 use super::tools;

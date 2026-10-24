@@ -1,6 +1,6 @@
 //! Small pure helpers: shell quoting, globs, path checks, durations, hashes.
 //!
-//! Owner: W4.
+//!
 
 use anyhow::{bail, Result};
 use sha2::{Digest, Sha256};

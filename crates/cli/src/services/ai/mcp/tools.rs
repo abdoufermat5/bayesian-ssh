@@ -4,7 +4,7 @@
 //! (no "rug pull"). Remote text only ever appears in fields named `untrusted_*`, next to a
 //! `notice`; it is never placed in a description or anything else bssh controls.
 //!
-//! Owner: W4.
+//!
 
 use super::context::{failed, Executed, RunContext, ToolError, ToolResult};
 use super::util::{parse_duration, sh_quote, truncate_chars, valid_since, valid_unit};

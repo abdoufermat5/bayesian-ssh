@@ -1,6 +1,6 @@
-//! MCP server for bssh AI (stdio; transport-agnostic so W8 can mount it on streamable HTTP).
+//! MCP server for bssh AI: stdio for `bssh ai mcp`, streamable HTTP for the `bssh ai serve` gateway.
 //!
-//! # The seam for other transports (W8)
+//! # Mounting the server on another transport
 //!
 //! ```ignore
 //! // One run per session:
@@ -22,7 +22,7 @@
 //! for the kill switch; `ctx.stopped().await` resolves then). Add the rmcp feature
 //! `transport-streamable-http-server` to Cargo.toml for HTTP.
 //!
-//! Owner: W4.
+//!
 
 pub mod context;
 pub mod files;

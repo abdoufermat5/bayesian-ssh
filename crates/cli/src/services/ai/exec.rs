@@ -1,6 +1,6 @@
 //! Executor for AI calls: timeouts, output caps, non-interactive auth, jailed and certified modes.
 //!
-//! Owner: W1. Every call goes through `SshTransport::exec_limited` with
+//! Every call goes through `SshTransport::exec_limited` with
 //! `non_interactive = true`, so a missing key or agent fails with a clear error instead of
 //! prompting on a TTY an MCP server does not have.
 
@@ -203,7 +203,7 @@ mod tests {
 
     #[test]
     fn jailed_mode_goes_through_jail_wrap() {
-        // jail::wrap is W5's; with the stub it errors and the error must surface.
+        // A jail that can't be built must fail the call, never fall back to plain.
         let exec = AiExecutor::new(&AppConfig::default()).with_read_paths(vec!["/var/log".into()]);
         let res = exec.prepare(&conn(), "ls", &ExecMode::Jailed(JailKind::None), &limits());
         assert!(res.is_err(), "JailKind::None cannot run jailed");

@@ -79,7 +79,7 @@ zeroize = { version = "1.7", features = ["zeroize_derive"] }
 crossterm = "0.28"
 toml = "1.0.3"
 
-# bssh AI (W6): comment-preserving edit of ~/.codex/config.toml
+# bssh AI: comment-preserving edit of ~/.codex/config.toml
 toml_edit = "0.25"
 tempfile = "3"
 
@@ -89,16 +89,16 @@ x25519-dalek = { version = "2", features = ["static_secrets"] }
 ed25519-dalek = { version = "2", features = ["zeroize"] }
 hkdf = "0.12"
 
-# bssh AI (W2)
+# bssh AI
 regex = "1"
 
-# bssh AI (W4)
+# bssh AI
 # MCP server; streamable HTTP is for the `bssh ai serve` gateway.
 rmcp = { version = "3.7.0", features = ["server", "macros", "transport-io", "elicitation", "transport-streamable-http-server"] }
 schemars = "1"
 diffy = "0.4"
 
-# bssh AI (W8): gateway HTTP server (bssh ai serve)
+# bssh AI: gateway HTTP server (bssh ai serve)
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json"] }
 
 [dev-dependencies]

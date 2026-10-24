@@ -1,4 +1,4 @@
-//! `bssh ai approve`. Owner: W3.
+//! `bssh ai approve`.
 //!
 //! Connects to every live run socket, lists the approval requests waiting for a human, shows
 //! the full subject (command, plan steps, diffs, analyzer tags, "the agent says") and sends

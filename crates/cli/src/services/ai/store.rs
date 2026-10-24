@@ -4,8 +4,8 @@
 //! desktop app), so the database runs in WAL mode with a busy timeout. The file is 0600 and
 //! its directory 0700.
 //!
-//! Owner: W3. Used by the policy engine (W3), the MCP server (W4: runs, changes), the audit
-//! and reports (W6) and the desktop app (W7: grants, history).
+//! Used by the policy engine, the MCP server (runs, changes), the audit and reports, and
+//! the desktop app (grants, history).
 
 use super::types::{ApprovalOutcome, ApprovalRequest, Grant, ToolName};
 use crate::config::{enforce_secure_dir, enforce_secure_file, AppConfig};
@@ -397,7 +397,7 @@ impl AiStore {
         Ok(n as u32)
     }
 
-    /// Record an applied change (W4 calls this after `apply_change` / `run` / `edit_file`
+    /// Record an applied change (call this after `apply_change` / `run` / `edit_file`
     /// actually changed something). Feeds the `changes_per_run` budget.
     pub fn note_change(&self, run_id: &str, label: &str) -> Result<()> {
         self.db()?.execute(

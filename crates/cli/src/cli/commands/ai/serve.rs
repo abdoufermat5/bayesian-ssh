@@ -1,4 +1,4 @@
-//! `bssh ai serve`: the gateway for unattended Teams agents. Owner: W8.
+//! `bssh ai serve`: the gateway for unattended Teams agents.
 
 use crate::cli::parser_ai::AiArgsServe;
 use crate::config::AppConfig;

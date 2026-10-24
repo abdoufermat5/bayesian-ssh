@@ -1,7 +1,6 @@
 //! bssh ai setup / doctor / ca trust: scripts for the host, running them as root, and the
 //! per-host checks behind `bssh ai doctor`.
 //!
-//! Owner: W5. Design: ai-agent-access.md sections 7.2, 7.3 and decision Q6.
 //!
 //! bssh needs root on a host for exactly two things, both shown before they run:
 //! creating the `bssh-agent` user ([`agent_user_script`]) and making sshd trust the bssh CA

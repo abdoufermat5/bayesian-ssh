@@ -1,4 +1,4 @@
-//! `bssh ai log`. Owner: W6.
+//! `bssh ai log`.
 
 use crate::cli::parser_ai::AiArgsLog;
 use crate::config::AppConfig;

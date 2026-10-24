@@ -6,7 +6,7 @@
 //! must pass before the next one starts. Every edit is backed up on the host and locally
 //! before it is written, so `undo` can restore it.
 //!
-//! Owner: W4.
+//!
 
 use super::mcp::context::{RunContext, ToolError, ToolResult};
 use super::mcp::util::{

@@ -25,7 +25,7 @@ use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, Stream
 use std::sync::{Arc, Mutex};
 use tracing::info;
 
-/// `McpBackend` backed by the real MCP server (replaces `gateway::UnwiredMcp`).
+/// `McpBackend` backed by the real MCP server.
 pub struct RmcpBackend;
 
 impl McpBackend for RmcpBackend {

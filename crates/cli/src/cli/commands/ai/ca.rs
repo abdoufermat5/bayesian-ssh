@@ -1,4 +1,4 @@
-//! `bssh ai ca`. Owner: W5.
+//! `bssh ai ca`.
 
 use super::setup::{print_script, resolve_targets};
 use crate::cli::parser_ai::{AiArgsCa, AiCaCommands};

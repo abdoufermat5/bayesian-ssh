@@ -1,4 +1,4 @@
-//! `bssh ai stop`. Owner: W3.
+//! `bssh ai stop`.
 //!
 //! Sends `Stop` to one run (or all of them) over the control socket. The run ends and its
 //! socket disappears; certificates stop being issued, so exposure is at most one cert TTL.

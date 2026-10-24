@@ -1,4 +1,4 @@
-//! `bssh ai ...` arguments. Each workstream owns its own `AiArgs*` struct.
+//! `bssh ai ...` arguments, one `AiArgs*` struct per command.
 
 use clap::{Args, Subcommand};
 

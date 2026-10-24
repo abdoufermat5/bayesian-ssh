@@ -1,6 +1,6 @@
 //! Secret redaction before output reaches the model (design 8).
 //!
-//! Owner: W2. [`SecretRedactor`] removes exact values from the bssh vault,
+//! [`SecretRedactor`] removes exact values from the bssh vault,
 //! private-key blocks, common token formats, credentials embedded in URLs and
 //! `key=value` secrets. Each hit becomes `«redacted:<kind>»` and is counted in
 //! the returned [`Redaction`] list (one entry per kind, sorted by kind).

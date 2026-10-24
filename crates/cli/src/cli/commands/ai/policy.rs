@@ -1,4 +1,4 @@
-//! `bssh ai policy`. Owner: W2.
+//! `bssh ai policy`.
 
 use crate::cli::parser_ai::{AiArgsPolicy, AiPolicyCommands};
 use crate::config::AppConfig;

@@ -1,6 +1,6 @@
 //! Run reports, recordings of agent output, bssh ai log / replay.
 //!
-//! Owner: W6. Reports are built from the audit log only, never by a model.
+//! Reports are built from the audit log only, never by a model.
 
 use super::audit::{read_entries, AuditEntry};
 use super::types::{AiEvent, ApprovalOutcome, Decision, ExecResult, Redaction};

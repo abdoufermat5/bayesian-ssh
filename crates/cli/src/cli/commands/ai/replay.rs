@@ -1,4 +1,4 @@
-//! `bssh ai replay`. Owner: W6.
+//! `bssh ai replay`.
 //!
 //! Plays the asciicast files `report::record_output` wrote for a run. The loop mirrors
 //! `cli/commands/replay.rs` (asciicast v2 "o" events); that file looks sessions up in the

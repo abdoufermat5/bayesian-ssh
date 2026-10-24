@@ -42,7 +42,7 @@ impl Default for TransportConfig {
     }
 }
 
-/// bssh AI settings (design: bssh-cloud/docs/design/ai-agent-access.md).
+/// bssh AI settings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AiConfig {

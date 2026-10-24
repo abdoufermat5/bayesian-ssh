@@ -1,6 +1,5 @@
 //! Approval broker: in-client (elicitation hook), out-of-band over the control socket, expiry.
 //!
-//! Owner: W3. Design: bssh-cloud/docs/design/ai-agent-access.md section 6.3.
 //!
 //! `LocalBroker::request` by tier:
 //! - `InClient`: ask the elicitor; if there is none, or it can't answer, fall back to
@@ -22,7 +21,7 @@ use std::time::Duration;
 use tokio::sync::{broadcast, oneshot};
 
 /// Asks the human through the agent's own client (MCP elicitation, tier T1).
-/// Implemented by the MCP layer (W4); `Ok(None)` = the client can't elicit.
+/// Implemented by the MCP layer; `Ok(None)` = the client can't elicit.
 #[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait Elicitor: Send + Sync {

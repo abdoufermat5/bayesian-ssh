@@ -1,6 +1,6 @@
 //! Local signed hash-chained AI audit log (AuditSink) and Teams forwarding hook.
 //!
-//! Owner: W6. One JSONL file, `<ai_dir>/audit/events.jsonl`; each line is
+//! One JSONL file, `<ai_dir>/audit/events.jsonl`; each line is
 //! `{seq, ts, event, prev_hash, hash, sig}`. `hash` is SHA-256 over
 //! `seq \n ts \n canonical event JSON \n prev_hash`, `sig` is an Ed25519
 //! signature of the hash hex by the local audit key (`audit/device.key`).

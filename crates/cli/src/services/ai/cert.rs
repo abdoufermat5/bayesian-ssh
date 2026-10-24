@@ -1,6 +1,5 @@
 //! Local user CA and approval-bound short-lived certificates (force-command).
 //!
-//! Owner: W5. Design: ai-agent-access.md section 7.3, ssh-certificates.md section 3.
 //!
 //! The CA is one Ed25519 key under `<ai_dir>/ca/`. Hosts trust its public half (`bssh ai ca
 //! trust`). For each run or approved step bssh mints a fresh Ed25519 key and a certificate

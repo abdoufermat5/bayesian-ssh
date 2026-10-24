@@ -1,4 +1,4 @@
-//! `bssh ai explain`. Owner: W2.
+//! `bssh ai explain`.
 
 use crate::cli::parser_ai::AiArgsExplain;
 use crate::config::AppConfig;

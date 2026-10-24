@@ -1,6 +1,6 @@
 //! Handler tests with fake executor, files, broker and audit; plus an in-process MCP round trip.
 //!
-//! Owner: W4.
+//!
 
 use super::context::ToolError;
 use super::server::build_server;

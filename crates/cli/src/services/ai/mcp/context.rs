@@ -4,10 +4,10 @@
 //! decision is Ask -> execute -> redact -> audit `Result` -> record output -> return.
 //!
 //! The context is transport-agnostic. Stdio builds one per process (`RunContext::from_config`);
-//! the Teams gateway (W8) builds one per session with `RunContext::new`, passing its own
+//! the Teams gateway builds one per session with `RunContext::new`, passing its own
 //! `ApprovalBroker` (the relay broker) and `Executor` through [`RunDeps`].
 //!
-//! Owner: W4.
+//!
 
 use super::files::{FileAccess, SftpFiles};
 use super::server::McpElicitor;

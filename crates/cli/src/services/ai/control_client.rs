@@ -1,6 +1,6 @@
 //! Client side of the local control socket (protocol in `ipc.rs`).
 //!
-//! Owner: W3. Used by `bssh ai approve | stop | status` and reusable by the desktop (W7).
+//! Used by `bssh ai approve | stop | status` and by the desktop app.
 //! Each running `bssh ai mcp` serves `<ai_dir>/runs/<run_id>.sock`; [`connect_all`] connects
 //! to every live one and removes sockets whose process is gone.
 
@@ -568,9 +568,8 @@ mod socket_path_tests {
 
     #[test]
     fn long_ai_dirs_get_a_short_stable_socket_dir() {
-        let ai = Path::new(
-            "/home/asadiakhou/.config/bayesian-ssh/environments/a-long-environment-name/ai",
-        );
+        let ai =
+            Path::new("/home/ana/.config/bayesian-ssh/environments/a-long-environment-name/ai");
         let dir = runs_dir(ai);
         assert!(!dir.starts_with(ai));
         assert_eq!(dir, runs_dir(ai), "server and clients must agree");
@@ -580,9 +579,8 @@ mod socket_path_tests {
             "{}",
             sock.display()
         );
-        let other = Path::new(
-            "/home/asadiakhou/.config/bayesian-ssh/environments/another-long-environment/ai",
-        );
+        let other =
+            Path::new("/home/ana/.config/bayesian-ssh/environments/another-long-environment/ai");
         assert_ne!(runs_dir(other), dir);
     }
 }

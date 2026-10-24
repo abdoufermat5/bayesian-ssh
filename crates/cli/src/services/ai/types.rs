@@ -1,6 +1,6 @@
-//! Shared contract for bssh AI (docs: bssh-cloud/docs/design/ai-agent-access.md).
+//! Shared types and traits for bssh AI.
 //!
-//! Every workstream codes against these types and traits. Changing a public item
+//! Every part of `services::ai` codes against these. Changing a public item
 //! here is a contract change: say so in the PR description.
 
 use crate::models::Connection;

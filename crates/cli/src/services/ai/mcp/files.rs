@@ -1,6 +1,6 @@
 //! File access for `read_file` and `edit_file` (SFTP), behind a trait so tests use a fake.
 //!
-//! Owner: W4. The SFTP session uses the connection's own auth (same as `bssh sftp`);
+//! The SFTP session uses the connection's own auth (same as `bssh sftp`);
 //! it is not jailed. Policy and deny paths are enforced by the caller before it gets here.
 
 use crate::config::AppConfig;

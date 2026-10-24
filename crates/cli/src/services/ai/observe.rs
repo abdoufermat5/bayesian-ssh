@@ -4,7 +4,7 @@
 //! `parse()` turns its output into JSON. Parsers are pure (no I/O) so they are tested on
 //! fixtures. Remote text is untrusted: the caller redacts and labels it.
 //!
-//! Owner: W4.
+//!
 
 use anyhow::{anyhow, bail, Result};
 use schemars::JsonSchema;

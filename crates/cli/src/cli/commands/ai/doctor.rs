@@ -1,4 +1,4 @@
-//! `bssh ai doctor`. Owner: W5.
+//! `bssh ai doctor`.
 //!
 //! Checks each host's enforcement (reachable, agent user, jail, CA trusted) and prints
 //! suggestions only: sudoers lines from the policy's write paths and an egress note.

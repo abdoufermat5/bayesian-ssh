@@ -994,7 +994,7 @@ pub fn teams_audit(
                             AuditKind::SessionEnd => "session_end",
                             AuditKind::VaultRead => "vault_read",
                             AuditKind::VaultWrite => "vault_write",
-                            // bssh AI kinds (W8): wire names, shown as is until W7 styles them.
+                            // bssh AI kinds: shown by their wire names.
                             other => other.as_str(),
                         },
                         who: l.who,

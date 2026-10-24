@@ -1,6 +1,5 @@
 //! Policy engine: scope, deny > ask > allow, tiers, grants, budgets.
 //!
-//! Owner: W3. Design: bssh-cloud/docs/design/ai-agent-access.md sections 6.3, 6.4, 8.
 //!
 //! Order of evaluation in [`DefaultPolicyEngine::decide`] (first match wins, so deny always
 //! beats ask and ask beats allow):
@@ -411,7 +410,7 @@ pub const PROBE_WINDOW: Duration = Duration::from_secs(300);
 
 /// Circuit breaker (design section 8): `Some(reason)` when the run should pause.
 /// Trips on too many denials in a minute (`budgets.max_denials_per_min`, 0 = off) or on
-/// repeated probing of out-of-scope hosts. W4 calls this after each decision, emits
+/// repeated probing of out-of-scope hosts. The MCP run context calls this after each decision, emits
 /// `AiEvent::CircuitBreaker` and stops the run.
 pub fn circuit_breaker(store: &AiStore, run_id: &str, budgets: &Budgets) -> Option<String> {
     let minute = Duration::from_secs(60);

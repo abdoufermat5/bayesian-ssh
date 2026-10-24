@@ -1,6 +1,6 @@
 //! Fakes for the traits in `types.rs`, so tests never touch a network or a real host.
 //!
-//! Owner: W4. Test-only.
+//! Test-only.
 
 use super::context::{RunContext, RunDeps, StaticHosts};
 use super::files::{FileAccess, FileRead};

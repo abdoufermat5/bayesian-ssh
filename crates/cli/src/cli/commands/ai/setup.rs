@@ -1,4 +1,4 @@
-//! `bssh ai setup`. Owner: W5.
+//! `bssh ai setup`.
 //!
 //! Creates the low-privilege `bssh-agent` user (decision Q6: that is the only thing that
 //! needs root, no firewall, no sudoers). The script is printed, confirmed, then run with

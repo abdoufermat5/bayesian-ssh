@@ -6,9 +6,8 @@
 //! agent and policy. Plain HTTP on localhost by default: put a reverse proxy
 //! in front for TLS (nginx or caddy proxying to the loopback port).
 //!
-//! The MCP tool core is W4's. This file owns everything around it and mounts
-//! it through the [`McpBackend`] seam; the integrator wires
-//! `mcp::build_server(Arc<RunContext>)` in (see ai-contract-changes.md).
+//! The MCP tools live in `mcp`; this file owns everything around them and mounts
+//! them through the [`McpBackend`] seam (`mcp::RmcpBackend` in production).
 
 use super::teams::{self, AgentContext, RelayBroker};
 use super::types::{ApprovalBroker, Policy};
@@ -255,7 +254,7 @@ pub fn router(state: Arc<GatewayState>, mcp: Router) -> Router {
 
 // ---------------------------------------------------------------- MCP seam
 
-/// What W4's MCP core needs from the gateway to build a `RunContext`: the
+/// What the MCP core needs from the gateway to build a `RunContext`: the
 /// effective policy (admin-signed), the approval broker, the executor config.
 pub struct GatewayContext {
     /// Config of the main database (hosts, local CA, runs store).
@@ -268,21 +267,19 @@ pub struct GatewayContext {
     pub broker: Arc<dyn ApprovalBroker>,
 }
 
-/// Mounts the MCP server for one gateway.
-///
-/// Assumption (logged in ai-contract-changes.md): W4 exposes
-/// `mcp::build_server(Arc<RunContext>)` with an injectable broker and executor;
-/// the integrator implements this trait around it with rmcp's streamable HTTP
-/// service (`StreamableHttpService::new(|| build_server(ctx.clone()), ..)`
-/// as an axum service) and passes it to [`serve`].
+/// Mounts the MCP server for one gateway, under `/mcp` behind the token check.
+/// Production uses `mcp::RmcpBackend` (rmcp's streamable HTTP service around
+/// `mcp::build_server`); tests mount small fakes.
 pub trait McpBackend: Send + Sync {
     fn router(&self, ctx: GatewayContext) -> Result<Router>;
 }
 
-/// Until the MCP core is wired: the gateway authenticates and approves, and
-/// answers MCP requests with 501.
+/// A backend without MCP, for tests of the auth layer: answers 501 once a
+/// request got through.
+#[cfg(test)]
 pub struct UnwiredMcp;
 
+#[cfg(test)]
 impl McpBackend for UnwiredMcp {
     fn router(&self, _ctx: GatewayContext) -> Result<Router> {
         Ok(Router::new().fallback(|| async {

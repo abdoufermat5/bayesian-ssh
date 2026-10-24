@@ -4,7 +4,7 @@
 //!
 //! Several `bssh ai mcp` processes may run at once (one per agent): each binds
 //! `<ai_dir>/runs/<run_id>.sock`, and `control.sock` is not used. Clients list
-//! `<ai_dir>/runs/*.sock` and connect to each. Owner: W3; consumer: W7 (desktop).
+//! `<ai_dir>/runs/*.sock` and connect to each.
 
 use super::types::{AiEvent, ApprovalOutcome, ApprovalRequest, Grant};
 use serde::{Deserialize, Serialize};
@@ -22,7 +22,7 @@ pub enum ClientMsg {
     /// Start receiving `ServerMsg::Event` for every new event.
     Subscribe,
     ListPending,
-    /// Active grants of this run (answered with `ServerMsg::Grants`). Added by W3.
+    /// Active grants of this run (answered with `ServerMsg::Grants`).
     ListGrants,
     Decide {
         request_id: String,

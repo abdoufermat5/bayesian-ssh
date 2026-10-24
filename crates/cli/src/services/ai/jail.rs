@@ -1,6 +1,5 @@
 //! Read-only jail: Landlock (setpriv / bssh-jail helper) or bubblewrap wrappers.
 //!
-//! Owner: W5. Design: ai-agent-access.md section 7.1.
 //!
 //! `wrap` turns a command into one string that is safe to hand to `ssh host '<string>'`
 //! (or to a certificate's `force-command`). Whatever shell the remote account uses

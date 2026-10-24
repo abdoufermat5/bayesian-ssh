@@ -1,6 +1,6 @@
 //! bssh ai install <client> [--guard]: MCP config and raw-ssh guard hooks.
 //!
-//! Owner: W6. Formats checked against the vendors' docs (see the PR notes):
+//! Formats checked against the vendors' docs:
 //! - Claude Code: user-scope servers live in the top-level `mcpServers` of `~/.claude.json`
 //!   as `{"type":"stdio","command":..,"args":[..]}` (code.claude.com/docs/en/mcp).
 //! - Claude Code hooks: `~/.claude/settings.json` `hooks.PreToolUse[] = {matcher, hooks:[{type:"command",command}]}`;

@@ -1,4 +1,4 @@
-//! `bssh ai token <team/agent> --ttl 1h`: a short-lived gateway token. Owner: W8.
+//! `bssh ai token <team/agent> --ttl 1h`: a short-lived gateway token.
 
 use crate::cli::parser_ai::AiArgsToken;
 use crate::config::AppConfig;

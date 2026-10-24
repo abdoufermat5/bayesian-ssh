@@ -197,7 +197,7 @@ fn run_id_of(event: &AiEvent) -> &str {
 
 /// Forward an event already appended to the local audit chain to the team's
 /// audit log (encrypted to the team audit key). No-op outside Teams. Called by
-/// `audit::LocalAudit` (W6).
+/// `audit::LocalAudit`.
 ///
 /// It only queues: signing and encrypting need the team key, which is
 /// available at the next `bssh teams sync` (or the gateway's own sync).

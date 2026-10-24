@@ -1,4 +1,4 @@
-//! `bssh ai install`. Owner: W6.
+//! `bssh ai install`.
 
 use crate::cli::parser_ai::AiArgsInstall;
 use crate::config::AppConfig;

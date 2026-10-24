@@ -1,4 +1,4 @@
-//! `bssh ai mcp`. Owner: W4.
+//! `bssh ai mcp`.
 //!
 //! stdout is the MCP channel: nothing here (or below) may print to it. Logging goes to stderr
 //! (set up in main.rs), and errors are reported on stderr by the CLI wrapper.
