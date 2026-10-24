@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **bssh AI**: let AI agents (Claude Code, Codex, Cursor, VS Code, Claude Desktop, CI bots) operate your servers without ever holding your keys. `bssh ai mcp` is an MCP server whose tools (`list_hosts`, `observe`, `read_file`, `search_logs`, `run_readonly`, `run`, `service`, `edit_file`, change plans with `propose_change`/`apply_change`/`undo`, `status`, `request_access`) go through a fixed pipeline: a shell parser tags every command (read, write, destructive, privilege, network...), a policy decides allow, ask or deny (never a model), asks wait for a human, output is capped and secrets are redacted before the agent sees them, and every call, decision and approval goes to a signed, hash-chained local audit log. Design: deterministic decisions, a read-only jail on the host, approval-bound certificates.
+- **Approvals**: a change plan is approved once for all its steps (diffs, verify and rollback shown); `bssh ai approve` and the desktop app's approval dialog decide from outside the agent; low-risk changes on hosts tagged for it can be confirmed in the agent's own client (MCP elicitation, opt-in); grants allow a kind of call for a while. `bssh ai status`, `bssh ai stop` (kill switch), `bssh ai log [--report]` and `bssh ai replay` show and control runs; the desktop app has a live view of each run with a Stop button.
+- **Policies** in `config.json` (`ai.policies`), with built-in `observe`, `operate` and `oncall` profiles: scope by tags, read/write/deny paths, deny rules matched on the parsed command, budgets (calls per minute, changes per run, run TTL) and a circuit breaker. `bssh ai explain '<cmd>'` shows how a command is parsed and decided; `bssh ai policy list|show|test` (a test file of commands with expected decisions, for CI).
+- **Host enforcement**: `bssh ai setup` creates a low-privilege `bssh-agent` user (root once, no firewall or sudo changes); reads run in a read-only, no-network jail (Landlock via `setpriv` or the `bssh-jail` helper, or bubblewrap) and are allowed without prompts; `bssh ai ca init|show|trust` sets up a local CA so each approved step runs with a 2-minute certificate whose forced command is exactly that step; `bssh ai doctor` reports each host's enforcement and suggests narrow sudo rules.
+- **`bssh ai install <client> [--guard]`** writes the MCP config for Claude Code, Codex, Cursor, VS Code or Claude Desktop, and with `--guard` a Claude Code hook that steers raw `ssh`/`scp` to known hosts towards the bssh tools.
+- **Teams agents**: `bssh teams agent add|list|remove|policy|pending|approve|deny` creates unattended agent identities (one seat each) with an admin-signed policy; their requests are relayed end-to-end encrypted to the team's admins, with two-person approval for hosts that need it; AI events join the team's signed audit log (the server sees who and when, never commands or output). `bssh ai serve --agent <team/agent>` is the gateway that serves MCP over HTTP to those agents, with short-lived tokens from `bssh ai token`.
+- `bssh exec --timeout <secs> --max-output <bytes>`.
+
+### Changed
+- Remote execution has timeouts and output caps in both transports, and a non-interactive mode that fails instead of prompting for a password.
+- Teams protocol: new member kind `agent`, signed agent policies in the vault, the approval relay and AI audit kinds (5 to 8) with an actor and an encrypted detail. Existing events and entries verify and decode as before; servers need bssh-cloud 0.5.0 for the new features.
+
 ## [2.12.1] - 2026-10-24
 
 ### Fixed

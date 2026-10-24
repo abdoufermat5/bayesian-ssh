@@ -69,16 +69,20 @@ async fn decide(
     let (team_id, _) = session::resolve_team(store.database(), team)?;
     let s = Session::open(store, config, &passphrase(false)?)?;
     let req = s.decide_approval(team_id, request, approve, reason).await?;
-    println!(
-        "{} {} ({})",
-        if approve {
-            "✅ Approved"
-        } else {
-            "🚫 Denied"
-        },
-        req.payload.request.request_id,
-        crate::services::ai::teams::describe(&req.payload.request)
-    );
+    let r = &req.payload.request;
+    let what = crate::services::ai::teams::describe(r);
+    if !approve {
+        println!("🚫 Denied {} ({what}).", r.request_id);
+    } else if r.tier == crate::services::ai::types::Tier::TwoPerson {
+        // The gateway counts approvers: one admin approving twice still counts once.
+        println!("✅ Your approval of {} ({what}) is sent.", r.request_id);
+        println!("   It needs two admins: it runs once another admin approves too.");
+    } else {
+        println!(
+            "✅ Approved {} ({what}): the agent's gateway runs it now.",
+            r.request_id
+        );
+    }
     Ok(())
 }
 
