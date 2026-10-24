@@ -51,6 +51,7 @@ pub fn run() {
                 let _ = window.set_background_color(Some(tauri::window::Color(9, 9, 11, 255)));
             }
             tray::setup_tray(app.handle())?;
+            commands::ai::start(app.handle());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -165,7 +166,13 @@ pub fn run() {
             commands::teams_remove,
             commands::teams_audit,
             commands::teams_attention,
-            commands::teams_remove_preview
+            commands::teams_remove_preview,
+            commands::ai::ai_list_runs,
+            commands::ai::ai_run_events,
+            commands::ai::ai_decide,
+            commands::ai::ai_stop,
+            commands::ai::ai_revoke_grant,
+            commands::ai::ai_settings
         ])
         .run(context)
         .expect("error while running tauri application");
