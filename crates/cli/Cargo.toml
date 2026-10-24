@@ -85,3 +85,6 @@ indicatif = "0.17"
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 ed25519-dalek = { version = "2", features = ["zeroize"] }
 hkdf = "0.12"
+
+# bssh AI (W2)
+regex = "1"
