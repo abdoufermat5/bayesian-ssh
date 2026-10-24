@@ -275,8 +275,15 @@ impl FeedLine {
             left.push_str(&ui::pad(&self.host, w));
             used += w;
         }
-        // The meta wins over the text but never runs past the line: keep 8 columns of text.
-        let meta_max = width.saturating_sub(used + 8 + 2).max(10);
+        // The meta wins over the text but never runs past the line. A short meta may squeeze
+        // the text to 8 columns; a long one (a denial's reason) leaves the command its share.
+        let keep = ui::display_width(&self.text).clamp(8, 30).min(width / 5);
+        let meta_max = if ui::display_width(&self.meta) <= 40 {
+            width.saturating_sub(used + 8 + 2)
+        } else {
+            width.saturating_sub(used + keep + 2)
+        }
+        .max(10);
         let meta = if ui::display_width(&self.meta) > meta_max {
             ui::truncate(&self.meta, meta_max)
         } else {

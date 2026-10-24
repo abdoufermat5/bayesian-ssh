@@ -1066,9 +1066,13 @@ fn call_block(call: &ToolCall, analysis: Option<&Analysis>) -> HostBlock {
     blocks.remove(0)
 }
 
+fn trim_dest(d: &str) -> &str {
+    d.trim_end_matches(['/', '"']).trim_start_matches('"')
+}
+
 /// A long destination keeps its last two path components.
 fn short_dest(d: &str) -> String {
-    let trimmed = d.trim_end_matches(['/', '"']).trim_start_matches('"');
+    let trimmed = trim_dest(d);
     if ui::display_width(trimmed) <= 28 {
         return trimmed.to_string();
     }
@@ -1141,6 +1145,12 @@ fn what_section(
             } else {
                 rows.len().min(TARGETS_PER_VERB)
             };
+            // Destinations in full when they all fit, else all shortened: one rule per group.
+            let room = w.saturating_sub(2 + hostw + verbw + tw + 3);
+            let full_dests = rows.iter().all(|(_, d)| {
+                d.as_ref()
+                    .is_none_or(|d| ui::display_width(trim_dest(d)) <= room)
+            });
             for (n, (target, dest)) in rows.iter().take(shown).enumerate() {
                 let verb = if n == 0 { v.word() } else { "" };
                 let mut line = format!(
@@ -1156,7 +1166,11 @@ fn what_section(
                                 "{} {} {}",
                                 ui::pad(&ui::truncate(target, tw), tw),
                                 style.paint(Tone::Dim, style.glyph(Glyph::Arrow)),
-                                short_dest(d)
+                                if full_dests {
+                                    trim_dest(d).to_string()
+                                } else {
+                                    short_dest(d)
+                                }
                             ),
                         );
                     }

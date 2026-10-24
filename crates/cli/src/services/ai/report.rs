@@ -571,10 +571,17 @@ pub fn render_report(report: &RunReport, style: &Style, now: DateTime<Utc>) -> S
         .iter()
         .filter(|a| a.outcome == "approved")
         .count();
-    let approved_str = if approved_count > 0 {
+    // Every call is allowed, asked or denied, so the counts add up to the total.
+    let asked_count = report.calls.iter().filter(|c| c.decision == "ask").count();
+    let approved_str = if asked_count > 0 {
+        style.paint(
+            Tone::Warn,
+            &format!("{asked_count} asked, {approved_count} approved"),
+        )
+    } else if approved_count > 0 {
         style.paint(Tone::Ok, &format!("{approved_count} approved"))
     } else {
-        "0 approved".to_string()
+        "0 asked".to_string()
     };
 
     let changes_summary = if report.changes.is_empty() {
@@ -609,7 +616,7 @@ pub fn render_report(report: &RunReport, style: &Style, now: DateTime<Utc>) -> S
 
     let _ = writeln!(
         out,
-        "{calls_str}  {allowed_str}  {denied_str}  {approved_str}   {changes_summary}"
+        "{calls_str}  {allowed_str}  {approved_str}  {denied_str}   {changes_summary}"
     );
 
     // 4. Section CHANGES
@@ -644,7 +651,10 @@ pub fn render_report(report: &RunReport, style: &Style, now: DateTime<Utc>) -> S
             let approved_str;
             if let Some(by) = &c.approved_by {
                 let channel_str = match &c.approved_channel {
-                    Some(ch) if ch != "in-band" => format!(" via {ch}"),
+                    // `ana@cli via cli` says it twice.
+                    Some(ch) if ch != "in-band" && !by.ends_with(&format!("@{ch}")) => {
+                        format!(" via {ch}")
+                    }
                     _ => String::new(),
                 };
                 let at_str = match &c.approved_at {
@@ -1262,7 +1272,7 @@ mod tests {
             "{start_str} → {end_str} (2 min 10 s) · hosts web-1"
         )));
         assert!(text
-            .contains("2 calls  1 allowed  1 denied  1 approved   1 change, applied, undo kept"));
+            .contains("2 calls  1 allowed  1 approved  1 denied   1 change, applied, undo kept"));
         assert!(text.contains("CHANGES\n  ✓ 696de2f2  Free 228 MB on web-1 /var/www (archive 3 old releases + stale bundle)"));
         let at_str = ui::clock("2026-10-24T17:24:44Z");
         assert!(text.contains(&format!("approved by ana at {at_str} · step 1/1 ok · checks 2/2 ok · undo with bssh ai undo 696de2f2")));
