@@ -77,6 +77,18 @@ impl std::str::FromStr for SessionStatusKind {
     }
 }
 
+impl Session {
+    /// What the session connected to, as `user@host:port`. Stored with the
+    /// session so the history stays readable for direct connections and
+    /// after the host is edited or removed.
+    pub fn target(&self) -> String {
+        format!(
+            "{}@{}:{}",
+            self.connection.user, self.connection.host, self.connection.port
+        )
+    }
+}
+
 impl SessionStatus {
     pub fn kind(&self) -> SessionStatusKind {
         match self {

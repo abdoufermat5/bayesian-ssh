@@ -441,7 +441,7 @@ impl Database {
                         COALESCE(SUM(CASE WHEN local_hour IN (?, ?, ?) THEN 1 ELSE 0 END), 0) AS n_hour,
                         COALESCE(SUM(CASE WHEN prev_connection_id = ? THEN 1 ELSE 0 END), 0) AS n_prev
                  FROM sessions
-                 WHERE started_at >= ?",
+                 WHERE started_at >= ? AND connection_id IS NOT NULL",
                 rusqlite::params![git_root, h0, h1, h2, prev_id, cutoff],
                 |row| {
                     Ok(GlobalTotals {

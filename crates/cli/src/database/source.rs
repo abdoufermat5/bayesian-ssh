@@ -106,7 +106,7 @@ impl Database {
             };
             for host_id in host_ids {
                 tx.execute(
-                    "DELETE FROM sessions WHERE connection_id = ?1",
+                    "UPDATE sessions SET connection_id = NULL WHERE connection_id = ?1",
                     params![host_id],
                 )?;
                 tx.execute(
