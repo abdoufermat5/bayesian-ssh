@@ -546,6 +546,7 @@ pub(crate) mod fake {
             },
             created_at: Utc::now().to_rfc3339(),
             expires_at: (Utc::now() + chrono::Duration::minutes(5)).to_rfc3339(),
+            reason: String::new(),
         }
     }
 }

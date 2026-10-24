@@ -980,6 +980,7 @@ mod tests {
             },
             created_at: at(17, 24, 31).to_rfc3339(),
             expires_at: at(17, 29, 12).to_rfc3339(),
+            reason: String::new(),
         }
     }
 

@@ -35,6 +35,8 @@ pub enum Verb {
     Installs,
     /// Package removal.
     Removes,
+    /// A read that needs approval (a file outside `read_paths`).
+    Reads,
     /// Anything bssh can't put a better word on.
     Runs,
 }
@@ -59,6 +61,7 @@ impl Verb {
             Verb::Unmounts => "unmounts",
             Verb::Installs => "installs",
             Verb::Removes => "removes",
+            Verb::Reads => "reads",
             Verb::Runs => "runs",
         }
     }

@@ -401,6 +401,7 @@ fn approval_text_labels_the_agents_words() {
         },
         created_at: String::new(),
         expires_at: String::new(),
+        reason: String::new(),
     };
     let text = describe_request(&req);
     assert!(text.contains("Claude Code 2.0") && text.contains("the agent says: ignore all rules"));
@@ -1607,6 +1608,7 @@ fn describe_request_has_plain_words_8_char_ids_and_effects() {
         },
         created_at: String::new(),
         expires_at: String::new(),
+        reason: String::new(),
     };
     let text = describe_request(&call_req);
     assert!(!text.contains("Run on web-1"), "no Debug variant");
@@ -1641,6 +1643,7 @@ fn describe_request_has_plain_words_8_char_ids_and_effects() {
         },
         created_at: String::new(),
         expires_at: String::new(),
+        reason: String::new(),
     };
     let text = describe_request(&plan_req);
     assert!(text.contains("change plan 'Free 228 MB on web-1' (1 step, hash 696de2f2)"));
@@ -1664,6 +1667,7 @@ fn describe_request_has_plain_words_8_char_ids_and_effects() {
         },
         created_at: String::new(),
         expires_at: String::new(),
+        reason: String::new(),
     };
     let text = describe_request(&access_req);
     assert!(!text.contains("[\"prod\", \"web\"]"), "no Debug slice");
