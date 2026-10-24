@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.0] - 2026-10-24
+
 ### Added
 - **bssh AI**: let AI agents (Claude Code, Codex, Cursor, VS Code, Claude Desktop, CI bots) operate your servers without ever holding your keys. `bssh ai mcp` is an MCP server whose tools (`list_hosts`, `observe`, `read_file`, `search_logs`, `run_readonly`, `run`, `service`, `edit_file`, change plans with `propose_change`/`apply_change`/`undo`, `status`, `request_access`) go through a fixed pipeline: a shell parser tags every command (read, write, destructive, privilege, network...), a policy decides allow, ask or deny (never a model), asks wait for a human, output is capped and secrets are redacted before the agent sees them, and every call, decision and approval goes to a signed, hash-chained local audit log. Design: deterministic decisions, a read-only jail on the host, approval-bound certificates.
 - **Approvals**: a change plan is approved once for all its steps (diffs, verify and rollback shown); `bssh ai approve` and the desktop app's approval dialog decide from outside the agent; low-risk changes on hosts tagged for it can be confirmed in the agent's own client (MCP elicitation, opt-in); grants allow a kind of call for a while. `bssh ai status`, `bssh ai stop` (kill switch), `bssh ai log [--report]` and `bssh ai replay` show and control runs; the desktop app has a live view of each run with a Stop button.
