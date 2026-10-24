@@ -161,7 +161,7 @@ async fn run_agent(
             for r in pending {
                 println!(
                     "{}  agent {}  tier {:?}  expires {}",
-                    &r.payload.request.request_id,
+                    r.payload.request.request_id,
                     r.payload.agent,
                     r.payload.request.tier,
                     r.expires_at.format("%H:%M:%S")

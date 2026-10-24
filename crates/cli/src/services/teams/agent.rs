@@ -9,6 +9,11 @@
 use super::client::TeamsClient;
 use super::crypto::{self, DeviceKeys};
 use super::relay::Peer;
+use super::session::{self, Session};
+use super::store::{TeamLocal, TeamsStore};
+use crate::config::AppConfig;
+use crate::database::Database;
+use crate::models::{Source, SourceKind};
 use anyhow::{anyhow, bail, Context, Result};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
@@ -152,6 +157,10 @@ pub fn credential_path(config: &crate::config::AppConfig, team_name: &str, agent
         .join(format!("{team_name}.{agent}.json"))
 }
 
+fn agents_dir(config: &AppConfig) -> PathBuf {
+    crate::services::ai::ai_dir(config).join("agents")
+}
+
 /// Find a credential by `team/agent` in the default location.
 pub fn find_credential(config: &crate::config::AppConfig, id: &str) -> Result<AgentCredential> {
     let (team, agent) = id
@@ -260,6 +269,33 @@ pub fn store_min_version(dir: &Path, cred: &AgentCredential, name: &str, v: u64)
     Ok(())
 }
 
+/// Outcome of [`AgentRuntime::refresh`].
+#[derive(Debug)]
+pub struct Refreshed {
+    pub policy: VerifiedPolicy,
+    pub hosts: usize,
+}
+
+/// Make sure `db` has a local source for the team (hosts are filed under it).
+fn ensure_team_source(db: &Database, team_id: Uuid, team_name: &str) -> Result<()> {
+    if session::local_teams(db)?
+        .iter()
+        .any(|(id, _)| *id == team_id)
+    {
+        return Ok(());
+    }
+    let name = if db.get_source(team_name)?.is_some() {
+        format!("team-{}", &team_id.to_string()[..8])
+    } else {
+        team_name.to_string()
+    };
+    db.add_source(&Source::new(
+        name,
+        SourceKind::Team,
+        serde_json::json!({ "team_id": team_id.to_string() }),
+    ))
+}
+
 /// What the gateway holds for one agent.
 pub struct AgentRuntime {
     pub cred: AgentCredential,
@@ -276,6 +312,78 @@ impl AgentRuntime {
             keys.clone(),
         )?);
         Ok(Self { cred, keys, client })
+    }
+
+    /// The agent's own Teams store (a separate database next to the credential),
+    /// so it never mixes with a human's identity on the same machine.
+    pub fn open_store(&self, config: &AppConfig) -> Result<(AppConfig, TeamsStore)> {
+        let dir = agents_dir(config);
+        std::fs::create_dir_all(&dir)?;
+        let mut agent_config = config.clone();
+        agent_config.database_path = dir.join(format!(
+            "{}.{}.db",
+            self.cred.team_name, self.cred.agent_name
+        ));
+        let store = TeamsStore::open(&agent_config)?;
+        let db = store.database();
+        db.conn.execute(
+            "INSERT OR REPLACE INTO teams_identity (id, server_url, email, account_id, device_id, created_at)
+             VALUES (1, ?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![
+                self.cred.server_url,
+                format!("agent:{}", self.cred.agent_name),
+                self.cred.account_id.to_string(),
+                self.cred.device_id.to_string(),
+                chrono::Utc::now().to_rfc3339()
+            ],
+        )?;
+        store.upsert_team(&TeamLocal {
+            team_id: self.cred.team_id,
+            server_url: self.cred.server_url.clone(),
+            account_id: self.cred.account_id,
+            device_id: self.cred.device_id,
+            trust_root_ed25519: self.cred.trust_root,
+            last_pulled_revision: 0,
+            created_at: chrono::Utc::now(),
+        })?;
+        ensure_team_source(db, self.cred.team_id, &self.cred.team_name)?;
+        Ok((agent_config, store))
+    }
+
+    /// Sync the vault (also uploads queued AI audit events), verify the signed
+    /// policy and mirror the team's hosts into the main database.
+    pub async fn refresh(
+        &self,
+        config: &AppConfig,
+        agent_config: &AppConfig,
+        store: &TeamsStore,
+    ) -> Result<Refreshed> {
+        let session = Session::with_keys(store, agent_config, self.keys.clone())?;
+        let sync = session.sync_team(self.cred.team_id, vec![]).await?;
+        if sync.waiting_for_key {
+            bail!("this agent has no team key yet: an admin must run `bssh teams grant`");
+        }
+        let view = session
+            .vault_view(self.cred.team_id)
+            .await?
+            .ok_or_else(|| anyhow!("no team key"))?;
+        let candidates: Vec<SignedAgentPolicy> = view
+            .agent_policies
+            .iter()
+            .map(|p| p.policy.clone())
+            .collect();
+        let dir = agents_dir(config);
+        let min = load_min_version(&dir, &self.cred, &self.cred.policy);
+        let policy = verify_policy(&self.cred, &candidates, &self.cred.policy, min)?;
+        store_min_version(&dir, &self.cred, &self.cred.policy, policy.signed.version)?;
+
+        let db = Database::new(config)?;
+        ensure_team_source(&db, self.cred.team_id, &self.cred.team_name)?;
+        session::materialize_into(&db, config, self.cred.team_id, &view)?;
+        Ok(Refreshed {
+            policy,
+            hosts: view.connections.len(),
+        })
     }
 
     /// Is this agent still a live member? An admin removing it is the kill

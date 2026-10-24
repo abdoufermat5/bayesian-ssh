@@ -1118,7 +1118,7 @@ mod tests {
         assert!(open_relay(&m, id(11), &a1, &DeviceKeys::generate().ed25519_public()).is_err());
         for mutate in [
             (|m: &mut RelayMessage| m.ciphertext.0[0] ^= 1) as fn(&mut RelayMessage),
-            |m| m.expires_at = m.expires_at + chrono::Duration::minutes(30),
+            |m| m.expires_at += chrono::Duration::minutes(30),
             |m| m.kind = RelayKind::Decision,
             |m| m.request_id = Uuid::new_v4(),
             |m| m.recipients[0].wrapped_key.0[0] ^= 1,

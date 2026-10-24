@@ -1262,50 +1262,7 @@ impl<'a> Session<'a> {
     /// Mirror the decrypted vault into the connection list through the
     /// inventory machinery: hosts are keyed by entry id, removed ones go stale.
     fn materialize(&self, team_id: Uuid, view: &VaultView) -> Result<inventory::SyncReport> {
-        let db = self.db();
-        let (_, mut source) = local_teams(db)?
-            .into_iter()
-            .find(|(id, _)| *id == team_id)
-            .ok_or_else(|| anyhow!("team {team_id} has no local source"))?;
-
-        if let Some(name) = &view.team_name {
-            if source.name != *name
-                && source.name.starts_with("team-")
-                && db.get_source(name)?.is_none()
-            {
-                db.conn.execute(
-                    "UPDATE sources SET name = ?1 WHERE id = ?2",
-                    params![name, source.id.to_string()],
-                )?;
-                source.name = name.clone();
-            }
-        }
-
-        let discovered: Vec<DiscoveredHost> = view
-            .connections
-            .iter()
-            .map(|c| DiscoveredHost {
-                external_id: c.entry_id.to_string(),
-                name: c.record.name.clone(),
-                host: c.record.host.clone(),
-                user: Some(c.record.user.clone()),
-                port: Some(c.record.port),
-                key_path: None,
-                tags: c.record.tags.clone(),
-                bastion: c.record.bastion.clone(),
-                bastion_user: c.record.bastion_user.clone(),
-                use_kerberos: c.record.use_kerberos,
-            })
-            .collect();
-        let existing = db.connections_for_source(source.id)?;
-        let taken: HashSet<String> = db
-            .list_connections(None, false)?
-            .into_iter()
-            .filter(|c| c.source_id != Some(source.id))
-            .map(|c| c.name)
-            .collect();
-        let plan = inventory::plan(&discovered, &existing, &taken, &source.name);
-        inventory::apply(db, self.config, &source, plan, None)
+        materialize_into(self.db(), self.config, team_id, view)
     }
 
     /// Share a local connection with the team (or update it, if it already
@@ -1437,6 +1394,59 @@ impl<'a> Session<'a> {
             complete,
         })
     }
+}
+
+/// Mirror a decrypted vault into `db` through the inventory machinery: hosts are
+/// keyed by entry id, removed ones go stale. The team needs a local source.
+pub(crate) fn materialize_into(
+    db: &Database,
+    config: &AppConfig,
+    team_id: Uuid,
+    view: &VaultView,
+) -> Result<inventory::SyncReport> {
+    let (_, mut source) = local_teams(db)?
+        .into_iter()
+        .find(|(id, _)| *id == team_id)
+        .ok_or_else(|| anyhow!("team {team_id} has no local source"))?;
+
+    if let Some(name) = &view.team_name {
+        if source.name != *name
+            && source.name.starts_with("team-")
+            && db.get_source(name)?.is_none()
+        {
+            db.conn.execute(
+                "UPDATE sources SET name = ?1 WHERE id = ?2",
+                params![name, source.id.to_string()],
+            )?;
+            source.name = name.clone();
+        }
+    }
+
+    let discovered: Vec<DiscoveredHost> = view
+        .connections
+        .iter()
+        .map(|c| DiscoveredHost {
+            external_id: c.entry_id.to_string(),
+            name: c.record.name.clone(),
+            host: c.record.host.clone(),
+            user: Some(c.record.user.clone()),
+            port: Some(c.record.port),
+            key_path: None,
+            tags: c.record.tags.clone(),
+            bastion: c.record.bastion.clone(),
+            bastion_user: c.record.bastion_user.clone(),
+            use_kerberos: c.record.use_kerberos,
+        })
+        .collect();
+    let existing = db.connections_for_source(source.id)?;
+    let taken: HashSet<String> = db
+        .list_connections(None, false)?
+        .into_iter()
+        .filter(|c| c.source_id != Some(source.id))
+        .map(|c| c.name)
+        .collect();
+    let plan = inventory::plan(&discovered, &existing, &taken, &source.name);
+    inventory::apply(db, config, &source, plan, None)
 }
 
 /// What `bssh teams agent add` produced.

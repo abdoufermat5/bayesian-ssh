@@ -116,7 +116,7 @@ pub fn read_vault(store: &TeamsStore, codec: &dyn VaultCodec, team_id: Uuid) -> 
     view.connections
         .sort_by(|a, b| a.record.name.cmp(&b.record.name));
     view.agent_policies
-        .sort_by(|a, b| b.policy.version.cmp(&a.policy.version));
+        .sort_by_key(|p| std::cmp::Reverse(p.policy.version));
     Ok(view)
 }
 

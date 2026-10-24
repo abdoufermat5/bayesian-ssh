@@ -504,7 +504,7 @@ mod tests {
         v.kind = RelayKind::Decision;
         assert_ne!(base, relay_signing_bytes(&v));
         let mut v = m.clone();
-        v.expires_at = v.expires_at + chrono::Duration::seconds(1);
+        v.expires_at += chrono::Duration::seconds(1);
         assert_ne!(base, relay_signing_bytes(&v));
         let mut v = m.clone();
         v.recipients[0].wrapped_key = Bytes(b"zz".to_vec());
