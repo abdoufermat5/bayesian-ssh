@@ -574,7 +574,8 @@ pub enum Commands {
             Examples:\n\
               bssh exec web-prod -- uname -a\n\
               bssh exec --all --dry-run -- uptime\n\
-              bssh exec -t prod -- systemctl status nginx"
+              bssh exec -t prod -- systemctl status nginx\n\
+              bssh exec --timeout 30 --max-output 65536 web-prod -- journalctl -n 1000"
     )]
     Exec {
         /// Connection name, alias, or hostname
@@ -588,6 +589,12 @@ pub enum Commands {
         /// Preview target hosts and command without executing
         #[arg(long)]
         dry_run: bool,
+        /// Kill the command after this many seconds (exit code 124, like timeout(1))
+        #[arg(long, value_name = "SECS", value_parser = clap::value_parser!(u64).range(1..))]
+        timeout: Option<u64>,
+        /// Keep at most this many bytes of stdout and of stderr per host
+        #[arg(long, value_name = "BYTES", value_parser = clap::value_parser!(u64).range(1..))]
+        max_output: Option<u64>,
         /// Remote command and arguments (put -- before the command)
         #[arg(last = true, required = true)]
         command: Vec<String>,

@@ -7,10 +7,15 @@
 use crate::config::AppConfig;
 use crate::models::Connection;
 use async_trait::async_trait;
+use std::path::PathBuf;
 use std::process::Stdio;
+use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Command as TokioCommand;
 
-use super::types::{ExecOutput, PtyIo, SftpSession, ShellHandle, SshTransport, TransportError};
+use super::types::{
+    CappedBuf, CertAuth, ExecOptions, ExecOutput, LimitedOutput, PtyIo, SftpSession, ShellHandle,
+    SshTransport, TransportError,
+};
 
 pub struct SubprocessTransport {
     #[allow(dead_code)]
@@ -83,6 +88,146 @@ pub(crate) fn jump_proxy_command(conn: &Connection, leading_opts: &str, shkc: &s
     )
 }
 
+/// Extra `ssh` switches for [`SshTransport::exec_limited`].
+#[derive(Debug, Default, Clone)]
+pub(crate) struct ArgvExtras {
+    /// `BatchMode=yes`, no agent/X11/port forwarding.
+    pub non_interactive: bool,
+    pub connect_timeout_secs: Option<u64>,
+    /// Private key and certificate files to authenticate with (and nothing else).
+    pub cert: Option<(PathBuf, PathBuf)>,
+}
+
+/// Stderr fragments that mean `ssh` itself failed (exit 255), not the remote command.
+const SSH_FAILURE_MARKERS: &[&str] = &[
+    "Permission denied",
+    "Host key verification failed",
+    "REMOTE HOST IDENTIFICATION HAS CHANGED",
+    "Connection refused",
+    "Connection timed out",
+    "Operation timed out",
+    "Could not resolve hostname",
+    "No route to host",
+    "Connection closed by",
+    "Connection reset by",
+    "kex_exchange_identification",
+    "ssh_exchange_identification",
+];
+
+/// In batch mode, turn an `ssh` failure (exit 255 with a known message) into an error that
+/// says what to do, instead of a result an agent might take for the command's own output.
+fn classify_ssh_failure(out: &LimitedOutput) -> Option<TransportError> {
+    if out.timed_out || out.exit_code != Some(255) {
+        return None;
+    }
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let marker = SSH_FAILURE_MARKERS.iter().find(|m| stderr.contains(**m))?;
+    let line = stderr
+        .lines()
+        .find(|l| l.contains(marker))
+        .unwrap_or_default()
+        .trim();
+    if *marker == "Permission denied" {
+        Some(TransportError::permanent(anyhow::anyhow!(
+            "needs interactive auth; use a key or ssh-agent ({line})"
+        )))
+    } else {
+        Some(TransportError::permanent(anyhow::anyhow!("ssh: {line}")))
+    }
+}
+
+/// Read a pipe to EOF, keeping what `buf` allows and dropping the rest.
+async fn drain_capped<R: AsyncRead + Unpin>(reader: Option<R>, buf: &mut CappedBuf) {
+    let Some(mut reader) = reader else { return };
+    let mut chunk = [0u8; 8192];
+    loop {
+        match reader.read(&mut chunk).await {
+            Ok(0) | Err(_) => break,
+            Ok(n) => buf.push(&chunk[..n]),
+        }
+    }
+}
+
+/// Run `program args` with the limits in `opts`. The timeout covers the whole process
+/// lifetime (connect included); on expiry the child is killed and the partial output kept.
+/// Split from `exec_limited` so tests can drive it with `sh -c`.
+pub(crate) async fn run_argv_limited(
+    program: &str,
+    args: &[String],
+    opts: &ExecOptions,
+) -> Result<LimitedOutput, TransportError> {
+    let mut child = TokioCommand::new(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| TransportError::permanent(anyhow::anyhow!("spawn {program}: {e}")))?;
+
+    let mut stdout = CappedBuf::new(opts.max_output_bytes);
+    let mut stderr = CappedBuf::new(opts.max_output_bytes);
+    let stdout_pipe = child.stdout.take();
+    let stderr_pipe = child.stderr.take();
+
+    let run = async {
+        tokio::join!(
+            drain_capped(stdout_pipe, &mut stdout),
+            drain_capped(stderr_pipe, &mut stderr)
+        );
+        child.wait().await
+    };
+    let status = match opts.timeout {
+        Some(t) => tokio::time::timeout(t, run).await.ok(),
+        None => Some(run.await),
+    };
+    let (exit_code, timed_out) = match status {
+        Some(Ok(st)) => (Some(st.code().unwrap_or(-1)), false),
+        Some(Err(e)) => return Err(TransportError::permanent(anyhow::Error::from(e))),
+        None => {
+            let _ = child.kill().await;
+            (None, true)
+        }
+    };
+    Ok(LimitedOutput {
+        truncated: stdout.truncated() || stderr.truncated(),
+        stdout: stdout.into_vec(),
+        stderr: stderr.into_vec(),
+        exit_code,
+        timed_out,
+    })
+}
+
+/// Write the certificate identity into a private temp dir (0700, key 0600) that is
+/// removed when the returned guard drops.
+fn write_cert_files(cert: &CertAuth) -> anyhow::Result<(tempfile::TempDir, PathBuf, PathBuf)> {
+    use std::io::Write;
+
+    let dir = tempfile::Builder::new().prefix("bssh-cert-").tempdir()?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700))?;
+    }
+    let key_path = dir.path().join("id");
+    let cert_path = dir.path().join("id-cert.pub");
+
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let mut key_file = opts.open(&key_path)?;
+    key_file.write_all(cert.private_key_openssh.as_bytes())?;
+    if !cert.private_key_openssh.ends_with('\n') {
+        key_file.write_all(b"\n")?;
+    }
+    std::fs::write(&cert_path, &cert.certificate_openssh)?;
+    Ok((dir, key_path, cert_path))
+}
+
 impl SubprocessTransport {
     pub fn new(config: AppConfig) -> Self {
         Self { config }
@@ -95,14 +240,47 @@ impl SubprocessTransport {
     /// pass a remote command via the argv — use `run_interactive_exec`
     /// instead.
     pub(crate) fn build_exec_argv(conn: &Connection, command: &str, shkc: &str) -> Vec<String> {
+        Self::build_exec_argv_with(conn, command, shkc, &ArgvExtras::default())
+    }
+
+    /// [`Self::build_exec_argv`] plus the AI/limited-exec switches: `BatchMode`,
+    /// `ConnectTimeout`, no forwarding, and a certificate identity.
+    pub(crate) fn build_exec_argv_with(
+        conn: &Connection,
+        command: &str,
+        shkc: &str,
+        extras: &ArgvExtras,
+    ) -> Vec<String> {
         let mut argv: Vec<String> = vec!["ssh".into()];
         // Non-interactive: no remote PTY. A forced TTY makes ssh print
         // "Connection to <host> closed." and merges remote stderr into stdout.
         argv.push("-T".into());
+        if extras.non_interactive {
+            // An agent run must not hand the user's agent or ports to the host.
+            argv.push("-a".into());
+            argv.push("-x".into());
+            argv.push("-o".into());
+            argv.push("ClearAllForwardings=yes".into());
+            // Never prompt for a password, passphrase or host key.
+            argv.push("-o".into());
+            argv.push("BatchMode=yes".into());
+        }
+        if let Some(secs) = extras.connect_timeout_secs {
+            argv.push("-o".into());
+            argv.push(format!("ConnectTimeout={secs}"));
+        }
         if conn.use_kerberos {
             argv.push("-K".into());
         }
-        if let Some(key) = &conn.key_path {
+        if let Some((key, cert)) = &extras.cert {
+            // Only the per-command certificate: no other identity may be offered.
+            argv.push("-o".into());
+            argv.push("IdentitiesOnly=yes".into());
+            argv.push("-i".into());
+            argv.push(key.to_string_lossy().into_owned());
+            argv.push("-o".into());
+            argv.push(format!("CertificateFile={}", cert.to_string_lossy()));
+        } else if let Some(key) = &conn.key_path {
             argv.push("-i".into());
             argv.push(key.clone());
         }
@@ -388,6 +566,40 @@ impl SubprocessTransport {
     }
 }
 
+/// Did `ssh` report that the server needs a pseudo-terminal? (Same check as plain `exec`.)
+fn needs_tty(stdout: &[u8], stderr: &[u8]) -> bool {
+    [stdout, stderr].iter().any(|bytes| {
+        let s = String::from_utf8_lossy(bytes);
+        s.contains("option -t") || s.contains("l'option -t") || s.contains("pseudo-terminal")
+    })
+}
+
+impl SubprocessTransport {
+    /// PTY-scraping exec under limits: the timeout wraps the whole run, the cap applies
+    /// afterwards (the output is collected line-wise, it cannot stream).
+    async fn limited_interactive(
+        &self,
+        conn: &Connection,
+        command: &str,
+        opts: &ExecOptions,
+    ) -> Result<LimitedOutput, TransportError> {
+        let run = self.run_interactive_exec(conn, command);
+        let out = match opts.timeout {
+            Some(t) => match tokio::time::timeout(t, run).await {
+                Ok(res) => res?,
+                Err(_) => {
+                    return Ok(LimitedOutput {
+                        timed_out: true,
+                        ..LimitedOutput::default()
+                    })
+                }
+            },
+            None => run.await?,
+        };
+        Ok(LimitedOutput::from_output(out, opts.max_output_bytes))
+    }
+}
+
 #[async_trait]
 impl SshTransport for SubprocessTransport {
     async fn open_shell(
@@ -446,6 +658,61 @@ impl SshTransport for SubprocessTransport {
             stderr: output.stderr,
             exit_code: output.status.code().unwrap_or(-1),
         })
+    }
+
+    async fn exec_limited(
+        &self,
+        conn: &Connection,
+        command: &str,
+        opts: &ExecOptions,
+    ) -> Result<LimitedOutput, TransportError> {
+        let interactive_bastion = conn.use_kerberos && conn.bastion.is_some();
+        if opts.is_plain() {
+            let out = self.exec(conn, command).await?;
+            return Ok(LimitedOutput::from_output(out, None));
+        }
+        if interactive_bastion {
+            if opts.non_interactive || opts.cert_auth.is_some() {
+                return Err(TransportError::permanent(anyhow::anyhow!(
+                    "interactive bastions need a terminal; not usable without prompts"
+                )));
+            }
+            return self.limited_interactive(conn, command, opts).await;
+        }
+
+        // Keep the key and certificate on disk only for the life of this call.
+        let cert_files = match &opts.cert_auth {
+            Some(cert) => Some(write_cert_files(cert).map_err(TransportError::permanent)?),
+            None => None,
+        };
+        let extras = ArgvExtras {
+            non_interactive: opts.non_interactive,
+            connect_timeout_secs: opts.connect_timeout.map(|t| t.as_secs().max(1)),
+            cert: cert_files
+                .as_ref()
+                .map(|(_, key, cert)| (key.clone(), cert.clone())),
+        };
+        let argv = Self::build_exec_argv_with(
+            conn,
+            command,
+            &self.config.transport.strict_host_key_checking,
+            &extras,
+        );
+        let (cmd_name, args) = argv
+            .split_first()
+            .ok_or_else(|| TransportError::permanent(anyhow::anyhow!("empty argv")))?;
+        let out = run_argv_limited(cmd_name, args, opts).await?;
+        drop(cert_files);
+
+        if opts.non_interactive {
+            if let Some(err) = classify_ssh_failure(&out) {
+                return Err(err);
+            }
+        } else if !out.timed_out && needs_tty(&out.stdout, &out.stderr) {
+            // Same fallback as plain `exec`: the server wants a PTY.
+            return self.limited_interactive(conn, command, opts).await;
+        }
+        Ok(out)
     }
 
     async fn open_sftp(&self, _conn: &Connection) -> Result<Box<dyn SftpSession>, TransportError> {
@@ -866,5 +1133,244 @@ mod tests {
         conn.bastion_user = Some("ops".into());
         let proxy = jump_proxy_command(&conn, "", "accept-new");
         assert!(proxy.contains("-i /keys/100%%key"));
+    }
+
+    fn batch_extras() -> ArgvExtras {
+        ArgvExtras {
+            non_interactive: true,
+            connect_timeout_secs: Some(7),
+            cert: None,
+        }
+    }
+
+    #[test]
+    fn default_exec_argv_has_no_batch_options() {
+        let argv =
+            SubprocessTransport::build_exec_argv(&c(false, None, None), "uptime", "accept-new");
+        assert!(!argv.iter().any(|a| a.starts_with("BatchMode")));
+        assert!(!argv.iter().any(|a| a.starts_with("ConnectTimeout")));
+        assert!(!argv.contains(&"-a".to_string()));
+    }
+
+    #[test]
+    fn batch_argv_never_prompts_and_never_forwards() {
+        let argv = SubprocessTransport::build_exec_argv_with(
+            &c(false, None, None),
+            "uptime",
+            "accept-new",
+            &batch_extras(),
+        );
+        let has = |s: &str| argv.iter().any(|a| a == s);
+        assert!(has("BatchMode=yes"));
+        assert!(has("ConnectTimeout=7"));
+        assert!(has("ClearAllForwardings=yes"));
+        assert!(has("-a") && has("-x") && has("-T"));
+        // The command is still the last word, after `--` and the destination.
+        let n = argv.len();
+        assert_eq!(argv[n - 1], "uptime");
+        assert_eq!(argv[n - 2], "alice@target.example");
+        assert_eq!(argv[n - 3], "--");
+    }
+
+    #[test]
+    fn cert_argv_offers_only_the_certificate() {
+        let extras = ArgvExtras {
+            cert: Some((PathBuf::from("/t/id"), PathBuf::from("/t/id-cert.pub"))),
+            ..batch_extras()
+        };
+        // A per-connection key must not be offered next to the certificate.
+        let argv = SubprocessTransport::build_exec_argv_with(
+            &c(false, None, Some("/home/alice/.ssh/id_rsa")),
+            "id",
+            "accept-new",
+            &extras,
+        );
+        assert!(argv.contains(&"IdentitiesOnly=yes".to_string()));
+        assert!(argv.contains(&"CertificateFile=/t/id-cert.pub".to_string()));
+        let keys: Vec<&String> = argv
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| *a == "-i")
+            .map(|(i, _)| &argv[i + 1])
+            .collect();
+        assert_eq!(keys, vec!["/t/id"]);
+    }
+
+    fn out(exit: Option<i32>, stderr: &str) -> LimitedOutput {
+        LimitedOutput {
+            stderr: stderr.as_bytes().to_vec(),
+            exit_code: exit,
+            ..LimitedOutput::default()
+        }
+    }
+
+    #[test]
+    fn permission_denied_becomes_an_actionable_error() {
+        let err = classify_ssh_failure(&out(
+            Some(255),
+            "alice@host: Permission denied (publickey,password).\n",
+        ))
+        .expect("ssh failure")
+        .to_string();
+        assert!(
+            err.contains("needs interactive auth; use a key or ssh-agent"),
+            "{err}"
+        );
+        assert!(err.contains("Permission denied"), "{err}");
+    }
+
+    #[test]
+    fn other_ssh_failures_keep_their_message() {
+        let err = classify_ssh_failure(&out(
+            Some(255),
+            "ssh: connect to host h port 22: Connection refused\n",
+        ))
+        .expect("ssh failure")
+        .to_string();
+        assert!(err.contains("Connection refused"), "{err}");
+    }
+
+    #[test]
+    fn remote_failures_are_results_not_errors() {
+        // The remote command's own exit codes are data, even 255 without an ssh message.
+        assert!(classify_ssh_failure(&out(Some(1), "Permission denied\n")).is_none());
+        assert!(classify_ssh_failure(&out(Some(255), "boom\n")).is_none());
+        assert!(classify_ssh_failure(&out(Some(0), "")).is_none());
+    }
+
+    #[test]
+    fn needs_tty_detects_the_ssh_messages() {
+        assert!(needs_tty(b"", b"sudo: you must have a pseudo-terminal"));
+        assert!(needs_tty(b"sudo: option -t required", b""));
+        assert!(!needs_tty(b"hello", b"world"));
+    }
+
+    #[cfg(unix)]
+    mod run {
+        use super::*;
+        use std::time::{Duration, Instant};
+
+        fn sh(script: &str, opts: &ExecOptions) -> LimitedOutput {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("runtime");
+            rt.block_on(run_argv_limited(
+                "sh",
+                &["-c".to_string(), script.to_string()],
+                opts,
+            ))
+            .expect("run")
+        }
+
+        #[test]
+        fn collects_output_and_exit_code() {
+            let out = sh("echo out; echo err >&2; exit 3", &ExecOptions::default());
+            assert_eq!(out.stdout, b"out\n");
+            assert_eq!(out.stderr, b"err\n");
+            assert_eq!(out.exit_code, Some(3));
+            assert!(!out.truncated && !out.timed_out);
+        }
+
+        #[test]
+        fn timeout_kills_the_child_and_keeps_partial_output() {
+            let opts = ExecOptions {
+                timeout: Some(Duration::from_millis(400)),
+                ..ExecOptions::default()
+            };
+            let started = Instant::now();
+            let out = sh("echo partial; exec sleep 30", &opts);
+            assert!(started.elapsed() < Duration::from_secs(10), "did not wait");
+            assert!(out.timed_out);
+            assert_eq!(out.exit_code, None);
+            assert_eq!(out.stdout, b"partial\n");
+        }
+
+        #[test]
+        fn timeout_leaves_no_child_running() {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let pidfile = dir.path().join("pid");
+            let script = format!("echo $$ > {}; exec sleep 30", pidfile.display());
+            let opts = ExecOptions {
+                timeout: Some(Duration::from_millis(500)),
+                ..ExecOptions::default()
+            };
+            let out = sh(&script, &opts);
+            assert!(out.timed_out);
+            let pid = std::fs::read_to_string(&pidfile)
+                .expect("pid file")
+                .trim()
+                .to_string();
+            // The process is gone (or a zombie already reaped): /proc has no live entry.
+            let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap_or_default();
+            assert!(
+                stat.is_empty() || stat.contains(") Z "),
+                "still running: {stat}"
+            );
+        }
+
+        #[test]
+        fn caps_each_stream_and_marks_truncated() {
+            let opts = ExecOptions {
+                max_output_bytes: Some(100),
+                ..ExecOptions::default()
+            };
+            // 200 KB on stdout, 50 bytes on stderr: only stdout exceeds the cap.
+            let out = sh(
+                "head -c 200000 /dev/zero | tr '\\0' x; echo 'short error' >&2; exit 0",
+                &opts,
+            );
+            assert_eq!(out.stdout.len(), 100);
+            assert!(out.stdout.iter().all(|b| *b == b'x'));
+            assert_eq!(out.stderr, b"short error\n");
+            assert!(out.truncated);
+            assert_eq!(
+                out.exit_code,
+                Some(0),
+                "the command was drained, not killed"
+            );
+        }
+
+        #[test]
+        fn output_under_the_cap_is_not_truncated() {
+            let opts = ExecOptions {
+                max_output_bytes: Some(100),
+                ..ExecOptions::default()
+            };
+            let out = sh("printf 'x%.0s' $(seq 1 100)", &opts);
+            assert_eq!(out.stdout.len(), 100);
+            assert!(!out.truncated, "exactly the cap fits");
+        }
+
+        #[test]
+        fn missing_program_is_an_error() {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("runtime");
+            let res = rt.block_on(run_argv_limited(
+                "/nonexistent/ssh-binary",
+                &[],
+                &ExecOptions::default(),
+            ));
+            assert!(res.is_err());
+        }
+
+        #[test]
+        fn cert_files_are_private_and_removed() {
+            use std::os::unix::fs::PermissionsExt;
+            let cert = CertAuth {
+                private_key_openssh: zeroize::Zeroizing::new("KEY".to_string()),
+                certificate_openssh: "CERT".to_string(),
+            };
+            let (dir, key, crt) = write_cert_files(&cert).expect("write");
+            let mode = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode();
+            assert_eq!(mode(&key) & 0o077, 0, "key readable by others");
+            assert_eq!(mode(dir.path()) & 0o077, 0, "dir readable by others");
+            assert_eq!(std::fs::read_to_string(&crt).unwrap(), "CERT");
+            let root = dir.path().to_path_buf();
+            drop(dir);
+            assert!(!root.exists());
+        }
     }
 }
