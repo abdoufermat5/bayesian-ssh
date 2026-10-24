@@ -570,6 +570,20 @@ fn known(c: &SimpleCommand, program: &str, out: &mut Effects) -> bool {
             };
             return unit_action(out, action, &[p.to_string()]);
         }
+        "nginx" => {
+            let signal = args
+                .iter()
+                .position(|a| a == "-s")
+                .and_then(|i| args.get(i + 1))
+                .map(String::as_str);
+            match signal {
+                Some("reload" | "reopen") => push(out, Verb::Reloads, vec!["nginx".into()], None),
+                Some("stop" | "quit") => push(out, Verb::Stops, vec!["nginx".into()], None),
+                // `nginx -t` only tests the configuration.
+                None if args.iter().any(|a| a == "-t" || a == "-T") => {}
+                _ => return false,
+            }
+        }
         "reboot" => push(out, Verb::Restarts, vec!["the host".into()], None),
         "poweroff" | "halt" => push(out, Verb::Stops, vec!["the host".into()], None),
         "shutdown" => {
@@ -1573,6 +1587,20 @@ mod tests {
 
     fn sum(cmd: &str) -> String {
         summary(&fx(cmd))
+    }
+
+    #[test]
+    fn nginx_signals_read_as_service_changes() {
+        assert_eq!(
+            sum("sudo nginx -s reload"),
+            "reloads nginx · deletes nothing · sudo yes"
+        );
+        assert_eq!(
+            sum("nginx -s quit"),
+            "stops nginx · deletes nothing · sudo no"
+        );
+        let a = ShellAnalyzer.analyze("nginx -t");
+        assert!(effects(&a).items.is_empty());
     }
 
     #[test]
