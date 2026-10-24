@@ -422,6 +422,32 @@ pub fn wrap(s: &str, width: usize, indent: usize) -> Vec<String> {
         .collect()
 }
 
+/// Local clock time without seconds, `17:24`. Unparseable input comes back as it is.
+pub fn clock_hm(ts: &str) -> String {
+    parse(ts)
+        .map(|t| t.format("%H:%M").to_string())
+        .unwrap_or_else(|| ts.to_string())
+}
+
+/// Tool name in human words: `list_hosts` -> `list hosts`, `run_readonly` -> `read`, etc.
+pub fn tool_kind_in_words(tool: &str) -> &'static str {
+    match tool {
+        "list_hosts" => "list hosts",
+        "host_info" => "observe",
+        "observe" => "observe",
+        "read_file" | "search_logs" | "run_readonly" | "run_many" => "read",
+        "propose_change" => "change plan",
+        "apply_change" => "apply",
+        "edit_file" => "edit",
+        "service" => "service",
+        "run" => "run",
+        "undo" => "undo",
+        "request_access" => "access",
+        "status" => "status",
+        _ => "call",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -470,5 +496,20 @@ mod tests {
         let lines = wrap("one two three four five six", 10, 2);
         assert!(lines.iter().all(|l| l.width() <= 10), "{lines:?}");
         assert!(lines[1].starts_with("  "));
+    }
+
+    #[test]
+    fn clock_hm_formats_hours_and_minutes() {
+        let ts = "2026-10-24T17:24:31Z";
+        assert_eq!(&clock(ts)[..5], &clock_hm(ts));
+    }
+
+    #[test]
+    fn tool_kind_in_words_translates_known_tools() {
+        assert_eq!(tool_kind_in_words("run_readonly"), "read");
+        assert_eq!(tool_kind_in_words("read_file"), "read");
+        assert_eq!(tool_kind_in_words("propose_change"), "change plan");
+        assert_eq!(tool_kind_in_words("service"), "service");
+        assert_eq!(tool_kind_in_words("request_access"), "access");
     }
 }

@@ -127,6 +127,9 @@ pub struct FeedContext {
     held: Vec<(String, FeedLine, DateTime<Utc>)>,
     /// The line just returned was an allowed read (for the folder).
     last_read: bool,
+    /// Give out-of-band asks a line of their own. `watch` shows the approval card instead;
+    /// a log has no cards.
+    pub show_asks: bool,
 }
 
 impl Default for FeedContext {
@@ -162,6 +165,7 @@ impl FeedContext {
             runs: HashMap::new(),
             held: Vec::new(),
             last_read: false,
+            show_asks: false,
         }
     }
 
@@ -341,13 +345,17 @@ pub fn event_feed(ev: &AiEvent, ctx: &mut FeedContext, now: DateTime<Utc>) -> Op
                     )
                 }
                 // The approval request that follows is the line for an out-of-band ask.
-                Decision::Ask { tier, .. } if *tier != Tier::InClient => None,
-                Decision::Ask { .. } => Some(
-                    line(Glyph::Ask)
-                        .host(call.host.as_deref())
-                        .text(text)
-                        .meta(Tone::Warn, "waiting in the agent's client"),
-                ),
+                Decision::Ask { tier, .. } if *tier != Tier::InClient && !ctx.show_asks => None,
+                Decision::Ask { tier, .. } => {
+                    Some(line(Glyph::Ask).host(call.host.as_deref()).text(text).meta(
+                        Tone::Warn,
+                        if *tier == Tier::InClient {
+                            "waiting in the agent's client"
+                        } else {
+                            "asked a person"
+                        },
+                    ))
+                }
             }
         }
         AiEvent::Approval {
