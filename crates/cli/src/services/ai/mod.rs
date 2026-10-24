@@ -8,6 +8,7 @@ pub mod types;
 pub mod exec;
 // Command analysis and redaction
 pub mod analyzer;
+pub mod effects;
 pub mod redact;
 // Policy, approvals, runs
 pub mod approval;
@@ -26,6 +27,8 @@ pub mod jail;
 pub mod audit;
 pub mod install;
 pub mod report;
+// The look shared by every AI surface
+pub mod ui;
 // Teams agents and gateway
 pub mod gateway;
 pub mod teams;
