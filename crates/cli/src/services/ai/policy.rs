@@ -56,7 +56,7 @@ const DEFAULT_DENY: &[&str] = &[
     "rm -rf /",
     "rm -rf /*",
     "mkfs *",
-    "dd of=/dev/*",
+    "dd of=/dev/**",
     "iptables -F",
     "shutdown *",
     "reboot",
@@ -556,8 +556,10 @@ impl DefaultPolicyEngine {
             }
         }
 
-        // 5. deny patterns: on the parsed commands when there is an analysis, so quoting,
-        // wrappers and `/bin/rm` can't dodge them; the text matcher covers the rest.
+        // 5. deny patterns: on the parsed commands, so quoting, wrappers and `/bin/rm` can't
+        // dodge them. The text matcher (whose `*` crosses `/`) only adds to that when bssh
+        // couldn't fully parse the call; on a clean parse it would hard-deny
+        // `rm -rf /var/www/cache` through `rm -rf /*`.
         let ast_hit = analysis.and_then(|a| {
             policy
                 .deny
@@ -565,7 +567,11 @@ impl DefaultPolicyEngine {
                 .find(|p| super::analyzer::matches_deny(p, a))
                 .cloned()
         });
-        if let Some(pat) = ast_hit.or_else(|| matches_deny_fallback(&policy.deny, call, analysis)) {
+        let hit = match analysis {
+            Some(a) if a.unknown_reason.is_none() => ast_hit,
+            _ => ast_hit.or_else(|| matches_deny_fallback(&policy.deny, call, analysis)),
+        };
+        if let Some(pat) = hit {
             return deny(format!("deny: the command matches '{pat}'"));
         }
 
@@ -1184,6 +1190,28 @@ mod tests {
                 stg.clone(),
                 'D',
                 "deny",
+            ),
+            (
+                "rm -rf on a deep path asks, rm -rf /* only covers the top level",
+                operate(),
+                cmd_call(Run, "web-1", "sudo bash -c 'rm -rf /var/www/cache'"),
+                Some(analysis(
+                    "rm",
+                    &["-rf", "/var/www/cache"],
+                    &[RiskTag::Destructive, RiskTag::Privilege],
+                )),
+                stg.clone(),
+                'K',
+                "write",
+            ),
+            (
+                "rm -rf on a top-level directory is denied",
+                operate(),
+                cmd_call(Run, "web-1", "rm -rf /var"),
+                Some(analysis("rm", &["-rf", "/var"], &[RiskTag::Destructive])),
+                stg.clone(),
+                'D',
+                "rm -rf /*",
             ),
             (
                 "run deny glob dd",

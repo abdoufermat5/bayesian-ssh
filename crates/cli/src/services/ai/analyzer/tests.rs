@@ -677,3 +677,38 @@ fn fuzz_never_panics() {
 fn basename_of(p: &str) -> &str {
     p.rsplit('/').next().unwrap_or(p)
 }
+
+#[test]
+fn deny_star_stays_within_a_path_segment() {
+    // The built-in `rm -rf /*` refuses the root and top-level directories...
+    for cmd in ["rm -rf /*", "rm -rf /var", "sudo rm -rf /etc", "rm -rf //"] {
+        assert!(
+            matches_deny("rm -rf /*", &analyze(cmd)),
+            "{cmd:?} should be denied"
+        );
+    }
+    // ...but deeper paths are not hard-denied: the policy asks for them instead.
+    for cmd in [
+        "rm -rf /var/www/cache",
+        "sudo bash -c 'rm -rf /var/www/cache'",
+        "rm -rf /tmp/build/out",
+    ] {
+        assert!(
+            !matches_deny("rm -rf /*", &analyze(cmd)),
+            "{cmd:?} should not be denied"
+        );
+    }
+    // `**` crosses directories: every device path, however deep.
+    let dd = analyze("dd if=/dev/zero of=/dev/disk/by-id/nvme-x");
+    assert!(matches_deny("dd of=/dev/**", &dd));
+    assert!(!matches_deny("dd of=/dev/*", &dd));
+    assert!(matches_deny(
+        "dd of=/dev/**",
+        &analyze("dd if=/dev/zero of=/dev/sda")
+    ));
+    // A lone `*` still matches any argument.
+    assert!(matches_deny(
+        "mkfs *",
+        &analyze("mkfs.ext4 /dev/mapper/vg-data")
+    ));
+}
