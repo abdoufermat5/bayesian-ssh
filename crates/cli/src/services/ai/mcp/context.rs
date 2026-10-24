@@ -157,6 +157,8 @@ pub struct RunContext {
     deadline: Instant,
     client: Mutex<String>,
     start_emitted: AtomicBool,
+    /// The local broker behind the control socket, told the client name on `start`.
+    local_broker: std::sync::OnceLock<Arc<LocalBroker>>,
     end_emitted: AtomicBool,
     calls: Mutex<VecDeque<Instant>>,
     denials: Mutex<VecDeque<Instant>>,
@@ -218,6 +220,7 @@ impl RunContext {
             deadline: now + ttl,
             client: Mutex::new("unknown".into()),
             start_emitted: AtomicBool::new(false),
+            local_broker: std::sync::OnceLock::new(),
             end_emitted: AtomicBool::new(false),
             calls: Mutex::new(VecDeque::new()),
             denials: Mutex::new(VecDeque::new()),
@@ -272,6 +275,7 @@ impl RunContext {
     /// A control-socket failure is logged and the run continues without it (approvals then
     /// only work in-client), it never stops the run.
     pub fn spawn_control(self: &Arc<Self>, broker: Arc<LocalBroker>, info: RunInfo) {
+        let _ = self.local_broker.set(broker.clone());
         let ai = ai_dir(&self.config);
         if let Err(e) = crate::services::ai::control_client::ensure_runs_dir(&ai) {
             warn!("control socket dir: {e:#}");
@@ -314,6 +318,9 @@ impl RunContext {
     pub fn start(&self, client: &str) {
         if let Ok(mut c) = self.client.lock() {
             *c = client.to_string();
+        }
+        if let Some(b) = self.local_broker.get() {
+            b.set_client(client);
         }
         if self.start_emitted.swap(true, Ordering::SeqCst) {
             return;

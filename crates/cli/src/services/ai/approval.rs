@@ -56,6 +56,8 @@ pub struct LocalBroker {
     pending: Mutex<HashMap<String, Pending>>,
     new_requests: broadcast::Sender<ApprovalRequest>,
     notifications: bool,
+    /// MCP client name: only known after `initialize`, which comes after the socket is up.
+    client: Mutex<String>,
 }
 
 impl LocalBroker {
@@ -66,7 +68,9 @@ impl LocalBroker {
         timeout_secs: u64,
     ) -> Self {
         let (new_requests, _) = broadcast::channel(64);
+        let client = Mutex::new(run.client.clone());
         Self {
+            client,
             store,
             run,
             elicitor,
@@ -89,6 +93,21 @@ impl LocalBroker {
 
     pub fn run_info(&self) -> &RunInfo {
         &self.run
+    }
+
+    /// Record the client name reported in MCP `initialize`.
+    pub fn set_client(&self, client: &str) {
+        if let Ok(mut c) = self.client.lock() {
+            *c = client.to_string();
+        }
+    }
+
+    /// The client name as currently known (`run_info().client` until `set_client`).
+    pub fn client(&self) -> String {
+        self.client
+            .lock()
+            .map(|c| c.clone())
+            .unwrap_or_else(|_| self.run.client.clone())
     }
 
     /// Stream of requests as they start waiting (the control server forwards these).
@@ -477,7 +496,7 @@ async fn handle_conn(
             let reply = ServerMsg::Hello {
                 version: IPC_VERSION,
                 run_id: run.run_id.clone(),
-                client: run.client.clone(),
+                client: broker.client(),
                 policy: run.policy.clone(),
                 started_at: run.started_at.clone(),
             };
