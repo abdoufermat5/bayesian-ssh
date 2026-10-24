@@ -26,6 +26,7 @@
 
 pub mod context;
 pub mod files;
+pub mod http;
 pub mod server;
 pub mod tools;
 pub mod util;
@@ -37,6 +38,7 @@ mod tests;
 
 pub use context::{DbHosts, HostSource, RunContext, RunDeps, ScopeFn, StaticHosts, ToolError};
 pub use files::{FileAccess, FileRead, SftpFiles};
+pub use http::RmcpBackend;
 pub use server::{build_server, BsshMcp, McpElicitor};
 
 use crate::config::AppConfig;

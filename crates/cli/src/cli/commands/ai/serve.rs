@@ -2,12 +2,13 @@
 
 use crate::cli::parser_ai::AiArgsServe;
 use crate::config::AppConfig;
-use crate::services::ai::gateway::{self, ServeOptions, UnwiredMcp};
+use crate::services::ai::gateway::{self, ServeOptions};
+use crate::services::ai::mcp::RmcpBackend;
 use anyhow::Result;
 
 pub async fn execute(args: AiArgsServe, config: AppConfig) -> Result<()> {
-    // The MCP core is mounted through `gateway::McpBackend`; the integrator
-    // swaps `UnwiredMcp` for the W4-backed implementation.
+    // The gateway authenticates and syncs the signed policy; the MCP server core is
+    // mounted through `gateway::McpBackend`.
     gateway::serve(
         config,
         ServeOptions {
@@ -15,7 +16,7 @@ pub async fn execute(args: AiArgsServe, config: AppConfig) -> Result<()> {
             agent: args.agent,
             allow_remote: args.allow_remote,
         },
-        &UnwiredMcp,
+        &RmcpBackend,
     )
     .await
 }
