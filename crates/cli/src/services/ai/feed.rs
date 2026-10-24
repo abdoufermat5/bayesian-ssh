@@ -123,11 +123,32 @@ pub struct FeedContext {
     /// plan hash -> hosts of its steps
     plan_hosts: HashMap<String, String>,
     runs: HashMap<String, RunStats>,
+    /// Allowed reads waiting for their result, which brings duration and jail.
+    held: Vec<(String, FeedLine, DateTime<Utc>)>,
+    /// The line just returned was an allowed read (for the folder).
+    last_read: bool,
 }
 
 impl Default for FeedContext {
     fn default() -> Self {
         Self::with_width(ui::width())
+    }
+}
+
+impl FeedContext {
+    /// Whether the line just returned by `event_feed` was an allowed read.
+    pub fn last_was_read(&self) -> bool {
+        self.last_read
+    }
+
+    /// Reads still waiting for their result after `max_age` (a failed call never sends
+    /// one), released without timing so no call goes unshown.
+    pub fn take_held(&mut self, now: DateTime<Utc>, max_age: chrono::Duration) -> Vec<FeedLine> {
+        let (old, keep) = std::mem::take(&mut self.held)
+            .into_iter()
+            .partition(|(_, _, at)| now - *at >= max_age);
+        self.held = keep;
+        old.into_iter().map(|(_, l, _)| l).collect()
     }
 }
 
@@ -139,6 +160,8 @@ impl FeedContext {
             requests: HashMap::new(),
             plan_hosts: HashMap::new(),
             runs: HashMap::new(),
+            held: Vec::new(),
+            last_read: false,
         }
     }
 
@@ -275,6 +298,7 @@ fn clock_of(now: DateTime<Utc>) -> String {
 /// Updates `ctx` as it goes, so feed events in order.
 pub fn event_feed(ev: &AiEvent, ctx: &mut FeedContext, now: DateTime<Utc>) -> Option<FeedLine> {
     let time = clock_of(now);
+    ctx.last_read = false;
     match ev {
         AiEvent::RunStarted { run_id, client, .. } => {
             ctx.note_run(run_id, client);
@@ -296,11 +320,14 @@ pub fn event_feed(ev: &AiEvent, ctx: &mut FeedContext, now: DateTime<Utc>) -> Op
             match decision {
                 Decision::Allow { reason } => {
                     let l = line(Glyph::Ok).host(call.host.as_deref()).text(text);
-                    Some(if reason.starts_with("step of approved plan") {
-                        l.meta(Tone::Dim, "approved plan")
+                    if reason.starts_with("step of approved plan") {
+                        Some(l.meta(Tone::Dim, "approved plan"))
+                    } else if is_read(call.tool) {
+                        ctx.held.push((call.call_id.clone(), l, now));
+                        None
                     } else {
-                        l
-                    })
+                        Some(l)
+                    }
                 }
                 Decision::Deny { reason } => {
                     stats.denied += 1;
@@ -362,8 +389,35 @@ pub fn event_feed(ev: &AiEvent, ctx: &mut FeedContext, now: DateTime<Utc>) -> Op
             call_id,
             exit_code,
             redactions,
+            duration_ms,
+            jailed,
             ..
         } => {
+            if let Some(i) = ctx.held.iter().position(|(id, ..)| id == call_id) {
+                let (_, mut l, _) = ctx.held.remove(i);
+                let mut meta: Vec<String> = Vec::new();
+                if let Some(ms) = duration_ms {
+                    meta.push(ui::duration_ms(*ms));
+                }
+                if *jailed == Some(true) {
+                    meta.push("jail".into());
+                }
+                let hidden: usize = redactions.iter().map(|r| r.count).sum();
+                if hidden > 0 {
+                    meta.push(format!("{hidden} redacted"));
+                }
+                return Some(match exit_code {
+                    Some(n) if *n != 0 => {
+                        l.mark = Glyph::Bad;
+                        meta.insert(0, format!("exit {n}"));
+                        l.meta(Tone::Bad, meta.join(" · "))
+                    }
+                    _ => {
+                        ctx.last_read = true;
+                        l.meta(Tone::Dim, meta.join(" · "))
+                    }
+                });
+            }
             let info = ctx.calls.get(call_id).cloned();
             let host = info.as_ref().and_then(|i| i.host.clone());
             let text = info.as_ref().map(|i| i.text.clone()).unwrap_or_default();
@@ -497,17 +551,32 @@ pub fn run_header(style: &Style, h: &RunHeader, width: usize) -> String {
 
 /// Effects of everything a request would run, merged into one.
 fn request_effects(req: &ApprovalRequest) -> Option<Effects> {
-    let analyses: Vec<&super::types::Analysis> = match &req.subject {
-        ApprovalSubject::Call { analysis, .. } => analysis.iter().collect(),
-        ApprovalSubject::Plan { analyses, .. } => analyses.iter().flatten().collect(),
+    // Each analysis with the command it came from, so variables expand.
+    let analyses: Vec<(&str, &super::types::Analysis)> = match &req.subject {
+        ApprovalSubject::Call { call, analysis } => analysis
+            .iter()
+            .map(|a| (call.command.as_deref().unwrap_or(""), a))
+            .collect(),
+        ApprovalSubject::Plan { plan, analyses, .. } => plan
+            .steps
+            .iter()
+            .zip(analyses)
+            .filter_map(|(step, a)| {
+                let command = match &step.action {
+                    super::types::StepAction::Run { command } => command.as_str(),
+                    _ => "",
+                };
+                a.as_ref().map(|a| (command, a))
+            })
+            .collect(),
         ApprovalSubject::Access { .. } => return None,
     };
     if analyses.is_empty() {
         return None;
     }
     let mut all = Effects::default();
-    for a in analyses {
-        let e = effects::effects(a);
+    for (command, a) in analyses {
+        let e = effects::effects_for(command, a);
         all.items.extend(e.items);
         all.deletes |= e.deletes;
         all.sudo |= e.sudo;
@@ -640,13 +709,10 @@ impl Folder {
         ))
     }
 
-    /// The lines to print for `ev` and its rendered `line`. A folded read yields nothing; the
+    /// The lines to print for a rendered `line`; `allowed_read` comes from
+    /// `FeedContext::last_was_read`. A folded read yields nothing; the
     /// next line of another kind yields the fold note first.
-    pub fn push(&mut self, style: &Style, ev: &AiEvent, line: Option<String>) -> Vec<String> {
-        let allowed_read = matches!(
-            ev,
-            AiEvent::Call { call, decision: Decision::Allow { .. } } if is_read(call.tool)
-        );
+    pub fn push(&mut self, style: &Style, allowed_read: bool, line: Option<String>) -> Vec<String> {
         let mut out = Vec::new();
         if allowed_read {
             self.streak += 1;
@@ -725,8 +791,29 @@ mod tests {
         event_line(&Style::plain(), ev, ctx, now)
     }
 
+    /// An allowed read and its result, as the feed sees them: the line comes with the result.
+    fn settle(ev: &AiEvent, c: &mut FeedContext, t: DateTime<Utc>) -> Option<String> {
+        let first = line(ev, c, t);
+        let AiEvent::Call { call, .. } = ev else {
+            return first;
+        };
+        if first.is_some() {
+            return first;
+        }
+        let res = AiEvent::Result {
+            run_id: call.run_id.clone(),
+            call_id: call.call_id.clone(),
+            exit_code: Some(0),
+            output_sha256: String::new(),
+            redactions: Vec::new(),
+            duration_ms: Some(180),
+            jailed: Some(true),
+        };
+        line(&res, c, t)
+    }
+
     #[test]
-    fn allowed_read_is_one_aligned_line_and_a_clean_result_adds_nothing() {
+    fn allowed_read_waits_for_its_result_and_shows_its_timing() {
         let mut c = ctx();
         let ev = allow(call(
             "c1",
@@ -734,16 +821,23 @@ mod tests {
             Some("web-1"),
             Some("df -h /var/www"),
         ));
-        let l = line(&ev, &mut c, at(17, 23, 42)).unwrap();
-        assert_eq!(l, "17:23:42  ✓ read          web-1   df -h /var/www");
+        assert_eq!(line(&ev, &mut c, at(17, 23, 42)), None);
         let res = AiEvent::Result {
+            duration_ms: Some(180),
+            jailed: Some(true),
             run_id: RUN.into(),
             call_id: "c1".into(),
             exit_code: Some(0),
             output_sha256: String::new(),
             redactions: vec![],
         };
-        assert_eq!(line(&res, &mut c, at(17, 23, 43)), None);
+        let l = line(&res, &mut c, at(17, 23, 43)).unwrap();
+        assert!(
+            l.starts_with("17:23:42  ✓ read          web-1   df -h /var/www")
+                && l.ends_with("0.2 s · jail"),
+            "{l}"
+        );
+        assert!(c.last_was_read());
     }
 
     #[test]
@@ -760,6 +854,8 @@ mod tests {
             at(17, 0, 0),
         );
         let res = AiEvent::Result {
+            duration_ms: None,
+            jailed: None,
             run_id: RUN.into(),
             call_id: "c1".into(),
             exit_code: Some(2),
@@ -771,7 +867,7 @@ mod tests {
         };
         let l = line(&res, &mut c, at(17, 0, 1)).unwrap();
         assert!(
-            l.contains("✗ read") && l.contains("web-1") && l.ends_with("exit 2"),
+            l.contains("✗ read") && l.contains("web-1") && l.ends_with("exit 2 · 1 redacted"),
             "{l}"
         );
         assert_eq!(l.chars().count(), 78);
@@ -1027,8 +1123,8 @@ mod tests {
                 Some("web-1"),
                 Some("ls"),
             ));
-            let l = line(&ev, &mut c, at(1, 0, i));
-            shown.extend(f.push(&style, &ev, l));
+            let l = settle(&ev, &mut c, at(1, 0, i));
+            shown.extend(f.push(&style, c.last_was_read(), l));
         }
         assert_eq!(shown.len(), 3);
         let d = deny(
@@ -1036,14 +1132,14 @@ mod tests {
             "writes",
         );
         let l = line(&d, &mut c, at(1, 1, 0));
-        let out = f.push(&style, &d, l);
+        let out = f.push(&style, c.last_was_read(), l);
         assert_eq!(out.len(), 2);
         assert_eq!(out[0], "          … 22 more reads, all allowed");
         assert!(out[1].contains("✗ read"));
         // A new streak starts over.
         let ev = allow(call("e", ToolName::RunReadonly, Some("web-1"), Some("ls")));
-        let l = line(&ev, &mut c, at(1, 2, 0));
-        assert_eq!(f.push(&style, &ev, l).len(), 1);
+        let l = settle(&ev, &mut c, at(1, 2, 0));
+        assert_eq!(f.push(&style, c.last_was_read(), l).len(), 1);
     }
 
     #[test]
@@ -1054,16 +1150,16 @@ mod tests {
         let mut n = 0;
         for i in 0..3 {
             let ev = allow(call(&format!("c{i}"), ToolName::ReadFile, Some("h"), None));
-            let l = line(&ev, &mut c, at(1, 0, i));
-            n += f.push(&style, &ev, l).len();
+            let l = settle(&ev, &mut c, at(1, 0, i));
+            n += f.push(&style, c.last_was_read(), l).len();
         }
         assert_eq!(n, 3);
         assert!(!f.toggle());
         let mut n = 0;
         for i in 0..10 {
             let ev = allow(call(&format!("d{i}"), ToolName::ReadFile, Some("h"), None));
-            let l = line(&ev, &mut c, at(1, 0, i));
-            n += f.push(&style, &ev, l).len();
+            let l = settle(&ev, &mut c, at(1, 0, i));
+            n += f.push(&style, c.last_was_read(), l).len();
         }
         assert_eq!(n, 10);
     }
@@ -1075,8 +1171,8 @@ mod tests {
         let mut f = Folder::default();
         for i in 0..5 {
             let ev = allow(call(&format!("c{i}"), ToolName::Observe, Some("h"), None));
-            let l = line(&ev, &mut c, at(1, 0, i));
-            f.push(&style, &ev, l);
+            let l = settle(&ev, &mut c, at(1, 0, i));
+            f.push(&style, c.last_was_read(), l);
         }
         assert_eq!(
             f.flush(&style).unwrap(),

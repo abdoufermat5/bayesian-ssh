@@ -966,10 +966,9 @@ fn single_effect(verb: Verb, target: &str) -> Effect {
     }
 }
 
-fn run_effects(analysis: Option<&Analysis>) -> Effects {
+fn run_effects(command: &str, analysis: Option<&Analysis>) -> Effects {
     match analysis {
-        // `effects_for(command, analysis)` replaces this call once the effects package lands.
-        Some(a) => effects::effects(a),
+        Some(a) => effects::effects_for(command, a),
         None => Effects {
             not_understood: Some("not analyzed".into()),
             ..Default::default()
@@ -1000,7 +999,7 @@ fn plan_blocks<'a>(
     for (step, analysis) in steps {
         let host = step.host.as_deref().unwrap_or("-");
         let (e, diff) = match &step.action {
-            StepAction::Run { .. } => (run_effects(analysis), None),
+            StepAction::Run { command } => (run_effects(command, analysis), None),
             StepAction::EditFile { path, patch } => (
                 Effects {
                     items: vec![single_effect(Verb::Edits, path)],
@@ -1058,7 +1057,10 @@ fn call_block(call: &ToolCall, analysis: Option<&Analysis>) -> HostBlock {
             },
             None,
         ),
-        _ => (run_effects(analysis), None),
+        _ => (
+            run_effects(call.command.as_deref().unwrap_or(""), analysis),
+            None,
+        ),
     };
     add_block(&mut blocks, host, e, diff);
     blocks.remove(0)

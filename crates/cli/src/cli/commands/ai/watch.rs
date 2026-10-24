@@ -233,6 +233,19 @@ mod unix_impl {
             self.print(&lines);
         }
 
+        /// Reads whose result never came (the call failed) are shown after a moment anyway.
+        fn release_held(&mut self, now: chrono::DateTime<Utc>) {
+            let held = self.ctx.take_held(now, chrono::Duration::seconds(2));
+            let mut out = Vec::new();
+            for l in held {
+                let line = l.render(&self.style, self.ctx.width);
+                out.extend(self.folder.push(&self.style, true, Some(line)));
+            }
+            if !out.is_empty() {
+                self.print(&out);
+            }
+        }
+
         fn event(&mut self, ev: AiEvent) {
             let now = Utc::now();
             let ok = self.host_ok(&ev);
@@ -247,7 +260,8 @@ mod unix_impl {
                 }
                 return;
             }
-            let mut lines = self.folder.push(&self.style, &ev, line);
+            let read = self.ctx.last_was_read();
+            let mut lines = self.folder.push(&self.style, read, line);
             if let AiEvent::Approval { request_id, .. } = &ev {
                 let had = self.pending.len();
                 self.pending.retain(|p| &p.request.request_id != request_id);
@@ -515,6 +529,7 @@ mod unix_impl {
         loop {
             tokio::select! {
                 _ = tick.tick() => {
+                    w.release_held(Utc::now());
                     for sock in list_sockets(&dir) {
                         if known.insert(sock.clone()) {
                             tokio::spawn(connect(sock, args.run.clone(), tx.clone()));

@@ -577,6 +577,8 @@ mod tests {
                 },
             },
             AiEvent::Result {
+                duration_ms: None,
+                jailed: None,
                 run_id: "run-1".into(),
                 call_id: "c1".into(),
                 exit_code: Some(0),

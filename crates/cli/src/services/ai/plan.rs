@@ -1102,7 +1102,7 @@ pub async fn do_edit(
             conn.name
         )));
     }
-    ctx.emit_result(call, None, new_sha.clone(), Vec::new());
+    ctx.emit_result(call, None, new_sha.clone(), Vec::new(), None);
     Ok(EditBackup {
         step_id: step_id.to_string(),
         host: conn.name.clone(),
