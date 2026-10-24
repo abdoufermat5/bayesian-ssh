@@ -22,6 +22,9 @@
  *   window.__SFTP_DELAY     - ms delay for `list_remote_directory`.
  *   window.__AUDIT_DELAY    - ms delay for `run_security_audit`.
  *   window.__BATCH_DELAY    - ms delay for `run_batch_command` (default 300).
+ *   window.__MOCK_AI_RUNS   - runs `ai_list_runs` returns (default none).
+ *   window.__MOCK_AI_EVENTS - `{ [runId]: StoredEvent[] }` for `ai_run_events`.
+ *   window.__MOCK_AI_SETTINGS - what `ai_settings` returns.
  *   window.__UPLOAD_DELAY   - ms delay per upload progress step (default 20).
  *   window.__UPLOAD_SCP_HOSTS  - host names that report `viaScp` (default
  *                             ["homelab-nas"]).
@@ -486,6 +489,19 @@
         e("README.md", false, 6120, "-rw-r--r--", "Jul 19 12:00"),
       ];
     },
+    // bssh AI. Runs and timelines come from the `__MOCK_AI_*` knobs; tests push
+    // live changes with `__MOCK_EMIT("ai://runs" | "ai://event" | "ai://request", ...)`.
+    ai_list_runs: () => window.__MOCK_AI_RUNS || [],
+    ai_run_events: (a) => (window.__MOCK_AI_EVENTS || {})[a && a.runId] || [],
+    ai_decide: () => null,
+    ai_stop: () => null,
+    ai_revoke_grant: () => null,
+    ai_settings: () =>
+      window.__MOCK_AI_SETTINGS || {
+        policies: {},
+        record_output: true,
+        approval_timeout_secs: 300,
+      },
   };
 
   window.__IPC_LOG = [];

@@ -38,9 +38,10 @@ test.describe("settings", () => {
       { label: "Privacy & history", marker: page.getByRole("checkbox", { name: /Record session history/ }) },
       { label: "Appearance", marker: page.getByRole("radiogroup", { name: "Theme" }) },
       { label: "Sources & updates", marker: page.getByRole("button", { name: "Check for updates" }) },
+      { label: "AI agents", marker: page.getByText("Unanswered requests expire after") },
     ];
 
-    // The rail exposes exactly the six settings sections.
+    // The rail exposes exactly the seven settings sections.
     await expect(page.locator(SECTIONS).getByRole("button")).toHaveCount(sections.length);
 
     for (const { label, marker } of sections) {

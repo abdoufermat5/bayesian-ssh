@@ -11,6 +11,7 @@ use bayesian_ssh::config::AppConfig;
 use bayesian_ssh::database::Database;
 
 pub mod agent;
+pub mod ai;
 pub mod app;
 pub mod connections;
 pub mod dialogs;
