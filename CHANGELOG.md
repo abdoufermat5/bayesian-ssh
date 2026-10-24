@@ -8,7 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- `bssh connect` to a host that isn't saved failed with `FOREIGN KEY constraint failed` before opening the session. Direct connections work again; they aren't kept in the session history, since there is no saved host to attach them to.
+- `bssh connect` to a host that isn't saved failed with `FOREIGN KEY constraint failed` before opening the session. Direct connections work again and are recorded in the session history like any other, under `user@host:port`.
+
+### Changed
+- Every session now records what it connected to (`user@host:port`), and removing a host, or a sync that drops it, keeps its sessions in the history instead of deleting them. The database moves to schema 10; existing sessions keep their host and get their target filled in.
 
 ## [2.13.1] - 2026-10-24
 

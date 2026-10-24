@@ -269,13 +269,12 @@ impl Database {
             return Ok(false);
         };
 
-        // Wrap all deletes in a single transaction so a crash mid-way
-        // can't leave orphan rows. Foreign keys are not enforced, so the
-        // schema's `ON DELETE CASCADE` never fires: delete dependents
-        // explicitly.
+        // One transaction so a crash mid-way can't leave orphan rows. The
+        // host's sessions stay in the history under their target: removing
+        // a host must not erase the record of who connected to it.
         let tx = self.conn.unchecked_transaction()?;
-        let sessions_deleted = tx.execute(
-            "DELETE FROM sessions WHERE connection_id = ?",
+        let sessions_kept = tx.execute(
+            "UPDATE sessions SET connection_id = NULL WHERE connection_id = ?",
             params![connection_id],
         )?;
         tx.execute(
@@ -293,8 +292,8 @@ impl Database {
         tx.commit()?;
 
         info!(
-            "Deleted {} sessions and connection '{}'",
-            sessions_deleted, name_or_id
+            "Deleted connection '{}', kept its {} sessions in the history",
+            name_or_id, sessions_kept
         );
         Ok(rows_affected > 0)
     }

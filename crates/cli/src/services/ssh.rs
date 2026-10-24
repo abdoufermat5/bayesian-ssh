@@ -104,12 +104,6 @@ impl SshService {
         session.transport = Some(format!("{kind:?}").to_lowercase());
         session.context = crate::services::context::capture(&self.database, &self.config);
         session.mark_active(std::process::id());
-        // A direct connection to a host that isn't saved has no row for the
-        // session to point at, so its session goes unrecorded.
-        let stored = self
-            .database
-            .get_connection(&connection.id.to_string())?
-            .is_some();
 
         let recorder = if crate::services::recording::should_record(
             connection,
@@ -145,9 +139,7 @@ impl SshService {
             None
         };
 
-        if stored {
-            self.database.add_session(&session)?;
-        }
+        self.database.add_session(&session)?;
 
         let conn = connection.clone();
         let rec_for_transport = recorder.clone();
@@ -174,10 +166,8 @@ impl SshService {
                     .map(|mut g| g.finish_in_place())
                     .unwrap_or_default(),
             };
-            if stored {
-                if let Err(e) = self.database.index_session_text(session.id, &text) {
-                    warn!("Failed to index recorded session text: {e}");
-                }
+            if let Err(e) = self.database.index_session_text(session.id, &text) {
+                warn!("Failed to index recorded session text: {e}");
             }
         }
 
@@ -199,9 +189,7 @@ impl SshService {
             }
         };
 
-        if stored {
-            self.database.update_session(&session)?;
-        }
+        self.database.update_session(&session)?;
 
         if self.config.recording.retention_days > 0 {
             match self

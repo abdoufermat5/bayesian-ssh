@@ -381,7 +381,10 @@ fn replace_tags(tx: &Transaction, connection: &Connection) -> Result<()> {
 
 /// Same cleanup as `Database::remove_connection`, for pruned inventory hosts.
 fn delete_connection(tx: &Transaction, id: &str) -> Result<()> {
-    tx.execute("DELETE FROM sessions WHERE connection_id = ?1", params![id])?;
+    tx.execute(
+        "UPDATE sessions SET connection_id = NULL WHERE connection_id = ?1",
+        params![id],
+    )?;
     tx.execute("DELETE FROM aliases WHERE connection_id = ?1", params![id])?;
     tx.execute(
         "DELETE FROM connection_tags WHERE connection_id = ?1",

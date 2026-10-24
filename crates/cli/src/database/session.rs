@@ -11,12 +11,15 @@ impl Database {
 
     pub fn add_session(&self, session: &Session) -> Result<()> {
         self.conn.execute(
-            "INSERT INTO sessions (id, connection_id, started_at, ended_at, status, status_kind, pid, exit_code, transport,
-                                   recording_path, cwd, git_root, prev_connection_id, local_hour, local_weekday)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            // `connection_id` is set only when the host is saved: a direct
+            // connection is recorded by its target alone.
+            "INSERT INTO sessions (id, connection_id, target, started_at, ended_at, status, status_kind, pid, exit_code,
+                                   transport, recording_path, cwd, git_root, prev_connection_id, local_hour, local_weekday)
+             VALUES (?, (SELECT id FROM connections WHERE id = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 session.id.to_string(),
                 session.connection.id.to_string(),
+                session.target(),
                 session.started_at.to_rfc3339(),
                 session.ended_at.map(|d| d.to_rfc3339()),
                 serde_json::to_string(&session.status)?,
@@ -65,7 +68,7 @@ impl Database {
             .conn
             .query_row(
                 "SELECT connection_id FROM sessions
-                 WHERE started_at >= ?
+                 WHERE started_at >= ? AND connection_id IS NOT NULL
                  ORDER BY started_at DESC
                  LIMIT 1",
                 params![cutoff.to_rfc3339()],
@@ -90,9 +93,10 @@ impl Database {
         use chrono::{Duration, Utc};
 
         let mut query = String::from(
-            "SELECT s.id, c.name, s.started_at, s.ended_at, s.status, s.exit_code, s.recording_path
+            "SELECT s.id, COALESCE(c.name, s.target, '?'), s.started_at, s.ended_at, s.status, s.exit_code,
+                    s.recording_path
              FROM sessions s
-             JOIN connections c ON s.connection_id = c.id
+             LEFT JOIN connections c ON s.connection_id = c.id
              WHERE 1=1",
         );
         let mut sql_params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
@@ -100,10 +104,13 @@ impl Database {
         if let Some(conn_name) = connection_filter {
             // Escape LIKE wildcards in the user-supplied filter; compare
             // by id (exact) and by name (LIKE) only against the escaped form.
-            query.push_str(" AND (c.name LIKE ? ESCAPE '\\' OR c.id = ?)");
+            query.push_str(
+                " AND (c.name LIKE ? ESCAPE '\\' OR c.id = ? OR s.target LIKE ? ESCAPE '\\')",
+            );
             let escaped = escape_like(conn_name);
             sql_params.push(Box::new(format!("%{}%", escaped)));
             sql_params.push(Box::new(conn_name.to_string()));
+            sql_params.push(Box::new(format!("%{}%", escaped)));
         }
 
         // `checked_sub_signed` instead of `-`: a huge `--days` would push the
@@ -202,19 +209,23 @@ impl Database {
         let fts_phrase = format!("\"{}\"", query.replace('"', "\"\""));
 
         let mut sql = String::from(
-            "SELECT s.id, c.name, s.started_at, snippet(session_text, 1, '[', ']', '…', 12)
+            "SELECT s.id, COALESCE(c.name, s.target, '?'), s.started_at,
+                    snippet(session_text, 1, '[', ']', '…', 12)
              FROM session_text
              JOIN sessions s ON s.id = session_text.session_id
-             JOIN connections c ON s.connection_id = c.id
+             LEFT JOIN connections c ON s.connection_id = c.id
              WHERE session_text MATCH ?",
         );
         let mut sql_params: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(fts_phrase)];
 
         if let Some(conn_name) = connection_filter {
-            sql.push_str(" AND (c.name LIKE ? ESCAPE '\\' OR c.id = ?)");
+            sql.push_str(
+                " AND (c.name LIKE ? ESCAPE '\\' OR c.id = ? OR s.target LIKE ? ESCAPE '\\')",
+            );
             let escaped = escape_like(conn_name);
             sql_params.push(Box::new(format!("%{}%", escaped)));
             sql_params.push(Box::new(conn_name.to_string()));
+            sql_params.push(Box::new(format!("%{}%", escaped)));
         }
 
         if let Some(cutoff) =
@@ -339,9 +350,9 @@ impl Database {
         &self,
     ) -> Result<Vec<(String, Option<u32>, chrono::DateTime<chrono::Utc>)>> {
         let mut stmt = self.conn.prepare(
-            "SELECT c.name, s.pid, s.started_at
+            "SELECT COALESCE(c.name, s.target, '?'), s.pid, s.started_at
              FROM sessions s
-             JOIN connections c ON s.connection_id = c.id
+             LEFT JOIN connections c ON s.connection_id = c.id
              WHERE s.ended_at IS NULL AND s.status_kind = 'active'
              ORDER BY s.started_at DESC",
         )?;
@@ -362,11 +373,11 @@ impl Database {
         target: &str,
     ) -> Result<Vec<(String, String, Option<u32>, chrono::DateTime<chrono::Utc>)>> {
         let mut stmt = self.conn.prepare(
-            "SELECT s.id, c.name, s.pid, s.started_at
+            "SELECT s.id, COALESCE(c.name, s.target, '?'), s.pid, s.started_at
              FROM sessions s
-             JOIN connections c ON s.connection_id = c.id
+             LEFT JOIN connections c ON s.connection_id = c.id
              WHERE s.ended_at IS NULL AND s.status_kind = 'active'
-               AND (c.name LIKE ? ESCAPE '\\' OR c.id = ?)
+               AND (c.name LIKE ?1 ESCAPE '\\' OR c.id = ?2 OR s.target LIKE ?1 ESCAPE '\\')
              ORDER BY s.started_at DESC",
         )?;
         let escaped = escape_like(target);
@@ -417,9 +428,9 @@ impl Database {
     pub fn close_stale_sessions(&self) -> Result<Vec<(String, Option<u32>)>> {
         let open: Vec<(String, String, Option<u32>)> = {
             let mut stmt = self.conn.prepare(
-                "SELECT s.id, c.name, s.pid
+                "SELECT s.id, COALESCE(c.name, s.target, '?'), s.pid
                  FROM sessions s
-                 JOIN connections c ON s.connection_id = c.id
+                 LEFT JOIN connections c ON s.connection_id = c.id
                  WHERE s.ended_at IS NULL",
             )?;
             let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;

@@ -22,7 +22,7 @@ pub use search::{Prediction, RankContext, ScoreBreakdown, SearchField};
 pub use session::live_pid;
 pub use source::SourceSummary;
 
-const SCHEMA_VERSION: i32 = 9;
+const SCHEMA_VERSION: i32 = 10;
 
 /// How long a statement waits on a lock held by another process (the CLI
 /// and the desktop app share the same database file) before failing with
@@ -166,6 +166,10 @@ impl Database {
         if current < 9 {
             self.migrate_v9_teams_trust()?;
             self.set_schema_version(9)?;
+        }
+        if current < 10 {
+            self.migrate_v10_sessions_target()?;
+            self.set_schema_version(10)?;
         }
         Ok(())
     }
@@ -376,6 +380,46 @@ impl Database {
     fn migrate_v9_teams_trust(&self) -> Result<()> {
         self.conn
             .execute_batch(crate::services::teams::session::SCHEMA_V9)?;
+        Ok(())
+    }
+
+    /// v10: a session keeps what it connected to. `target` is `user@host:port`
+    /// at connect time, and `connection_id` may be NULL: a direct connection
+    /// to a host that isn't saved, or a host removed since. SQLite can't drop
+    /// NOT NULL in place, so the table is rebuilt; `create_indexes` puts the
+    /// indexes back.
+    fn migrate_v10_sessions_target(&self) -> Result<()> {
+        self.conn.execute_batch(
+            "CREATE TABLE sessions_v10 (
+                id TEXT PRIMARY KEY,
+                connection_id TEXT,
+                target TEXT,
+                started_at TEXT NOT NULL,
+                ended_at TEXT,
+                status TEXT NOT NULL,
+                pid INTEGER,
+                exit_code INTEGER,
+                transport TEXT,
+                status_kind TEXT,
+                recording_path TEXT,
+                cwd TEXT,
+                git_root TEXT,
+                prev_connection_id TEXT,
+                local_hour INTEGER,
+                local_weekday INTEGER,
+                FOREIGN KEY (connection_id) REFERENCES connections (id)
+             );
+             INSERT INTO sessions_v10 (id, connection_id, target, started_at, ended_at, status, pid,
+                                       exit_code, transport, status_kind, recording_path, cwd,
+                                       git_root, prev_connection_id, local_hour, local_weekday)
+             SELECT s.id, c.id, c.user || '@' || c.host || ':' || c.port, s.started_at, s.ended_at,
+                    s.status, s.pid, s.exit_code, s.transport, s.status_kind, s.recording_path,
+                    s.cwd, s.git_root, s.prev_connection_id, s.local_hour, s.local_weekday
+             FROM sessions s
+             LEFT JOIN connections c ON c.id = s.connection_id;
+             DROP TABLE sessions;
+             ALTER TABLE sessions_v10 RENAME TO sessions;",
+        )?;
         Ok(())
     }
 
@@ -682,5 +726,115 @@ mod tests {
             assert_eq!(n, 1, "missing table {table}");
         }
         assert!(db.get_connection("keepme").unwrap().is_some());
+    }
+
+    #[test]
+    fn direct_connection_sessions_are_recorded() {
+        use crate::models::Session;
+
+        let dir = tempdir().unwrap();
+        let db = open(dir.path());
+        db.add_connection(&sample("web")).unwrap();
+        // Never saved: `bssh connect deploy@10.0.0.9`.
+        let mut direct = Connection::new(
+            "10.0.0.9".into(),
+            "10.0.0.9".into(),
+            "deploy".into(),
+            2222,
+            None,
+            None,
+            false,
+            None,
+        );
+        direct.update_last_used();
+        let mut session = Session::new(direct);
+        session.mark_terminated(0);
+        db.add_session(&session).unwrap();
+        db.update_session(&session).unwrap();
+
+        let history = db.get_session_history(None, 10, None, false).unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].connection_name, "deploy@10.0.0.9:2222");
+        let filtered = db
+            .get_session_history(Some("10.0.0.9"), 10, None, false)
+            .unwrap();
+        assert_eq!(filtered.len(), 1, "the target is searchable");
+        let linked: Option<String> = db
+            .conn
+            .query_row("SELECT connection_id FROM sessions", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(linked, None);
+    }
+
+    #[test]
+    fn removing_a_host_keeps_its_sessions() {
+        use crate::models::Session;
+
+        let dir = tempdir().unwrap();
+        let db = open(dir.path());
+        let conn = sample("web");
+        db.add_connection(&conn).unwrap();
+        let mut session = Session::new(conn);
+        session.mark_terminated(0);
+        db.add_session(&session).unwrap();
+
+        assert!(db.remove_connection("web").unwrap());
+        let history = db.get_session_history(None, 10, None, false).unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].connection_name, "u@h.example.com:22");
+    }
+
+    #[test]
+    fn v9_sessions_keep_their_host_and_gain_a_target() {
+        let dir = tempdir().unwrap();
+        let config = AppConfig {
+            database_path: dir.path().join("test.db"),
+            ..Default::default()
+        };
+        let conn = sample("web");
+        {
+            let db = Database::open(&config).unwrap();
+            db.migrate_v1_create_core_tables().unwrap();
+            db.migrate_v2_add_sessions_transport().unwrap();
+            db.migrate_v3_create_tags_and_status().unwrap();
+            db.migrate_v4_purge_orphans().unwrap();
+            db.migrate_v5_session_recordings().unwrap();
+            db.migrate_v6_session_context().unwrap();
+            db.migrate_v7_inventory_sources().unwrap();
+            db.migrate_v8_teams_tables().unwrap();
+            db.migrate_v9_teams_trust().unwrap();
+            db.set_schema_version(9).unwrap();
+            db.add_connection(&conn).unwrap();
+            db.conn
+                .execute(
+                    "INSERT INTO sessions (id, connection_id, started_at, status, status_kind)
+                     VALUES ('s1', ?, '2026-10-01T10:00:00+00:00', '\"Terminated\"', 'terminated')",
+                    [conn.id.to_string()],
+                )
+                .unwrap();
+        }
+
+        let db = Database::new(&config).unwrap();
+        assert_eq!(db.current_schema_version().unwrap(), SCHEMA_VERSION);
+        let (linked, target): (Option<String>, Option<String>) = db
+            .conn
+            .query_row(
+                "SELECT connection_id, target FROM sessions WHERE id = 's1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(linked, Some(conn.id.to_string()));
+        assert_eq!(target.as_deref(), Some("u@h.example.com:22"));
+        let indexes: i64 = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND tbl_name = 'sessions'
+                 AND name LIKE 'idx_sessions_%'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(indexes, 6, "indexes are rebuilt with the table");
     }
 }
