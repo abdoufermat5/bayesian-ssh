@@ -348,10 +348,41 @@ fn def<A: JsonSchema + 'static, O: JsonSchema + 'static>(
     description: &'static str,
     ann: ToolAnnotations,
 ) -> Tool {
-    Tool::new(name_str(name), description, Arc::new(JsonObject::new()))
+    let mut t = Tool::new(name_str(name), description, Arc::new(JsonObject::new()))
         .with_input_schema::<A>()
         .with_output_schema::<O>()
-        .annotate(ann)
+        .annotate(ann);
+    t.input_schema = Arc::new(standard_formats(t.input_schema.as_ref().clone()));
+    if let Some(o) = &t.output_schema {
+        t.output_schema = Some(Arc::new(standard_formats(o.as_ref().clone())));
+    }
+    t
+}
+
+/// schemars marks integers with `format: "uint64"` and the like, which JSON Schema
+/// doesn't define: clients' validators print a warning for each. Drop them; the
+/// `minimum` schemars also writes keeps the meaning.
+fn standard_formats(mut schema: JsonObject) -> JsonObject {
+    fn walk(v: &mut Value) {
+        match v {
+            Value::Object(m) => {
+                let numeric = m.get("format").and_then(Value::as_str).is_some_and(|f| {
+                    matches!(f, "uint" | "int" | "float" | "double")
+                        || f.strip_prefix("uint")
+                            .or_else(|| f.strip_prefix("int"))
+                            .is_some_and(|bits| bits.parse::<u8>().is_ok())
+                });
+                if numeric {
+                    m.remove("format");
+                }
+                m.values_mut().for_each(walk);
+            }
+            Value::Array(a) => a.iter_mut().for_each(walk),
+            _ => {}
+        }
+    }
+    schema.values_mut().for_each(walk);
+    schema
 }
 
 /// snake_case wire name of a tool.
@@ -1119,6 +1150,17 @@ mod tests {
         assert!(log_command(&sl("nginx", None, Some("1h'; id #")), 5).is_err());
         assert!(log_command(&sl("/var/log/a", None, Some("1h")), 5).is_err());
         assert!(log_command(&sl("/var/../etc/shadow", None, None), 5).is_err());
+    }
+
+    #[test]
+    fn schemas_use_only_standard_formats() {
+        let all = serde_json::to_string(&definitions()).unwrap();
+        for f in ["uint", "uint64", "uint32", "int64", "double"] {
+            assert!(
+                !all.contains(&format!("\"format\":\"{f}\"")),
+                "{f} left in a schema"
+            );
+        }
     }
 
     #[test]

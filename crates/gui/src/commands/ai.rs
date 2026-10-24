@@ -930,6 +930,7 @@ mod tests {
             subject,
             created_at: "2026-10-24T10:00:00Z".into(),
             expires_at: "2026-10-24T10:05:00Z".into(),
+            reason: String::new(),
         }
     }
 

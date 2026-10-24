@@ -458,6 +458,13 @@ fn call_title(call: &ToolCall) -> String {
             None => format!("Edit a file{on}"),
         },
         ToolName::Run => format!("Run a command{on}"),
+        ToolName::RunReadonly | ToolName::RunMany => format!("Run a read-only command{on}"),
+        ToolName::ReadFile => match &call.path {
+            Some(p) => format!("Read {p}{on}"),
+            None => format!("Read a file{on}"),
+        },
+        ToolName::SearchLogs => format!("Search logs{on}"),
+        ToolName::Observe => format!("Look at the host{on}"),
         ToolName::Undo => format!("Undo a change{on}"),
         ToolName::ApplyChange => format!("Apply a change{on}"),
         _ => format!("Run a tool{on}"),
@@ -604,6 +611,10 @@ fn render_card_w(
         dim("policy"),
         style.facts(&[&run.policy, tier_words(r.tier)])
     ));
+    if !r.reason.is_empty() {
+        // The policy's own words for why it asks.
+        o.push(format!("  {}  {}", dim("why   "), r.reason));
+    }
 
     // The commands.
     match &r.subject {
@@ -734,7 +745,7 @@ fn step_body(step: &Step) -> Body {
             diff: Some(patch.clone()),
         },
         StepAction::Service { unit, action } => Body {
-            lines: vec![format!("service {} {unit}", action_name(*action))],
+            lines: vec![format!("{} {unit}", action_name(*action))],
             diff: None,
         },
         StepAction::Undo { step } => Body {
@@ -754,16 +765,26 @@ fn call_body(call: &ToolCall) -> Body {
             )],
             diff: arg("patch").map(String::from),
         },
+        ToolName::ReadFile | ToolName::SearchLogs => Body {
+            lines: vec![match (call.tool, call.path.as_deref().or(arg("path"))) {
+                (ToolName::ReadFile, Some(p)) => format!("read {p}"),
+                _ => format!(
+                    "search {}{}",
+                    arg("source").unwrap_or("logs"),
+                    arg("pattern")
+                        .map(|p| format!(" for {p}"))
+                        .unwrap_or_default()
+                ),
+            }],
+            diff: None,
+        },
         _ => match (&call.command, arg("unit")) {
             (Some(c), _) => Body {
                 lines: effects::command_lines(c),
                 diff: None,
             },
             (None, Some(unit)) => Body {
-                lines: vec![format!(
-                    "service {} {unit}",
-                    arg("action").unwrap_or("change")
-                )],
+                lines: vec![format!("{} {unit}", arg("action").unwrap_or("change"))],
                 diff: None,
             },
             _ => Body {
@@ -849,11 +870,26 @@ fn diff_lines(style: &Style, patch: &str, full: bool) -> Vec<String> {
 /// `CHECKS  df -h /var/www … · 4 × test      read-only`, or one rail line per command when `full`.
 fn side_steps(style: &Style, name: &str, steps: &[Step], w: usize, full: bool) -> Vec<String> {
     let bodies: Vec<String> = steps.iter().flat_map(|s| step_body(s).lines).collect();
-    let read_only = steps.iter().all(|s| match &s.action {
-        StepAction::Run { command } => ShellAnalyzer.analyze(command).is_read_only(),
-        _ => false,
-    });
-    let tag = style.paint(Tone::Dim, if read_only { "read-only" } else { "write" });
+    // What these steps risk, in the words used everywhere else: `read-only` when that is all.
+    let mut tags: Vec<RiskTag> = Vec::new();
+    for s in steps {
+        match &s.action {
+            StepAction::Run { command } => tags.extend(
+                ShellAnalyzer
+                    .analyze(command)
+                    .tags
+                    .into_iter()
+                    .filter(|t| *t != RiskTag::Read),
+            ),
+            StepAction::Service { .. } => tags.push(RiskTag::ServiceChange),
+            StepAction::EditFile { .. } | StepAction::Undo { .. } => tags.push(RiskTag::Write),
+        }
+    }
+    let tag = if tags.is_empty() {
+        style.paint(Tone::Dim, "read-only")
+    } else {
+        style.risks(&tags)
+    };
     let label = ui::pad(&style.label(name), 8);
     let mut out = Vec::new();
     if full {
@@ -1046,6 +1082,19 @@ fn call_block(call: &ToolCall, analysis: Option<&Analysis>) -> HostBlock {
                 arg("patch").map(|p| (path, p.to_string())),
             )
         }
+        ToolName::ReadFile | ToolName::SearchLogs => (
+            Effects {
+                items: call
+                    .path
+                    .as_deref()
+                    .or(arg("path"))
+                    .or(arg("source"))
+                    .map(|p| vec![single_effect(Verb::Reads, p)])
+                    .unwrap_or_default(),
+                ..Default::default()
+            },
+            None,
+        ),
         ToolName::Service => (
             Effects {
                 items: match (arg("action").and_then(service_verb), arg("unit")) {
@@ -1192,12 +1241,6 @@ fn what_section(
                 ));
             }
         }
-        for (path, patch) in &b.diffs {
-            let _ = path;
-            for l in diff_lines(style, patch, full) {
-                o.push(format!("  {}{}{l}", " ".repeat(hostw), " ".repeat(verbw)));
-            }
-        }
         if let Some(why) = &b.effects.not_understood {
             o.push(format!(
                 "  {}{}",
@@ -1290,6 +1333,7 @@ mod tests {
             subject,
             created_at: "2026-10-24T17:24:31Z".into(),
             expires_at: "2026-10-24T17:29:31Z".into(),
+            reason: String::new(),
         }
     }
 
@@ -1369,6 +1413,26 @@ mod tests {
 
     fn plain(r: &ApprovalRequest) -> String {
         render_card_w(&Style::plain(), &hello(), r, now(), false, 86)
+    }
+
+    #[test]
+    fn a_read_outside_read_paths_says_what_and_why() {
+        let mut c = call(ToolName::ReadFile, None);
+        c.path = Some("/opt/app/app.py".into());
+        let mut r = base(ApprovalSubject::Call {
+            call: c,
+            analysis: None,
+        });
+        r.reason = "read: /opt/app/app.py is outside read_paths".into();
+        let text = plain(&r);
+        assert!(text.contains("Read /opt/app/app.py on db-1"), "{text}");
+        assert!(text.contains("│ read /opt/app/app.py"), "{text}");
+        assert!(text.contains("reads    /opt/app/app.py"), "{text}");
+        assert!(
+            text.contains("why     read: /opt/app/app.py is outside read_paths"),
+            "{text}"
+        );
+        assert!(!text.contains("not understood"), "{text}");
     }
 
     #[test]

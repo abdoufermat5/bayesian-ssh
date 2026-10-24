@@ -664,6 +664,18 @@ impl RunContext {
         subject: ApprovalSubject,
         summary: &str,
     ) -> Result<String, ToolError> {
+        self.request_approval_because(tier, subject, summary, "")
+            .await
+    }
+
+    /// `request_approval`, with the policy's reason shown to the approver.
+    pub async fn request_approval_because(
+        &self,
+        tier: Tier,
+        subject: ApprovalSubject,
+        summary: &str,
+        reason: &str,
+    ) -> Result<String, ToolError> {
         let request_id = uuid::Uuid::new_v4().to_string();
         let timeout = Duration::from_secs(self.config.ai.approval_timeout_secs.max(1));
         let req = ApprovalRequest {
@@ -674,6 +686,7 @@ impl RunContext {
             subject,
             created_at: now_rfc3339(),
             expires_at: rfc3339_in(timeout),
+            reason: reason.to_string(),
         };
         if let Ok(mut p) = self.pending.lock() {
             p.insert(
@@ -734,7 +747,8 @@ impl RunContext {
                 };
                 let summary = format!("{:?} {}", call.tool, call.command.as_deref().unwrap_or(""));
                 debug!("approval needed ({tier:?}): {reason}");
-                self.request_approval(tier, subject, summary.trim()).await?;
+                self.request_approval_because(tier, subject, summary.trim(), &reason)
+                    .await?;
                 Ok(())
             }
         }

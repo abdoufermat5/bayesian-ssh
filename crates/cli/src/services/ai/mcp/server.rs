@@ -11,9 +11,9 @@ use crate::services::ai::types::*;
 use crate::services::ai::ui::{self, Style};
 use async_trait::async_trait;
 use rmcp::model::{
-    CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, Implementation,
-    InitializeRequestParams, InitializeResult, ListToolsResult, PaginatedRequestParams,
-    ServerCapabilities, ServerConfig,
+    CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, DiscoverResult,
+    Implementation, InitializeRequestParams, InitializeResult, ListToolsResult,
+    PaginatedRequestParams, ServerCapabilities, ServerConfig,
 };
 use rmcp::service::{ElicitationError, ElicitationMode, Peer, RequestContext};
 use rmcp::{ErrorData as McpError, RoleServer, ServerHandler};
@@ -1162,6 +1162,39 @@ pub fn to_result(tool: &str, r: Result<serde_json::Value, ToolError>) -> CallToo
     }
 }
 
+/// `name version`, with the client's display title when it sends one (`Claude Code 2.1.310`).
+fn client_label(info: &Implementation) -> String {
+    let name = info
+        .title
+        .as_deref()
+        .filter(|t| !t.is_empty())
+        .unwrap_or(&info.name);
+    if info.version.is_empty() {
+        name.to_string()
+    } else {
+        format!("{name} {}", info.version)
+    }
+}
+
+impl BsshMcp {
+    /// MCP 2026-07-28 has no `initialize`: the client names itself in every request's
+    /// `_meta`. The first request that does starts the run, as `initialize` would.
+    fn note_client(&self, context: &RequestContext<RoleServer>) {
+        if self.ctx.client() != "unknown" {
+            return;
+        }
+        let Some(info) = context.meta.client_info() else {
+            return;
+        };
+        let client = client_label(&info);
+        self.ctx.start(&client);
+        if let Some(e) = &self.ctx.deps.elicitor {
+            e.set_peer(context.peer.clone());
+        }
+        debug!("MCP client: {client}");
+    }
+}
+
 impl ServerHandler for BsshMcp {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
@@ -1175,12 +1208,7 @@ impl ServerHandler for BsshMcp {
         context: RequestContext<RoleServer>,
     ) -> Result<InitializeResult, McpError> {
         context.peer.set_peer_info(request.clone());
-        let info = &request.client_info;
-        let client = if info.version.is_empty() {
-            info.name.clone()
-        } else {
-            format!("{} {}", info.name, info.version)
-        };
+        let client = client_label(&request.client_info);
         // Self-reported by the client: shown as such everywhere.
         self.ctx.start(&client);
         if let Some(e) = &self.ctx.deps.elicitor {
@@ -1190,11 +1218,23 @@ impl ServerHandler for BsshMcp {
         self.negotiate_initialize(&request)
     }
 
+    async fn discover(
+        &self,
+        context: RequestContext<RoleServer>,
+    ) -> Result<DiscoverResult, McpError> {
+        self.note_client(&context);
+        Ok(DiscoverResult::from_server_info(
+            self.supported_protocol_versions().into_owned(),
+            self.get_info(),
+        ))
+    }
+
     async fn list_tools(
         &self,
         _request: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, McpError> {
+        self.note_client(&context);
         Ok(ListToolsResult::with_all_items(self.tools.as_ref().clone()))
     }
 
@@ -1205,8 +1245,9 @@ impl ServerHandler for BsshMcp {
     async fn call_tool(
         &self,
         request: CallToolRequestParams,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, McpError> {
+        self.note_client(&context);
         let args = serde_json::Value::Object(request.arguments.unwrap_or_default());
         let out = tools::call(&self.ctx, &request.name, args).await;
         Ok(to_result(&request.name, out).into())

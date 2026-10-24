@@ -272,6 +272,7 @@ impl AiStore {
                 subject: serde_json::from_str(&subject)?,
                 created_at,
                 expires_at,
+                reason: String::new(),
             });
         }
         Ok(out)
@@ -518,6 +519,7 @@ mod tests {
             },
             created_at: Utc::now().to_rfc3339(),
             expires_at: (Utc::now() + chrono::Duration::minutes(5)).to_rfc3339(),
+            reason: String::new(),
         }
     }
 

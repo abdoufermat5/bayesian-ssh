@@ -369,6 +369,10 @@ pub struct ApprovalRequest {
     /// RFC 3339.
     pub created_at: String,
     pub expires_at: String,
+    /// Why the policy asks (`read: /opt/app/app.py is outside read_paths`), for single
+    /// calls. Empty for plans and for requests written before it existed.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub reason: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

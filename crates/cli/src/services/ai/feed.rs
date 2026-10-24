@@ -496,10 +496,16 @@ pub fn event_feed(ev: &AiEvent, ctx: &mut FeedContext, now: DateTime<Utc>) -> Op
                 }
                 Some(l)
             } else {
+                // A step failed: the plan stopped there, and the steps before it ran.
+                let meta = match undo_point {
+                    Some(_) => format!("earlier steps stay done · undo with bssh ai undo {id}"),
+                    None => "earlier steps stay done".to_string(),
+                };
                 Some(
-                    FeedLine::new(&time, Glyph::Bad, "not applied")
+                    FeedLine::new(&time, Glyph::Bad, "stopped")
                         .host(host.as_deref())
-                        .text(format!("change {id}")),
+                        .text(format!("change {id} at a failed step"))
+                        .meta(Tone::Bad, meta),
                 )
             }
         }
@@ -980,6 +986,7 @@ mod tests {
             },
             created_at: at(17, 24, 31).to_rfc3339(),
             expires_at: at(17, 29, 12).to_rfc3339(),
+            reason: String::new(),
         }
     }
 

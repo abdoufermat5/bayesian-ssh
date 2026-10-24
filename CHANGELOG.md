@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **bssh AI with current Claude Code.** Claude Code 2.1.310 speaks MCP 2026-07-28, which has no `initialize`: the client names itself in each request. bssh only read the client from `initialize`, so these runs recorded no start, showed the agent as `unknown` and couldn't ask in the agent's client. The first request that names a client now starts the run, and its display name is used (`Claude Code 2.1.310`).
+- Tool schemas no longer carry non-standard number formats (`uint64`…), which made Claude Code print a warning per field.
+- Approval cards say why the policy asks, show what a read that needs approval would read, name the real risk of checks and undo steps, show a diff once, and read `reload nginx.service` for service steps. `nginx -s reload` reads as reloading nginx.
+- `bssh ai watch` follows terminal resizes instead of wrapping every line.
+- A change plan that stops at a failed step says so, with the earlier steps still done, instead of "not applied".
+
 ## [2.13.2] - 2026-10-24
 
 ### Added

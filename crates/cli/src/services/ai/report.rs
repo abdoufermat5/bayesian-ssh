@@ -593,7 +593,7 @@ pub fn render_report(report: &RunReport, style: &Style, now: DateTime<Utc>) -> S
         } else if c.applied {
             ", applied"
         } else {
-            ", not applied"
+            ", stopped at a failed step"
         };
         let undo_str = if c.undo_point.is_some() && !c.undone {
             ", undo kept"
@@ -685,7 +685,7 @@ pub fn render_report(report: &RunReport, style: &Style, now: DateTime<Utc>) -> S
                     details.push(&undo_str);
                 }
             } else {
-                details.push("not applied");
+                details.push("stopped at a failed step");
             }
 
             if !details.is_empty() {

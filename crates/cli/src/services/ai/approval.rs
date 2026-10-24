@@ -654,6 +654,7 @@ pub(crate) mod tests {
             },
             created_at: chrono::Utc::now().to_rfc3339(),
             expires_at: (chrono::Utc::now() + chrono::Duration::minutes(5)).to_rfc3339(),
+            reason: String::new(),
         }
     }
 
