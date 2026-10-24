@@ -7,11 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-- `bssh connect` to a host that isn't saved failed with `FOREIGN KEY constraint failed` before opening the session. Direct connections work again and are recorded in the session history like any other, under `user@host:port`.
+### Added
+- **`bssh ai watch`**: one live feed for every running agent. Each call is one aligned line (time, decision, what kind of call, host, command, duration and whether it ran in the read-only jail); runs of allowed reads fold into one line; an approval request opens a compact card in place, answered with `a` or `d`, and Enter shows the full card. Joining late replays what the run did so far. `--run`, `--host` and `--json`.
 
 ### Changed
+- **bssh AI looks the same everywhere.** Approval cards, `watch`, `log`, `report`, `status`, `explain` and `policy` share one visual language: the decision first, 8-character ids, local times, color only for decisions and risk, plain text when piped or with `NO_COLOR`. `--json` output is unchanged.
+- **The approval card says what a change does**, read by bssh's parser rather than the agent: what it creates, moves, copies, deletes, edits or restarts, with variables like `$A` resolved, and whether it deletes anything, uses sudo or the network. Each step is split into its commands; the agent's explanation comes last, labelled as unchecked. Single-key answers with no default: `a`, `d`, `v` for the full text, `g` to allow a single call for 15 minutes.
+- **Agents' clients show readable results.** A tool result's text is now a status line and the host's output between markers with a random tag per call, instead of the result's JSON on one line; the full JSON stays in the structured content. Refusals say what happened, that nothing ran, and what to do next.
+- `bssh ai log <run> --report` reads like a ticket: who, when, where and totals that add up, then changes, denials, redactions, and recordings as a count with the replay command. `bssh ai log <run>` uses the watch format.
 - Every session now records what it connected to (`user@host:port`), and removing a host, or a sync that drops it, keeps its sessions in the history instead of deleting them. The database moves to schema 10; existing sessions keep their host and get their target filled in.
+
+### Fixed
+- `bssh connect` to a host that isn't saved failed with `FOREIGN KEY constraint failed` before opening the session. Direct connections work again and are recorded in the session history like any other, under `user@host:port`.
 
 ## [2.13.1] - 2026-10-24
 
