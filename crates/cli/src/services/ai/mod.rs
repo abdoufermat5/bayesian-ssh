@@ -13,6 +13,7 @@ pub mod analyzer;
 pub mod redact;
 // W3 policy, approvals, runs
 pub mod approval;
+pub mod control_client;
 pub mod policy;
 pub mod store;
 // W4 MCP server and tools
