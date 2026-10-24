@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.2] - 2026-10-24
+
 ### Added
 - **`bssh ai watch`**: one live feed for every running agent. Each call is one aligned line (time, decision, what kind of call, host, command, duration and whether it ran in the read-only jail); runs of allowed reads fold into one line; an approval request opens a compact card in place, answered with `a` or `d`, and Enter shows the full card. Joining late replays what the run did so far. `--run`, `--host` and `--json`.
 
