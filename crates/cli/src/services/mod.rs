@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod ai;
 pub mod auth;
 pub mod context;
 pub mod crypto;

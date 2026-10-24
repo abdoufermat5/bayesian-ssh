@@ -476,6 +476,24 @@ pub enum Commands {
         command: OrgCommands,
     },
 
+    /// Let AI agents operate servers safely (MCP proxy with policy, approvals and audit)
+    #[command(
+        long_about = "bssh AI: your agent gets your servers, not your keys.\n\n\
+            `bssh ai mcp` is an MCP server for Claude Code, Codex, Cursor and other agents.\n\
+            Every call is parsed, checked against a policy, run in a read-only jail or\n\
+            approved by you, recorded and signed.",
+        after_help = "Examples:\n\
+          bssh ai install claude-code\n\
+          bssh ai explain 'systemctl restart nginx && tail /var/log/x'\n\
+          bssh ai setup -t staging\n\
+          bssh ai approve --list\n\
+          bssh ai log"
+    )]
+    Ai {
+        #[command(subcommand)]
+        command: crate::cli::parser_ai::AiCommands,
+    },
+
     /// Manage multi-environment profiles (separate connection databases)
     Env {
         #[command(subcommand)]

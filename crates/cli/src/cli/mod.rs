@@ -3,6 +3,7 @@ use anyhow::Result;
 
 pub mod commands;
 pub mod parser;
+pub mod parser_ai;
 pub mod utils;
 
 pub use parser::{
@@ -188,6 +189,7 @@ impl Cli {
             Commands::Source { command } => commands::source::execute(command, config).await,
             Commands::Teams { command } => commands::teams::execute(command, config).await,
             Commands::Org { command } => commands::org::execute(command, config).await,
+            Commands::Ai { command } => commands::ai::execute(command, config).await,
             Commands::Completions { shell } => commands::completions::execute(shell, config).await,
             Commands::History {
                 connection,

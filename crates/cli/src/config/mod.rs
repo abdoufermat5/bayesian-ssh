@@ -42,6 +42,28 @@ impl Default for TransportConfig {
     }
 }
 
+/// bssh AI settings (design: bssh-cloud/docs/design/ai-agent-access.md).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AiConfig {
+    /// Named agent policies; `default` is used when none is given.
+    pub policies: std::collections::BTreeMap<String, crate::services::ai::types::Policy>,
+    /// Record `run` output of agent calls as asciicast, like interactive sessions.
+    pub record_output: bool,
+    /// Approval requests with no answer expire as denied after this many seconds.
+    pub approval_timeout_secs: u64,
+}
+
+impl Default for AiConfig {
+    fn default() -> Self {
+        Self {
+            policies: Default::default(),
+            record_output: true,
+            approval_timeout_secs: 300,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RecordingConfig {
@@ -112,6 +134,8 @@ pub struct AppConfig {
     pub recording: RecordingConfig,
     #[serde(default)]
     pub prediction: PredictionConfig,
+    #[serde(default)]
+    pub ai: AiConfig,
 }
 
 fn default_search_mode() -> String {
@@ -284,6 +308,7 @@ impl AppConfig {
             auth: AuthConfig::default(),
             recording: RecordingConfig::default(),
             prediction: PredictionConfig::default(),
+            ai: AiConfig::default(),
         }
     }
 
