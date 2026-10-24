@@ -201,10 +201,18 @@ pub enum AiCaCommands {
 
 #[derive(Args, Debug)]
 pub struct AiArgsServe {
+    /// Address to listen on (plain HTTP: keep it on localhost, put a TLS reverse proxy in front)
     #[arg(long, default_value = "127.0.0.1:8765")]
     pub listen: String,
+    /// Policy name; Teams agents always run the admin-signed policy of their credential
     #[arg(long, default_value = "default")]
     pub policy: String,
+    /// Agent identity to run, `<team>/<agent>` (see `bssh teams agent add`)
+    #[arg(long, value_name = "TEAM/AGENT")]
+    pub agent: String,
+    /// Allow a non-loopback --listen address
+    #[arg(long)]
+    pub allow_remote: bool,
 }
 
 #[derive(Args, Debug)]

@@ -6,7 +6,7 @@ use super::codec::{check_incoming_keys, VaultCodec};
 use crate::config::AppConfig;
 use crate::database::Database;
 use anyhow::{anyhow, Context, Result};
-use bssh_teams_proto::api::{AuditEvent, AuditKind, EncryptedEntry, WrappedKey};
+use bssh_teams_proto::api::{AuditActor, AuditEvent, AuditKind, EncryptedEntry, WrappedKey};
 use bssh_teams_proto::layout::{audit_event_hash, AUDIT_GENESIS};
 use bssh_teams_proto::wire::{Fixed, PublicKey32};
 use chrono::{DateTime, SubsecRound, Utc};
@@ -463,6 +463,23 @@ impl TeamsStore {
         entry_id: Option<Uuid>,
         occurred_at: DateTime<Utc>,
     ) -> Result<AuditEvent> {
+        self.append_audit_event_full(team_id, codec, kind, entry_id, occurred_at, None, None)
+    }
+
+    /// [`Self::append_audit_event_at`] for a bssh AI event: `actor` is signed
+    /// with the event, `detail` (plaintext) is encrypted to the team audit key
+    /// before signing, so the server never sees it.
+    #[allow(clippy::too_many_arguments)]
+    pub fn append_audit_event_full(
+        &self,
+        team_id: Uuid,
+        codec: &dyn VaultCodec,
+        kind: AuditKind,
+        entry_id: Option<Uuid>,
+        occurred_at: DateTime<Utc>,
+        actor: Option<AuditActor>,
+        detail: Option<&[u8]>,
+    ) -> Result<AuditEvent> {
         let device_id = codec.device_id();
         let tx = self.db.conn.unchecked_transaction()?;
         let head: Option<(i64, Vec<u8>)> = tx
@@ -488,7 +505,12 @@ impl TeamsStore {
             occurred_at: occurred_at.trunc_subsecs(3),
             prev_hash,
             signature: Fixed::ZERO,
+            actor,
+            detail: None,
         };
+        if let Some(plain) = detail {
+            event.detail = Some(codec.seal_audit_detail(&event, plain)?);
+        }
         codec.sign_audit(&mut event);
         let hash = audit_event_hash(&event);
         tx.execute(

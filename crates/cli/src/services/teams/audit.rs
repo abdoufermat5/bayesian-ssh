@@ -243,6 +243,8 @@ mod tests {
                         .unwrap(),
                     prev_hash: prev,
                     signature: Fixed::ZERO,
+                    actor: None,
+                    detail: None,
                 };
                 sign_audit_event(&mut event, &d.keys);
                 prev = audit_event_hash(&event);

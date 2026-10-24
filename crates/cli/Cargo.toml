@@ -93,10 +93,13 @@ hkdf = "0.12"
 regex = "1"
 
 # bssh AI (W4)
-# MCP server. W8 adds "transport-streamable-http-server" for `bssh ai serve`.
-rmcp = { version = "3.7.0", features = ["server", "macros", "transport-io", "elicitation"] }
+# MCP server; streamable HTTP is for the `bssh ai serve` gateway.
+rmcp = { version = "3.7.0", features = ["server", "macros", "transport-io", "elicitation", "transport-streamable-http-server"] }
 schemars = "1"
 diffy = "0.4"
+
+# bssh AI (W8): gateway HTTP server (bssh ai serve)
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json"] }
 
 [dev-dependencies]
 # In-process MCP client for the round-trip tests.

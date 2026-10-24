@@ -1060,6 +1060,50 @@ pub enum TeamsCommands {
         #[arg(long)]
         limit: Option<u32>,
     },
+    /// Agent identities for unattended AI agents (admin): `bssh ai serve` runs them
+    Agent {
+        #[command(subcommand)]
+        command: TeamsAgentCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum TeamsAgentCommands {
+    /// Create an agent: its own device keys, a seat, a signed policy and a credential file
+    Add {
+        team: String,
+        name: String,
+        /// Policy from `ai.policies` in config.json, signed for the agent (default: `default`)
+        #[arg(long, value_name = "NAME")]
+        policy: Option<String>,
+    },
+    /// List a team's agents
+    List { team: String },
+    /// Remove an agent: frees its seat and rotates the team key
+    Remove { team: String, name: String },
+    /// Re-sign an agent's policy from config.json
+    Policy {
+        team: String,
+        name: String,
+        #[arg(long, value_name = "NAME", default_value = "default")]
+        policy: String,
+    },
+    /// List approval requests from agents waiting for you
+    Pending { team: String },
+    /// Approve a pending request (a prefix of its id is enough)
+    Approve {
+        team: String,
+        request: String,
+        #[arg(long)]
+        reason: Option<String>,
+    },
+    /// Deny a pending request
+    Deny {
+        team: String,
+        request: String,
+        #[arg(long)]
+        reason: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]

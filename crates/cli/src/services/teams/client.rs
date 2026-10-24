@@ -23,6 +23,8 @@ use uuid::Uuid;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+/// Longest long-poll a caller should ask for: under the request timeout.
+pub const MAX_POLL_WAIT_SECS: u64 = 20;
 /// Refresh the token this long before it expires.
 const TOKEN_SKEW_SECS: i64 = 60;
 
@@ -433,6 +435,52 @@ impl TeamsClient {
         self.post("/invites/accept", req).await
     }
 
+    // -- agents and the approval relay (bssh AI) -----------------------------
+
+    /// Register an agent identity (admin). The agent takes a seat.
+    pub async fn create_agent(
+        &self,
+        team_id: Uuid,
+        req: &CreateAgentRequest,
+    ) -> ClientResult<AgentInfo> {
+        self.post(&format!("/teams/{team_id}/agents"), req).await
+    }
+
+    pub async fn list_agents(&self, team_id: Uuid) -> ClientResult<Vec<AgentInfo>> {
+        self.get(&format!("/teams/{team_id}/agents"), &[]).await
+    }
+
+    /// Queue a relay message for its recipients.
+    pub async fn post_relay(&self, team_id: Uuid, msg: &RelayMessage) -> ClientResult<RelayAck> {
+        self.post(&format!("/teams/{team_id}/relay"), msg).await
+    }
+
+    /// Messages addressed to this device after `after`. Waits up to `wait_secs`
+    /// (the server caps it at 30, this client's request timeout is 30 too, so
+    /// callers ask for at most [`MAX_POLL_WAIT_SECS`]) for one to arrive.
+    pub async fn poll_relay(
+        &self,
+        team_id: Uuid,
+        kind: Option<RelayKind>,
+        request_id: Option<Uuid>,
+        after: u64,
+        wait_secs: u64,
+    ) -> ClientResult<RelayPoll> {
+        let mut query = vec![
+            ("after", after.to_string()),
+            ("wait", wait_secs.min(MAX_POLL_WAIT_SECS).to_string()),
+        ];
+        match kind {
+            Some(RelayKind::Request) => query.push(("kind", "request".into())),
+            Some(RelayKind::Decision) => query.push(("kind", "decision".into())),
+            None => {}
+        }
+        if let Some(id) = request_id {
+            query.push(("request_id", id.to_string()));
+        }
+        self.get(&format!("/teams/{team_id}/relay"), &query).await
+    }
+
     // -- organizations -------------------------------------------------------
 
     /// Organizations this account owns or has a team in.
@@ -585,6 +633,12 @@ impl TeamsClient {
         if let Some(since) = filter.since {
             query.push(("since", since.to_rfc3339()));
         }
+        if let Some(kind) = filter.kind {
+            query.push(("kind", kind.as_str().to_string()));
+        }
+        if let Some(actor) = &filter.actor {
+            query.push(("actor", actor.clone()));
+        }
         self.get(&format!("/teams/{team_id}/audit"), &query).await
     }
 }
@@ -594,6 +648,8 @@ impl TeamsClient {
 pub struct AuditFilter {
     pub device_id: Option<Uuid>,
     pub entry_id: Option<Uuid>,
+    pub kind: Option<AuditKind>,
+    pub actor: Option<String>,
     pub since: Option<DateTime<Utc>>,
     pub limit: Option<u32>,
 }
