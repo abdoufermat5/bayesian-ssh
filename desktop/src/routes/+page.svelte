@@ -26,6 +26,9 @@
   import BatchExecModal from "$lib/components/modals/BatchExecModal.svelte";
   import UploadModal from "$lib/components/modals/UploadModal.svelte";
   import QuitConfirmModal from "$lib/components/modals/QuitConfirmModal.svelte";
+  import ApprovalDialog from "$lib/components/modals/ApprovalDialog.svelte";
+  import AiView from "$lib/components/AiView.svelte";
+  import { startAi, stopAiListeners } from "$lib/stores/ai.svelte";
   import AppLoader from "$lib/components/AppLoader.svelte";
   import CommandPalette from "$lib/components/CommandPalette.svelte";
   import Toast from "$lib/components/Toast.svelte";
@@ -146,6 +149,8 @@
       await appState.loadStats();
     });
 
+    void startAi();
+
     const appWindow = getCurrentWindow();
     void appWindow
       .onCloseRequested((event) => {
@@ -206,6 +211,7 @@
       window.removeEventListener("keydown", handleKeydownWithHelp);
       window.removeEventListener("resize", handleWindowResize);
       teardownTerminalListeners();
+      stopAiListeners();
       stopKerberosMonitoring();
       unlistenConnect?.();
       unlistenQuitConfirm?.();
@@ -291,6 +297,8 @@
         <AuditView />
       {:else if appState.activeTab === "teams"}
         <TeamsView connections={appState.allConnections} onConnectionsChanged={() => void appState.loadConnections()} />
+      {:else if appState.activeTab === "ai"}
+        <AiView timezone={appState.settings.timezone} />
       {:else if appState.activeTab === "settings"}
         <SettingsView
           bind:settings={appState.settings}
@@ -410,6 +418,8 @@
       onConfirm={appState.confirmDelete}
     />
   {/if}
+
+  <ApprovalDialog />
 
   <Toast />
 </div>

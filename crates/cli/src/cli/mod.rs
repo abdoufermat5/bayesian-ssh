@@ -3,6 +3,7 @@ use anyhow::Result;
 
 pub mod commands;
 pub mod parser;
+pub mod parser_ai;
 pub mod utils;
 
 pub use parser::{
@@ -188,6 +189,7 @@ impl Cli {
             Commands::Source { command } => commands::source::execute(command, config).await,
             Commands::Teams { command } => commands::teams::execute(command, config).await,
             Commands::Org { command } => commands::org::execute(command, config).await,
+            Commands::Ai { command } => commands::ai::execute(command, config).await,
             Commands::Completions { shell } => commands::completions::execute(shell, config).await,
             Commands::History {
                 connection,
@@ -207,8 +209,16 @@ impl Cli {
                 all,
                 tag,
                 dry_run,
+                timeout,
+                max_output,
                 command,
-            } => commands::exec::execute(target, all, tag, dry_run, command, config).await,
+            } => {
+                let limits = commands::exec::CliLimits {
+                    timeout: timeout.map(std::time::Duration::from_secs),
+                    max_output_bytes: max_output.map(|n| usize::try_from(n).unwrap_or(usize::MAX)),
+                };
+                commands::exec::execute(target, all, tag, dry_run, limits, command, config).await
+            }
             Commands::Upload {
                 args,
                 all,

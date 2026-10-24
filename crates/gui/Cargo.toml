@@ -46,6 +46,10 @@ dirs = "5.0"
 sha2 = "0.10"
 base64 = "0.22"
 tauri-plugin-updater = "2"
+tracing = "0.1"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"

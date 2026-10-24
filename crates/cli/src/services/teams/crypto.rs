@@ -9,7 +9,8 @@ use aes_gcm::{Aes256Gcm, Key, KeyInit, Nonce};
 use base64::engine::general_purpose::STANDARD_NO_PAD;
 use base64::Engine;
 use bssh_teams_proto::api::{
-    AuditEvent, DeviceInfo, EncryptedEntry, NewDevice, VaultPayload, WrappedKey,
+    AuditDetail, AuditEvent, DeviceInfo, EncryptedEntry, NewDevice, RelayKind, RelayMessage,
+    RelayRecipient, SignedAgentPolicy, VaultPayload, WrappedKey,
 };
 use bssh_teams_proto::layout;
 use bssh_teams_proto::wire::{Bytes, Fixed, PublicKey32, Signature64};
@@ -157,6 +158,26 @@ impl DeviceKeys {
         Ok(Self::from_secrets(&x, &e))
     }
 
+    /// Both private keys as `x25519_secret (32) ‖ ed25519_seed (32)`, for the
+    /// 0600 credential file of an agent (which has no passphrase to type).
+    pub fn to_secret_bytes(&self) -> Zeroizing<[u8; 64]> {
+        let mut out = Zeroizing::new([0u8; 64]);
+        out[..32].copy_from_slice(&self.x25519.to_bytes());
+        out[32..].copy_from_slice(&self.ed25519.to_bytes());
+        out
+    }
+
+    pub fn from_secret_bytes(bytes: &[u8]) -> Result<Self> {
+        if bytes.len() != 64 {
+            return Err(TeamsCryptoError::Malformed("device secrets (wrong length)"));
+        }
+        let mut x = Zeroizing::new([0u8; 32]);
+        let mut e = Zeroizing::new([0u8; 32]);
+        x.copy_from_slice(&bytes[..32]);
+        e.copy_from_slice(&bytes[32..]);
+        Ok(Self::from_secrets(&x, &e))
+    }
+
     fn sign(&self, msg: &[u8]) -> Signature64 {
         Fixed(self.ed25519.sign(msg).to_bytes())
     }
@@ -208,11 +229,32 @@ impl TeamKey {
     }
 }
 
+impl TeamKey {
+    /// `AK_v = HKDF-SHA256(salt = team_id, ikm = TK_v, info = AUDIT_KEY ‖ key_version)`.
+    fn audit_key(&self, team_id: Uuid) -> Zeroizing<[u8; 32]> {
+        let mut info = layout::kdf::AUDIT_KEY.to_vec();
+        info.extend_from_slice(&self.key_version.to_be_bytes());
+        let hk = Hkdf::<Sha256>::new(Some(team_id.as_bytes()), &self.bytes[..]);
+        let mut out = Zeroizing::new([0u8; 32]);
+        let _ = hk.expand(&info, &mut out[..]);
+        out
+    }
+}
+
 /// `wrap_key = HKDF(salt = eph_pub ‖ recipient_pub, ikm = shared, info = KDF_KEY_WRAP)`.
 fn wrap_key(
     shared: &x25519_dalek::SharedSecret,
     eph_pub: &[u8; 32],
     recipient_pub: &[u8; 32],
+) -> Result<Zeroizing<[u8; 32]>> {
+    wrap_key_with(shared, eph_pub, recipient_pub, layout::kdf::KEY_WRAP)
+}
+
+fn wrap_key_with(
+    shared: &x25519_dalek::SharedSecret,
+    eph_pub: &[u8; 32],
+    recipient_pub: &[u8; 32],
+    info: &[u8],
 ) -> Result<Zeroizing<[u8; 32]>> {
     if !shared.was_contributory() {
         return Err(TeamsCryptoError::WeakKey);
@@ -222,7 +264,7 @@ fn wrap_key(
     salt[32..].copy_from_slice(recipient_pub);
     let hk = Hkdf::<Sha256>::new(Some(&salt), shared.as_bytes());
     let mut out = Zeroizing::new([0u8; 32]);
-    hk.expand(layout::kdf::KEY_WRAP, &mut out[..])
+    hk.expand(info, &mut out[..])
         .map_err(|_| TeamsCryptoError::Malformed("key derivation"))?;
     Ok(out)
 }
@@ -385,6 +427,204 @@ pub fn verify_audit_event(event: &AuditEvent, device_ed25519: &PublicKey32) -> R
     } else {
         Err(TeamsCryptoError::BadSignature)
     }
+}
+
+// ── bssh AI: audit detail, agent policies, approval relay ────────────────────
+
+/// Encrypt `plaintext` as the detail of `event` (which must not have one yet).
+/// Call before [`sign_audit_event`]: the signature covers the ciphertext.
+pub fn seal_audit_detail(
+    team_id: Uuid,
+    key: &TeamKey,
+    event: &AuditEvent,
+    plaintext: &[u8],
+) -> Result<AuditDetail> {
+    let ak = key.audit_key(team_id);
+    let aad = layout::audit_detail_aad(event, key.key_version);
+    let nonce = random_nonce();
+    let ciphertext = aes_encrypt(&ak, &nonce, plaintext, &aad)?;
+    Ok(AuditDetail {
+        key_version: key.key_version,
+        nonce: Fixed(nonce),
+        ciphertext: Bytes(ciphertext),
+    })
+}
+
+/// Decrypt an event's detail. The caller verifies the event signature first.
+pub fn open_audit_detail(
+    team_id: Uuid,
+    key: &TeamKey,
+    event: &AuditEvent,
+) -> Result<Zeroizing<Vec<u8>>> {
+    let detail = event
+        .detail
+        .as_ref()
+        .ok_or(TeamsCryptoError::Malformed("audit event (no detail)"))?;
+    if detail.key_version != key.key_version {
+        return Err(TeamsCryptoError::Malformed(
+            "audit detail (key version mismatch)",
+        ));
+    }
+    let ak = key.audit_key(team_id);
+    let aad = layout::audit_detail_aad(event, detail.key_version);
+    aes_decrypt(&ak, detail.nonce.as_bytes(), &detail.ciphertext.0, &aad)
+}
+
+/// Sign an agent policy as an admin device.
+pub fn sign_policy(team_id: Uuid, policy: &mut SignedAgentPolicy, signer: &DeviceKeys) {
+    policy.signature = signer.sign(&layout::policy_signing_bytes(team_id, policy));
+}
+
+/// Check an agent policy against the pinned admin key.
+pub fn verify_policy(
+    team_id: Uuid,
+    policy: &SignedAgentPolicy,
+    admin_ed25519: &PublicKey32,
+) -> Result<()> {
+    if verify(
+        admin_ed25519,
+        &layout::policy_signing_bytes(team_id, policy),
+        &policy.signature,
+    ) {
+        Ok(())
+    } else {
+        Err(TeamsCryptoError::UntrustedSigner)
+    }
+}
+
+/// A device a relay message is encrypted to.
+#[derive(Debug, Clone)]
+pub struct RelayTarget {
+    pub device_id: Uuid,
+    pub x25519_public: PublicKey32,
+}
+
+/// Fields of a relay message chosen by the sender.
+#[derive(Debug, Clone)]
+pub struct RelayDraft {
+    pub team_id: Uuid,
+    pub request_id: Uuid,
+    pub kind: RelayKind,
+    pub sender_device_id: Uuid,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Encrypt `payload` to every target and sign the result as the sender.
+pub fn seal_relay(
+    draft: &RelayDraft,
+    payload: &[u8],
+    targets: &[RelayTarget],
+    sender: &DeviceKeys,
+) -> Result<RelayMessage> {
+    use chrono::SubsecRound;
+    if targets.is_empty() {
+        return Err(TeamsCryptoError::Malformed("relay message (no recipients)"));
+    }
+    let mut m = RelayMessage {
+        message_id: Uuid::new_v4(),
+        team_id: draft.team_id,
+        request_id: draft.request_id,
+        kind: draft.kind,
+        sender_device_id: draft.sender_device_id,
+        // Only millisecond precision is signed.
+        created_at: draft.created_at.trunc_subsecs(3),
+        expires_at: draft.expires_at.trunc_subsecs(3),
+        nonce: Fixed::ZERO,
+        ciphertext: Bytes(Vec::new()),
+        recipients: Vec::new(),
+        signature: Fixed::ZERO,
+    };
+    let ck = random_bytes::<32>();
+    let nonce = random_nonce();
+    m.ciphertext = Bytes(aes_encrypt(&ck, &nonce, payload, &layout::relay_aad(&m))?);
+    m.nonce = Fixed(nonce);
+    for t in targets {
+        let eph = EphemeralSecret::random_from_rng(OsRng);
+        let eph_pub = XPublic::from(&eph).to_bytes();
+        let their = XPublic::from(*t.x25519_public.as_bytes());
+        let shared = eph.diffie_hellman(&their);
+        let wk = wrap_key_with(&shared, &eph_pub, their.as_bytes(), layout::kdf::RELAY_WRAP)?;
+        drop(shared);
+        let rn = random_nonce();
+        let wrapped = aes_encrypt(
+            &wk,
+            &rn,
+            &ck[..],
+            &layout::relay_wrap_aad(m.message_id, t.device_id),
+        )?;
+        m.recipients.push(RelayRecipient {
+            device_id: t.device_id,
+            ephemeral_public: Fixed(eph_pub),
+            nonce: Fixed(rn),
+            wrapped_key: Bytes(wrapped),
+        });
+    }
+    m.signature = sender.sign(&layout::relay_signing_bytes(&m));
+    Ok(m)
+}
+
+/// Verify a relay message against `sender_ed25519` (a key the receiver
+/// trusts for `m.sender_device_id`), then decrypt it as `my_device_id`.
+pub fn open_relay(
+    m: &RelayMessage,
+    my_device_id: Uuid,
+    me: &DeviceKeys,
+    sender_ed25519: &PublicKey32,
+) -> Result<Zeroizing<Vec<u8>>> {
+    if !verify(
+        sender_ed25519,
+        &layout::relay_signing_bytes(m),
+        &m.signature,
+    ) {
+        return Err(TeamsCryptoError::BadSignature);
+    }
+    let rec = m
+        .recipients
+        .iter()
+        .find(|r| r.device_id == my_device_id)
+        .ok_or(TeamsCryptoError::Malformed(
+            "relay message (not addressed to this device)",
+        ))?;
+    let eph_pub = XPublic::from(*rec.ephemeral_public.as_bytes());
+    let shared = me.x25519.diffie_hellman(&eph_pub);
+    let my_pub = XPublic::from(&me.x25519).to_bytes();
+    let wk = wrap_key_with(
+        &shared,
+        eph_pub.as_bytes(),
+        &my_pub,
+        layout::kdf::RELAY_WRAP,
+    )?;
+    drop(shared);
+    let ck = aes_decrypt(
+        &wk,
+        rec.nonce.as_bytes(),
+        &rec.wrapped_key.0,
+        &layout::relay_wrap_aad(m.message_id, my_device_id),
+    )?;
+    if ck.len() != 32 {
+        return Err(TeamsCryptoError::Malformed(
+            "relay content key (wrong length)",
+        ));
+    }
+    let mut key = Zeroizing::new([0u8; 32]);
+    key.copy_from_slice(&ck);
+    aes_decrypt(
+        &key,
+        m.nonce.as_bytes(),
+        &m.ciphertext.0,
+        &layout::relay_aad(m),
+    )
+}
+
+/// Sign an arbitrary byte string with a device key (credential tests, tokens).
+pub fn sign_with(keys: &DeviceKeys, msg: &[u8]) -> Signature64 {
+    keys.sign(msg)
+}
+
+/// Verify a signature made by [`sign_with`].
+pub fn verify_with(pk: &PublicKey32, msg: &[u8], sig: &Signature64) -> bool {
+    verify(pk, msg, sig)
 }
 
 /// OpenSSH-style fingerprint of an Ed25519 key, `SHA256:<base64 no padding>`,
@@ -706,6 +946,8 @@ mod tests {
             occurred_at: Utc::now(),
             prev_hash: layout::AUDIT_GENESIS,
             signature: Fixed::ZERO,
+            actor: None,
+            detail: None,
         }
     }
 
@@ -741,5 +983,158 @@ mod tests {
             fingerprint(&Fixed(pk)),
             "SHA256:SF9WlmfWuKAxL+IE2QnAygAmBz78F4TZDzR549n0G5Q"
         );
+    }
+
+    // An event signed by a pre-AI client (python/RFC 8032 reference, seed [1; 32]).
+    const OLD_EVENT: &str = r#"{
+        "event_id":"06060606-0606-0606-0606-060606060606",
+        "team_id":"01010101-0101-0101-0101-010101010101",
+        "device_id":"04040404-0404-0404-0404-040404040404",
+        "seq":7,"kind":"session_start",
+        "entry_id":"02020202-0202-0202-0202-020202020202",
+        "occurred_at":"2023-11-14T22:13:20.123Z",
+        "prev_hash":"CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg=",
+        "signature":"rxfVq0KLe2evDDwJi3+L3wfJ3elaQEOv9jRqOaTt2WecUc7YuwjcupTSvqKYLo77/Cn4zekMuwpOuOe+Zdm5Cg=="
+    }"#;
+
+    #[test]
+    fn pre_ai_audit_event_still_verifies() {
+        let ev: AuditEvent = serde_json::from_str(OLD_EVENT).unwrap();
+        let pk: PublicKey32 =
+            serde_json::from_str("\"iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w=\"").unwrap();
+        assert!(verify_audit_event(&ev, &pk).is_ok());
+        // The same key signs a fresh v1 event identically (Ed25519 is deterministic).
+        let keys = DeviceKeys::from_secrets(&[9; 32], &[1; 32]);
+        assert_eq!(keys.ed25519_public(), pk);
+        let mut again = ev.clone();
+        again.signature = Fixed::ZERO;
+        sign_audit_event(&mut again, &keys);
+        assert_eq!(again.signature, ev.signature);
+    }
+
+    #[test]
+    fn ai_audit_event_round_trip_and_tamper() {
+        let k = DeviceKeys::generate();
+        let tk = TeamKey::generate(2);
+        let mut ev = event();
+        ev.kind = AuditKind::AiCall;
+        ev.actor = Some(bssh_teams_proto::api::AuditActor {
+            kind: bssh_teams_proto::api::MemberKind::Agent,
+            name: "deployer".into(),
+            on_behalf_of: None,
+        });
+        ev.detail = Some(seal_audit_detail(ev.team_id, &tk, &ev, b"{\"cmd\":\"ls\"}").unwrap());
+        sign_audit_event(&mut ev, &k);
+        assert!(verify_audit_event(&ev, &k.ed25519_public()).is_ok());
+        assert_eq!(
+            &open_audit_detail(ev.team_id, &tk, &ev).unwrap()[..],
+            b"{\"cmd\":\"ls\"}"
+        );
+        // Swapping the actor breaks the signature.
+        let mut t = ev.clone();
+        t.actor.as_mut().unwrap().name = "other".into();
+        assert!(verify_audit_event(&t, &k.ed25519_public()).is_err());
+        // Moving the detail to another event breaks decryption.
+        let mut moved = ev.clone();
+        moved.event_id = id(9);
+        assert!(open_audit_detail(moved.team_id, &tk, &moved).is_err());
+        // Another team key can't read it.
+        assert!(open_audit_detail(ev.team_id, &TeamKey::generate(2), &ev).is_err());
+    }
+
+    #[test]
+    fn policy_sign_verify_and_widening_fails() {
+        let admin = DeviceKeys::generate();
+        let mut p = SignedAgentPolicy {
+            agent_device_id: id(5),
+            name: "default".into(),
+            policy_json: r#"{"profile":"observe"}"#.into(),
+            version: 1,
+            signed_at: Utc::now(),
+            signer_device_id: id(7),
+            signature: Fixed::ZERO,
+        };
+        sign_policy(id(1), &mut p, &admin);
+        assert!(verify_policy(id(1), &p, &admin.ed25519_public()).is_ok());
+        let mut wide = p.clone();
+        wide.policy_json = r#"{"profile":"oncall"}"#.into();
+        assert!(verify_policy(id(1), &wide, &admin.ed25519_public()).is_err());
+        assert!(verify_policy(id(2), &p, &admin.ed25519_public()).is_err());
+        assert!(verify_policy(id(1), &p, &DeviceKeys::generate().ed25519_public()).is_err());
+        let mut other_agent = p.clone();
+        other_agent.agent_device_id = id(6);
+        assert!(verify_policy(id(1), &other_agent, &admin.ed25519_public()).is_err());
+    }
+
+    fn draft(kind: RelayKind) -> RelayDraft {
+        RelayDraft {
+            team_id: id(1),
+            request_id: id(3),
+            kind,
+            sender_device_id: id(4),
+            created_at: Utc::now(),
+            expires_at: Utc::now() + chrono::Duration::minutes(5),
+        }
+    }
+
+    #[test]
+    fn relay_round_trip_for_each_recipient_only() {
+        let (sender, a1, a2, outsider) = (
+            DeviceKeys::generate(),
+            DeviceKeys::generate(),
+            DeviceKeys::generate(),
+            DeviceKeys::generate(),
+        );
+        let targets = [
+            RelayTarget {
+                device_id: id(11),
+                x25519_public: a1.x25519_public(),
+            },
+            RelayTarget {
+                device_id: id(12),
+                x25519_public: a2.x25519_public(),
+            },
+        ];
+        let m = seal_relay(
+            &draft(RelayKind::Request),
+            b"restart nginx on web-1",
+            &targets,
+            &sender,
+        )
+        .unwrap();
+        let spk = sender.ed25519_public();
+        assert_eq!(
+            &open_relay(&m, id(11), &a1, &spk).unwrap()[..],
+            b"restart nginx on web-1"
+        );
+        assert_eq!(
+            &open_relay(&m, id(12), &a2, &spk).unwrap()[..],
+            b"restart nginx on web-1"
+        );
+        // Not addressed, or the wrong private key.
+        assert!(open_relay(&m, id(13), &outsider, &spk).is_err());
+        assert!(open_relay(&m, id(11), &outsider, &spk).is_err());
+        // Wrong sender key, tampered ciphertext, changed expiry or kind.
+        assert!(open_relay(&m, id(11), &a1, &DeviceKeys::generate().ed25519_public()).is_err());
+        for mutate in [
+            (|m: &mut RelayMessage| m.ciphertext.0[0] ^= 1) as fn(&mut RelayMessage),
+            |m| m.expires_at += chrono::Duration::minutes(30),
+            |m| m.kind = RelayKind::Decision,
+            |m| m.request_id = Uuid::new_v4(),
+            |m| m.recipients[0].wrapped_key.0[0] ^= 1,
+        ] {
+            let mut t = m.clone();
+            mutate(&mut t);
+            assert!(open_relay(&t, id(11), &a1, &spk).is_err());
+        }
+    }
+
+    #[test]
+    fn device_secret_bytes_round_trip() {
+        let k = DeviceKeys::generate();
+        let again = DeviceKeys::from_secret_bytes(&k.to_secret_bytes()[..]).unwrap();
+        assert_eq!(k.ed25519_public(), again.ed25519_public());
+        assert_eq!(k.x25519_public(), again.x25519_public());
+        assert!(DeviceKeys::from_secret_bytes(&[0; 10]).is_err());
     }
 }

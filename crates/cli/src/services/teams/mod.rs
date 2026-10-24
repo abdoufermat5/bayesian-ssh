@@ -22,12 +22,14 @@
 
 #![allow(dead_code)]
 
+pub mod agent;
 pub mod audit;
 pub mod billing;
 pub mod client;
 pub mod codec;
 pub mod crypto;
 pub mod orgs;
+pub mod relay;
 pub mod session;
 pub mod store;
 pub mod sync;
@@ -37,7 +39,7 @@ pub use store::TeamsStore;
 pub use sync::{SyncEngine, SyncReport};
 
 use anyhow::Result;
-use bssh_teams_proto::api::{ConnectionRecord, VaultPayload};
+use bssh_teams_proto::api::{ConnectionRecord, SignedAgentPolicy, VaultPayload};
 use uuid::Uuid;
 
 /// A shared connection as seen locally.
@@ -51,12 +53,23 @@ pub struct TeamConnection {
     pub record: ConnectionRecord,
 }
 
+/// An admin-signed agent policy found in the vault (not yet verified: the
+/// reader checks the signature against its pinned admin key).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TeamAgentPolicy {
+    pub entry_id: Uuid,
+    pub revision: u64,
+    pub policy: SignedAgentPolicy,
+}
+
 /// The decrypted local view of a team vault.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct VaultView {
     pub team_name: Option<String>,
     /// Live (non-deleted) connections, sorted by name.
     pub connections: Vec<TeamConnection>,
+    /// Signed agent policies (bssh AI), newest version of each (agent, name) first.
+    pub agent_policies: Vec<TeamAgentPolicy>,
     /// Entries that could not be verified or decrypted (unknown author,
     /// missing key version, bad signature). They are skipped, never shown.
     pub unreadable: Vec<Uuid>,
@@ -88,6 +101,11 @@ pub fn read_vault(store: &TeamsStore, codec: &dyn VaultCodec, team_id: Uuid) -> 
                 record,
             }),
             Ok(VaultPayload::TeamProfile { name }) => view.team_name = Some(name),
+            Ok(VaultPayload::AgentPolicy(policy)) => view.agent_policies.push(TeamAgentPolicy {
+                entry_id,
+                revision,
+                policy,
+            }),
             Ok(VaultPayload::Tombstone) => {}
             Err(e) => {
                 tracing::warn!("team entry {entry_id} unreadable: {e}");
@@ -97,6 +115,8 @@ pub fn read_vault(store: &TeamsStore, codec: &dyn VaultCodec, team_id: Uuid) -> 
     }
     view.connections
         .sort_by(|a, b| a.record.name.cmp(&b.record.name));
+    view.agent_policies
+        .sort_by_key(|p| std::cmp::Reverse(p.policy.version));
     Ok(view)
 }
 

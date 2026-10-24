@@ -222,6 +222,17 @@ pub struct AddOwnerRequest {
     pub email: String,
 }
 
+/// Who a team member is. Agents are unattended identities created by an
+/// admin (`POST /v1/teams/{team_id}/agents`); they take a seat like a human
+/// member, are never admins, and can read the vault but not write to it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MemberKind {
+    #[default]
+    Human,
+    Agent,
+}
+
 /// `GET /v1/teams/{team_id}/members` returns `Vec<Member>`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Member {
@@ -229,6 +240,9 @@ pub struct Member {
     pub account_id: Uuid,
     pub email: String,
     pub role: Role,
+    /// `Human` from a server without agents.
+    #[serde(default)]
+    pub kind: MemberKind,
     pub devices: Vec<DeviceInfo>,
     pub joined_at: DateTime<Utc>,
 }
@@ -378,6 +392,29 @@ pub enum VaultPayload {
     },
     /// Deletion marker; the entry stays in history.
     Tombstone,
+    /// An agent's policy, signed by an admin device. Clients verify the
+    /// signature against the pinned admin key before using it, so the server
+    /// can't widen it.
+    AgentPolicy(SignedAgentPolicy),
+}
+
+/// An admin-signed agent policy (bssh AI, Teams). `policy_json` is the exact
+/// text that was signed (a serialized `ai` policy); it is parsed only after
+/// the signature verifies. The server sees none of this: it lives in the
+/// encrypted vault.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SignedAgentPolicy {
+    /// The agent's device id the policy applies to.
+    pub agent_device_id: Uuid,
+    /// Policy name, e.g. `default`.
+    pub name: String,
+    pub policy_json: String,
+    /// Bumped on every re-sign; a gateway refuses to go back to a lower one.
+    pub version: u64,
+    pub signed_at: DateTime<Utc>,
+    pub signer_device_id: Uuid,
+    /// Over [`crate::layout::policy_signing_bytes`].
+    pub signature: Signature64,
 }
 
 /// A shared connection. Deliberately has no key paths or passwords: those are
@@ -467,6 +504,119 @@ pub struct BillingRedirect {
     pub url: String,
 }
 
+// ── Agents ───────────────────────────────────────────────────────────────────
+
+/// `POST /v1/teams/{team_id}/agents` (admin): register an agent identity. The
+/// admin generated the agent's device keys locally and sends only the public
+/// halves. The agent becomes a member of kind [`MemberKind::Agent`] and takes
+/// a seat (`SeatLimit` applies). The admin then wraps the team key to the
+/// agent's device with `POST /keys`, like for any new device.
+/// Removing an agent is `DELETE /v1/teams/{team_id}/members/{member_id}`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CreateAgentRequest {
+    /// Shown to admins; unique within the team (case-insensitive).
+    pub name: String,
+    pub device: NewDevice,
+}
+
+/// Response of `POST …/agents`; `GET /v1/teams/{team_id}/agents` (any member)
+/// returns `Vec<AgentInfo>`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentInfo {
+    pub member_id: Uuid,
+    pub account_id: Uuid,
+    pub name: String,
+    pub device: DeviceInfo,
+    pub created_at: DateTime<Utc>,
+}
+
+// ── Approval relay ───────────────────────────────────────────────────────────
+//
+// An agent that needs a human's approval posts a `Request` encrypted to the
+// admins' devices; an admin answers with a `Decision` encrypted to the
+// requesting device (and the other admins). The server queues and expires the
+// messages; it sees the team, the sender device, the size and the expiry, and
+// nothing of what is asked or decided.
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RelayKind {
+    Request,
+    Decision,
+}
+
+impl RelayKind {
+    pub fn tag(self) -> u8 {
+        match self {
+            RelayKind::Request => 1,
+            RelayKind::Decision => 2,
+        }
+    }
+}
+
+/// The content key of a [`RelayMessage`], wrapped to one device.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RelayRecipient {
+    pub device_id: Uuid,
+    pub ephemeral_public: PublicKey32,
+    pub nonce: Nonce12,
+    /// AES-256-GCM of the 32-byte content key, tag appended.
+    pub wrapped_key: Bytes,
+}
+
+/// An end-to-end encrypted, signed message between devices of one team.
+///
+/// `POST /v1/teams/{team_id}/relay` (any active member for a `Request`, admin
+/// for a `Decision`). The server checks the signature against the sender
+/// device's key, that the sender is the caller, that recipients are active
+/// devices of the team (admins for a `Request`), the size (64 KiB) and that
+/// `expires_at` is in the future and at most one hour away.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RelayMessage {
+    /// Client-chosen UUIDv4; makes posts idempotent.
+    pub message_id: Uuid,
+    pub team_id: Uuid,
+    /// Correlates a decision with its request; opaque to the server.
+    pub request_id: Uuid,
+    pub kind: RelayKind,
+    pub sender_device_id: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+    pub nonce: Nonce12,
+    /// AES-256-GCM of a JSON payload under the content key, AAD =
+    /// [`crate::layout::relay_aad`].
+    pub ciphertext: Bytes,
+    pub recipients: Vec<RelayRecipient>,
+    /// Over [`crate::layout::relay_signing_bytes`].
+    pub signature: Signature64,
+}
+
+/// Response of `POST …/relay`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RelayAck {
+    pub message_id: Uuid,
+    /// The queue position; pass it as `after` to skip past this message.
+    pub seq: u64,
+}
+
+/// `GET /v1/teams/{team_id}/relay?kind=&request_id=&after=&wait=`: unexpired
+/// messages addressed to the calling device with `seq > after`, ascending.
+/// With nothing to return, waits up to `wait` seconds (default 0, max 30) for
+/// a message to arrive, then answers with an empty list.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RelayPoll {
+    pub messages: Vec<RelayEnvelope>,
+    /// Pass as `after` next time.
+    pub next: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RelayEnvelope {
+    /// Server-assigned, strictly increasing per server.
+    pub seq: u64,
+    pub message: RelayMessage,
+}
+
 // ── Audit ────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -476,6 +626,14 @@ pub enum AuditKind {
     SessionEnd,
     VaultRead,
     VaultWrite,
+    /// bssh AI: a tool call and its policy decision. Detail is encrypted.
+    AiCall,
+    /// bssh AI: an approval request and its outcome.
+    AiApproval,
+    /// bssh AI: a change plan applied or undone.
+    AiChange,
+    /// bssh AI: run started or ended, circuit breaker tripped.
+    AiRun,
 }
 
 impl AuditKind {
@@ -486,8 +644,67 @@ impl AuditKind {
             AuditKind::SessionEnd => 2,
             AuditKind::VaultRead => 3,
             AuditKind::VaultWrite => 4,
+            AuditKind::AiCall => 5,
+            AuditKind::AiApproval => 6,
+            AuditKind::AiChange => 7,
+            AuditKind::AiRun => 8,
         }
     }
+
+    /// Kinds 1 to 4 predate bssh AI and are signed with the v1 layout (when
+    /// they carry no actor or detail).
+    pub fn is_ai(self) -> bool {
+        self.tag() >= 5
+    }
+
+    /// Wire name, as used in `kind` query filters and server storage.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            AuditKind::SessionStart => "session_start",
+            AuditKind::SessionEnd => "session_end",
+            AuditKind::VaultRead => "vault_read",
+            AuditKind::VaultWrite => "vault_write",
+            AuditKind::AiCall => "ai_call",
+            AuditKind::AiApproval => "ai_approval",
+            AuditKind::AiChange => "ai_change",
+            AuditKind::AiRun => "ai_run",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "session_start" => AuditKind::SessionStart,
+            "session_end" => AuditKind::SessionEnd,
+            "vault_read" => AuditKind::VaultRead,
+            "vault_write" => AuditKind::VaultWrite,
+            "ai_call" => AuditKind::AiCall,
+            "ai_approval" => AuditKind::AiApproval,
+            "ai_change" => AuditKind::AiChange,
+            "ai_run" => AuditKind::AiRun,
+            _ => return None,
+        })
+    }
+}
+
+/// Who acted. Signed with the event (v2 layout), visible to the server so
+/// "which agent did something this week" can be queried.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AuditActor {
+    pub kind: MemberKind,
+    /// Agent name, or the member's email for a human.
+    pub name: String,
+    /// The human an interactive agent acts for ("Claude Code on behalf of alice").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_behalf_of: Option<String>,
+}
+
+/// Encrypted detail of an AI event (commands, hosts, outcome). AES-256-GCM
+/// under the team's audit key, see `PROTOCOL.md`. Opaque to the server.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AuditDetail {
+    pub key_version: u32,
+    pub nonce: Nonce12,
+    pub ciphertext: Bytes,
 }
 
 /// A client-signed audit event. Events per device form a hash chain
@@ -507,6 +724,12 @@ pub struct AuditEvent {
     pub occurred_at: DateTime<Utc>,
     pub prev_hash: Hash32,
     pub signature: Signature64,
+    /// Who acted; set on AI events. Absent on kinds 1 to 4 from older clients.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actor: Option<AuditActor>,
+    /// Encrypted detail; set on AI events.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<AuditDetail>,
 }
 
 /// `POST /v1/teams/{team_id}/audit`: events from the calling device, in
@@ -524,8 +747,9 @@ pub struct IngestAuditResponse {
     pub duplicates: Vec<Uuid>,
 }
 
-/// `GET /v1/teams/{team_id}/audit?device_id=&entry_id=&since=&limit=` (admin)
-/// returns `Vec<AuditRecord>`, newest first, `limit` default 100, max 1000.
+/// `GET /v1/teams/{team_id}/audit?device_id=&entry_id=&kind=&actor=&since=&limit=`
+/// (admin) returns `Vec<AuditRecord>`, newest first, `limit` default 100, max
+/// 1000. `kind` is an [`AuditKind::as_str`] name, `actor` an exact actor name.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AuditRecord {
     pub event: AuditEvent,
@@ -588,5 +812,101 @@ mod tests {
         let e: ApiError =
             serde_json::from_str(r#"{"code":"payment_required","message":"x"}"#).unwrap();
         assert_eq!(e.code, ErrorCode::PaymentRequired);
+    }
+}
+
+#[cfg(test)]
+mod compat_tests {
+    use super::*;
+
+    // An audit event as written by a pre-AI client (kinds 1-4, no actor/detail).
+    const OLD_EVENT: &str = r#"{
+        "event_id":"06060606-0606-0606-0606-060606060606",
+        "team_id":"01010101-0101-0101-0101-010101010101",
+        "device_id":"04040404-0404-0404-0404-040404040404",
+        "seq":7,"kind":"session_start",
+        "entry_id":"02020202-0202-0202-0202-020202020202",
+        "occurred_at":"2023-11-14T22:13:20.123Z",
+        "prev_hash":"CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg=",
+        "signature":"rxfVq0KLe2evDDwJi3+L3wfJ3elaQEOv9jRqOaTt2WecUc7YuwjcupTSvqKYLo77/Cn4zekMuwpOuOe+Zdm5Cg=="
+    }"#;
+
+    #[test]
+    fn old_audit_events_decode_and_reserialize_unchanged() {
+        let ev: AuditEvent = serde_json::from_str(OLD_EVENT).unwrap();
+        assert!(ev.actor.is_none() && ev.detail.is_none());
+        let json = serde_json::to_string(&ev).unwrap();
+        assert!(
+            !json.contains("actor") && !json.contains("detail"),
+            "{json}"
+        );
+        let again: AuditEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(ev, again);
+    }
+
+    #[test]
+    fn old_tags_are_never_reused() {
+        assert_eq!(
+            [
+                AuditKind::SessionStart,
+                AuditKind::SessionEnd,
+                AuditKind::VaultRead,
+                AuditKind::VaultWrite
+            ]
+            .map(AuditKind::tag),
+            [1, 2, 3, 4]
+        );
+        assert_eq!(
+            [
+                AuditKind::AiCall,
+                AuditKind::AiApproval,
+                AuditKind::AiChange,
+                AuditKind::AiRun
+            ]
+            .map(AuditKind::tag),
+            [5, 6, 7, 8]
+        );
+        for k in [
+            AuditKind::SessionStart,
+            AuditKind::AiCall,
+            AuditKind::AiApproval,
+            AuditKind::AiChange,
+            AuditKind::AiRun,
+        ] {
+            assert_eq!(AuditKind::parse(k.as_str()), Some(k));
+            let json = serde_json::to_string(&k).unwrap();
+            assert_eq!(json, format!("\"{}\"", k.as_str()));
+        }
+    }
+
+    #[test]
+    fn old_vault_payloads_and_members_still_decode() {
+        let p: VaultPayload =
+            serde_json::from_str(r#"{"type":"team_profile","name":"ops"}"#).unwrap();
+        assert!(matches!(p, VaultPayload::TeamProfile { .. }));
+        let m: Member = serde_json::from_str(
+            r#"{"member_id":"01010101-0101-0101-0101-010101010101",
+                "account_id":"01010101-0101-0101-0101-010101010101",
+                "email":"a@b.c","role":"admin","devices":[],
+                "joined_at":"2023-11-14T22:13:20Z"}"#,
+        )
+        .unwrap();
+        assert_eq!(m.kind, MemberKind::Human);
+    }
+
+    #[test]
+    fn agent_policy_payload_is_tagged() {
+        let p = VaultPayload::AgentPolicy(SignedAgentPolicy {
+            agent_device_id: Uuid::nil(),
+            name: "default".into(),
+            policy_json: "{}".into(),
+            version: 1,
+            signed_at: chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
+            signer_device_id: Uuid::nil(),
+            signature: Fixed::ZERO,
+        });
+        let json = serde_json::to_string(&p).unwrap();
+        assert!(json.starts_with(r#"{"type":"agent_policy""#), "{json}");
+        assert_eq!(serde_json::from_str::<VaultPayload>(&json).unwrap(), p);
     }
 }

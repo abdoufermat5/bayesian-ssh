@@ -12,6 +12,7 @@
     Ticket,
   } from "lucide-svelte";
   import { attentionCount } from "$lib/stores/attention.svelte";
+  import { aiPendingCount } from "$lib/stores/ai.svelte";
   import { GLOBAL_SHORTCUTS, viewDigit } from "$lib/shortcuts";
   import { VIEW_META, viewEnabled } from "$lib/viewMeta";
   import type { AppTab, DesktopSettings, EnvInfo } from "$lib/types";
@@ -93,6 +94,10 @@
     {
       label: "Team",
       items: [navItem("teams", { attention: attentionCount("teams") })],
+    },
+    {
+      label: "AI",
+      items: [navItem("ai", { attention: aiPendingCount() })],
     },
   ]);
 

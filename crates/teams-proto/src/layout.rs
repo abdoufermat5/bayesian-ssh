@@ -6,7 +6,7 @@
 //! signature for one purpose can never verify as another. UUIDs are their 16
 //! raw bytes, integers are big-endian, timestamps are Unix milliseconds (i64).
 
-use crate::api::{AuditEvent, EncryptedEntry, WrappedKey};
+use crate::api::{AuditEvent, EncryptedEntry, RelayMessage, SignedAgentPolicy, WrappedKey};
 use crate::wire::{Hash32, Nonce12, PublicKey32};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
@@ -17,6 +17,17 @@ pub mod domain {
     pub const KEY_WRAP: &[u8] = b"bssh-teams/v1/key-wrap\0";
     pub const AUDIT: &[u8] = b"bssh-teams/v1/audit\0";
     pub const AUTH: &[u8] = b"bssh-teams/v1/auth\0";
+    /// Audit events with an actor or detail, or of an AI kind (tags 5+).
+    /// Events of kinds 1 to 4 without either keep the [`AUDIT`] layout.
+    pub const AUDIT_V2: &[u8] = b"bssh-teams/v2/audit\0";
+    /// Detail of an AI audit event (AEAD associated data).
+    pub const AUDIT_DETAIL: &[u8] = b"bssh-teams/v2/audit-detail\0";
+    /// Admin-signed agent policy.
+    pub const POLICY: &[u8] = b"bssh-teams/v2/agent-policy\0";
+    /// Approval relay messages (AEAD associated data and signature).
+    pub const RELAY: &[u8] = b"bssh-teams/v2/relay\0";
+    /// Content-key wrap inside a relay message (AEAD associated data).
+    pub const RELAY_WRAP: &[u8] = b"bssh-teams/v2/relay-wrap\0";
 }
 
 /// HKDF-SHA256 `info` strings. See `PROTOCOL.md` for salts and inputs.
@@ -25,6 +36,10 @@ pub mod kdf {
     pub const VAULT_KEY: &[u8] = b"bssh-teams/v1/vault-key";
     /// Key wrap: `HKDF(salt = ephemeral_pub ‖ recipient_pub, ikm = X25519(eph, recipient), info = KEY_WRAP)`.
     pub const KEY_WRAP: &[u8] = b"bssh-teams/v1/key-wrap";
+    /// Audit key: `HKDF(salt = team_id, ikm = team_key, info = AUDIT_KEY ‖ key_version)`.
+    pub const AUDIT_KEY: &[u8] = b"bssh-teams/v2/audit-key";
+    /// Relay content-key wrap: like [`KEY_WRAP`], with this `info`.
+    pub const RELAY_WRAP: &[u8] = b"bssh-teams/v2/relay-wrap";
 }
 
 fn sha256(data: &[u8]) -> [u8; 32] {
@@ -116,11 +131,14 @@ pub fn auth_signing_bytes(challenge_id: Uuid, device_id: Uuid, nonce: &PublicKey
     b
 }
 
-/// Bytes a device signs for an audit event:
-/// `AUDIT ‖ team_id ‖ event_id ‖ device_id ‖ seq ‖ kind ‖ entry_id|zeros ‖ occurred_at_ms ‖ prev_hash`.
-pub fn audit_signing_bytes(event: &AuditEvent) -> Vec<u8> {
-    let mut b = Vec::with_capacity(domain::AUDIT.len() + 16 * 4 + 8 + 1 + 8 + 32);
-    b.extend_from_slice(domain::AUDIT);
+/// Does this event use the original (v1) signing layout? Kinds 1 to 4 with
+/// neither actor nor detail do, so every event signed before bssh AI still
+/// verifies byte for byte.
+pub fn audit_is_v1(event: &AuditEvent) -> bool {
+    !event.kind.is_ai() && event.actor.is_none() && event.detail.is_none()
+}
+
+fn audit_fixed_fields(b: &mut Vec<u8>, event: &AuditEvent) {
     b.extend_from_slice(event.team_id.as_bytes());
     b.extend_from_slice(event.event_id.as_bytes());
     b.extend_from_slice(event.device_id.as_bytes());
@@ -129,6 +147,130 @@ pub fn audit_signing_bytes(event: &AuditEvent) -> Vec<u8> {
     b.extend_from_slice(event.entry_id.unwrap_or(Uuid::nil()).as_bytes());
     b.extend_from_slice(&event.occurred_at.timestamp_millis().to_be_bytes());
     b.extend_from_slice(event.prev_hash.as_bytes());
+}
+
+fn push_str(b: &mut Vec<u8>, s: &str) {
+    b.extend_from_slice(&(s.len() as u32).to_be_bytes());
+    b.extend_from_slice(s.as_bytes());
+}
+
+/// Bytes a device signs for an audit event.
+///
+/// v1 (kinds 1 to 4, no actor, no detail):
+/// `AUDIT ‖ team_id ‖ event_id ‖ device_id ‖ seq ‖ kind ‖ entry_id|zeros ‖ occurred_at_ms ‖ prev_hash`.
+///
+/// v2 (everything else): `AUDIT_V2 ‖` the same fixed fields `‖ actor ‖ detail`, where
+/// `actor` is `0x00`, or `0x01 ‖ kind (1 human, 2 agent) ‖ len32 ‖ name ‖ flag ‖ [len32 ‖ on_behalf_of]`,
+/// and `detail` is `0x00`, or `0x01 ‖ key_version ‖ nonce ‖ SHA-256(ciphertext)`.
+pub fn audit_signing_bytes(event: &AuditEvent) -> Vec<u8> {
+    if audit_is_v1(event) {
+        let mut b = Vec::with_capacity(domain::AUDIT.len() + 16 * 4 + 8 + 1 + 8 + 32);
+        b.extend_from_slice(domain::AUDIT);
+        audit_fixed_fields(&mut b, event);
+        return b;
+    }
+    let mut b = Vec::with_capacity(domain::AUDIT_V2.len() + 16 * 4 + 8 + 1 + 8 + 32 + 64);
+    b.extend_from_slice(domain::AUDIT_V2);
+    audit_fixed_fields(&mut b, event);
+    match &event.actor {
+        None => b.push(0),
+        Some(a) => {
+            b.push(1);
+            b.push(match a.kind {
+                crate::api::MemberKind::Human => 1,
+                crate::api::MemberKind::Agent => 2,
+            });
+            push_str(&mut b, &a.name);
+            match &a.on_behalf_of {
+                None => b.push(0),
+                Some(o) => {
+                    b.push(1);
+                    push_str(&mut b, o);
+                }
+            }
+        }
+    }
+    match &event.detail {
+        None => b.push(0),
+        Some(d) => {
+            b.push(1);
+            b.extend_from_slice(&d.key_version.to_be_bytes());
+            b.extend_from_slice(d.nonce.as_bytes());
+            b.extend_from_slice(&sha256(&d.ciphertext.0));
+        }
+    }
+    b
+}
+
+/// AEAD associated data of an audit event's encrypted detail:
+/// `AUDIT_DETAIL ‖ team_id ‖ event_id ‖ device_id ‖ kind ‖ key_version`.
+pub fn audit_detail_aad(event: &AuditEvent, key_version: u32) -> Vec<u8> {
+    let mut b = Vec::with_capacity(domain::AUDIT_DETAIL.len() + 16 * 3 + 1 + 4);
+    b.extend_from_slice(domain::AUDIT_DETAIL);
+    b.extend_from_slice(event.team_id.as_bytes());
+    b.extend_from_slice(event.event_id.as_bytes());
+    b.extend_from_slice(event.device_id.as_bytes());
+    b.push(event.kind.tag());
+    b.extend_from_slice(&key_version.to_be_bytes());
+    b
+}
+
+/// Bytes an admin device signs for an agent policy:
+/// `POLICY ‖ team_id ‖ agent_device_id ‖ signer_device_id ‖ version ‖ signed_at_ms ‖ len32 ‖ name ‖ SHA-256(policy_json)`.
+pub fn policy_signing_bytes(team_id: Uuid, policy: &SignedAgentPolicy) -> Vec<u8> {
+    let mut b =
+        Vec::with_capacity(domain::POLICY.len() + 16 * 3 + 8 + 8 + 4 + policy.name.len() + 32);
+    b.extend_from_slice(domain::POLICY);
+    b.extend_from_slice(team_id.as_bytes());
+    b.extend_from_slice(policy.agent_device_id.as_bytes());
+    b.extend_from_slice(policy.signer_device_id.as_bytes());
+    b.extend_from_slice(&policy.version.to_be_bytes());
+    b.extend_from_slice(&policy.signed_at.timestamp_millis().to_be_bytes());
+    push_str(&mut b, &policy.name);
+    b.extend_from_slice(&sha256(policy.policy_json.as_bytes()));
+    b
+}
+
+/// AEAD associated data of a relay message's payload:
+/// `RELAY ‖ team_id ‖ message_id ‖ request_id ‖ kind ‖ sender_device_id ‖ created_at_ms ‖ expires_at_ms`.
+pub fn relay_aad(m: &RelayMessage) -> Vec<u8> {
+    let mut b = Vec::with_capacity(domain::RELAY.len() + 16 * 4 + 1 + 16);
+    b.extend_from_slice(domain::RELAY);
+    b.extend_from_slice(m.team_id.as_bytes());
+    b.extend_from_slice(m.message_id.as_bytes());
+    b.extend_from_slice(m.request_id.as_bytes());
+    b.push(m.kind.tag());
+    b.extend_from_slice(m.sender_device_id.as_bytes());
+    b.extend_from_slice(&m.created_at.timestamp_millis().to_be_bytes());
+    b.extend_from_slice(&m.expires_at.timestamp_millis().to_be_bytes());
+    b
+}
+
+/// AEAD associated data of one wrapped content key: `RELAY_WRAP ‖ message_id ‖ recipient_device_id`.
+pub fn relay_wrap_aad(message_id: Uuid, recipient_device_id: Uuid) -> Vec<u8> {
+    let mut b = Vec::with_capacity(domain::RELAY_WRAP.len() + 32);
+    b.extend_from_slice(domain::RELAY_WRAP);
+    b.extend_from_slice(message_id.as_bytes());
+    b.extend_from_slice(recipient_device_id.as_bytes());
+    b
+}
+
+/// Bytes the sender device signs for a relay message:
+/// `relay_aad ‖ nonce ‖ SHA-256(ciphertext) ‖ SHA-256(recipients)`, where `recipients` is, per
+/// recipient in order, `device_id ‖ ephemeral_public ‖ nonce ‖ SHA-256(wrapped_key)`.
+/// The `RELAY` domain makes it unusable as any other signature.
+pub fn relay_signing_bytes(m: &RelayMessage) -> Vec<u8> {
+    let mut b = relay_aad(m);
+    b.extend_from_slice(m.nonce.as_bytes());
+    b.extend_from_slice(&sha256(&m.ciphertext.0));
+    let mut r = Vec::with_capacity(m.recipients.len() * 92);
+    for rec in &m.recipients {
+        r.extend_from_slice(rec.device_id.as_bytes());
+        r.extend_from_slice(rec.ephemeral_public.as_bytes());
+        r.extend_from_slice(rec.nonce.as_bytes());
+        r.extend_from_slice(&sha256(&rec.wrapped_key.0));
+    }
+    b.extend_from_slice(&sha256(&r));
     b
 }
 
@@ -189,6 +331,8 @@ mod tests {
             occurred_at: Utc.timestamp_millis_opt(1_700_000_000_123).unwrap(),
             prev_hash: Fixed([8; 32]),
             signature: Fixed([5; 64]),
+            actor: None,
+            detail: None,
         }
     }
 
@@ -251,11 +395,126 @@ mod tests {
 
     #[test]
     fn domains_are_distinct() {
-        let all = [domain::ENTRY, domain::KEY_WRAP, domain::AUDIT, domain::AUTH];
+        let all = [
+            domain::ENTRY,
+            domain::KEY_WRAP,
+            domain::AUDIT,
+            domain::AUTH,
+            domain::AUDIT_V2,
+            domain::AUDIT_DETAIL,
+            domain::POLICY,
+            domain::RELAY,
+            domain::RELAY_WRAP,
+        ];
         for (i, a) in all.iter().enumerate() {
             for b in &all[i + 1..] {
                 assert!(!a.starts_with(b) && !b.starts_with(a));
             }
         }
+    }
+
+    #[test]
+    fn v1_audit_layout_is_frozen_for_old_events() {
+        // Hand-built per the PROTOCOL.md v1 layout: an event signed before
+        // bssh AI must produce exactly these bytes forever.
+        let ev = sample_event();
+        let mut want = Vec::new();
+        want.extend_from_slice(b"bssh-teams/v1/audit\0");
+        want.extend_from_slice(&[1; 16]);
+        want.extend_from_slice(&[6; 16]);
+        want.extend_from_slice(&[4; 16]);
+        want.extend_from_slice(&7u64.to_be_bytes());
+        want.push(1);
+        want.extend_from_slice(&[2; 16]);
+        want.extend_from_slice(&1_700_000_000_123i64.to_be_bytes());
+        want.extend_from_slice(&[8; 32]);
+        assert_eq!(audit_signing_bytes(&ev), want);
+        assert!(audit_is_v1(&ev));
+    }
+
+    #[test]
+    fn ai_events_use_v2_and_bind_actor_and_detail() {
+        use crate::api::{AuditActor, AuditDetail, MemberKind};
+        let mut ev = sample_event();
+        ev.kind = AuditKind::AiCall;
+        let bare = audit_signing_bytes(&ev);
+        assert!(bare.starts_with(domain::AUDIT_V2));
+        assert!(!audit_is_v1(&ev));
+
+        let mut with_actor = ev.clone();
+        with_actor.actor = Some(AuditActor {
+            kind: MemberKind::Agent,
+            name: "deployer".into(),
+            on_behalf_of: None,
+        });
+        assert_ne!(bare, audit_signing_bytes(&with_actor));
+        let mut other = with_actor.clone();
+        other.actor.as_mut().unwrap().on_behalf_of = Some("alice".into());
+        assert_ne!(
+            audit_signing_bytes(&with_actor),
+            audit_signing_bytes(&other)
+        );
+
+        let mut with_detail = with_actor.clone();
+        with_detail.detail = Some(AuditDetail {
+            key_version: 1,
+            nonce: Fixed([3; 12]),
+            ciphertext: Bytes(b"x".to_vec()),
+        });
+        assert_ne!(
+            audit_signing_bytes(&with_actor),
+            audit_signing_bytes(&with_detail)
+        );
+        let mut tampered = with_detail.clone();
+        tampered.detail.as_mut().unwrap().ciphertext = Bytes(b"y".to_vec());
+        assert_ne!(
+            audit_signing_bytes(&with_detail),
+            audit_signing_bytes(&tampered)
+        );
+
+        // An old kind that gains an actor moves to v2.
+        let mut old_kind = sample_event();
+        old_kind.actor = with_actor.actor.clone();
+        assert!(audit_signing_bytes(&old_kind).starts_with(domain::AUDIT_V2));
+    }
+
+    #[test]
+    fn relay_signature_binds_every_field() {
+        use crate::api::{RelayKind, RelayRecipient};
+        let m = RelayMessage {
+            message_id: id(1),
+            team_id: id(2),
+            request_id: id(3),
+            kind: RelayKind::Request,
+            sender_device_id: id(4),
+            created_at: Utc.timestamp_millis_opt(1_700_000_000_000).unwrap(),
+            expires_at: Utc.timestamp_millis_opt(1_700_000_600_000).unwrap(),
+            nonce: Fixed([1; 12]),
+            ciphertext: Bytes(b"ct".to_vec()),
+            recipients: vec![RelayRecipient {
+                device_id: id(5),
+                ephemeral_public: Fixed([2; 32]),
+                nonce: Fixed([3; 12]),
+                wrapped_key: Bytes(b"wk".to_vec()),
+            }],
+            signature: Fixed::ZERO,
+        };
+        let base = relay_signing_bytes(&m);
+        let mut v = m.clone();
+        v.kind = RelayKind::Decision;
+        assert_ne!(base, relay_signing_bytes(&v));
+        let mut v = m.clone();
+        v.expires_at += chrono::Duration::seconds(1);
+        assert_ne!(base, relay_signing_bytes(&v));
+        let mut v = m.clone();
+        v.recipients[0].wrapped_key = Bytes(b"zz".to_vec());
+        assert_ne!(base, relay_signing_bytes(&v));
+        let mut v = m.clone();
+        v.recipients.push(v.recipients[0].clone());
+        assert_ne!(base, relay_signing_bytes(&v));
+        let mut v = m.clone();
+        v.ciphertext = Bytes(b"cx".to_vec());
+        assert_ne!(base, relay_signing_bytes(&v));
+        assert_ne!(relay_aad(&m), relay_wrap_aad(id(1), id(5)));
     }
 }

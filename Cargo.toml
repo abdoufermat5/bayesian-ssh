@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/ai-jail",
     "crates/cli",
     "crates/gui",
     "crates/teams-proto",

@@ -476,6 +476,24 @@ pub enum Commands {
         command: OrgCommands,
     },
 
+    /// Let AI agents operate servers safely (MCP proxy with policy, approvals and audit)
+    #[command(
+        long_about = "bssh AI: your agent gets your servers, not your keys.\n\n\
+            `bssh ai mcp` is an MCP server for Claude Code, Codex, Cursor and other agents.\n\
+            Every call is parsed, checked against a policy, run in a read-only jail or\n\
+            approved by you, recorded and signed.",
+        after_help = "Examples:\n\
+          bssh ai install claude-code\n\
+          bssh ai explain 'systemctl restart nginx && tail /var/log/x'\n\
+          bssh ai setup -t staging\n\
+          bssh ai approve --list\n\
+          bssh ai log"
+    )]
+    Ai {
+        #[command(subcommand)]
+        command: crate::cli::parser_ai::AiCommands,
+    },
+
     /// Manage multi-environment profiles (separate connection databases)
     Env {
         #[command(subcommand)]
@@ -556,7 +574,8 @@ pub enum Commands {
             Examples:\n\
               bssh exec web-prod -- uname -a\n\
               bssh exec --all --dry-run -- uptime\n\
-              bssh exec -t prod -- systemctl status nginx"
+              bssh exec -t prod -- systemctl status nginx\n\
+              bssh exec --timeout 30 --max-output 65536 web-prod -- journalctl -n 1000"
     )]
     Exec {
         /// Connection name, alias, or hostname
@@ -570,6 +589,12 @@ pub enum Commands {
         /// Preview target hosts and command without executing
         #[arg(long)]
         dry_run: bool,
+        /// Kill the command after this many seconds (exit code 124, like timeout(1))
+        #[arg(long, value_name = "SECS", value_parser = clap::value_parser!(u64).range(1..))]
+        timeout: Option<u64>,
+        /// Keep at most this many bytes of stdout and of stderr per host
+        #[arg(long, value_name = "BYTES", value_parser = clap::value_parser!(u64).range(1..))]
+        max_output: Option<u64>,
         /// Remote command and arguments (put -- before the command)
         #[arg(last = true, required = true)]
         command: Vec<String>,
@@ -1034,6 +1059,50 @@ pub enum TeamsCommands {
         /// Maximum number of events (default and maximum: 1000)
         #[arg(long)]
         limit: Option<u32>,
+    },
+    /// Agent identities for unattended AI agents (admin): `bssh ai serve` runs them
+    Agent {
+        #[command(subcommand)]
+        command: TeamsAgentCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum TeamsAgentCommands {
+    /// Create an agent: its own device keys, a seat, a signed policy and a credential file
+    Add {
+        team: String,
+        name: String,
+        /// Policy from `ai.policies` in config.json, signed for the agent (default: `default`)
+        #[arg(long, value_name = "NAME")]
+        policy: Option<String>,
+    },
+    /// List a team's agents
+    List { team: String },
+    /// Remove an agent: frees its seat and rotates the team key
+    Remove { team: String, name: String },
+    /// Re-sign an agent's policy from config.json
+    Policy {
+        team: String,
+        name: String,
+        #[arg(long, value_name = "NAME", default_value = "default")]
+        policy: String,
+    },
+    /// List approval requests from agents waiting for you
+    Pending { team: String },
+    /// Approve a pending request (a prefix of its id is enough)
+    Approve {
+        team: String,
+        request: String,
+        #[arg(long)]
+        reason: Option<String>,
+    },
+    /// Deny a pending request
+    Deny {
+        team: String,
+        request: String,
+        #[arg(long)]
+        reason: Option<String>,
     },
 }
 

@@ -204,6 +204,78 @@ the free seats), while pushes fail with `PaymentRequired` and invites with `Seat
 - Audit ingest: `device_id` is the caller's device; signatures and chain verify.
 - Revoked devices and removed members get `Forbidden` on everything team-scoped.
 
+## bssh AI additions (additive; `PROTOCOL_VERSION` stays 1)
+
+Everything below is new tags, new optional fields and new routes. A pre-AI client keeps
+working: events and vault entries it wrote still verify and decode byte for byte (tests in
+`layout.rs` and `api.rs`), and unknown `VaultPayload` types are reported as unreadable, not
+applied.
+
+### Agent identities
+
+An agent is a team member of `kind = agent` (`Member.kind`, default `human`). An admin creates
+it (`POST /teams/{id}/agents { name, device }`): the admin's client generates the agent's device
+keys locally, sends the public halves, wraps the team key to the agent's device
+(`POST /keys`, no invite flow) and writes a 0600 credential file holding the private keys for the
+gateway. The agent takes a seat like any member (`SeatLimit` and read-only rules apply), is never
+an admin, can read the vault, and cannot push to it (`Forbidden`). Removing it is
+`DELETE /teams/{id}/members/{member}`, which rotates the team key like any removal.
+`GET /teams/{id}/agents` lists them.
+
+### Signed agent policies
+
+`VaultPayload::AgentPolicy { agent_device_id, name, policy_json, version, signed_at,
+signer_device_id, signature }`, sealed in the vault like any entry. The signature is Ed25519
+over `layout::policy_signing_bytes` by an admin device; the gateway verifies it against the
+pinned admin key (trust root) before parsing `policy_json`, checks `agent_device_id` is itself,
+and never accepts a lower `version` than the highest it has seen. The server can neither forge
+nor widen a policy.
+
+### Approval relay
+
+Messages between an agent and the team's admins, end-to-end encrypted and signed by the sender
+device (`RelayMessage`).
+
+```
+CK         = 32 random bytes
+ciphertext = AES-256-GCM(CK, nonce, payload JSON, layout::relay_aad(message))
+per recipient device R:
+  eph = fresh X25519 keypair
+  wk  = HKDF(salt = eph.public ‖ R.x25519_public, ikm = X25519(eph, R), info = "bssh-teams/v2/relay-wrap")
+  wrapped_key = AES-256-GCM(wk, nonce_R, CK, layout::relay_wrap_aad(message_id, R.device_id))
+signature  = Ed25519(sender_device_sk, layout::relay_signing_bytes(message))
+```
+
+Open: verify the signature against a key the receiver trusts for that sender, find your
+`RelayRecipient`, unwrap `CK`, decrypt. A `Request` payload is the approval request (what, where,
+tier); a `Decision` payload names the `request_id`, the outcome, the approver and a hash of the
+request. T3 (two-person) needs `Decision`s from two distinct admin accounts. The requester
+trusts only approver keys pinned in its credential.
+
+Routes: `POST /teams/{id}/relay` (idempotent on `message_id`), `GET /teams/{id}/relay?kind=&request_id=&after=&wait=`
+(long-poll, `wait` max 30 s, only messages addressed to the calling device). The server checks
+signature, sender = caller, recipient devices active in the team (admins for a `Request`), size
+(64 KiB), `expires_at` in the future and at most 1 h ahead; expired messages are dropped. It sees
+team, sender device, request id, kind, recipient devices, size and expiry; never the content.
+
+### AI audit events
+
+`AuditKind` gains `ai_call` (5), `ai_approval` (6), `ai_change` (7), `ai_run` (8). `AuditEvent`
+gains optional `actor { kind, name, on_behalf_of }` (visible to the server, signed) and `detail
+{ key_version, nonce, ciphertext }` (encrypted, signed):
+
+```
+AK         = HKDF(salt = team_id, ikm = TK_v, info = "bssh-teams/v2/audit-key" ‖ key_version, len = 32)
+ciphertext = AES-256-GCM(AK, nonce, detail JSON, layout::audit_detail_aad(event, key_version))
+```
+
+Signing layouts are versioned: kinds 1 to 4 with neither actor nor detail keep the v1 bytes
+exactly; anything else is signed as `layout::audit_signing_bytes` v2 (domain
+`bssh-teams/v2/audit`, which also covers the actor and `SHA-256(detail ciphertext)`). The chain
+hash is unchanged (`SHA-256(signing bytes ‖ signature)`), so v1 and v2 events share one chain.
+`GET /audit` accepts `kind=` and `actor=`. The server stores `actor` and `detail` as given and
+reads neither.
+
 ## Versioning
 
 Changing any layout in `layout.rs` changes the wire format: bump `PROTOCOL_VERSION`,

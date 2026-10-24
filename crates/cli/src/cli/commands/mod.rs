@@ -1,4 +1,5 @@
 pub mod add;
+pub mod ai;
 pub mod alias;
 pub mod audit;
 pub mod backup;
