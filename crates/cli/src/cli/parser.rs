@@ -894,6 +894,32 @@ mod tests {
     use clap::Parser;
 
     #[test]
+    fn teams_device_revoke_parses() {
+        let id = "6f1c2f64-2a63-4a43-9a43-1f0f0b6f6c11";
+        let cli = Cli::try_parse_from(["bssh", "teams", "device", "revoke", id]).unwrap();
+        match cli.command {
+            Some(Commands::Teams {
+                command:
+                    TeamsCommands::Device {
+                        command: TeamsDeviceCommands::Revoke { device_id },
+                    },
+            }) => assert_eq!(device_id.to_string(), id),
+            _ => panic!("expected `teams device revoke`"),
+        }
+        assert!(Cli::try_parse_from(["bssh", "teams", "device", "revoke"]).is_err());
+        assert!(Cli::try_parse_from(["bssh", "teams", "device", "revoke", "nope"]).is_err());
+    }
+
+    #[test]
+    fn teams_audit_limit_and_all_exclude_each_other() {
+        assert!(Cli::try_parse_from(["bssh", "teams", "audit", "t", "--limit", "500"]).is_ok());
+        assert!(Cli::try_parse_from(["bssh", "teams", "audit", "t", "--all"]).is_ok());
+        assert!(
+            Cli::try_parse_from(["bssh", "teams", "audit", "t", "--all", "--limit", "5"]).is_err()
+        );
+    }
+
+    #[test]
     fn org_commands_parse() {
         assert!(Cli::try_parse_from(["bssh", "org", "list"]).is_ok());
         assert!(Cli::try_parse_from(["bssh", "org", "show"]).is_ok());
@@ -1179,14 +1205,36 @@ pub enum TeamsCommands {
         /// Only events received since this date (YYYY-MM-DD or RFC 3339)
         #[arg(long, value_name = "DATE")]
         since: Option<String>,
-        /// Maximum number of events (default and maximum: 1000)
-        #[arg(long)]
+        /// How many of the newest events to show (default: 100). The whole log is verified either way
+        #[arg(long, value_name = "N")]
         limit: Option<u32>,
+        /// Show every matching event instead of the newest ones
+        #[arg(long, conflicts_with = "limit")]
+        all: bool,
+    },
+    /// Devices of your account, or of a team's members (admin): revoke one
+    Device {
+        #[command(subcommand)]
+        command: TeamsDeviceCommands,
     },
     /// Agent identities for unattended AI agents (admin): `bssh ai serve` runs them
     Agent {
         #[command(subcommand)]
         command: TeamsAgentCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum TeamsDeviceCommands {
+    /// Revoke a device for good: it is locked out at once and every team its account is in needs a new team key
+    #[command(
+        after_help = "The device id is shown by `bssh teams whoami` (this device) and\n\
+      `bssh teams members <team>` (a member's devices, admin).\n\
+      Allowed for the device's own account, and for an admin of a team its account is in."
+    )]
+    Revoke {
+        /// Id of the device (a full UUID)
+        device_id: uuid::Uuid,
     },
 }
 

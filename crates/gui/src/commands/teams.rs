@@ -13,6 +13,7 @@ use bayesian_ssh::services::teams::orgs;
 use bayesian_ssh::services::teams::session::{
     self, AuditQuery, JoinWith, PreviewDevice, Session, TeamSync,
 };
+use bayesian_ssh::services::teams::sync::AUDIT_QUOTA_MESSAGE;
 use bayesian_ssh::services::teams::TeamsStore;
 use bssh_teams_proto::api::Role;
 use bssh_teams_proto::api::{AuditKind, OrgInfo, OrgRole};
@@ -214,7 +215,15 @@ impl From<&TeamSync> for TeamSyncDto {
             unreadable: s.unreadable,
             rotated_to: s.rotated_to,
             rotation_required: r.rotation_required,
-            errors: r.errors.clone(),
+            errors: r
+                .errors
+                .iter()
+                .cloned()
+                .chain(
+                    r.audit_quota_exceeded
+                        .then(|| AUDIT_QUOTA_MESSAGE.to_string()),
+                )
+                .collect(),
             hosts_added: s.hosts.as_ref().map_or(0, |h| h.added),
             hosts_updated: s.hosts.as_ref().map_or(0, |h| h.updated),
             hosts_stale: s.hosts.as_ref().map_or(0, |h| h.stale),
@@ -330,7 +339,7 @@ pub struct TeamRemovePreviewDto {
 pub struct TeamAuditDto {
     lines: Vec<AuditLineDto>,
     chains: usize,
-    from_genesis: bool,
+    verified_events: usize,
     problems: Vec<String>,
     invalid_events: usize,
     complete: bool,
@@ -1062,6 +1071,9 @@ pub fn teams_audit(
                         entry_id,
                         email: member.filter(|m| !m.trim().is_empty()),
                         since,
+                        // The window this view always showed; the whole log
+                        // is verified regardless.
+                        limit: Some(1000),
                         ..Default::default()
                     },
                 )
@@ -1069,7 +1081,7 @@ pub fn teams_audit(
             Ok(TeamAuditDto {
                 clean: log.is_clean(),
                 chains: log.chains.len(),
-                from_genesis: log.chains.iter().all(|c| c.from_genesis()),
+                verified_events: log.verified_events,
                 problems: log.problems.clone(),
                 invalid_events: log.invalid_events,
                 complete: log.complete,

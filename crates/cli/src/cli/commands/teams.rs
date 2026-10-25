@@ -7,6 +7,7 @@ use crate::services::teams::orgs;
 use crate::services::teams::session::{
     self, AuditQuery, JoinWith, PendingDevice, Session, TeamAudit, TeamSync,
 };
+use crate::services::teams::sync::AUDIT_QUOTA_MESSAGE;
 use crate::services::teams::TeamsStore;
 use anyhow::{anyhow, bail, Result};
 use bssh_teams_proto::api::{BillingInterval, Invite, Role};
@@ -120,6 +121,69 @@ async fn decide(
         );
     }
     Ok(())
+}
+
+async fn run_device(
+    command: crate::cli::parser::TeamsDeviceCommands,
+    store: &TeamsStore,
+    config: &AppConfig,
+) -> Result<()> {
+    use crate::cli::parser::TeamsDeviceCommands as D;
+    let db = store.database();
+    match command {
+        D::Revoke { device_id } => {
+            let identity = session::load_identity(db)?
+                .ok_or_else(|| anyhow!("Teams isn't set up on this machine (`bssh teams init`)"))?;
+            let this_device = identity.device_id == device_id;
+            let prompt = if this_device {
+                format!(
+                    "Revoke THIS device ({device_id})? It is locked out for good and this \
+                     machine's Teams identity is removed. This can't be undone."
+                )
+            } else {
+                format!(
+                    "Revoke device {device_id}? It is locked out for good. This can't be undone."
+                )
+            };
+            if !confirm(&prompt, false)? {
+                println!("Cancelled.");
+                return Ok(());
+            }
+            let s = Session::open(store, config, &passphrase(false)?)?;
+            let removed_identity = s.revoke_device(device_id).await?;
+            println!(
+                "🚫 Revoked device {device_id}: it can no longer sign in or sync, and it stays \
+                 revoked."
+            );
+            println!("{}", rotation_hint(&session::local_team_names(db)?));
+            if removed_identity {
+                println!(
+                    "   This machine's Teams identity is removed. Team connections you already \
+                     synced stay as local connections."
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+/// What follows a revocation: the affected teams must move to a new team key,
+/// which an admin's sync does. Names the teams this machine knows, since the
+/// server decides which are affected.
+fn rotation_hint(teams: &[(uuid::Uuid, String)]) -> String {
+    let mut text = String::from(
+        "   Every team the device's account is in now needs a new team key, so the device can't \
+         read what is written from now on. An admin posts it the next time they run \
+         `bssh teams sync`",
+    );
+    match teams {
+        [] => text.push('.'),
+        [(_, name)] => text.push_str(&format!(
+            "; as an admin, run it now: `bssh teams sync {name}`."
+        )),
+        _ => text.push_str("; as an admin, run it now: `bssh teams sync` (all teams)."),
+    }
+    text
 }
 
 async fn run_agent(
@@ -489,12 +553,8 @@ async fn run(command: TeamsCommands, store: &TeamsStore, config: &AppConfig) -> 
                     Role::Member => "member",
                 };
                 println!("  {} [{role}]", m.email);
-                for d in m.devices.iter().filter(|d| d.revoked_at.is_none()) {
-                    println!(
-                        "      {:<20} {}",
-                        d.name,
-                        crate::services::teams::crypto::fingerprint(&d.ed25519_public)
-                    );
+                for d in &m.devices {
+                    println!("{}", device_line(d));
                 }
             }
             if let Some(invites) = s.invites(team_id).await?.filter(|i| !i.is_empty()) {
@@ -578,6 +638,7 @@ async fn run(command: TeamsCommands, store: &TeamsStore, config: &AppConfig) -> 
             member,
             since,
             limit,
+            all,
         } => {
             let (team_id, source) = session::resolve_team(db, &team)?;
             let since = since.as_deref().map(parse_since).transpose()?;
@@ -594,6 +655,7 @@ async fn run(command: TeamsCommands, store: &TeamsStore, config: &AppConfig) -> 
                         email: member,
                         since,
                         limit,
+                        all,
                     },
                 )
                 .await?;
@@ -602,6 +664,8 @@ async fn run(command: TeamsCommands, store: &TeamsStore, config: &AppConfig) -> 
                 bail!("the audit log failed verification");
             }
         }
+
+        TeamsCommands::Device { command } => run_device(command, store, config).await?,
 
         TeamsCommands::Agent { command } => run_agent(command, store, config).await?,
 
@@ -643,6 +707,22 @@ async fn run(command: TeamsCommands, store: &TeamsStore, config: &AppConfig) -> 
         }
     }
     Ok(())
+}
+
+/// One device in `bssh teams members`: name, fingerprint and id (the argument
+/// of `bssh teams device revoke`). Revoked devices stay listed, marked, since
+/// they still count as authors of what they wrote.
+fn device_line(d: &bssh_teams_proto::api::DeviceInfo) -> String {
+    let mut line = format!(
+        "      {:<20} {}  {}",
+        d.name,
+        crate::services::teams::crypto::fingerprint(&d.ed25519_public),
+        d.device_id
+    );
+    if let Some(at) = d.revoked_at {
+        line.push_str(&format!("  revoked {}", at.format("%Y-%m-%d")));
+    }
+    line
 }
 
 fn parse_since(s: &str) -> Result<chrono::DateTime<chrono::Utc>> {
@@ -704,16 +784,10 @@ fn print_audit(team: &str, log: &TeamAudit) {
     }
     println!();
     if log.is_clean() {
-        let from_start = log.chains.iter().all(|c| c.from_genesis());
         println!(
-            "✅ Verified on this machine: {} signature(s) valid, {} device chain(s) intact{}.",
-            log.lines.len(),
-            log.chains.len(),
-            if from_start && log.complete {
-                ", complete from each device's first event"
-            } else {
-                ""
-            }
+            "✅ Verified on this machine, the whole log: {} signature(s) valid, {} device chain(s) intact from each device's first event.",
+            log.verified_events,
+            log.chains.len()
         );
     } else {
         println!(
@@ -728,7 +802,8 @@ fn print_audit(team: &str, log: &TeamAudit) {
     }
     if !log.complete {
         println!(
-            "   Showing the newest events only; narrow with --since or --host to see older ones."
+            "   Showing the newest {} event(s) only: --limit <N> shows more, --all shows every one.",
+            log.lines.len()
         );
     }
 }
@@ -848,6 +923,9 @@ fn print_sync(name: &str, sync: &TeamSync) {
     }
     if r.rotation_required {
         println!("   ⚠️  a member was removed: an admin must sync to rotate the team key; your edits stay queued.");
+    }
+    if r.audit_quota_exceeded {
+        println!("   ⚠️  {}", AUDIT_QUOTA_MESSAGE);
     }
     for e in &r.errors {
         println!("   ❌ {e}");

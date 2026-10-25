@@ -1,6 +1,6 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
-  import { CircleCheck, CircleX, Download, RefreshCw, ShieldAlert, ShieldCheck, ShieldHalf } from "lucide-svelte";
+  import { CircleCheck, CircleX, Download, RefreshCw, ShieldAlert, ShieldCheck } from "lucide-svelte";
   import type { Connection, TeamAudit, TeamMember, TeamSummary } from "$lib/types";
   import { raiseAttention, resolveAttention, TEAM_ATTENTION } from "$lib/stores/attention.svelte";
   import {
@@ -44,7 +44,6 @@
   let requestSeq = 0;
   async function verify() {
     const seq = ++requestSeq;
-    const unfiltered = !member && !host && !since;
     busy = true;
     error = null;
     try {
@@ -66,8 +65,9 @@
           body: "Treat this log as tampered until you've checked it.",
           action: { label: "Open audit log", tab: "teams", teamId: team.team_id },
         });
-      } else if (unfiltered) {
-        // Only an unfiltered clean run clears a failure found earlier.
+      } else {
+        // The whole log is verified whatever the filters show, so any clean
+        // run clears a failure found earlier.
         resolveAttention(id);
       }
     } catch (err) {
@@ -135,19 +135,10 @@
         <div class="flex flex-col gap-0.5">
           <span class="alert-title">Verified on this device{verifiedAt ? `, ${formatUtc(verifiedAt)}` : ""}</span>
           <span class="text-secondary">
-            {plural(log.lines.length, "event")}, {plural(log.chains, "device chain")}, complete from the first event.
-          </span>
-        </div>
-      </div>
-    {:else if verdict === "partial"}
-      <div class="alert alert-warning" role="status">
-        <ShieldHalf size={16} class="mt-0.5 shrink-0" />
-        <div class="flex flex-col gap-0.5">
-          <span class="alert-title">Verified, partial: older events weren't checked</span>
-          <span class="text-secondary">
-            {plural(log.lines.length, "event")} and {plural(log.chains, "device chain")} are valid{log.complete
-              ? ", but the log doesn't start from each device's first event"
-              : "; only the newest events were fetched"}.{filtered ? "" : " Narrow with Since or Host to check older ones."}
+            {plural(log.verified_events, "event")}, {plural(log.chains, "device chain")}, the whole log, complete from
+            each device's first event.{log.complete
+              ? ""
+              : ` The list shows only the newest ${plural(log.lines.length, "event")}; the rest were verified too.`}
           </span>
         </div>
       </div>

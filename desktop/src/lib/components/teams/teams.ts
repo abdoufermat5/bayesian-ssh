@@ -120,11 +120,11 @@ export function emailCodeNotice(init: TeamsInitError): string {
 
 export type TeamTab = "hosts" | "members" | "audit";
 
-export type AuditVerdict = "verified" | "partial" | "failed";
+export type AuditVerdict = "verified" | "failed";
 
+/** The backend verifies the whole log whatever the list shows, so a clean log is verified in full. */
 export function auditVerdict(log: TeamAudit): AuditVerdict {
-  if (!log.clean) return "failed";
-  return log.complete && log.from_genesis ? "verified" : "partial";
+  return log.clean ? "verified" : "failed";
 }
 
 export const AUDIT_EVENT_LABEL: Record<TeamAudit["lines"][number]["kind"], string> = {

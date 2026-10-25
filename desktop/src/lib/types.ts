@@ -373,9 +373,11 @@ export interface TeamAuditLine {
 export interface TeamAudit {
   lines: TeamAuditLine[];
   chains: number;
-  from_genesis: boolean;
+  /** Events of the whole log that verified, not just the listed ones. */
+  verified_events: number;
   problems: string[];
   invalid_events: number;
+  /** The list holds every matching event (the verification covers the whole log either way). */
   complete: boolean;
   clean: boolean;
 }

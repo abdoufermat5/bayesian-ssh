@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **bssh Teams: revoke a device.** `bssh teams device revoke <DEVICE_ID>` revokes a device for good: the server kills its tokens at once and locks it out of everything, and every team its account is in asks for a new team key that leaves it out. Allowed for the device's own account, and for an admin of a team the device's account is in. The command says so and points at `bssh teams sync`, which is how an admin posts the new key. Revoking the device you are running on asks first and then removes this machine's Teams identity (team connections you already synced stay as local connections). `bssh teams members` now shows each device's id and also lists revoked devices, marked `revoked <date>`.
+- **bssh Teams: a full team audit storage is reported.** When the server refuses an audit upload because the team's audit storage is full, `bssh teams sync` (and the desktop's sync) says so once per sync. Your audit events stay queued on the device and upload once the server's operator raises the team's audit storage limit (team admins can't); they aren't retried within the sync.
+
+### Changed
+- **`bssh teams audit` verifies the whole log.** It used to check only the newest 1000 events, so a deletion further back could go unseen. It now reads the log in chain order, page by page, and checks every signature and each device's hash chain from its first event, in constant memory; a device whose first events are missing is reported. The listing is the newest 100 events by default: `--limit <N>` shows more (beyond 1000 too) and `--all` shows every matching event. `--host`, `--member` and `--since` only narrow the listing, never the verification. A server too old to page its audit log can only be verified when the whole log fits in one page; otherwise the command says the server needs an update and exits non-zero.
+
 ## [2.13.5] - 2026-10-25
 
 ### Changed

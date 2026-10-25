@@ -82,6 +82,12 @@ impl TeamsError {
         self.code() == Some(ErrorCode::InvalidEmailCode)
     }
 
+    /// The team's audit storage is full. Not transient: retrying changes
+    /// nothing until the server's operator raises the team's audit storage limit.
+    pub fn is_audit_quota_exceeded(&self) -> bool {
+        self.code() == Some(ErrorCode::AuditQuotaExceeded)
+    }
+
     /// True for failures worth retrying later (network, 5xx, rate limit).
     pub fn is_transient(&self) -> bool {
         match self {
@@ -382,10 +388,6 @@ impl TeamsClient {
         self.post_plain("/accounts", req).await
     }
 
-    pub async fn add_device(&self, req: &AddDeviceRequest) -> ClientResult<AddDeviceResponse> {
-        self.post("/devices", req).await
-    }
-
     pub async fn request_challenge(&self) -> ClientResult<ChallengeResponse> {
         let req = ChallengeRequest {
             device_id: self.device_id,
@@ -639,41 +641,121 @@ impl TeamsClient {
         self.post(&format!("/teams/{team_id}/audit"), req).await
     }
 
-    /// The team's audit log, newest first (admins only).
+    /// One page of the team's audit log (admins only), as `query` describes:
+    /// filters, order, page size and cursor. [`walk_audit_pages`] reads every
+    /// page.
     pub async fn list_audit(
         &self,
         team_id: Uuid,
-        filter: &AuditFilter,
+        query: &AuditListQuery,
     ) -> ClientResult<Vec<AuditRecord>> {
-        let mut query = vec![("limit", filter.limit.unwrap_or(1000).to_string())];
-        if let Some(device) = filter.device_id {
-            query.push(("device_id", device.to_string()));
-        }
-        if let Some(entry) = filter.entry_id {
-            query.push(("entry_id", entry.to_string()));
-        }
-        if let Some(since) = filter.since {
-            query.push(("since", since.to_rfc3339()));
-        }
-        if let Some(kind) = filter.kind {
-            query.push(("kind", kind.as_str().to_string()));
-        }
-        if let Some(actor) = &filter.actor {
-            query.push(("actor", actor.clone()));
-        }
-        self.get(&format!("/teams/{team_id}/audit"), &query).await
+        let pairs = audit_query_pairs(query)?;
+        let pairs: Vec<(&str, String)> =
+            pairs.iter().map(|(k, v)| (k.as_str(), v.clone())).collect();
+        self.get(&format!("/teams/{team_id}/audit"), &pairs).await
+    }
+
+    /// Revoke a device of this account, or of a member of a team the caller
+    /// administers. The server answers 404 for a device the caller can't see,
+    /// whether or not it exists.
+    pub async fn revoke_device(&self, device_id: Uuid) -> ClientResult<()> {
+        self.call(Method::DELETE, &format!("/devices/{device_id}"), &[], None)
+            .await?;
+        Ok(())
     }
 }
 
-/// Filters for [`TeamsClient::list_audit`]. The server caps `limit` at 1000.
-#[derive(Debug, Clone, Default)]
-pub struct AuditFilter {
-    pub device_id: Option<Uuid>,
-    pub entry_id: Option<Uuid>,
-    pub kind: Option<AuditKind>,
-    pub actor: Option<String>,
-    pub since: Option<DateTime<Utc>>,
-    pub limit: Option<u32>,
+/// Page size of an audit query that sets none: the server's default.
+const DEFAULT_AUDIT_PAGE: u32 = 100;
+
+/// The query string of an audit request. Serialized by the protocol type
+/// itself, so the field and enum names can't drift from the server's.
+fn audit_query_pairs(query: &AuditListQuery) -> ClientResult<Vec<(String, String)>> {
+    let serde_json::Value::Object(fields) =
+        serde_json::to_value(query).map_err(|e| TeamsError::Decode(e.to_string()))?
+    else {
+        return Err(TeamsError::Decode("audit query is not an object".into()));
+    };
+    Ok(fields
+        .into_iter()
+        .map(|(k, v)| match v {
+            serde_json::Value::String(s) => (k, s),
+            other => (k, other.to_string()),
+        })
+        .collect())
+}
+
+/// Whether `last` lies strictly past the cursor of `query`, in the order the
+/// query asks for. A query with no cursor (the first page) is always passed.
+/// A server older than paging ignores the cursor and answers the first page
+/// again, which fails this test.
+fn passes_cursor(query: &AuditListQuery, last: &AuditRecord) -> bool {
+    let event = &last.event;
+    match query.order.unwrap_or_default() {
+        AuditOrder::Newest => match (
+            query.before_received_at,
+            query.before_device_id,
+            query.before_seq,
+        ) {
+            (Some(at), Some(device), Some(seq)) => {
+                (last.received_at, event.device_id, event.seq) < (at, device, seq)
+            }
+            _ => true,
+        },
+        AuditOrder::Chain => match (query.after_device_id, query.after_seq) {
+            (Some(device), Some(seq)) => (event.device_id, event.seq) > (device, seq),
+            _ => true,
+        },
+    }
+}
+
+/// How [`walk_audit_pages`] ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuditWalk {
+    /// A page shorter than the page size came back: the log is read to its end.
+    Finished,
+    /// A page did not advance past its cursor: the server doesn't page (it
+    /// predates paging) and the log was not read to its end.
+    Stalled,
+    /// `each` asked to stop.
+    Stopped,
+}
+
+/// Read the audit log page by page, starting from `first`, and hand every
+/// page to `each` as it arrives, so a caller that only checks events in
+/// passing never holds the whole log. Each next page is
+/// [`AuditListQuery::after`] the last record of the previous one. Stops on a
+/// page shorter than the page size, on an empty page, when a page does not
+/// advance past its cursor, or when `each` returns `false`.
+pub async fn walk_audit_pages<F, Fut, E>(
+    first: AuditListQuery,
+    mut fetch: F,
+    mut each: E,
+) -> ClientResult<AuditWalk>
+where
+    F: FnMut(AuditListQuery) -> Fut,
+    Fut: std::future::Future<Output = ClientResult<Vec<AuditRecord>>>,
+    E: FnMut(Vec<AuditRecord>) -> bool,
+{
+    let page_size = first.limit.unwrap_or(DEFAULT_AUDIT_PAGE).max(1) as usize;
+    let mut query = first;
+    loop {
+        let page = fetch(query.clone()).await?;
+        let Some(last) = page.last().cloned() else {
+            return Ok(AuditWalk::Finished);
+        };
+        if !passes_cursor(&query, &last) {
+            return Ok(AuditWalk::Stalled);
+        }
+        let full = page.len() >= page_size;
+        if !each(page) {
+            return Ok(AuditWalk::Stopped);
+        }
+        if !full {
+            return Ok(AuditWalk::Finished);
+        }
+        query = query.after(&last);
+    }
 }
 
 #[async_trait(?Send)]
@@ -827,6 +909,199 @@ mod tests {
             expires_at: Utc::now() + ChronoDuration::seconds(ttl_secs),
         })
         .unwrap()
+    }
+
+    fn record(device: u8, seq: u64, received_secs: i64) -> AuditRecord {
+        use bssh_teams_proto::api::{AuditEvent, AuditKind};
+        AuditRecord {
+            event: AuditEvent {
+                event_id: Uuid::new_v4(),
+                team_id: Uuid::from_bytes([1; 16]),
+                device_id: Uuid::from_bytes([device; 16]),
+                seq,
+                kind: AuditKind::SessionStart,
+                entry_id: None,
+                occurred_at: DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
+                prev_hash: Fixed::ZERO,
+                signature: Fixed::ZERO,
+                actor: None,
+                detail: None,
+            },
+            received_at: DateTime::from_timestamp(received_secs, 0).unwrap(),
+            client_ip: None,
+        }
+    }
+
+    /// Drive [`walk_audit_pages`] over `pages` (one per request), returning
+    /// the queries it sent, the records handed to `each` and how it ended.
+    async fn walk(
+        first: AuditListQuery,
+        pages: Vec<Vec<AuditRecord>>,
+        stop_after: Option<usize>,
+    ) -> (Vec<AuditListQuery>, usize, AuditWalk) {
+        let sent = std::cell::RefCell::new(Vec::new());
+        let calls = std::cell::Cell::new(0usize);
+        let mut got = 0;
+        let end = walk_audit_pages(
+            first,
+            |q| {
+                sent.borrow_mut().push(q);
+                let i = calls.get();
+                calls.set(i + 1);
+                // A server that has no more pages repeats nothing: empty.
+                let page = pages.get(i).cloned().unwrap_or_default();
+                async move { Ok(page) }
+            },
+            |page| {
+                got += page.len();
+                stop_after.is_none_or(|n| got < n)
+            },
+        )
+        .await
+        .unwrap();
+        (sent.into_inner(), got, end)
+    }
+
+    #[tokio::test]
+    async fn chain_walk_follows_the_cursor_and_stops_on_a_short_page() {
+        let first = AuditListQuery {
+            order: Some(AuditOrder::Chain),
+            limit: Some(2),
+            ..Default::default()
+        };
+        let pages = vec![
+            vec![record(1, 0, 10), record(1, 1, 11)],
+            vec![record(1, 2, 12), record(2, 0, 13)],
+            vec![record(2, 1, 14)],
+            vec![record(9, 9, 99)], // never asked for
+        ];
+        let (sent, got, end) = walk(first, pages, None).await;
+        assert_eq!((got, end), (5, AuditWalk::Finished));
+        assert_eq!(sent.len(), 3);
+        assert_eq!((sent[0].after_device_id, sent[0].after_seq), (None, None));
+        assert_eq!(sent[1].after_device_id, Some(Uuid::from_bytes([1; 16])));
+        assert_eq!(sent[1].after_seq, Some(1));
+        assert_eq!(sent[2].after_device_id, Some(Uuid::from_bytes([2; 16])));
+        assert_eq!(sent[2].after_seq, Some(0));
+        assert!(sent.iter().all(|q| q.limit == Some(2)));
+    }
+
+    #[tokio::test]
+    async fn full_last_page_costs_one_empty_request_then_stops() {
+        let first = AuditListQuery {
+            limit: Some(2),
+            ..Default::default()
+        };
+        let pages = vec![vec![record(1, 5, 20), record(1, 4, 19)]];
+        let (sent, got, end) = walk(first, pages, None).await;
+        assert_eq!((got, end, sent.len()), (2, AuditWalk::Finished, 2));
+        assert_eq!(sent[1].before_seq, Some(4));
+        assert_eq!(sent[1].before_received_at, DateTime::from_timestamp(19, 0));
+    }
+
+    #[tokio::test]
+    async fn newest_walk_stops_when_a_page_does_not_advance() {
+        // An old server ignores the cursor and sends the first page again.
+        let first = AuditListQuery {
+            limit: Some(2),
+            ..Default::default()
+        };
+        let page = vec![record(1, 5, 20), record(1, 4, 19)];
+        let (sent, got, end) = walk(first, vec![page.clone(), page.clone(), page], None).await;
+        assert_eq!(end, AuditWalk::Stalled);
+        assert_eq!(sent.len(), 2, "asks once more, then gives up");
+        assert_eq!(got, 2, "the repeated page is not handed over twice");
+    }
+
+    #[tokio::test]
+    async fn chain_walk_stops_when_a_page_does_not_advance() {
+        let first = AuditListQuery {
+            order: Some(AuditOrder::Chain),
+            limit: Some(2),
+            ..Default::default()
+        };
+        let page = vec![record(1, 0, 10), record(1, 1, 11)];
+        let (sent, got, end) = walk(first, vec![page.clone(), page], None).await;
+        assert_eq!((got, end, sent.len()), (2, AuditWalk::Stalled, 2));
+    }
+
+    #[tokio::test]
+    async fn walk_stops_when_the_caller_has_enough() {
+        let first = AuditListQuery {
+            limit: Some(2),
+            ..Default::default()
+        };
+        let pages = vec![
+            vec![record(1, 5, 20), record(1, 4, 19)],
+            vec![record(1, 3, 18), record(1, 2, 17)],
+        ];
+        let (sent, got, end) = walk(first, pages, Some(2)).await;
+        assert_eq!((got, end, sent.len()), (2, AuditWalk::Stopped, 1));
+    }
+
+    #[test]
+    fn audit_query_is_sent_as_the_protocol_names_it() {
+        let device = Uuid::from_bytes([4; 16]);
+        let q = AuditListQuery {
+            kind: Some(AuditKind::VaultRead),
+            actor: Some("ci bot".into()),
+            limit: Some(50),
+            order: Some(AuditOrder::Newest),
+            before_received_at: DateTime::from_timestamp(1_700_000_000, 0),
+            before_device_id: Some(device),
+            before_seq: Some(7),
+            ..Default::default()
+        };
+        let mut pairs = audit_query_pairs(&q).unwrap();
+        pairs.sort();
+        let get = |k: &str| pairs.iter().find(|(n, _)| n == k).map(|(_, v)| v.as_str());
+        assert_eq!(get("kind"), Some("vault_read"));
+        assert_eq!(get("actor"), Some("ci bot"));
+        assert_eq!(get("limit"), Some("50"));
+        assert_eq!(get("order"), Some("newest"));
+        assert_eq!(get("before_seq"), Some("7"));
+        assert_eq!(get("before_device_id"), Some(device.to_string().as_str()));
+        assert_eq!(get("before_received_at"), Some("2023-11-14T22:13:20Z"));
+        assert_eq!(pairs.len(), 7, "unset fields are not sent: {pairs:?}");
+    }
+
+    #[tokio::test]
+    async fn revoke_device_sends_delete_and_quota_is_not_transient() {
+        let device = Uuid::from_u128(5);
+        let quota = serde_json::to_string(&ApiError {
+            code: ErrorCode::AuditQuotaExceeded,
+            message: "audit storage is full".into(),
+        })
+        .unwrap();
+        let (url, seen) = mock_server(move |i| match i {
+            0 => (200, challenge_json()),
+            1 => (200, token_json("t", 3600)),
+            2 => (204, String::new()),
+            _ => (403, quota.clone()),
+        })
+        .await;
+        let client = TeamsClient::new(&url, Uuid::new_v4(), Arc::new(FakeSigner)).unwrap();
+        client.revoke_device(device).await.unwrap();
+        let err = client
+            .list_audit(Uuid::nil(), &AuditListQuery::default())
+            .await
+            .unwrap_err();
+        assert!(
+            err.is_audit_quota_exceeded() && !err.is_transient(),
+            "{err}"
+        );
+        let seen = seen.lock().unwrap();
+        assert!(
+            seen[2].starts_with("DELETE /v1/devices/00000000-0000-0000-0000-000000000005 HTTP/1.1"),
+            "{}",
+            seen[2]
+        );
+        assert!(
+            seen[3]
+                .starts_with("GET /v1/teams/00000000-0000-0000-0000-000000000000/audit HTTP/1.1"),
+            "{}",
+            seen[3]
+        );
     }
 
     #[test]

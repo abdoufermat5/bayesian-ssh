@@ -57,6 +57,11 @@ pub struct RejectedEntry {
     pub reason: String,
 }
 
+/// What to tell the user when [`SyncReport::audit_quota_exceeded`] is set.
+pub const AUDIT_QUOTA_MESSAGE: &str = "The team's audit storage is full. Your audit events stay \
+     queued on this device and upload once the server's operator raises the team's audit \
+     storage limit.";
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SyncReport {
     /// Entries newly applied to the local copy from the server.
@@ -69,6 +74,11 @@ pub struct SyncReport {
     pub dropped_edits: Vec<DroppedEdit>,
     /// Audit events the server acknowledged (stored or already stored).
     pub audit_uploaded: usize,
+    /// The server refused the audit upload: the team's audit storage is full.
+    /// Nothing was lost: the events stay queued and the next sync tries
+    /// again, which only works once the server's operator has
+    /// raised the limit. Tell the user once per sync ([`AUDIT_QUOTA_MESSAGE`]).
+    pub audit_quota_exceeded: bool,
     /// The server refused pushes: a member was removed and an admin must post
     /// a new key version first. Edits stay queued.
     pub rotation_required: bool,
@@ -81,7 +91,10 @@ pub struct SyncReport {
 
 impl SyncReport {
     pub fn is_clean(&self) -> bool {
-        self.errors.is_empty() && !self.rotation_required && self.rejected.is_empty()
+        self.errors.is_empty()
+            && !self.rotation_required
+            && !self.audit_quota_exceeded
+            && self.rejected.is_empty()
     }
 }
 
@@ -335,6 +348,8 @@ impl<'a, T: TeamsTransport + ?Sized, C: VaultCodec + ?Sized> SyncEngine<'a, T, C
     }
 
     /// Upload queued audit events in `seq` order. Duplicates count as success.
+    /// A full audit quota is reported in `report`, not as an error: one
+    /// request, no retry.
     async fn upload_audit(&self, report: &mut SyncReport) -> Result<()> {
         let device_id = self.codec.device_id();
         loop {
@@ -344,7 +359,7 @@ impl<'a, T: TeamsTransport + ?Sized, C: VaultCodec + ?Sized> SyncEngine<'a, T, C
             if batch.is_empty() {
                 return Ok(());
             }
-            let resp = self
+            let resp = match self
                 .transport
                 .ingest_audit(
                     self.team_id,
@@ -352,7 +367,17 @@ impl<'a, T: TeamsTransport + ?Sized, C: VaultCodec + ?Sized> SyncEngine<'a, T, C
                         events: batch.clone(),
                     },
                 )
-                .await?;
+                .await
+            {
+                Ok(resp) => resp,
+                // Refused and stored nothing: keep the events, stop here (a
+                // retry can't succeed before the limit is raised), report it.
+                Err(e) if e.is_audit_quota_exceeded() => {
+                    report.audit_quota_exceeded = true;
+                    return Ok(());
+                }
+                Err(e) => return Err(e.into()),
+            };
             let acked: HashSet<Uuid> = resp
                 .accepted
                 .iter()
@@ -477,6 +502,8 @@ pub(crate) mod testutil {
         pub audit_seen: HashSet<Uuid>,
         pub audit_stored: Vec<AuditEvent>,
         pub next_audit_seq: u64,
+        /// Refuse audit uploads like a team at its audit storage cap.
+        pub audit_quota_full: bool,
     }
 
     impl ServerState {
@@ -510,6 +537,7 @@ pub(crate) mod testutil {
         pub state: RefCell<ServerState>,
         pub pull_calls: Cell<usize>,
         pub push_calls: Cell<usize>,
+        pub audit_calls: Cell<usize>,
         /// Fail this many push calls with a network error before storing anything.
         pub fail_pushes: Cell<u32>,
         /// Store the push but answer with a network error (lost response).
@@ -587,6 +615,16 @@ pub(crate) mod testutil {
             req: IngestAuditRequest,
         ) -> ClientResult<IngestAuditResponse> {
             let mut st = self.state.borrow_mut();
+            self.audit_calls.set(self.audit_calls.get() + 1);
+            if st.audit_quota_full {
+                return Err(TeamsError::Api {
+                    status: 403,
+                    error: ApiError {
+                        code: ErrorCode::AuditQuotaExceeded,
+                        message: "audit storage is full".into(),
+                    },
+                });
+            }
             let mut resp = IngestAuditResponse {
                 accepted: vec![],
                 duplicates: vec![],
@@ -916,6 +954,45 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[tokio::test]
+    async fn full_audit_quota_keeps_events_queued_and_is_reported_once() {
+        let f = fixture();
+        for _ in 0..3 {
+            f.store
+                .append_audit_event(f.team, &f.me, AuditKind::SessionStart, None)
+                .unwrap();
+        }
+        queue_edit(&f.store, &f.me, f.team, Uuid::new_v4(), &conn("a")).unwrap();
+        f.server.state.borrow_mut().audit_quota_full = true;
+
+        let report = engine(&f).sync().await;
+        assert!(report.audit_quota_exceeded, "{report:?}");
+        assert!(report.errors.is_empty(), "not an error line: {report:?}");
+        assert!(!report.is_clean());
+        assert_eq!(report.audit_uploaded, 0);
+        assert_eq!(report.pushed, 1, "the vault still syncs");
+        assert_eq!(f.server.audit_calls.get(), 1, "no retry within a sync");
+        assert_eq!(
+            f.store
+                .pending_audit(f.team, f.me.device, 10)
+                .unwrap()
+                .len(),
+            3,
+            "nothing acknowledged, nothing dropped"
+        );
+
+        // The operator raises the limit: the same events go up, in order.
+        f.server.state.borrow_mut().audit_quota_full = false;
+        let report = engine(&f).sync().await;
+        assert!(report.is_clean(), "{report:?}");
+        assert_eq!(report.audit_uploaded, 3);
+        assert!(f
+            .store
+            .pending_audit(f.team, f.me.device, 10)
+            .unwrap()
+            .is_empty());
     }
 
     #[tokio::test]

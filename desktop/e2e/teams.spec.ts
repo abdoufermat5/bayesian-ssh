@@ -507,7 +507,7 @@ test.describe("Teams audit log, verified", () => {
             },
           ],
           chains: 1,
-          from_genesis: true,
+          verified_events: 1,
           problems: [],
           invalid_events: 0,
           complete: true,
@@ -523,7 +523,7 @@ test.describe("Teams audit log, verified", () => {
     await page.getByRole("button", { name: "platform", exact: true }).click();
     await page.getByRole("tab", { name: "Audit log" }).click();
     await expect(page.getByRole("status").filter({ hasText: "Verified on this device" })).toContainText(
-      "1 event, 1 device chain, complete from the first event.",
+      "1 event, 1 device chain, the whole log, complete from each device's first event.",
     );
     const row = page.getByRole("row", { name: /ana@example.com/ });
     await expect(row).toContainText("Valid");
@@ -540,7 +540,7 @@ test.describe("Teams audit log, verified", () => {
   });
 });
 
-test.describe("Teams audit log, partial", () => {
+test.describe("Teams audit log, limited list", () => {
   test.use({
     mockOptions: {
       overrides: {
@@ -548,7 +548,7 @@ test.describe("Teams audit log, partial", () => {
         teams_audit: () => ({
           lines: [],
           chains: 1,
-          from_genesis: true,
+          verified_events: 1,
           problems: [],
           invalid_events: 0,
           complete: false,
@@ -558,13 +558,13 @@ test.describe("Teams audit log, partial", () => {
     },
   });
 
-  test("says older events weren't checked", async ({ app, page }) => {
+  test("says the list is cut but the whole log was verified", async ({ app, page }) => {
     await app.gotoApp();
     await app.nav("Teams");
     await page.getByRole("button", { name: "platform", exact: true }).click();
     await page.getByRole("tab", { name: "Audit log" }).click();
-    await expect(page.getByRole("status").filter({ hasText: "Verified, partial" })).toContainText(
-      "older events weren't checked",
+    await expect(page.getByRole("status").filter({ hasText: "Verified on this device" })).toContainText(
+      "the rest were verified too",
     );
   });
 });
@@ -588,7 +588,7 @@ test.describe("Teams audit log, tampered", () => {
             },
           ],
           chains: 0,
-          from_genesis: true,
+          verified_events: 1,
           problems: ["device d-2: events 3 to 4 are missing"],
           invalid_events: 1,
           complete: true,
