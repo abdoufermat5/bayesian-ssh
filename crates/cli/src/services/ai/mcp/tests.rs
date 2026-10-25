@@ -145,6 +145,10 @@ async fn read_file_range_cap_deny_and_redaction() {
         .put("web-1", "/etc/app.env", "TOKEN=hunter2\nline2\nline3\n");
     k.files.put("web-1", "/etc/shadow", "root:x");
     k.files.put("web-1", "/bin/blob", "a\0b");
+    // A read resolves the path on the host first.
+    k.exec
+        .on("readlink -f -- '/etc/app.env'", "/etc/app.env\n", 0);
+    k.exec.on("readlink -f -- '/bin/blob'", "/bin/blob\n", 0);
 
     let v = call(
         &k,
@@ -203,6 +207,158 @@ async fn read_file_range_cap_deny_and_redaction() {
 }
 
 #[tokio::test]
+async fn read_file_denies_a_symlink_into_a_deny_path() {
+    let mut p = policy();
+    p.read_paths = vec!["/var/log/**".into()];
+    p.deny_paths = vec!["/root/.ssh".into()];
+    let k = kit(p, allow_all(), hosts());
+    k.files.put("web-1", "/var/log/app.log", "public log");
+    k.files.put("web-1", "/root/.ssh/id_ed25519", "PRIVATE KEY");
+    // A link inside the readable paths points at a deny path.
+    k.exec.on(
+        "readlink -f -- '/var/log/app.log'",
+        "/root/.ssh/id_ed25519\n",
+        0,
+    );
+
+    let e = call(
+        &k,
+        "read_file",
+        json!({ "host": "web-1", "path": "/var/log/app.log" }),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(e, ToolError::Denied(_)), "{e}");
+    assert!(e.to_string().contains("deny rule"), "{e}");
+    // The refusal is audited against the target that was actually resolved.
+    assert!(k
+        .audit
+        .calls()
+        .iter()
+        .any(|(c, d)| matches!(d, Decision::Deny { .. })
+            && c.path.as_deref() == Some("/root/.ssh/id_ed25519")));
+}
+
+#[tokio::test]
+async fn read_file_reads_the_resolved_target() {
+    let k = std_kit();
+    k.files.put("web-1", "/srv/link", "the link itself");
+    k.files.put("web-1", "/srv/real.txt", "the real target");
+    k.exec
+        .on("readlink -f -- '/srv/link'", "/srv/real.txt\n", 0);
+
+    let v = call(
+        &k,
+        "read_file",
+        json!({ "host": "web-1", "path": "/srv/link" }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(v["untrusted_content"], "the real target");
+    assert_eq!(v["path"], "/srv/real.txt");
+    let (c, _) = k
+        .audit
+        .calls()
+        .into_iter()
+        .find(|(c, _)| c.tool == ToolName::ReadFile)
+        .expect("read call audited");
+    assert_eq!(c.path.as_deref(), Some("/srv/real.txt"));
+    assert_eq!(c.args["requested_path"], "/srv/link");
+}
+
+#[tokio::test]
+async fn read_file_denies_when_the_host_cannot_resolve_the_path() {
+    let k = std_kit();
+    k.files.put("web-1", "/srv/file", "secret");
+    // The fake host answers with nothing (and no readlink rule was scripted).
+    let e = call(
+        &k,
+        "read_file",
+        json!({ "host": "web-1", "path": "/srv/file" }),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(e, ToolError::Denied(_)), "{e}");
+
+    let k = std_kit();
+    k.exec.on("readlink", "", 1);
+    let e = call(
+        &k,
+        "read_file",
+        json!({ "host": "web-1", "path": "/srv/file" }),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(e, ToolError::Denied(_)), "{e}");
+}
+
+#[tokio::test]
+async fn read_file_re_decides_the_policy_on_the_resolved_path() {
+    // The engine stands in for the real one: only read_paths are allowed.
+    let engine = FakeEngine(Box::new(|c: &ToolCall| {
+        if c.path
+            .as_deref()
+            .is_some_and(|p| p.starts_with("/var/log/"))
+        {
+            Decision::Allow {
+                reason: "read_paths".into(),
+            }
+        } else {
+            Decision::Deny {
+                reason: "outside read_paths".into(),
+            }
+        }
+    }));
+    let k = kit(policy(), engine, hosts());
+    k.files.put("web-1", "/var/log/app.log", "public log");
+    k.files.put("web-1", "/srv/secret", "secret");
+    k.exec
+        .on("readlink -f -- '/var/log/app.log'", "/srv/secret\n", 0);
+
+    let e = call(
+        &k,
+        "read_file",
+        json!({ "host": "web-1", "path": "/var/log/app.log" }),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(e, ToolError::Denied(_)), "{e}");
+    assert!(e.to_string().contains("outside read_paths"), "{e}");
+}
+
+#[test]
+fn read_mode_uses_the_agent_principal_when_the_ca_is_trusted() {
+    use super::context::RunContext;
+    let facts = |jail: JailKind, certificates: bool| HostFacts {
+        name: "web-1".into(),
+        tags: vec![],
+        enforcement: Enforcement {
+            jail,
+            certificates,
+            agent_user: certificates,
+        },
+    };
+    assert_eq!(
+        RunContext::read_mode(&facts(JailKind::None, true)),
+        ExecMode::Plain,
+        "no jail, nothing to wrap"
+    );
+    assert_eq!(
+        RunContext::read_mode(&facts(JailKind::Landlock, false)),
+        ExecMode::Jailed(JailKind::Landlock),
+        "no CA: the jail runs as the login user"
+    );
+    assert_eq!(
+        RunContext::read_mode(&facts(JailKind::Landlock, true)),
+        ExecMode::JailedAsAgent(JailKind::Landlock)
+    );
+    assert_eq!(
+        RunContext::read_mode(&facts(JailKind::Bubblewrap, true)),
+        ExecMode::JailedAsAgent(JailKind::Bubblewrap)
+    );
+}
+
+#[tokio::test]
 async fn search_logs_runs_a_quoted_command() {
     let k = std_kit();
     k.exec.on("journalctl", "Oct 24 nginx[1]: 502 hunter2\n", 0);
@@ -252,6 +408,28 @@ async fn run_readonly_refuses_writes_without_a_jail_and_redacts() {
     .unwrap_err();
     assert!(matches!(e, ToolError::Denied(_)), "{e}");
     assert!(!k.exec.commands().iter().any(|c| c.contains("rm -rf")));
+}
+
+#[tokio::test]
+async fn huge_commands_are_rejected_before_analysis() {
+    let k = std_kit();
+    // 1 MiB of glob characters: an analyzer/glob matcher must never see this.
+    let giant = format!("cat {}", "*".repeat(1024 * 1024));
+    let start = std::time::Instant::now();
+    for tool in ["run_readonly", "run", "run_many"] {
+        let args = if tool == "run_many" {
+            json!({ "tag": "web", "command": giant.clone() })
+        } else {
+            json!({ "host": "web-1", "command": giant.clone() })
+        };
+        let e = call(&k, tool, args).await.unwrap_err();
+        assert!(
+            matches!(&e, ToolError::Invalid(m) if m.contains("longer than")),
+            "{tool}: {e}"
+        );
+    }
+    assert!(start.elapsed().as_secs() < 2, "{:?}", start.elapsed());
+    assert!(k.exec.commands().is_empty(), "nothing may run");
 }
 
 #[tokio::test]
@@ -347,7 +525,7 @@ async fn jailed_hosts_run_readonly_inside_the_jail_and_certified_hosts_write_wit
     assert!(raw
         .iter()
         .filter(|(c, _)| c == "make report" || c.contains("free -b"))
-        .all(|(_, m)| *m == ExecMode::Jailed(JailKind::Landlock)));
+        .all(|(_, m)| *m == ExecMode::JailedAsAgent(JailKind::Landlock)));
 
     call(
         &k,

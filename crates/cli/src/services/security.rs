@@ -4,7 +4,7 @@
 //! Fingerprinting is delegated to [`crate::services::known_hosts::fingerprint_sha256`]
 //! so the SHA-256/`SHA256:` encoding logic has a single definition.
 
-use crate::config::AppConfig;
+use crate::config::{AppConfig, HostKeyPolicy};
 use crate::models::Connection;
 use crate::services::known_hosts::fingerprint_sha256;
 use serde::Serialize;
@@ -126,17 +126,25 @@ pub struct AuditReportDto {
     pub total_info: usize,
 }
 
+/// The finding raised when host-key checking is disabled.
+///
+/// Uses `TransportConfig::host_key_policy` so the OpenSSH `no` alias is
+/// reported too, instead of only the exact string `off`.
+fn host_key_finding(config: &AppConfig) -> Option<AuditFindingDto> {
+    (config.transport.host_key_policy() == HostKeyPolicy::Off).then(|| AuditFindingDto {
+        severity: "critical".into(),
+        title: "StrictHostKeyChecking Disabled".into(),
+        description: "Global strict host key checking is set to 'off'. This exposes connections to Man-in-the-Middle (MITM) attacks.".into(),
+        remediation: "Set strict_host_key_checking to 'accept-new' or 'strict' in settings.".into(),
+    })
+}
+
 /// Build a security audit report from the active configuration and connections.
 pub fn build_audit_report(config: &AppConfig, connections: &[Connection]) -> AuditReportDto {
     let mut findings = Vec::new();
 
-    if config.transport.strict_host_key_checking == "off" {
-        findings.push(AuditFindingDto {
-            severity: "critical".into(),
-            title: "StrictHostKeyChecking Disabled".into(),
-            description: "Global strict host key checking is set to 'off'. This exposes connections to Man-in-the-Middle (MITM) attacks.".into(),
-            remediation: "Set strict_host_key_checking to 'accept-new' or 'strict' in settings.".into(),
-        });
+    if let Some(finding) = host_key_finding(config) {
+        findings.push(finding);
     }
 
     let config_dir = dirs::config_dir()
@@ -289,4 +297,38 @@ fn looks_like_private_key(path: &Path) -> bool {
         return false;
     }
     first.starts_with("-----BEGIN") && first.contains("PRIVATE KEY")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::host_key_finding;
+    use crate::config::AppConfig;
+
+    fn with_policy(value: &str) -> AppConfig {
+        let mut config = AppConfig::default();
+        config.transport.strict_host_key_checking = value.into();
+        config
+    }
+
+    #[test]
+    fn any_off_spelling_is_reported() {
+        for value in ["off", "OFF", "no"] {
+            let finding = host_key_finding(&with_policy(value)).expect(value);
+            assert_eq!(finding.severity, "critical");
+            assert_eq!(finding.title, "StrictHostKeyChecking Disabled");
+        }
+    }
+
+    #[test]
+    fn strict_and_accept_new_are_not_reported() {
+        for value in ["strict", "yes", "accept-new"] {
+            assert!(host_key_finding(&with_policy(value)).is_none(), "{value}");
+        }
+    }
+
+    #[test]
+    fn unknown_policy_is_not_reported_as_off() {
+        // `load` already rewrites this to `strict`; the report must agree.
+        assert!(host_key_finding(&with_policy("bogus")).is_none());
+    }
 }

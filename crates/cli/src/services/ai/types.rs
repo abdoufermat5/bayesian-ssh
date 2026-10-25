@@ -35,6 +35,20 @@ pub struct SimpleCommand {
     pub wrappers: Vec<String>,
     /// Redirection targets written to (`> /etc/x`, `>> log`).
     pub writes_to: Vec<String>,
+    /// Redirection targets read from (`< /etc/x`, `0< f`, `<> f`), including redirections
+    /// on the groups that enclose the command.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reads_from: Vec<String>,
+    /// Arguments the shell expands as globs before the command sees them (`/etc/sha*`).
+    /// A quoted `'*.log'` is not listed: the command receives it verbatim.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub glob_args: Vec<String>,
+    /// Directory a literal absolute `cd`/`pushd` earlier on the same command line changed
+    /// to, so relative arguments resolve against it (`cd /etc && cat shadow`). `None` when
+    /// no such `cd` was seen; a `cd` whose target is only known at run time makes the
+    /// analysis `unknown` instead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
     pub tags: BTreeSet<RiskTag>,
     /// Rule that classified it, for `bssh ai explain`.
     pub rule: Option<String>,
@@ -445,10 +459,21 @@ pub struct ExecResult {
 pub enum ExecMode {
     /// As the connection's normal user and auth (delegation without host setup).
     Plain,
-    /// Wrapped in the host's read-only jail.
+    /// Wrapped in the host's read-only jail, as the connection's normal user.
     Jailed(JailKind),
+    /// Wrapped in the jail, as `bssh-agent`, via a certificate whose force-command is the
+    /// jailed command. The agent principal's own file permissions then enforce the deny
+    /// paths a Landlock jail cannot express.
+    JailedAsAgent(JailKind),
     /// As `bssh-agent` with a short-lived certificate whose force-command is exactly this command.
     Certified,
+}
+
+impl ExecMode {
+    /// Does this mode run the command inside the read-only jail?
+    pub fn is_jailed(&self) -> bool {
+        matches!(self, ExecMode::Jailed(_) | ExecMode::JailedAsAgent(_))
+    }
 }
 
 #[allow(clippy::double_must_use)]

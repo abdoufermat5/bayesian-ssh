@@ -289,6 +289,7 @@ pub fn find_exec_commands(args: &[Arg]) -> Result<Vec<(String, Vec<Arg>)>, Strin
                         text: w.text.clone(),
                         dynamic: true,
                         flaggy: false,
+                        glob: false,
                     });
                 } else {
                     inner.push(w.clone());

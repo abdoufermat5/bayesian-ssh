@@ -1,4 +1,4 @@
-use crate::config::{AppConfig, AppConfigUpdates};
+use crate::config::{AppConfig, AppConfigUpdates, HostKeyPolicy};
 use anyhow::Result;
 use tracing::info;
 
@@ -12,6 +12,7 @@ pub async fn execute(
     log_level: Option<String>,
     clear_bastion: bool,
     search_mode: Option<String>,
+    strict_host_key_checking: Option<String>,
     recording: Option<String>,
     recording_tags: Option<String>,
     prediction: Option<String>,
@@ -19,6 +20,19 @@ pub async fn execute(
     mut config: AppConfig,
 ) -> Result<()> {
     info!("Updating application configuration");
+
+    // Reject an unknown policy here: storing it would leave the transports to
+    // guess, which is how an unrecognised value once silently meant accept-new.
+    let strict_host_key_checking = strict_host_key_checking
+        .map(|value| {
+            HostKeyPolicy::parse(&value).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "invalid --strict-host-key-checking '{}': use 'strict', 'accept-new' or 'off'",
+                    value.escape_debug()
+                )
+            })
+        })
+        .transpose()?;
 
     // Handle bastion settings:
     // - If --clear-bastion is passed, set to Some(None) to clear
@@ -53,6 +67,7 @@ pub async fn execute(
         auto_save_history: None,
         max_history_size: None,
         search_mode,
+        strict_host_key_checking,
         recording_enabled,
         recording_tags,
         prediction_enabled: prediction.as_deref().map(|v| v == "on"),
@@ -82,6 +97,10 @@ pub async fn execute(
         }
     );
     println!("  Log level: {}", config.log_level);
+    println!(
+        "  Strict host key checking: {}",
+        config.transport.strict_host_key_checking
+    );
     println!(
         "  Search mode: {} {}",
         config.search_mode,

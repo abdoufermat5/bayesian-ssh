@@ -75,10 +75,11 @@ pub async fn execute(args: AiArgsSetup, config: AppConfig) -> Result<()> {
     let exec = AiExecutor::new(&config);
     let ca_pub = crate::services::ai::cert::ca_public_key(&config).ok();
     let mut failed = 0usize;
+    let host_key_policy = config.transport.host_key_policy();
     // One host at a time: sudo may ask for a password on the terminal.
     for conn in &targets {
         println!("== {} ({}@{})", conn.name, conn.user, conn.host);
-        match hostsetup::run_root_script(conn, &exec, &script, true).await {
+        match hostsetup::run_root_script(conn, &exec, &script, true, host_key_policy).await {
             Ok(run) if run.exit_code == 0 => {
                 for line in run.output.lines() {
                     println!("   {line}");

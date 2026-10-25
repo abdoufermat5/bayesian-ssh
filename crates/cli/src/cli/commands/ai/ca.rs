@@ -93,9 +93,10 @@ async fn trust(
 
     let exec = AiExecutor::new(config);
     let mut failed = 0usize;
+    let host_key_policy = config.transport.host_key_policy();
     for conn in &targets {
         println!("== {} ({}@{})", conn.name, conn.user, conn.host);
-        match hostsetup::run_root_script(conn, &exec, &script, true).await {
+        match hostsetup::run_root_script(conn, &exec, &script, true, host_key_policy).await {
             Ok(run) if run.exit_code == 0 => {
                 for line in run.output.lines() {
                     println!("   {line}");

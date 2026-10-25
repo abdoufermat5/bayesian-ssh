@@ -6,13 +6,16 @@
 //!   `OutOfBand`.
 //! - `OutOfBand`: persist the request, push `ServerMsg::NewRequest` to every control client,
 //!   wait for a `Decide` or for `approval_timeout_secs` (then `Expired`).
-//! - `TwoPerson`: like out-of-band, but it needs two decisions from distinct `by`. Locally that
-//!   is rarely possible, so on timeout with fewer approvals it is denied with
-//!   "needs Teams (two approvers)" (Teams' RelayBroker is the real T3 path).
+//! - `TwoPerson`: like out-of-band, but it needs two decisions from distinct people. Locally
+//!   every approval comes from the same machine, so at most one is recorded (a second local
+//!   one is refused) and the request ends denied on timeout with "needs Teams (two
+//!   approvers)"; Teams' RelayBroker is the real T3 path.
 
 use super::ipc::{ClientMsg, ServerMsg, IPC_VERSION};
 use super::store::AiStore;
-use super::types::{AiEvent, ApprovalBroker, ApprovalOutcome, ApprovalRequest, Tier};
+use super::types::{
+    AiEvent, ApprovalBroker, ApprovalOutcome, ApprovalRequest, ApprovalSubject, Grant, Tier,
+};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -43,7 +46,8 @@ pub struct RunInfo {
 /// A request waiting for a human.
 struct Pending {
     req: ApprovalRequest,
-    /// Distinct approvers so far (two-person needs two).
+    /// Local approvers so far. A two-person request needs the Teams relay for its second
+    /// approver, so it never finishes from this list.
     approvers: Vec<String>,
     first_grant: Option<super::types::Grant>,
     tx: Option<oneshot::Sender<ApprovalOutcome>>,
@@ -129,6 +133,11 @@ impl LocalBroker {
 
     /// Apply a human decision (from the control socket). Errors when the request is unknown,
     /// already decided or expired, or when the same person approves a two-person request twice.
+    ///
+    /// The outcome is checked here, not trusted: a grant is narrowed to the request (see
+    /// `checked_grant`), and a two-person request never completes from local approvals —
+    /// every local approval comes from the same machine, so at most one is recorded and the
+    /// request keeps waiting for the Teams relay.
     pub fn decide(&self, request_id: &str, outcome: ApprovalOutcome) -> anyhow::Result<()> {
         let mut map = self
             .pending
@@ -149,16 +158,23 @@ impl LocalBroker {
                         "'{by}' already approved this request; a second person is needed"
                     );
                 }
+                if entry.req.tier == Tier::TwoPerson && !entry.approvers.is_empty() {
+                    anyhow::bail!(
+                        "this request needs two different people, and a local approval can't \
+                         be the second one; a second person approves it on the Teams relay"
+                    );
+                }
+                let grant = match grant {
+                    Some(g) => Some(checked_grant(&entry.req, &self.run, g)?),
+                    None => None,
+                };
                 entry.approvers.push(by);
                 if entry.first_grant.is_none() {
                     entry.first_grant = grant;
                 }
-                let needed = if entry.req.tier == Tier::TwoPerson {
-                    2
-                } else {
-                    1
-                };
-                if entry.approvers.len() < needed {
+                if entry.req.tier == Tier::TwoPerson {
+                    // Recorded as one approving person, still pending: it expires as
+                    // "needs Teams (two approvers)" unless the relay supplies the second.
                     return Ok(());
                 }
                 ApprovalOutcome::Approved {
@@ -180,28 +196,13 @@ impl LocalBroker {
         Ok(())
     }
 
-    /// Persist the outcome and store the grant of an approval.
+    /// Persist the outcome and store the grant of an approval (already checked by `decide`).
     fn finish(&self, request_id: &str, outcome: ApprovalOutcome) -> ApprovalOutcome {
-        let outcome = match outcome {
-            ApprovalOutcome::Approved {
-                by,
-                channel,
-                grant: Some(mut g),
-            } => {
-                if g.grant_id.is_empty() {
-                    g.grant_id = uuid::Uuid::new_v4().to_string();
-                }
-                if let Err(e) = self.store.add_grant(&g) {
-                    tracing::warn!("could not store grant: {e}");
-                }
-                ApprovalOutcome::Approved {
-                    by,
-                    channel,
-                    grant: Some(g),
-                }
+        if let ApprovalOutcome::Approved { grant: Some(g), .. } = &outcome {
+            if let Err(e) = self.store.add_grant(g) {
+                tracing::warn!("could not store grant: {e}");
             }
-            other => other,
-        };
+        }
         if let Err(e) = self.store.record_outcome(request_id, &outcome) {
             tracing::warn!("could not record approval outcome: {e}");
         }
@@ -272,6 +273,44 @@ impl LocalBroker {
             }
         }
     }
+}
+
+/// Longest grant a decision may create, whatever the client asked for.
+const MAX_GRANT_HOURS: i64 = 8;
+
+/// Rewrite a grant supplied by a control-socket client so it covers only the request being
+/// approved: server-generated `grant_id`, this run's id, the request's own tool and exact
+/// host, and an expiry within [`MAX_GRANT_HOURS`].
+///
+/// The client (`bssh ai approve`, the desktop app) chooses whether there is a grant and for
+/// how long, but it can only narrow a decision, never widen it beyond what was asked.
+fn checked_grant(req: &ApprovalRequest, run: &RunInfo, mut g: Grant) -> anyhow::Result<Grant> {
+    let ApprovalSubject::Call { call, .. } = &req.subject else {
+        anyhow::bail!("grants only cover a single call, not a plan or an access request");
+    };
+    if g.tool != call.tool {
+        anyhow::bail!(
+            "grant for {:?} does not match the request's {:?}",
+            g.tool,
+            call.tool
+        );
+    }
+    let Some(host) = call.host.clone() else {
+        anyhow::bail!("a grant needs the requested call's host");
+    };
+    let now = chrono::Utc::now();
+    let expires = chrono::DateTime::parse_from_rfc3339(&g.expires_at)
+        .map_err(|_| anyhow::anyhow!("grant expiry '{}' is not RFC 3339", g.expires_at))?
+        .with_timezone(&chrono::Utc);
+    if expires <= now {
+        anyhow::bail!("grant expiry '{}' is in the past", g.expires_at);
+    }
+    let cap = now + chrono::Duration::hours(MAX_GRANT_HOURS);
+    g.grant_id = uuid::Uuid::new_v4().to_string();
+    g.run_id = Some(run.run_id.clone());
+    g.hosts = host;
+    g.expires_at = expires.min(cap).to_rfc3339();
+    Ok(g)
 }
 
 #[async_trait]
@@ -628,7 +667,7 @@ fn handle_msg(
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::services::ai::types::{ApprovalSubject, Grant, Scope, ToolName};
+    use crate::services::ai::types::{ApprovalSubject, Grant, Scope, ToolCall, ToolName};
 
     pub(crate) fn run_info() -> RunInfo {
         RunInfo {
@@ -673,6 +712,36 @@ pub(crate) mod tests {
             by: by.into(),
             channel: "cli".into(),
             grant: None,
+        }
+    }
+
+    /// A single-call request: the only subject a grant may cover.
+    fn call_request(id: &str, tool: ToolName, host: Option<&str>) -> ApprovalRequest {
+        let mut r = request(id, Tier::OutOfBand);
+        r.subject = ApprovalSubject::Call {
+            call: ToolCall {
+                run_id: "run1".into(),
+                call_id: "c1".into(),
+                tool,
+                host: host.map(String::from),
+                command: Some("uptime".into()),
+                path: None,
+                args: serde_json::Value::Null,
+            },
+            analysis: None,
+        };
+        r
+    }
+
+    /// A grant that `decide` accepts as-is for a `Service` call on `web-1`.
+    fn a_grant() -> Grant {
+        Grant {
+            grant_id: "g1".into(),
+            run_id: Some("run1".into()),
+            tool: ToolName::Service,
+            hosts: "web-1".into(),
+            target: None,
+            expires_at: (chrono::Utc::now() + chrono::Duration::minutes(5)).to_rfc3339(),
         }
     }
 
@@ -755,7 +824,10 @@ pub(crate) mod tests {
     async fn approval_with_grant_stores_the_grant() {
         let (_t, b) = broker(30, None);
         let b2 = b.clone();
-        let h = tokio::spawn(async move { b2.request(request("q1", Tier::OutOfBand)).await });
+        let h = tokio::spawn(async move {
+            b2.request(call_request("q1", ToolName::Service, Some("web-1")))
+                .await
+        });
         wait_pending(&b, 1).await;
         let grant = Grant {
             grant_id: String::new(),
@@ -780,7 +852,132 @@ pub(crate) mod tests {
         }
         let stored = b.store().active_grants(Some("run1")).unwrap();
         assert_eq!(stored.len(), 1);
-        assert_eq!(stored[0].hosts, "web-*");
+        // The client asked for a glob; the broker keeps the request's exact host.
+        assert_eq!(stored[0].hosts, "web-1");
+        assert_eq!(stored[0].run_id.as_deref(), Some("run1"));
+    }
+
+    #[tokio::test]
+    async fn a_grant_is_narrowed_to_the_request() {
+        let (_t, b) = broker(30, None);
+        let b2 = b.clone();
+        let h = tokio::spawn(async move {
+            b2.request(call_request("q1", ToolName::Service, Some("web-1")))
+                .await
+        });
+        wait_pending(&b, 1).await;
+        let wide = Grant {
+            grant_id: "client-chosen".into(),
+            run_id: Some("other-run".into()),
+            tool: ToolName::Service,
+            hosts: "*".into(),
+            target: None,
+            expires_at: (chrono::Utc::now() + chrono::Duration::days(365)).to_rfc3339(),
+        };
+        b.decide(
+            "q1",
+            ApprovalOutcome::Approved {
+                by: "alice".into(),
+                channel: "cli".into(),
+                grant: Some(wide),
+            },
+        )
+        .unwrap();
+        let out = h.await.unwrap().unwrap();
+        let ApprovalOutcome::Approved { grant: Some(g), .. } = out else {
+            panic!("{out:?}");
+        };
+        assert_eq!(g.hosts, "web-1");
+        assert_eq!(g.run_id.as_deref(), Some("run1"));
+        assert_ne!(g.grant_id, "client-chosen");
+        let expires = chrono::DateTime::parse_from_rfc3339(&g.expires_at).unwrap();
+        let cap = chrono::Utc::now() + chrono::Duration::hours(MAX_GRANT_HOURS);
+        assert!(expires <= cap, "{expires} > {cap}");
+    }
+
+    #[tokio::test]
+    async fn grants_that_make_no_sense_are_refused() {
+        let (_t, b) = broker(30, None);
+        let b2 = b.clone();
+        let h = tokio::spawn(async move {
+            b2.request(call_request("q1", ToolName::Service, Some("web-1")))
+                .await
+        });
+        wait_pending(&b, 1).await;
+        let past = (chrono::Utc::now() - chrono::Duration::minutes(1)).to_rfc3339();
+        for g in [
+            Grant {
+                tool: ToolName::Run,
+                ..a_grant()
+            },
+            Grant {
+                expires_at: "soon".into(),
+                ..a_grant()
+            },
+            Grant {
+                expires_at: past,
+                ..a_grant()
+            },
+        ] {
+            let err = b
+                .decide(
+                    "q1",
+                    ApprovalOutcome::Approved {
+                        by: "alice".into(),
+                        channel: "cli".into(),
+                        grant: Some(g),
+                    },
+                )
+                .unwrap_err();
+            assert!(err.to_string().contains("grant"), "{err}");
+            assert_eq!(b.pending_requests().len(), 1, "still pending");
+        }
+        // Without a grant the same approval goes through.
+        b.decide("q1", approve("alice")).unwrap();
+        h.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn grants_only_cover_a_single_call_with_a_host() {
+        // An access request (not a call) can't carry a grant.
+        let (_t, b) = broker(30, None);
+        let b2 = b.clone();
+        let h = tokio::spawn(async move { b2.request(request("q1", Tier::OutOfBand)).await });
+        wait_pending(&b, 1).await;
+        assert!(b
+            .decide(
+                "q1",
+                ApprovalOutcome::Approved {
+                    by: "alice".into(),
+                    channel: "cli".into(),
+                    grant: Some(a_grant()),
+                },
+            )
+            .is_err());
+        assert_eq!(b.pending_requests().len(), 1);
+        b.decide("q1", approve("alice")).unwrap();
+        h.await.unwrap().unwrap();
+
+        // A call without a host has nothing to scope a grant to.
+        let (_t2, b) = broker(30, None);
+        let b2 = b.clone();
+        let h =
+            tokio::spawn(async move { b2.request(call_request("q1", ToolName::Run, None)).await });
+        wait_pending(&b, 1).await;
+        let mut g = a_grant();
+        g.tool = ToolName::Run;
+        assert!(b
+            .decide(
+                "q1",
+                ApprovalOutcome::Approved {
+                    by: "alice".into(),
+                    channel: "cli".into(),
+                    grant: Some(g),
+                },
+            )
+            .is_err());
+        b.decide("q1", approve("alice")).unwrap();
+        h.await.unwrap().unwrap();
     }
 
     #[tokio::test]
@@ -797,7 +994,9 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn two_person_needs_two_distinct_approvers() {
-        let (_t, b) = broker(30, None);
+        // Locally every approval comes from the same machine, so a second local approval is
+        // refused even under another name; the request ends denied needing the Teams relay.
+        let (_t, b) = broker(1, None);
         let b2 = b.clone();
         let h = tokio::spawn(async move { b2.request(request("q1", Tier::TwoPerson)).await });
         wait_pending(&b, 1).await;
@@ -811,9 +1010,17 @@ pub(crate) mod tests {
             b.decide("q1", approve("alice")).is_err(),
             "same person twice"
         );
-        b.decide("q1", approve("bob")).unwrap();
+        assert!(
+            b.decide("q1", approve("bob")).is_err(),
+            "a local approval can't be the second person"
+        );
         match h.await.unwrap().unwrap() {
-            ApprovalOutcome::Approved { by, .. } => assert_eq!(by, "alice + bob"),
+            ApprovalOutcome::Denied {
+                reason: Some(r), ..
+            } => {
+                assert!(r.contains("needs Teams (two approvers)"), "{r}");
+                assert!(r.contains("1 of 2"), "{r}");
+            }
             other => panic!("{other:?}"),
         }
     }

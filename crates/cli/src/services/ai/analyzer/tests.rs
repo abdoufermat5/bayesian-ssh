@@ -712,3 +712,89 @@ fn deny_star_stays_within_a_path_segment() {
         &analyze("mkfs.ext4 /dev/mapper/vg-data")
     ));
 }
+
+#[test]
+fn input_redirections_are_recorded() {
+    // `<`, `N<` and `<>` read a file; the policy needs it to judge deny paths.
+    for cmd in [
+        "cat < /etc/shadow",
+        "cat 0</etc/shadow",
+        "cat <>/etc/shadow",
+    ] {
+        let a = analyze(cmd);
+        assert_eq!(a.commands[0].reads_from, vec!["/etc/shadow"], "{cmd:?}");
+        assert_eq!(a.commands[0].program, "cat");
+    }
+    let a = analyze("cat <> /etc/shadow");
+    assert_eq!(a.commands[0].writes_to, vec!["/etc/shadow"]);
+
+    // A redirection on the group belongs to every command inside it.
+    let a = analyze("{ cat; } < /etc/shadow");
+    assert_eq!(a.commands[0].reads_from, vec!["/etc/shadow"]);
+
+    // Built-in sinks and descriptors are not paths.
+    for cmd in ["cat < /dev/null", "cat <&0", "cat <<EOF\nhi\nEOF"] {
+        let a = analyze(cmd);
+        assert!(
+            a.commands.iter().all(|c| c.reads_from.is_empty()),
+            "{cmd:?}"
+        );
+    }
+    // Output redirections stay output-only.
+    let a = analyze("cat > /tmp/x");
+    assert!(a.commands[0].reads_from.is_empty());
+    assert_eq!(a.commands[0].writes_to, vec!["/tmp/x"]);
+}
+
+#[test]
+fn cd_tracking_resolves_relative_arguments() {
+    // A literal absolute `cd` gives later relative arguments a directory.
+    let a = analyze("cd /etc && cat shadow");
+    assert!(a.is_read_only());
+    assert_eq!(a.commands[1].program, "cat");
+    assert_eq!(a.commands[1].cwd.as_deref(), Some("/etc"));
+
+    let a = analyze("(cd /srv/app && cat log)");
+    assert_eq!(a.commands[1].cwd.as_deref(), Some("/srv/app"));
+
+    // A subshell's `cd` does not leak out of it; a brace group's does.
+    let a = analyze("(cd /etc); cat shadow");
+    assert_eq!(a.commands[1].cwd, None);
+    let a = analyze("{ cd /etc; }; cat shadow");
+    assert_eq!(a.commands[1].cwd.as_deref(), Some("/etc"));
+
+    // The last literal `cd` wins.
+    let a = analyze("cd /etc && cd /var && cat log");
+    assert_eq!(a.commands[2].cwd.as_deref(), Some("/var"));
+
+    // `-C dir` applies to the command that carries it.
+    let a = analyze("tar -C /etc -cf - shadow");
+    assert_eq!(a.commands[0].cwd.as_deref(), Some("/etc"));
+    let a = analyze("git --directory=/srv/app status");
+    assert_eq!(a.commands[0].cwd.as_deref(), Some("/srv/app"));
+    // ...but not to the shell: the next command is back where it was.
+    let a = analyze("tar -C /etc -cf - shadow; cat log");
+    assert_eq!(a.commands[1].cwd, None);
+
+    // A `cd` we can't follow leaves later relative paths unprovable.
+    for cmd in [
+        "cd $d && cat shadow",
+        "cd .. && cat shadow",
+        "cd - && cat shadow",
+        "cd ~ && cat .ssh/id_rsa",
+        "popd && cat shadow",
+        "cd /etc && pushd && cat shadow",
+        "cd $d && cat < shadow",
+    ] {
+        let a = analyze(cmd);
+        assert!(
+            a.unknown_reason.is_some(),
+            "{cmd:?} should be unknown, got {a:?}"
+        );
+        assert!(!a.is_read_only(), "{cmd:?}");
+    }
+    // A command with no relative operand stays analyzable.
+    assert!(analyze("cd $d && ls").is_read_only());
+    // Absolute operands don't depend on the directory we lost track of.
+    assert!(analyze("cd $d && cat /var/log/syslog").is_read_only());
+}

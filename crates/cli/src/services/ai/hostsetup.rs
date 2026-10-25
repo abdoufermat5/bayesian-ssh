@@ -11,6 +11,7 @@ use super::jail::{self, shell_quote};
 use super::types::{
     Enforcement, ExecLimits, ExecMode, ExecResult, Executor, JailKind, Policy, Profile,
 };
+use crate::config::HostKeyPolicy;
 use crate::models::Connection;
 use crate::services::transport::SubprocessTransport;
 use anyhow::{bail, Context, Result};
@@ -227,11 +228,15 @@ pub struct RootRun {
 /// Run `script` as root on `conn`: first without a password prompt (root login or
 /// passwordless sudo) through `exec`; if sudo asks for a password and `allow_interactive`
 /// is set and a terminal is attached, once more over `ssh -tt` so the human types it.
+///
+/// `policy` is the configured host-key policy for the bastion hop of that
+/// interactive fallback; the target's prompt stays the user's ssh's.
 pub async fn run_root_script(
     conn: &Connection,
     exec: &dyn Executor,
     script: &str,
     allow_interactive: bool,
+    policy: HostKeyPolicy,
 ) -> Result<RootRun> {
     let limits = ExecLimits {
         timeout: Duration::from_secs(180),
@@ -254,7 +259,7 @@ pub async fn run_root_script(
             conn.name
         );
     }
-    let code = run_root_script_interactive(conn, script).await?;
+    let code = run_root_script_interactive(conn, script, policy).await?;
     Ok(RootRun {
         exit_code: code,
         output: String::new(),
@@ -262,11 +267,15 @@ pub async fn run_root_script(
     })
 }
 
-async fn run_root_script_interactive(conn: &Connection, script: &str) -> Result<i32> {
+async fn run_root_script_interactive(
+    conn: &Connection,
+    script: &str,
+    policy: HostKeyPolicy,
+) -> Result<i32> {
     if conn.use_kerberos && conn.bastion.is_some() {
         bail!("interactive sudo through a Kerberos bastion is not supported: log in and run the script by hand");
     }
-    let mut argv = SubprocessTransport::build_shell_argv(conn);
+    let mut argv = SubprocessTransport::build_shell_argv(conn, policy);
     argv.push(root_command(script, true));
     let (program, args) = argv.split_first().context("empty ssh command")?;
     let status = tokio::process::Command::new(program)

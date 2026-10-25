@@ -1,6 +1,6 @@
 //! Security auditor subcommand (`bssh audit`)
 
-use crate::config::AppConfig;
+use crate::config::{AppConfig, HostKeyPolicy};
 use crate::database::Database;
 use anyhow::Result;
 use chrono::Utc;
@@ -42,7 +42,7 @@ pub async fn execute(fix: bool, config: AppConfig) -> Result<()> {
     println!("Environment: {}\n", config.environment);
 
     // 1. Audit Transport Security Settings
-    if config.transport.strict_host_key_checking == "off" {
+    if config.transport.host_key_policy() == HostKeyPolicy::Off {
         findings.push(AuditFinding {
             severity: AuditSeverity::Critical,
             title: "StrictHostKeyChecking Disabled".into(),
