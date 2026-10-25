@@ -58,6 +58,8 @@ mod demo {
                     exit_code: Some(0),
                     output_sha256: "00".into(),
                     redactions: Vec::new(),
+                    duration_ms: Some(180),
+                    jailed: None,
                 },
             },
             ServerMsg::NewRequest {
@@ -65,6 +67,7 @@ mod demo {
                     request_id: "req-1".into(),
                     run_id: "demo".into(),
                     client: "Fake agent 0.1".into(),
+                    reason: String::new(),
                     tier: Tier::OutOfBand,
                     subject: ApprovalSubject::Call {
                         call: reload,
@@ -123,6 +126,8 @@ mod demo {
                                     client: "Fake agent 0.1".into(),
                                     policy: "default".into(),
                                     started_at: chrono::Utc::now().to_rfc3339(),
+                                    on_behalf_of: String::new(),
+                                    hosts: vec!["web-1".into()],
                                 },
                             )
                             .await
