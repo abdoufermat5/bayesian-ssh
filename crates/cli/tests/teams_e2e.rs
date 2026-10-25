@@ -41,6 +41,7 @@ async fn register(url: &str, email: &str) -> (Device, TeamsClient) {
             device: keys.to_new_device("laptop"),
             // The dev server (bssh-cloud docker-compose) accepts open signups.
             invite_token: None,
+            email_code: None,
         })
         .await
         .unwrap();

@@ -350,6 +350,7 @@ pub async fn init(
                 .map(str::trim)
                 .filter(|t| !t.is_empty())
                 .map(str::to_string),
+            email_code: None,
         })
         .await
         .map_err(|e| {
