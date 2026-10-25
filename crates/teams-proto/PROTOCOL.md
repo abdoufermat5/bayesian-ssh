@@ -88,6 +88,15 @@ polls `GET /teams/{id}/devices/pending` and posts a `WrappedKey` for each new de
 `GET /teams/{id}/invites` (admin) lists the pending ones, without their tokens;
 `DELETE /teams/{id}/invites/{invite}` (admin) revokes one, and its token stops working.
 
+**Revoke a device.** `DELETE /devices/{device_id}` (204, no body) by the device's own
+account or by an active admin of a team in which the device's account is an active member.
+Accounts have one device each, so an owner revokes the device they are signed in on; a
+lost or stolen laptop is revoked by a team admin. `revoked_at` is set and never cleared;
+the device's tokens die at once and it gets `Forbidden` everywhere. Every team in which
+the account is an active member gets `rotation_required`, so an admin rotates the key to
+the remaining devices. Revoked devices still show in member device lists, with
+`revoked_at`.
+
 **Remove a member.** `DELETE /teams/{id}/members/{member}` sets `rotation_required`.
 Pushes with the old `key_version` then fail with `RotationRequired`. The admin generates
 `TK_{v+1}`, wraps it to every remaining active device, and posts them all in one request.
@@ -143,6 +152,49 @@ What the chain guarantees, against a server that edits its database:
 - Not detectable from the log alone: *truncation*, i.e. dropping a device's newest
   events before it uploads anything after them. The device notices on its next upload.
   Closing this needs devices to publish signed chain heads elsewhere (future work).
+
+**Reading the log.** `GET /teams/{id}/audit` (admin) takes the query described by
+`AuditListQuery` and answers `Vec<AuditRecord>`, at most `limit` per page (clamped by the
+server to 1 to 1000, default 100). Paging is by keyset cursor, not by offset, so events arriving meanwhile
+never shift or repeat a page already read:
+
+- `order=newest` (default): `received_at` descending, then `device_id` descending, then
+  `seq` descending. The cursor is `before_received_at`, `before_device_id`, `before_seq`
+  (all three or none), taken from the last record of the page; the next page holds the
+  events after it. Every filter (`device_id`, `entry_id`, `kind`, `actor`, `since`) applies;
+  `since` compares `received_at`, the time the server observed the event, not the signed
+  `occurred_at`.
+- `order=chain`: `device_id` ascending, then `seq` ascending, so each device's hash chain
+  comes in order, one device after the other. The cursor is `after_device_id`, `after_seq`
+  (both or none). Only `device_id` and `limit` are allowed besides the cursor: any other
+  filter would drop events from the middle of a chain and break the contiguity that
+  verification checks.
+- A cursor of the other order, a partial cursor or a filter with `order=chain` is
+  `InvalidRequest`. A `limit` outside 1 to 1000 is clamped, not rejected.
+- A page holding fewer records than the effective (clamped) `limit` is the last one.
+  `AuditListQuery::after(last)` builds the query for the next page.
+- A server older than paging ignores the cursor and the order and answers the first page
+  again. A client that may talk to one stops when a page does not advance past its cursor.
+
+`bssh teams audit` verifies the whole log, not just a window: it reads `order=chain` page
+by page and re-checks every signature and chain on the admin's machine.
+
+**Quota.** A server may cap the audit storage of a team. At the cap an upload is refused
+with `AuditQuotaExceeded` (403) and stores nothing. The client keeps its events queued,
+tells the user, and retries later; an admin raises the limit on the server, or the
+operator does. Reads keep working.
+
+**Server-side verification.** A server may run a periodic verifier that re-checks the
+signatures and hash chains of the events it stores, and logs any break. Each run checks
+the events stored since a per-chain checkpoint, and also advances a rolling sweep that
+re-verifies every stored event once per pass (bounded work per run, wrapping around at the
+end), so a database edit behind the server is eventually reported; the latency grows with
+the size of the log. It catches edits to the database made by anyone but the operator (a
+bug, a restored backup, a person with database access but not with the server's
+configuration). It does not see events that were dropped before they were stored. It is
+**not** a guarantee against a malicious operator: whoever runs the server can also change
+or silence the verifier. Only client-side verification, with keys the server never holds,
+gives that guarantee.
 
 ## Organizations
 
@@ -202,6 +254,8 @@ the free seats), while pushes fail with `PaymentRequired` and invites with `Seat
 - Key post: the caller is admin; signatures verify against the caller's device key;
   recipients are active member devices; a rotation covers all of them.
 - Audit ingest: `device_id` is the caller's device; signatures and chain verify.
+- Device revoke: the caller is the device's own account, or an active admin of a team in
+  which that account is an active member. Revocation is permanent.
 - Revoked devices and removed members get `Forbidden` on everything team-scoped.
 
 ## bssh AI additions (additive; `PROTOCOL_VERSION` stays 1)

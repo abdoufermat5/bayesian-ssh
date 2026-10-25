@@ -126,7 +126,7 @@
           </li>
         </ul>
         <p class="m-0 type-meta">
-          Lost a laptop? Devices can't be revoked one by one yet: remove the member, then invite them again.
+          Lost a laptop? Revoke just that device with <code>bssh teams device revoke &lt;DEVICE_ID&gt;</code> (CLI; the id is listed by <code>bssh teams members</code>) instead of removing the member.
         </p>
 
         {#if blocked}

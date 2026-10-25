@@ -9,8 +9,8 @@
 //! the rotation fail instead of leaking the key.
 
 use super::agent::{credential_path, AgentCredential};
-use super::audit::{self as audit_log, ChainSummary, EventCheck};
-use super::client::{validate_server_url, AuditFilter, TeamsClient, TeamsError};
+use super::audit::{check_event, ChainProblem, ChainSummary, ChainVerifier, EventCheck};
+use super::client::{validate_server_url, walk_audit_pages, AuditWalk, TeamsClient, TeamsError};
 use super::codec::{unwrap_all, CryptoCodec};
 use super::crypto::{self, fingerprint, DeviceKeys, TeamKey};
 use super::relay::{IncomingRequest, Peer, RelayEndpoint};
@@ -23,10 +23,10 @@ use crate::models::{Connection, DiscoveredHost, Source, SourceKind};
 use crate::services::inventory::sync as inventory;
 use anyhow::{anyhow, bail, Context, Result};
 use bssh_teams_proto::api::{
-    AcceptInviteRequest, AuditKind, BillingInfo, BillingInterval, CheckoutRequest,
-    ConnectionRecord, CreateAccountRequest, CreateInviteRequest, CreateTeamRequest, DeviceInfo,
-    EmailCodeRequest, EmailCodeResponse, ErrorCode, Invite, Member, MemberKind, OrgInfo,
-    PutKeysRequest, Role, SignedAgentPolicy, TeamInfo, VaultPayload,
+    AcceptInviteRequest, AuditKind, AuditListQuery, AuditOrder, BillingInfo, BillingInterval,
+    CheckoutRequest, ConnectionRecord, CreateAccountRequest, CreateInviteRequest,
+    CreateTeamRequest, DeviceInfo, EmailCodeRequest, EmailCodeResponse, ErrorCode, Invite, Member,
+    MemberKind, OrgInfo, PutKeysRequest, Role, SignedAgentPolicy, TeamInfo, VaultPayload,
 };
 use bssh_teams_proto::wire::{Fixed, PublicKey32};
 use chrono::{DateTime, Utc};
@@ -117,13 +117,29 @@ pub enum JoinWith<'a> {
     Team(Uuid),
 }
 
-/// Which part of the audit log to fetch. `email` narrows client-side.
+/// Events shown by [`Session::audit`] when the caller sets no limit.
+pub const DEFAULT_AUDIT_LIMIT: u32 = 100;
+
+/// Largest page the server serves; also the page size when reading more.
+const AUDIT_PAGE: u32 = 1000;
+
+/// Shown when the log can't be read in full because the server ignores the
+/// order and the cursor of an audit request.
+const OLD_SERVER_PAGING: &str = "this Teams server is too old to read its whole audit log in \
+     pages, so the log was not verified in full: ask its operator to update it";
+
+/// Which part of the audit log to show, newest first. `email` narrows
+/// client-side. Whatever is shown, the whole log is verified.
 #[derive(Debug, Clone, Default)]
 pub struct AuditQuery {
     pub entry_id: Option<Uuid>,
     pub email: Option<String>,
     pub since: Option<DateTime<Utc>>,
+    /// Newest events to show (default [`DEFAULT_AUDIT_LIMIT`]); may exceed one
+    /// server page, in which case the next pages are fetched.
     pub limit: Option<u32>,
+    /// Show every matching event; `limit` is ignored.
+    pub all: bool,
 }
 
 /// One audit event, verified and with names resolved.
@@ -144,12 +160,15 @@ pub struct AuditLine {
 /// A team's audit log as checked by this client.
 #[derive(Debug, Clone)]
 pub struct TeamAudit {
-    /// Newest first.
+    /// The events asked for, newest first.
     pub lines: Vec<AuditLine>,
+    /// One per device, from verifying the whole log (not just `lines`).
     pub chains: Vec<ChainSummary>,
+    /// Events of the whole log whose signature checked out.
+    pub verified_events: usize,
     pub problems: Vec<String>,
     pub invalid_events: usize,
-    /// The server returned fewer events than the limit: nothing was cut off.
+    /// `lines` holds every event that matched: the limit cut nothing off.
     pub complete: bool,
 }
 
@@ -1520,29 +1539,59 @@ impl<'a> Session<'a> {
         }
     }
 
-    /// Download the audit log (admins only) and verify it here: signatures
-    /// against device keys this machine knows, and each device's hash chain.
+    /// Revoke a device, permanently: the server kills its tokens at once and
+    /// asks every team its account is in for a new key version that leaves it
+    /// out. Allowed for the device's own account and for an admin of a team
+    /// the device's account is in. Returns whether it was this machine's own
+    /// device; if so, this machine's Teams identity is removed, since the
+    /// server refuses everything from it from now on.
+    pub async fn revoke_device(&self, device_id: Uuid) -> Result<bool> {
+        self.client.revoke_device(device_id).await.map_err(|e| {
+            if e.code() == Some(ErrorCode::NotFound) {
+                // The server answers the same for a device that doesn't exist
+                // and one the caller may not touch.
+                anyhow!(
+                    "no device {device_id} that you can revoke: it must be on your account, \
+                     or belong to a member of a team you administer (see `bssh teams members`)"
+                )
+            } else {
+                anyhow::Error::from(e)
+            }
+        })?;
+        let mine = device_id == self.identity.device_id;
+        if mine {
+            self.forget_identity()?;
+        }
+        Ok(mine)
+    }
+
+    /// Drop this machine's Teams identity and its sealed device keys. Team
+    /// connections already synced stay as ordinary local connections.
+    fn forget_identity(&self) -> Result<()> {
+        self.db()
+            .conn
+            .execute("DELETE FROM teams_identity WHERE id = 1", [])?;
+        self.db().conn.execute(
+            "DELETE FROM device_keys WHERE device_id = ?1",
+            [self.identity.device_id.to_string()],
+        )?;
+        Ok(())
+    }
+
+    /// Show the audit log (admins only), newest first, and verify the whole of
+    /// it here, whatever is shown: every signature against device keys this
+    /// machine knows, and each device's hash chain from its first event.
+    ///
+    /// The log is read twice. The listing is `order=newest` with the filters
+    /// and the limit asked for. The verification is `order=chain`, which the
+    /// server allows no filter on (a filter would drop events from the middle
+    /// of a chain), page by page, so it takes memory for one page however
+    /// large the log.
     pub async fn audit(&self, team_id: Uuid, query: AuditQuery) -> Result<TeamAudit> {
         let info = self.require_admin(team_id).await?;
         let members = self.client.list_members(team_id).await?;
         self.remember_authors(team_id, &members)?;
-
-        let limit = query.limit.unwrap_or(1000).clamp(1, 1000);
-        let records = self
-            .client
-            .list_audit(
-                team_id,
-                &AuditFilter {
-                    entry_id: query.entry_id,
-                    since: query.since,
-                    limit: Some(limit),
-                    ..Default::default()
-                },
-            )
-            .await?;
-        let complete = records.len() < limit as usize;
-        let filtered = query.entry_id.is_some() || query.since.is_some() || query.email.is_some();
-        let verified = audit_log::verify(team_id, records, &self.authors(team_id)?, filtered);
+        let authors = self.authors(team_id)?;
 
         // Names: current members first, then devices this admin approved
         // (which covers members removed since).
@@ -1565,43 +1614,117 @@ impl<'a> Session<'a> {
                 None => HashMap::new(),
             };
 
-        let email_filter = query.email.map(|e| e.trim().to_lowercase());
-        let lines = verified
-            .records
-            .iter()
-            .filter_map(|r| {
-                let e = &r.record.event;
-                let (who, device_name) = names
-                    .get(&e.device_id)
-                    .cloned()
-                    .unwrap_or_else(|| (format!("unknown device {}", e.device_id), String::new()));
-                if email_filter.as_deref().is_some_and(|f| f != who) {
-                    return None;
+        // The listing. `--member` narrows here, by device owner, so the limit
+        // counts events shown, not events fetched.
+        let wanted =
+            (!query.all).then(|| query.limit.unwrap_or(DEFAULT_AUDIT_LIMIT).max(1) as usize);
+        let email_filter = query.email.as_deref().map(|e| e.trim().to_lowercase());
+        let mut lines: Vec<AuditLine> = Vec::new();
+        let listing_end = walk_audit_pages(
+            AuditListQuery {
+                entry_id: query.entry_id,
+                since: query.since,
+                limit: Some(wanted.map_or(AUDIT_PAGE, |n| n.min(AUDIT_PAGE as usize) as u32)),
+                ..Default::default()
+            },
+            |q| {
+                let client = &self.client;
+                async move { client.list_audit(team_id, &q).await }
+            },
+            |page| {
+                for r in page {
+                    let e = &r.event;
+                    let (who, device_name) =
+                        names.get(&e.device_id).cloned().unwrap_or_else(|| {
+                            (format!("unknown device {}", e.device_id), String::new())
+                        });
+                    if email_filter.as_deref().is_some_and(|f| f != who) {
+                        continue;
+                    }
+                    lines.push(AuditLine {
+                        occurred_at: e.occurred_at,
+                        received_at: r.received_at,
+                        kind: e.kind,
+                        who,
+                        device_name,
+                        host: e.entry_id.map(|id| {
+                            hosts
+                                .get(&id)
+                                .cloned()
+                                .unwrap_or_else(|| "(deleted host)".to_string())
+                        }),
+                        client_ip: r.client_ip.clone(),
+                        check: check_event(team_id, e, &authors),
+                    });
+                    if wanted.is_some_and(|n| lines.len() >= n) {
+                        return false;
+                    }
                 }
-                Some(AuditLine {
-                    occurred_at: e.occurred_at,
-                    received_at: r.record.received_at,
-                    kind: e.kind,
-                    who,
-                    device_name,
-                    host: e.entry_id.map(|id| {
-                        hosts
-                            .get(&id)
-                            .cloned()
-                            .unwrap_or_else(|| "(deleted host)".to_string())
-                    }),
-                    client_ip: r.record.client_ip.clone(),
-                    check: r.check,
-                })
-            })
-            .collect();
+                true
+            },
+        )
+        .await?;
+        let mut problems = Vec::new();
+        let shown_invalid = lines
+            .iter()
+            .filter(|l| l.check != EventCheck::Valid)
+            .count();
+
+        // The verification of the whole log.
+        let mut verifier = ChainVerifier::new(team_id, &authors);
+        let mut previous: Option<(Uuid, u64)> = None;
+        let mut unordered = false;
+        let end = walk_audit_pages(
+            AuditListQuery {
+                order: Some(AuditOrder::Chain),
+                limit: Some(AUDIT_PAGE),
+                ..Default::default()
+            },
+            |q| {
+                let client = &self.client;
+                async move { client.list_audit(team_id, &q).await }
+            },
+            |mut page| {
+                let key = |r: &bssh_teams_proto::api::AuditRecord| (r.event.device_id, r.event.seq);
+                let in_order = |page: &[bssh_teams_proto::api::AuditRecord]| {
+                    page.windows(2).all(|w| key(&w[0]) <= key(&w[1]))
+                        && previous.is_none_or(|p| key(&page[0]) > p)
+                };
+                if !in_order(&page) {
+                    // A server older than paging ignores the order and sends
+                    // newest first. If its one page is the whole log, sorting
+                    // it here is enough; otherwise the log can't be read in
+                    // chain order.
+                    if previous.is_none() && page.len() < AUDIT_PAGE as usize {
+                        page.sort_by_key(key);
+                    } else {
+                        unordered = true;
+                        return false;
+                    }
+                }
+                for r in &page {
+                    verifier.push(r);
+                }
+                previous = page.last().map(key);
+                true
+            },
+        )
+        .await?;
+        if unordered || end == AuditWalk::Stalled {
+            problems.push(OLD_SERVER_PAGING.to_string());
+        }
+        let report = verifier.finish();
+        problems.extend(report.problems.iter().map(ChainProblem::to_string));
+        problems.dedup();
 
         Ok(TeamAudit {
             lines,
-            invalid_events: verified.invalid_events(),
-            problems: verified.problems.iter().map(|p| p.to_string()).collect(),
-            chains: verified.chains,
-            complete,
+            invalid_events: report.invalid_events.max(shown_invalid),
+            verified_events: report.chains.iter().map(|c| c.events).sum(),
+            problems,
+            chains: report.chains,
+            // Stopped by the limit, or a server that doesn't page: more may exist.
+            complete: listing_end == AuditWalk::Finished,
         })
     }
 }
@@ -2551,5 +2674,252 @@ mod tests {
             .filter(|h| h.starts_with("POST /v1/accounts/email-code HTTP/1.1"))
             .count();
         assert_eq!(mailed, 2, "the empty line mailed one more: {seen:#?}");
+    }
+
+    // ── Audit verification and device revocation ────────────────────────────
+
+    use bssh_teams_proto::api::{AuditEvent, AuditRecord, MemberKind};
+    use bssh_teams_proto::layout::{audit_event_hash, AUDIT_GENESIS};
+
+    const MY_DEVICE: u128 = 6;
+
+    /// An unlocked admin session on `url`, with its identity and team stored.
+    fn admin_session<'a>(
+        store: &'a TeamsStore,
+        config: &'a AppConfig,
+        keys: &Arc<DeviceKeys>,
+        url: &str,
+        team_id: Uuid,
+    ) -> Session<'a> {
+        store
+            .database()
+            .conn
+            .execute(
+                "INSERT INTO teams_identity (id, server_url, email, account_id, device_id, created_at)
+                 VALUES (1, ?1, 'ana@example.com', ?2, ?3, '2026-01-01T00:00:00Z')",
+                params![
+                    url,
+                    Uuid::from_u128(5).to_string(),
+                    Uuid::from_u128(MY_DEVICE).to_string()
+                ],
+            )
+            .unwrap();
+        store
+            .save_sealed_device_keys(
+                Uuid::from_u128(MY_DEVICE),
+                &keys.seal("pw pw pw pw").unwrap(),
+            )
+            .unwrap();
+        store
+            .upsert_team(&TeamLocal {
+                team_id,
+                server_url: url.to_string(),
+                account_id: Uuid::from_u128(5),
+                device_id: Uuid::from_u128(MY_DEVICE),
+                trust_root_ed25519: keys.ed25519_public(),
+                last_pulled_revision: 0,
+                created_at: Utc::now(),
+            })
+            .unwrap();
+        Session::with_keys(store, config, keys.clone()).unwrap()
+    }
+
+    fn json_challenge() -> String {
+        serde_json::to_string(&bssh_teams_proto::api::ChallengeResponse {
+            challenge_id: Uuid::new_v4(),
+            nonce: Fixed([1u8; 32]),
+            expires_at: Utc::now() + chrono::Duration::seconds(60),
+        })
+        .unwrap()
+    }
+
+    fn json_token() -> String {
+        serde_json::to_string(&bssh_teams_proto::api::TokenResponse {
+            access_token: "t".into(),
+            expires_at: Utc::now() + chrono::Duration::seconds(3600),
+        })
+        .unwrap()
+    }
+
+    /// `n` correctly signed and chained events of `keys`' device.
+    fn signed_chain(team: Uuid, device: Uuid, keys: &DeviceKeys, n: u64) -> Vec<AuditRecord> {
+        let mut prev = AUDIT_GENESIS;
+        (0..n)
+            .map(|seq| {
+                let mut event = AuditEvent {
+                    event_id: Uuid::new_v4(),
+                    team_id: team,
+                    device_id: device,
+                    seq,
+                    kind: AuditKind::SessionStart,
+                    entry_id: None,
+                    occurred_at: DateTime::from_timestamp(1_700_000_000 + seq as i64, 0).unwrap(),
+                    prev_hash: prev,
+                    signature: Fixed::ZERO,
+                    actor: None,
+                    detail: None,
+                };
+                crypto::sign_audit_event(&mut event, keys);
+                prev = audit_event_hash(&event);
+                AuditRecord {
+                    event,
+                    received_at: DateTime::from_timestamp(1_700_000_100 + seq as i64, 0).unwrap(),
+                    client_ip: None,
+                }
+            })
+            .collect()
+    }
+
+    fn admin_team_json(team_id: Uuid) -> String {
+        serde_json::to_string(&TeamInfo {
+            team_id,
+            seats: 5,
+            member_count: 1,
+            current_key_version: 1,
+            rotation_required: false,
+            my_role: Role::Admin,
+            created_at: Utc::now(),
+            org_id: None,
+        })
+        .unwrap()
+    }
+
+    fn admin_members_json(keys: &DeviceKeys) -> String {
+        serde_json::to_string(&vec![Member {
+            member_id: Uuid::from_u128(1),
+            account_id: Uuid::from_u128(5),
+            email: "ana@example.com".into(),
+            role: Role::Admin,
+            kind: MemberKind::Human,
+            devices: vec![DeviceInfo {
+                device_id: Uuid::from_u128(MY_DEVICE),
+                account_id: Uuid::from_u128(5),
+                name: "laptop".into(),
+                x25519_public: keys.x25519_public(),
+                ed25519_public: keys.ed25519_public(),
+                created_at: Utc::now(),
+                revoked_at: None,
+            }],
+            joined_at: Utc::now(),
+        }])
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn audit_verifies_the_whole_log_whatever_is_listed() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = AppConfig {
+            database_path: dir.path().join("bssh.db"),
+            ..AppConfig::default()
+        };
+        let store = TeamsStore::open(&config).unwrap();
+        let team_id = Uuid::from_u128(9);
+        let device = Uuid::from_u128(MY_DEVICE);
+        // The admin's own keys sign the log, so build the fixture around them.
+        let keys = Arc::new(DeviceKeys::generate());
+        let log = signed_chain(team_id, device, &keys, 5);
+        let newest: Vec<_> = log.iter().rev().take(2).cloned().collect();
+        // The server lost event 2 of the chain, far behind the listed window.
+        let mut chain_page = log.clone();
+        chain_page.remove(2);
+        let (listing, chain) = (
+            serde_json::to_string(&newest).unwrap(),
+            serde_json::to_string(&chain_page).unwrap(),
+        );
+        let (team, members) = (admin_team_json(team_id), admin_members_json(&keys));
+        let (url, seen) = mock_server(move |i| match i {
+            0 => (200, json_challenge()),
+            1 => (200, json_token()),
+            2 => (200, team.clone()),
+            3 => (200, members.clone()),
+            4 => (200, "[]".to_string()), // keys: no team key here, hosts stay unnamed
+            5 => (200, listing.clone()),
+            _ => (200, chain.clone()),
+        })
+        .await;
+        let s = admin_session(&store, &config, &keys, &url, team_id);
+
+        let audit = s
+            .audit(
+                team_id,
+                AuditQuery {
+                    limit: Some(2),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(audit.lines.len(), 2, "the listing honors the limit");
+        assert!(!audit.complete, "and says it stopped there");
+        assert!(
+            !audit.is_clean(),
+            "the deletion is found: {:?}",
+            audit.problems
+        );
+        assert_eq!(
+            audit.problems,
+            vec![format!("device {device}: events 2 to 2 are missing")]
+        );
+        assert_eq!(audit.verified_events, 4);
+        assert_eq!(audit.chains.len(), 1);
+
+        let seen = seen.lock().unwrap();
+        assert!(seen[5].contains("limit=2"), "{}", seen[5]);
+        assert!(!seen[5].contains("order="), "{}", seen[5]);
+        assert!(seen[6].contains("order=chain"), "{}", seen[6]);
+        assert!(seen[6].contains("limit=1000"), "{}", seen[6]);
+        assert!(!seen[6].contains("since="), "no filter on the chain read");
+    }
+
+    #[tokio::test]
+    async fn revoking_this_device_removes_the_local_identity() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = AppConfig {
+            database_path: dir.path().join("bssh.db"),
+            ..AppConfig::default()
+        };
+        let store = TeamsStore::open(&config).unwrap();
+        let not_found = r#"{"code":"not_found","message":"no such device"}"#.to_string();
+        let (url, seen) = mock_server(move |i| match i {
+            0 => (200, json_challenge()),
+            1 => (200, json_token()),
+            2 => (404, not_found.clone()),
+            _ => (204, String::new()),
+        })
+        .await;
+        let keys = Arc::new(DeviceKeys::generate());
+        let s = admin_session(&store, &config, &keys, &url, Uuid::from_u128(9));
+
+        // A device the caller can't see: a plain message, identity untouched.
+        let other = Uuid::from_u128(77);
+        let err = s.revoke_device(other).await.unwrap_err().to_string();
+        assert!(
+            err.contains("no device") && err.contains("you can revoke"),
+            "{err}"
+        );
+        assert!(load_identity(store.database()).unwrap().is_some());
+
+        // This machine's own device: revoked, then forgotten here.
+        assert!(s.revoke_device(Uuid::from_u128(MY_DEVICE)).await.unwrap());
+        assert!(load_identity(store.database()).unwrap().is_none());
+        assert!(store
+            .sealed_device_keys(Uuid::from_u128(MY_DEVICE))
+            .unwrap()
+            .is_none());
+        let seen = seen.lock().unwrap();
+        assert!(
+            seen[2].starts_with(&format!("DELETE /v1/devices/{other} ")),
+            "{}",
+            seen[2]
+        );
+        assert!(
+            seen[3].starts_with(&format!(
+                "DELETE /v1/devices/{} ",
+                Uuid::from_u128(MY_DEVICE)
+            )),
+            "{}",
+            seen[3]
+        );
     }
 }
