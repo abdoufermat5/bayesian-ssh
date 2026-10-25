@@ -255,6 +255,28 @@ async fn run_readonly_refuses_writes_without_a_jail_and_redacts() {
 }
 
 #[tokio::test]
+async fn huge_commands_are_rejected_before_analysis() {
+    let k = std_kit();
+    // 1 MiB of glob characters: an analyzer/glob matcher must never see this.
+    let giant = format!("cat {}", "*".repeat(1024 * 1024));
+    let start = std::time::Instant::now();
+    for tool in ["run_readonly", "run", "run_many"] {
+        let args = if tool == "run_many" {
+            json!({ "tag": "web", "command": giant.clone() })
+        } else {
+            json!({ "host": "web-1", "command": giant.clone() })
+        };
+        let e = call(&k, tool, args).await.unwrap_err();
+        assert!(
+            matches!(&e, ToolError::Invalid(m) if m.contains("longer than")),
+            "{tool}: {e}"
+        );
+    }
+    assert!(start.elapsed().as_secs() < 2, "{:?}", start.elapsed());
+    assert!(k.exec.commands().is_empty(), "nothing may run");
+}
+
+#[tokio::test]
 async fn result_events_hash_the_redacted_output() {
     let k = std_kit();
     k.exec.on("cat /f", "x hunter2 y", 0);

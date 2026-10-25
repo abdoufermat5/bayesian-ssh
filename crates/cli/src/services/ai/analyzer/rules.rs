@@ -24,6 +24,9 @@ pub struct Arg {
     pub dynamic: bool,
     /// Could turn into an option (or a different word entirely) at run time.
     pub flaggy: bool,
+    /// The shell expands this word as a glob before the command sees it (`/etc/sha*`).
+    /// A quoted `'*.log'` is not one: the command receives it verbatim.
+    pub glob: bool,
 }
 
 impl Arg {
@@ -32,6 +35,7 @@ impl Arg {
             text: text.to_string(),
             dynamic: false,
             flaggy: false,
+            glob: false,
         }
     }
 
@@ -41,6 +45,7 @@ impl Arg {
             text: text.to_string(),
             dynamic: true,
             flaggy: true,
+            glob: false,
         }
     }
 }

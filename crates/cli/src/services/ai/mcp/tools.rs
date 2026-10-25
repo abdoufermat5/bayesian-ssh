@@ -30,6 +30,8 @@ pub const READ_MAX: u64 = 256 * 1024;
 const LOG_LINES_DEFAULT: u32 = 200;
 const LOG_LINES_MAX: u32 = 1000;
 const ACCESS_MAX_SECS: u64 = 8 * 3600;
+/// Longest command accepted by `run`, `run_readonly` and `run_many`, before any analysis.
+pub const MAX_COMMAND_BYTES: usize = 64 * 1024;
 
 // ---------------------------------------------------------------- inputs
 
@@ -879,6 +881,20 @@ fn exec_out(host: &str, ex: &Executed, jailed: bool) -> ExecOut {
     }
 }
 
+/// Command tools take text from an agent: refuse anything longer than [`MAX_COMMAND_BYTES`]
+/// before it reaches the analyzer or a glob comparison.
+fn check_command(command: &str) -> Result<(), ToolError> {
+    if command.trim().is_empty() {
+        return Err(ToolError::Invalid("empty command".into()));
+    }
+    if command.len() > MAX_COMMAND_BYTES {
+        return Err(ToolError::Invalid(format!(
+            "command is longer than {MAX_COMMAND_BYTES} bytes"
+        )));
+    }
+    Ok(())
+}
+
 /// `run_readonly` on one host (also the unit of `run_many`).
 pub async fn run_readonly_on(
     ctx: &Arc<RunContext>,
@@ -886,9 +902,7 @@ pub async fn run_readonly_on(
     command: &str,
     tool: ToolName,
 ) -> ToolResult {
-    if command.trim().is_empty() {
-        return Err(ToolError::Invalid("empty command".into()));
-    }
+    check_command(command)?;
     let facts = ctx.facts(conn).await;
     let analysis = ctx.deps.analyzer.analyze(command);
     let call = ctx.new_call(
@@ -915,6 +929,7 @@ pub async fn run_readonly_on(
 }
 
 async fn run_many(ctx: &Arc<RunContext>, a: RunManyArgs) -> ToolResult {
+    check_command(&a.command)?;
     let hosts: Vec<Connection> = ctx
         .visible_hosts()
         .await?
@@ -963,9 +978,7 @@ async fn run_many(ctx: &Arc<RunContext>, a: RunManyArgs) -> ToolResult {
 }
 
 async fn run_tool(ctx: &Arc<RunContext>, a: RunArgs) -> ToolResult {
-    if a.command.trim().is_empty() {
-        return Err(ToolError::Invalid("empty command".into()));
-    }
+    check_command(&a.command)?;
     let conn = ctx.resolve_host(&a.host).await?;
     let facts = ctx.facts(&conn).await;
     let analysis = ctx.deps.analyzer.analyze(&a.command);
