@@ -11,10 +11,15 @@
 //! - Landlock (`setpriv --landlock-access ...`, util-linux >= 2.40): no writes anywhere
 //!   (except `/dev/null`), reads and execution only under the policy's read paths plus
 //!   what programs need to start, no TCP bind/connect where the kernel's Landlock ABI is at
-//!   least 4. UDP and unix sockets are not covered on older ABIs. Deny paths can't be
-//!   expressed (Landlock only allows); the low-privilege user's file permissions do that.
+//!   least 4. UDP and unix sockets are not covered on older ABIs. Landlock can only allow,
+//!   so the wrapper cannot mask deny paths: those are enforced by the low-privilege
+//!   `bssh-agent` principal the jail runs as (`ExecMode::JailedAsAgent`), whose file
+//!   permissions apply inside the jail. A Landlock jail running as the connection's login
+//!   user therefore does **not** enforce `deny_paths`, and the policy asks before running
+//!   anything that is not provably read-only.
 //! - Bubblewrap: the whole filesystem read-only, no network or IPC namespace access, a
-//!   private `/tmp`, deny paths masked. Reads are not limited to the read paths.
+//!   private `/tmp`, and every literal deny path masked (`--tmpfs` over a directory, a
+//!   `/dev/null` bind over a file). Reads are not limited to the read paths.
 //! - The `bssh-jail` helper (`~bssh-agent/.local/bin/bssh-jail`, crate `crates/ai-jail`)
 //!   does the Landlock job on hosts whose util-linux is too old.
 
@@ -69,6 +74,9 @@ pub struct JailSpec {
 
 /// Wrap `command` so it runs read-only, without network, reads limited to `read_paths`.
 /// Errors for `JailKind::None`.
+///
+/// Only the probe uses this. Executors pass the policy's deny paths through
+/// [`wrap_with`]; otherwise bubblewrap's masking is never used.
 pub fn wrap(kind: JailKind, read_paths: &[String], command: &str) -> anyhow::Result<String> {
     wrap_with(
         kind,

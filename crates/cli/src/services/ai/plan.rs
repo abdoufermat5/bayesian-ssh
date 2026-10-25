@@ -849,7 +849,8 @@ pub async fn service_healthy(
         json!({ "health_check": unit }),
     );
     let cmd = format!("systemctl is-active -- {}", sh_quote(unit));
-    // Read-only check: no certificate needed.
+    // A read-only check. `read_mode` still uses a jail (and, when the host trusts our CA,
+    // the agent principal) but never a plain write certificate.
     let mode = RunContext::read_mode(facts);
     let ex = ctx
         .exec(

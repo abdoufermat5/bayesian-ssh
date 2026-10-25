@@ -12,7 +12,8 @@
 //! 6. `write_paths` set and `edit_file` outside it: deny
 //! 7. an active grant matches: allow
 //! 8. read tools: allow (`read_file` only under `read_paths`, else ask);
-//!    `run_readonly` / `run_many`: allow when the host has a jail, or the analysis is read-only,
+//!    `run_readonly` / `run_many`: allow when the jail runs as the low-privilege agent
+//!    principal (so file permissions enforce `deny_paths`), or the analysis is read-only,
 //!    else ask
 //! 9. write tools: ask, with the tier from the approval rules
 //!
@@ -626,23 +627,31 @@ impl DefaultPolicyEngine {
                 }
             }
             ToolName::RunReadonly | ToolName::RunMany => {
-                if host.enforcement.jail != JailKind::None {
+                // A jail stops writes, but deny paths are only enforced when it runs as the
+                // low-privilege agent principal: Landlock can only allow, and bubblewrap masks
+                // literal deny paths only (not globs such as `**/.ssh/**`).
+                if host.enforcement.jail != JailKind::None && host.enforcement.certificates {
                     return Decision::Allow {
                         reason: format!(
-                            "jail: the host enforces a {:?} read-only jail",
+                            "jail: the host enforces a {:?} read-only jail and it runs as the \
+                             low-privilege agent principal",
                             host.enforcement.jail
                         ),
                     };
                 }
+                let boundary = match host.enforcement.jail {
+                    JailKind::None => "the host has no jail",
+                    _ => "the host's jail cannot enforce deny_paths",
+                };
                 return match analysis {
                     Some(a) if a.is_read_only() => Decision::Allow {
                         reason: "analyzer: every command is read-only".into(),
                     },
                     Some(a) => ask(format!(
-                        "analyzer: not provably read-only ({}) and the host has no jail",
+                        "analyzer: not provably read-only ({}) and {boundary}",
                         describe_tags(a)
                     )),
-                    None => ask("analyzer: no analysis and the host has no jail".into()),
+                    None => ask(format!("analyzer: no analysis and {boundary}")),
                 };
             }
             ToolName::RequestAccess => {
@@ -730,6 +739,18 @@ mod tests {
         }
     }
 
+    /// The same host, but it trusts the bssh CA and has the `bssh-agent` user.
+    fn host_trusting_ca(name: &str, tags: &[&str], jail: JailKind) -> HostFacts {
+        HostFacts {
+            enforcement: Enforcement {
+                jail,
+                certificates: true,
+                agent_user: true,
+            },
+            ..host(name, tags, jail)
+        }
+    }
+
     fn call(tool: ToolName, host: Option<&str>) -> ToolCall {
         ToolCall {
             run_id: "run1".into(),
@@ -806,6 +827,8 @@ mod tests {
         use ToolName::*;
         let stg = host("web-1", &["staging"], JailKind::None);
         let stg_jail = host("web-1", &["staging"], JailKind::Landlock);
+        let stg_bwrap = host("web-1", &["staging"], JailKind::Bubblewrap);
+        let stg_agent = host_trusting_ca("web-1", &["staging"], JailKind::Landlock);
         let other = host("db-9", &["lab"], JailKind::None);
         let ro = analysis("cat", &["/etc/hosts"], &[RiskTag::Read]);
         let wr = analysis(
@@ -979,13 +1002,31 @@ mod tests {
                 "target",
             ),
             (
-                "run_readonly jailed",
+                "run_readonly jailed by bubblewrap as the login user",
+                operate(),
+                cmd_call(RunReadonly, "web-1", "rm x"),
+                Some(wr.clone()),
+                stg_bwrap.clone(),
+                'K',
+                "analyzer",
+            ),
+            (
+                "run_readonly jailed as the agent principal",
+                operate(),
+                cmd_call(RunReadonly, "web-1", "rm x"),
+                Some(wr.clone()),
+                stg_agent.clone(),
+                'A',
+                "jail",
+            ),
+            (
+                "run_readonly landlock as the login user asks",
                 operate(),
                 cmd_call(RunReadonly, "web-1", "rm x"),
                 Some(wr.clone()),
                 stg_jail.clone(),
-                'A',
-                "jail",
+                'K',
+                "analyzer",
             ),
             (
                 "run_readonly read-only analysis",
@@ -1024,11 +1065,11 @@ mod tests {
                 "analyzer",
             ),
             (
-                "run_many jailed",
+                "run_many jailed as the agent principal",
                 operate(),
                 cmd_call(RunMany, "web-1", "uptime"),
                 None,
-                stg_jail.clone(),
+                stg_agent.clone(),
                 'A',
                 "jail",
             ),
@@ -1379,6 +1420,40 @@ mod tests {
     }
 
     // ---- tiers
+
+    #[test]
+    fn a_jail_auto_allows_only_when_it_enforces_deny_paths() {
+        let fx = fixture();
+        let login = host("web-1", &["staging"], JailKind::Landlock);
+        let agent = host_trusting_ca("web-1", &["staging"], JailKind::Landlock);
+        let bwrap = host("web-1", &["staging"], JailKind::Bubblewrap);
+        let bwrap_agent = host_trusting_ca("web-1", &["staging"], JailKind::Bubblewrap);
+        let c = cmd_call(ToolName::RunReadonly, "web-1", "rm x");
+        let wr = analysis("rm", &["x"], &[RiskTag::Destructive]);
+
+        // As the login user, Landlock can't mask deny_paths and bubblewrap only masks literal
+        // ones: the analyzer decides.
+        for h in [&login, &bwrap] {
+            let d = fx.engine.decide(&operate(), &c, Some(&wr), h);
+            assert!(matches!(d, Decision::Ask { .. }), "{h:?}: {d:?}");
+            assert!(
+                reason(&d).contains("cannot enforce deny_paths"),
+                "{}",
+                reason(&d)
+            );
+        }
+        // The low-privilege agent principal does provide it, with either jail.
+        for h in [&agent, &bwrap_agent] {
+            let d = fx.engine.decide(&operate(), &c, Some(&wr), h);
+            assert!(is_allow(&d), "{h:?}: {d:?}");
+            assert!(reason(&d).starts_with("jail:"), "{}", reason(&d));
+        }
+        // A provably read-only command still runs under the login-user Landlock jail.
+        let ro = analysis("cat", &["/etc/hosts"], &[RiskTag::Read]);
+        let d = fx.engine.decide(&operate(), &c, Some(&ro), &login);
+        assert!(is_allow(&d), "{d:?}");
+        assert!(reason(&d).starts_with("analyzer:"), "{}", reason(&d));
+    }
 
     #[test]
     fn tier_two_person_for_critical_tags() {

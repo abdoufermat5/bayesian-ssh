@@ -26,6 +26,8 @@ pub struct AiExecutor {
     config: AppConfig,
     /// Paths the read-only jail may read (`Policy::read_paths`).
     read_paths: Vec<String>,
+    /// Paths the read-only jail must mask (`Policy::deny_paths`).
+    deny_paths: Vec<String>,
 }
 
 impl AiExecutor {
@@ -33,13 +35,57 @@ impl AiExecutor {
         Self {
             config: config.clone(),
             read_paths: Vec::new(),
+            deny_paths: Vec::new(),
         }
     }
 
-    /// Paths a jailed command may read; passed to `jail::wrap`.
+    /// Paths a jailed command may read; passed to `jail::wrap_with`.
     pub fn with_read_paths(mut self, read_paths: Vec<String>) -> Self {
         self.read_paths = read_paths;
         self
+    }
+
+    /// Paths a jailed command must not reach; passed to `jail::wrap_with`.
+    pub fn with_deny_paths(mut self, deny_paths: Vec<String>) -> Self {
+        self.deny_paths = deny_paths;
+        self
+    }
+
+    /// What the jail is allowed to read and must mask. Bubblewrap masks the literal deny
+    /// paths; Landlock cannot, so `ExecMode::JailedAsAgent` relies on the agent principal.
+    fn jail_spec(&self) -> jail::JailSpec {
+        jail::JailSpec {
+            read_paths: self.read_paths.clone(),
+            deny_paths: self.deny_paths.clone(),
+        }
+    }
+
+    /// Log in as `bssh-agent` with a certificate whose force-command is `command`.
+    /// `what` names the mode in the error, for when there is no CA to issue from.
+    fn agent_connection(
+        &self,
+        conn: &Connection,
+        command: &str,
+        opts: &mut ExecOptions,
+        what: &str,
+    ) -> anyhow::Result<Connection> {
+        if !cert::ca_available(&self.config) {
+            anyhow::bail!(
+                "{what} is not supported yet: no local CA \
+                 (initialise one with `bssh ai ca init`)"
+            );
+        }
+        let issued = cert::issue(&self.config, command, CERT_TTL, None)
+            .map_err(|e| anyhow::anyhow!("{what} is not supported yet: {e}"))?;
+        opts.cert_auth = Some(CertAuth {
+            private_key_openssh: issued.private_key_openssh,
+            certificate_openssh: issued.certificate_openssh,
+        });
+        // Only the certificate may authenticate, as the agent principal.
+        let mut agent_conn = conn.clone();
+        agent_conn.user = cert::AGENT_PRINCIPAL.to_string();
+        agent_conn.key_path = None;
+        Ok(agent_conn)
     }
 
     /// Turn a call into the connection, command and options the transport needs.
@@ -60,27 +106,19 @@ impl AiExecutor {
         match mode {
             ExecMode::Plain => Ok((conn.clone(), command.to_string(), opts)),
             ExecMode::Jailed(kind) => {
-                let wrapped = jail::wrap(*kind, &self.read_paths, command)?;
+                let wrapped = jail::wrap_with(*kind, &self.jail_spec(), command)?;
                 Ok((conn.clone(), wrapped, opts))
             }
+            ExecMode::JailedAsAgent(kind) => {
+                // The certificate's force-command is the jailed command, so the agent
+                // principal runs nothing but the jail the policy asked for.
+                let wrapped = jail::wrap_with(*kind, &self.jail_spec(), command)?;
+                let agent = self.agent_connection(conn, &wrapped, &mut opts, "jailed exec")?;
+                Ok((agent, wrapped, opts))
+            }
             ExecMode::Certified => {
-                if !cert::ca_available(&self.config) {
-                    anyhow::bail!(
-                        "certified exec is not supported yet: no local CA \
-                         (initialise one with `bssh ai ca init`)"
-                    );
-                }
-                let issued = cert::issue(&self.config, command, CERT_TTL, None)
-                    .map_err(|e| anyhow::anyhow!("certified exec is not supported yet: {e}"))?;
-                opts.cert_auth = Some(CertAuth {
-                    private_key_openssh: issued.private_key_openssh,
-                    certificate_openssh: issued.certificate_openssh,
-                });
-                // Only the certificate may authenticate, as the agent principal.
-                let mut agent_conn = conn.clone();
-                agent_conn.user = cert::AGENT_PRINCIPAL.to_string();
-                agent_conn.key_path = None;
-                Ok((agent_conn, command.to_string(), opts))
+                let agent = self.agent_connection(conn, command, &mut opts, "certified exec")?;
+                Ok((agent, command.to_string(), opts))
             }
         }
     }
@@ -207,6 +245,86 @@ mod tests {
         let exec = AiExecutor::new(&AppConfig::default()).with_read_paths(vec!["/var/log".into()]);
         let res = exec.prepare(&conn(), "ls", &ExecMode::Jailed(JailKind::None), &limits());
         assert!(res.is_err(), "JailKind::None cannot run jailed");
+    }
+
+    #[test]
+    fn jailed_mode_passes_the_policys_deny_paths_to_the_wrapper() {
+        let exec = AiExecutor::new(&AppConfig::default())
+            .with_read_paths(vec!["/var/log/**".into()])
+            .with_deny_paths(vec!["/etc/shadow".into(), "/root/.ssh".into()]);
+        let (c, cmd, _) = exec
+            .prepare(
+                &conn(),
+                "cat /var/log/app.log",
+                &ExecMode::Jailed(JailKind::Bubblewrap),
+                &limits(),
+            )
+            .unwrap();
+        assert_eq!(c.user, "alice", "the plain jail runs as the login user");
+        // The wrapping shell layer re-quotes the script, so match the paths, not the quoting.
+        assert!(cmd.contains("for m in"), "{cmd}");
+        assert!(
+            cmd.contains("/etc/shadow") && cmd.contains("/root/.ssh"),
+            "{cmd}"
+        );
+        assert!(cmd.contains("--tmpfs \"$m\""), "{cmd}");
+    }
+
+    #[test]
+    fn jailed_as_agent_runs_the_wrapped_command_under_a_certificate() {
+        use russh::keys::ssh_key::Certificate;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let config = AppConfig {
+            database_path: tmp.path().join("bssh.db"),
+            ..AppConfig::default()
+        };
+        cert::init_ca(&config, None).expect("ca");
+        let exec = AiExecutor::new(&config)
+            .with_read_paths(vec!["/var/log/**".into()])
+            .with_deny_paths(vec!["/root/.ssh".into()]);
+        let (c, cmd, opts) = exec
+            .prepare(
+                &conn(),
+                "cat /var/log/app.log",
+                &ExecMode::JailedAsAgent(JailKind::Bubblewrap),
+                &limits(),
+            )
+            .unwrap();
+        assert_eq!(c.user, cert::AGENT_PRINCIPAL);
+        assert!(
+            c.key_path.is_none(),
+            "only the certificate may authenticate"
+        );
+        assert!(cmd.starts_with("sh -c "), "{cmd}");
+        assert!(cmd.contains("for m in"), "{cmd}");
+        assert!(cmd.contains("/root/.ssh"), "{cmd}");
+        // The certificate runs the jail, not the bare command.
+        let cert =
+            Certificate::from_openssh(&opts.cert_auth.expect("certificate").certificate_openssh)
+                .expect("parse certificate");
+        assert_eq!(
+            cert.critical_options()
+                .get("force-command")
+                .map(String::as_str),
+            Some(cmd.as_str())
+        );
+        assert_eq!(cert.valid_principals(), [cert::AGENT_PRINCIPAL]);
+    }
+
+    #[test]
+    fn jailed_as_agent_errors_clearly_without_a_ca() {
+        let exec = AiExecutor::new(&AppConfig::default());
+        let err = exec
+            .prepare(
+                &conn(),
+                "cat /var/log/app.log",
+                &ExecMode::JailedAsAgent(JailKind::Landlock),
+                &limits(),
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("not supported yet"), "{err}");
     }
 
     #[test]

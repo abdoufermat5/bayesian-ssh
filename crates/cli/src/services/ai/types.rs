@@ -445,10 +445,21 @@ pub struct ExecResult {
 pub enum ExecMode {
     /// As the connection's normal user and auth (delegation without host setup).
     Plain,
-    /// Wrapped in the host's read-only jail.
+    /// Wrapped in the host's read-only jail, as the connection's normal user.
     Jailed(JailKind),
+    /// Wrapped in the jail, as `bssh-agent`, via a certificate whose force-command is the
+    /// jailed command. The agent principal's own file permissions then enforce the deny
+    /// paths a Landlock jail cannot express.
+    JailedAsAgent(JailKind),
     /// As `bssh-agent` with a short-lived certificate whose force-command is exactly this command.
     Certified,
+}
+
+impl ExecMode {
+    /// Does this mode run the command inside the read-only jail?
+    pub fn is_jailed(&self) -> bool {
+        matches!(self, ExecMode::Jailed(_) | ExecMode::JailedAsAgent(_))
+    }
 }
 
 #[allow(clippy::double_must_use)]
