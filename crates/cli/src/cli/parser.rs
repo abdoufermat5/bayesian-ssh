@@ -451,6 +451,7 @@ pub enum Commands {
           bssh teams share db-prod --team platform\n\
           bssh teams invite platform ana@example.com\n\
           bssh teams init --server https://teams.example.com --email ana@example.com --invite <TOKEN>\n\
+          bssh teams init --server https://teams.example.com --email you@example.com --email-code <CODE>\n\
           bssh teams join <TOKEN> --fingerprint SHA256:...      (on Ana's machine)\n\
           bssh teams grant platform --fingerprint SHA256:...    (admin, Ana's device)\n\
           bssh teams sync"
@@ -945,11 +946,60 @@ mod tests {
         assert!(Cli::try_parse_from(["bssh", "connect", "db01", "-p", "0"]).is_err());
         assert!(Cli::try_parse_from(["bssh", "add", "n", "h", "-p", "0"]).is_err());
     }
+
+    #[test]
+    fn teams_init_accepts_email_code() {
+        let cli = Cli::try_parse_from([
+            "bssh",
+            "teams",
+            "init",
+            "--server",
+            "https://teams.example.com",
+            "--email",
+            "ana@example.com",
+            "--email-code",
+            "123456",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Commands::Teams {
+                command:
+                    TeamsCommands::Init {
+                        server,
+                        email,
+                        email_code,
+                        ..
+                    },
+            }) => {
+                assert_eq!(server, "https://teams.example.com");
+                assert_eq!(email, "ana@example.com");
+                assert_eq!(email_code.as_deref(), Some("123456"));
+            }
+            _ => unreachable!(),
+        }
+        // Optional: setup without a code still parses.
+        let cli = Cli::try_parse_from([
+            "bssh",
+            "teams",
+            "init",
+            "--server",
+            "https://teams.example.com",
+            "--email",
+            "ana@example.com",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Commands::Teams {
+                command: TeamsCommands::Init { email_code, .. },
+            }) => assert_eq!(email_code, None),
+            _ => unreachable!(),
+        }
+    }
 }
 
 #[derive(Subcommand)]
 pub enum TeamsCommands {
-    /// Set up this machine: create your account and this device's keys
+    /// Set up this machine: create your account and this device's keys (verifies your email when asked)
     Init {
         /// Sync server URL (https; http only for localhost)
         #[arg(long, value_name = "URL")]
@@ -963,6 +1013,9 @@ pub enum TeamsCommands {
         /// Invite token from your admin (servers that only accept invited accounts need it)
         #[arg(long, value_name = "TOKEN")]
         invite: Option<String>,
+        /// Verification code the server emailed you (when it asks to verify your email)
+        #[arg(long, value_name = "CODE")]
+        email_code: Option<String>,
     },
     /// Show this machine's account, device and fingerprint
     Whoami,
@@ -977,7 +1030,7 @@ pub enum TeamsCommands {
     },
     /// List the teams on this machine
     List,
-    /// Invite someone by email (admin)
+    /// Invite someone by email (admin); the server mails the token when it can
     Invite {
         team: String,
         email: String,

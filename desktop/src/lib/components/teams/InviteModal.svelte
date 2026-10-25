@@ -47,13 +47,29 @@
   </div>
   {#if invite}
     <div class="modal-body flex flex-col gap-3 type-body text-secondary">
+      {#if invite.emailed}
+        <p class="m-0">
+          The server emailed this invite to {invite.email}. The message below is the fallback if it doesn't
+          arrive.
+        </p>
+      {/if}
       <p class="m-0">
-        Send {invite.email} this message. The token is shown only once and works until {formatUtc(invite.expires_at)}.
+        {#if invite.emailed}
+          Send it yourself only if the email doesn't arrive; the token is shown once and works until
+          {formatUtc(invite.expires_at)}.
+        {:else}
+          Send {invite.email} this message. The token is shown only once and works until {formatUtc(invite.expires_at)}.
+        {/if}
       </p>
       <pre class="code-block m-0 max-h-72 whitespace-pre-wrap break-all select-text">{message}</pre>
       <p class="m-0 type-meta">
-        Send it over a channel where you know it's really {invite.email}. The fingerprint in it is what stops the
-        server from impersonating you.
+        {#if invite.emailed}
+          The server never sees your fingerprint: send it to {invite.email} yourself, over a channel where you
+          know it's really them (not by replying to the invite email).
+        {:else}
+          Send it over a channel where you know it's really {invite.email}. The fingerprint in it is what stops the
+          server from impersonating you.
+        {/if}
       </p>
     </div>
     <div class="modal-footer">

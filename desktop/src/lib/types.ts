@@ -295,6 +295,21 @@ export interface TeamInvite {
   token: string;
   admin_fingerprint: string;
   server_url: string;
+  /** The server mailed the token too; it is still returned as a fallback. */
+  emailed: boolean;
+}
+
+/**
+ * Why `teams_init` didn't finish. A mailed code means ask for it and retry
+ * with `emailCode`; a rejected one comes with a freshly mailed code.
+ */
+export type TeamsInitError =
+  | { kind: "email_code_sent"; email: string; expires_in_secs: number }
+  | { kind: "email_code_rejected"; email: string }
+  | { kind: "failed"; message: string };
+
+export interface EmailCodeResult {
+  expires_in_secs: number;
 }
 
 export interface TeamJoin {

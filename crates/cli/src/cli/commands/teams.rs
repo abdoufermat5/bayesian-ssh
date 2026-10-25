@@ -9,7 +9,8 @@ use crate::services::teams::session::{
 };
 use crate::services::teams::TeamsStore;
 use anyhow::{anyhow, bail, Result};
-use bssh_teams_proto::api::{BillingInterval, Role};
+use bssh_teams_proto::api::{BillingInterval, Invite, Role};
+use std::io::{self, IsTerminal, Write};
 use zeroize::Zeroizing;
 
 /// Env var read instead of prompting, for scripts.
@@ -46,6 +47,41 @@ fn default_device_name() -> String {
         .map(|h| h.trim().to_string())
         .filter(|h| !h.is_empty())
         .unwrap_or_else(|| "device".to_string())
+}
+
+/// Asks for the code that verifies the account's email, on the terminal only.
+/// An empty line means "mail me a new code" (see [`session::EmailCodePrompt`]).
+struct TerminalEmailCodePrompt {
+    interactive: bool,
+}
+
+impl TerminalEmailCodePrompt {
+    fn new() -> Self {
+        Self {
+            interactive: io::stdin().is_terminal() && io::stdout().is_terminal(),
+        }
+    }
+}
+
+impl session::EmailCodePrompt for TerminalEmailCodePrompt {
+    fn terminal(&self) -> bool {
+        self.interactive
+    }
+
+    fn read_code(&mut self, notice: Option<&str>) -> Result<Option<String>> {
+        if let Some(notice) = notice {
+            println!("{notice}");
+        }
+        print!("Verification code (Enter to get a new one): ");
+        io::stdout().flush()?;
+        let mut line = String::new();
+        if io::stdin().read_line(&mut line)? == 0 {
+            // A closed stdin never means consent: don't mail codes in a loop.
+            bail!("no verification code was entered; rerun with `--email-code <CODE>`");
+        }
+        let code = line.trim();
+        Ok((!code.is_empty()).then(|| code.to_string()))
+    }
 }
 
 pub async fn execute(command: TeamsCommands, config: AppConfig) -> Result<()> {
@@ -202,11 +238,23 @@ async fn run(command: TeamsCommands, store: &TeamsStore, config: &AppConfig) -> 
             email,
             device_name,
             invite,
+            email_code,
         } => {
             let pass = passphrase(true)?;
             let name = device_name.unwrap_or_else(default_device_name);
-            let identity =
-                session::init(store, &server, &email, &name, &pass, invite.as_deref()).await?;
+            // Verifies the email on a terminal when the server asks for it;
+            // without one the error says to rerun with `--email-code`.
+            let identity = session::init_interactive(
+                store,
+                &server,
+                &email,
+                &name,
+                &pass,
+                invite.as_deref(),
+                email_code.as_deref(),
+                &mut TerminalEmailCodePrompt::new(),
+            )
+            .await?;
             let s = Session::open(store, config, &pass)?;
             println!(
                 "✅ Teams is set up for {} on {}",
@@ -281,26 +329,11 @@ async fn run(command: TeamsCommands, store: &TeamsStore, config: &AppConfig) -> 
             let (invite, fp) = s.invite(team_id, &email, role).await?;
             let token = invite
                 .token
+                .as_deref()
                 .ok_or_else(|| anyhow!("the server didn't return an invite token"))?;
-            println!(
-                "✉️  Invited {} to '{}' (expires {}).",
-                invite.email,
-                source.name,
-                invite.expires_at.format("%Y-%m-%d")
-            );
-            println!();
-            println!("Send them these, over a channel you trust (the token is shown only once):");
-            println!();
-            println!(
-                "  bssh teams init --server {} --email {} --invite {token}",
-                s.identity.server_url, invite.email
-            );
-            println!("  bssh teams join {token} --fingerprint {fp}");
-            println!();
-            println!("When they send back their device fingerprint, run:");
-            println!(
-                "  bssh teams grant {} --fingerprint <THEIR FINGERPRINT>",
-                source.name
+            print!(
+                "{}",
+                invite_text(&invite, &source.name, token, &fp, &s.identity.server_url)
             );
         }
 
@@ -700,6 +733,58 @@ fn print_pending(p: &PendingDevice) {
     println!("  {:<28} {:<16} {}", p.email, p.device.name, p.fingerprint);
 }
 
+/// What `bssh teams invite` prints: the invitee's setup commands, whether the
+/// server mailed the token, and this admin device's fingerprint, which must
+/// reach the invitee out of band: the server never chooses the trust root.
+pub(crate) fn invite_text(
+    invite: &Invite,
+    team: &str,
+    token: &str,
+    admin_fingerprint: &str,
+    server_url: &str,
+) -> String {
+    let mut text = format!(
+        "✉️  Invited {} to '{}' (expires {}).\n",
+        invite.email,
+        team,
+        invite.expires_at.format("%Y-%m-%d")
+    );
+    if invite.emailed {
+        text.push_str(&format!(
+            "\nThe server emailed the invite to {}. The commands below are the fallback if it\n\
+             doesn't arrive (the token is shown only once):\n\n",
+            invite.email
+        ));
+    } else {
+        text.push_str(
+            "\nSend them these, over a channel you trust (the token is shown only once):\n\n",
+        );
+    }
+    text.push_str(&format!(
+        "  bssh teams init --server {server_url} --email {} --invite {token}\n",
+        invite.email
+    ));
+    text.push_str(&format!(
+        "  bssh teams join {token} --fingerprint {admin_fingerprint}\n"
+    ));
+    text.push_str("\nSend them your device fingerprint yourself, ");
+    if invite.emailed {
+        text.push_str(
+            "not by replying to the server's email:\nthey must know the invite really is from you.\n",
+        );
+    } else {
+        text.push_str(
+            "over that same channel: it is how\nthey know the invite really is from you.\n",
+        );
+    }
+    text.push_str(&format!("\n  {admin_fingerprint}\n"));
+    text.push_str("\nWhen they send back their device fingerprint, run:\n");
+    text.push_str(&format!(
+        "  bssh teams grant {team} --fingerprint <THEIR FINGERPRINT>\n"
+    ));
+    text
+}
+
 /// The server took this run's queued edits (or there was nothing to refuse).
 fn reached_server(sync: &TeamSync) -> bool {
     let r = &sync.report;
@@ -861,4 +946,81 @@ pub(crate) fn open_in_browser(url: &str) {
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    fn invite(emailed: bool) -> Invite {
+        Invite {
+            invite_id: uuid::Uuid::nil(),
+            team_id: uuid::Uuid::nil(),
+            email: "ana@example.com".into(),
+            role: Role::Member,
+            expires_at: chrono::Utc.with_ymd_and_hms(2026, 11, 1, 12, 0, 0).unwrap(),
+            token: Some("tok-123".into()),
+            emailed,
+        }
+    }
+
+    fn render(emailed: bool) -> String {
+        invite_text(
+            &invite(emailed),
+            "platform",
+            "tok-123",
+            "SHA256:abc",
+            "https://teams.example.com",
+        )
+    }
+
+    #[test]
+    fn invite_text_says_when_the_server_emailed_the_invite() {
+        let text = render(true);
+        assert!(
+            text.contains("The server emailed the invite to ana@example.com"),
+            "{text}"
+        );
+        // The token is still shown, as a fallback.
+        assert!(text.contains("--invite tok-123"), "{text}");
+        assert!(
+            text.contains("bssh teams join tok-123 --fingerprint SHA256:abc"),
+            "{text}"
+        );
+        // The fingerprint goes out of band, never through the server's mail.
+        assert!(
+            text.contains("not by replying to the server's email"),
+            "{text}"
+        );
+        assert!(text.contains("  SHA256:abc\n"), "{text}");
+        assert!(
+            text.contains("bssh teams grant platform --fingerprint <THEIR FINGERPRINT>"),
+            "{text}"
+        );
+        assert!(text.contains("expires 2026-11-01"), "{text}");
+    }
+
+    #[test]
+    fn invite_text_without_the_email_keeps_the_manual_instructions() {
+        let text = render(false);
+        assert!(!text.contains("emailed"), "{text}");
+        assert!(text.contains("over a channel you trust"), "{text}");
+        assert!(
+            text.contains(
+                "bssh teams init --server https://teams.example.com --email ana@example.com \
+                 --invite tok-123"
+            ),
+            "{text}"
+        );
+        assert!(
+            text.contains("bssh teams join tok-123 --fingerprint SHA256:abc"),
+            "{text}"
+        );
+        assert!(text.contains("  SHA256:abc\n"), "{text}");
+        assert!(
+            text.contains("bssh teams grant platform --fingerprint <THEIR FINGERPRINT>"),
+            "{text}"
+        );
+    }
 }

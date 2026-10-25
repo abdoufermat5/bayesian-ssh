@@ -1,9 +1,15 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { ArrowLeft } from "lucide-svelte";
-  import type { TeamJoin, TeamsStatus } from "$lib/types";
+  import type { EmailCodeResult, TeamJoin, TeamsStatus } from "$lib/types";
   import Fingerprint from "$lib/components/teams/Fingerprint.svelte";
-  import { normalizeFingerprint, parseInvite, teamIdFromJoinError } from "$lib/components/teams/teams";
+  import {
+    emailCodeNotice,
+    normalizeFingerprint,
+    parseInvite,
+    teamIdFromJoinError,
+    teamsInitError,
+  } from "$lib/components/teams/teams";
 
   let {
     busy,
@@ -30,6 +36,11 @@
   let error = $state<string | null>(null);
   /** The device is set up; only the join can still fail and be retried. */
   let initialised = $state(false);
+  /** The server asked to verify the email: show the code field and retry. */
+  let codeNeeded = $state(false);
+  let emailCode = $state("");
+  let codeNotice = $state<string | null>(null);
+  let resending = $state(false);
   /** Set after a fingerprint mismatch: the token is spent, finish by team id. */
   let retryTeamId = $state<string | null>(null);
   let joined = $state.raw<TeamJoin | null>(null);
@@ -57,6 +68,7 @@
     if (initialised) return fingerprint.trim() ? null : "Enter the admin's fingerprint from the invite";
     if (pass1.length < 8) return "The passphrase needs at least 8 characters";
     if (pass1 !== pass2) return "The passphrases don't match";
+    if (codeNeeded && !emailCode.trim()) return "Enter the verification code";
     return null;
   });
 
@@ -72,6 +84,8 @@
           deviceName: null,
           passphrase: pass1,
           inviteToken: token.trim(),
+          // Sent only once the server asked for it.
+          emailCode: codeNeeded ? emailCode.trim() : null,
         });
         initialised = true;
         pass1 = pass2 = "";
@@ -83,16 +97,44 @@
       });
       step = 2;
     } catch (err) {
-      const text = String(err);
-      const teamId = teamIdFromJoinError(text);
-      if (teamId) {
-        retryTeamId = teamId;
-        error = "mismatch";
+      const init = teamsInitError(err);
+      if (init?.kind === "email_code_sent" || init?.kind === "email_code_rejected") {
+        codeNeeded = true;
+        emailCode = "";
+        codeNotice = emailCodeNotice(init);
+      } else if (init?.kind === "failed") {
+        error = init.message;
       } else {
-        error = text;
+        const text = String(err);
+        const teamId = teamIdFromJoinError(text);
+        if (teamId) {
+          retryTeamId = teamId;
+          error = "mismatch";
+        } else {
+          error = text;
+        }
       }
     } finally {
       working = false;
+    }
+  }
+
+  async function sendNewCode() {
+    if (resending || working) return;
+    resending = true;
+    error = null;
+    try {
+      const sent = await invoke<EmailCodeResult>("teams_request_email_code", {
+        server: server.trim(),
+        email: email.trim(),
+      });
+      codeNeeded = true;
+      emailCode = "";
+      codeNotice = emailCodeNotice({ kind: "email_code_sent", email: email.trim(), expires_in_secs: sent.expires_in_secs });
+    } catch (err) {
+      error = String(err);
+    } finally {
+      resending = false;
     }
   }
 
@@ -184,6 +226,31 @@
             <label class="field-label" for="ob-pass2">Repeat passphrase</label>
             <input id="ob-pass2" class="input" type="password" bind:value={pass2} autocomplete="new-password" />
           </div>
+          {#if codeNeeded}
+            <div class="field">
+              <label class="field-label" for="ob-email-code">Verification code</label>
+              <input
+                id="ob-email-code"
+                class="input input-mono"
+                bind:value={emailCode}
+                autocomplete="one-time-code"
+                inputmode="numeric"
+                aria-describedby="ob-email-code-hint"
+              />
+              <span id="ob-email-code-hint" class="field-hint">
+                {codeNotice ?? `Enter the code the server emailed to ${email}.`}
+              </span>
+            </div>
+            <button
+              type="button"
+              class="btn btn-secondary btn-sm self-start"
+              onclick={sendNewCode}
+              disabled={resending || working}
+            >
+              {#if resending}<span class="spinner size-3"></span>{/if}
+              Send a new code
+            </button>
+          {/if}
         {:else}
           <div class="field">
             <label class="field-label" for="ob-admin-fp">Admin's fingerprint (from the invite)</label>

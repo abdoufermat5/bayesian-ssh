@@ -57,6 +57,67 @@ test.describe("Teams setup", () => {
   });
 });
 
+test.describe("Teams setup with email verification", () => {
+  test.use({
+    mockOptions: {
+      overrides: {
+        teams_status: () => ({ identity: null, unlocked: false, fingerprint: null, teams: [] }),
+        // First attempt: the server wants an emailed code. The retry succeeds
+        // only with the expected one; anything else is rejected (no new mail).
+        teams_init: (args) => {
+          // No code yet: the server asks for one (and mails it).
+          const code = args && typeof args === "object" && "emailCode" in args ? args.emailCode : null;
+          if (code == null) {
+            throw { kind: "email_code_sent", email: "ana@example.com", expires_in_secs: 600 };
+          }
+          if (code !== "123456") {
+            throw { kind: "email_code_rejected", email: "ana@example.com" };
+          }
+          return {
+            identity: { email: "ana@example.com", server_url: "https://teams.example.com", device_id: "d-2" },
+            unlocked: true,
+            // Overrides are stringified into the page: no test-scope values.
+            fingerprint: "SHA256:anaDeviceFingerprintBBBBBBBBBBBBBBBBBBBBBBB",
+            teams: [],
+          };
+        },
+        teams_request_email_code: () => ({ expires_in_secs: 600 }),
+      },
+    },
+  });
+
+  test("asks for the emailed code, says when it is wrong, and retries", async ({ app, page }) => {
+    await app.gotoApp();
+    await app.nav("Teams");
+    await page.getByLabel("Sync server").fill("https://teams.example.com");
+    await page.getByLabel("Your email").fill("ana@example.com");
+    await page.getByLabel("Passphrase", { exact: true }).fill("correct horse");
+    await page.getByLabel("Repeat passphrase").fill("correct horse");
+    await page.getByRole("button", { name: "Set up this device" }).click();
+
+    const notice = "The server sent a code to ana@example.com (valid 10 minutes).";
+    await expect(page.getByText(notice)).toBeVisible();
+    const code = page.getByLabel("Verification code");
+    await expect(code).toBeVisible();
+
+    await code.fill("000000");
+    await page.getByRole("button", { name: "Set up this device" }).click();
+    await expect(page.getByText("That code is wrong, expired or already used.")).toBeVisible();
+    await expect(code).toHaveValue("");
+
+    await page.getByRole("button", { name: "Send a new code" }).click();
+    await expect(page.getByText(notice)).toBeVisible();
+    await code.fill("123456");
+    await page.getByRole("button", { name: "Set up this device" }).click();
+
+    await expect(page.locator("code.fingerprint").first()).toHaveText(ANA_FP);
+    const calls = (await app.ipcCalls("teams_init")) as Array<Record<string, unknown>>;
+    expect(calls[0]).toMatchObject({ emailCode: null });
+    expect(calls.at(-1)).toMatchObject({ emailCode: "123456" });
+    expect(await app.ipcCalls("teams_request_email_code")).toHaveLength(1);
+  });
+});
+
 test.describe("Teams unlock", () => {
   test.use({
     mockOptions: {

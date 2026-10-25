@@ -62,6 +62,58 @@ fn open_store() -> anyhow::Result<(TeamsStore, AppConfig)> {
     Ok((store, config))
 }
 
+/// Why `teams_init` didn't finish. A mailed code means the form must ask for
+/// it; the UI retries with `emailCode` (and can mail another with
+/// `teams_request_email_code`).
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TeamsInitError {
+    /// The server mailed a code: ask for it and retry.
+    EmailCodeSent {
+        email: String,
+        expires_in_secs: u64,
+    },
+    /// The code given was wrong, expired or used; a new one was mailed.
+    /// The code was wrong, expired or used. Nothing new is mailed: the user
+    /// checks it or asks for a new one (each code mailed costs relay quota and
+    /// replaces the one in their inbox).
+    EmailCodeRejected {
+        email: String,
+    },
+    Failed {
+        message: String,
+    },
+}
+
+impl TeamsInitError {
+    fn failed(message: impl Into<String>) -> Self {
+        Self::Failed {
+            message: message.into(),
+        }
+    }
+}
+
+impl From<anyhow::Error> for TeamsInitError {
+    fn from(e: anyhow::Error) -> Self {
+        Self::failed(message(e))
+    }
+}
+
+#[derive(Serialize)]
+pub struct EmailCodeDto {
+    expires_in_secs: u64,
+}
+
+/// Run an `init` attempt on its own thread; its failure keeps the shape the UI
+/// switches on instead of turning everything into a string.
+fn on_init_thread<T: Send + 'static>(
+    job: impl FnOnce() -> std::result::Result<T, TeamsInitError> + Send + 'static,
+) -> std::result::Result<T, TeamsInitError> {
+    std::thread::spawn(job)
+        .join()
+        .map_err(|_| TeamsInitError::failed("the Teams worker crashed"))?
+}
+
 /// Run `job` on a dedicated thread and wait for it.
 fn on_teams_thread<T: Send + 'static>(
     job: impl FnOnce() -> anyhow::Result<T> + Send + 'static,
@@ -184,6 +236,9 @@ pub struct InviteDto {
     token: String,
     admin_fingerprint: String,
     server_url: String,
+    /// The server mailed the token to the invitee; it is still returned as a
+    /// fallback. The admin fingerprint is never mailed by the server.
+    emailed: bool,
 }
 
 #[derive(Serialize)]
@@ -337,16 +392,19 @@ pub fn teams_init(
     device_name: Option<String>,
     passphrase: String,
     invite_token: Option<String>,
-) -> Result<TeamsStatus, String> {
+    email_code: Option<String>,
+) -> std::result::Result<TeamsStatus, TeamsInitError> {
     let passphrase = Zeroizing::new(passphrase);
     if passphrase.chars().count() < 8 {
-        return Err("Use a passphrase of at least 8 characters.".into());
+        return Err(TeamsInitError::failed(
+            "Use a passphrase of at least 8 characters.",
+        ));
     }
     let name = device_name
         .map(|n| n.trim().to_string())
         .filter(|n| !n.is_empty())
         .unwrap_or_else(default_device_name);
-    let keys = on_teams_thread(move || {
+    let keys = on_init_thread(move || {
         let (store, _) = open_store()?;
         block_on(session::init(
             &store,
@@ -355,11 +413,42 @@ pub fn teams_init(
             &name,
             &passphrase,
             invite_token.as_deref(),
-        ))?;
-        session::unlock(&store, &passphrase)
+            email_code.as_deref(),
+        ))
+        .map_err(|e| match e.downcast_ref::<TeamsError>() {
+            // A wrong code keeps the one in the inbox: no new mail until asked.
+            Some(teams) if teams.is_invalid_email_code() => TeamsInitError::EmailCodeRejected {
+                email: email.clone(),
+            },
+            // The server wants proof of the email: mail a code and let the
+            // form ask for it (the desktop has no terminal to prompt on).
+            Some(teams) if teams.is_email_verification_required() => {
+                match block_on(session::request_email_code(&server, &email)) {
+                    Ok(sent) => TeamsInitError::EmailCodeSent {
+                        email: email.clone(),
+                        expires_in_secs: sent.expires_in_secs,
+                    },
+                    Err(e) => TeamsInitError::from(e),
+                }
+            }
+            _ => TeamsInitError::from(e),
+        })?;
+        Ok(session::unlock(&store, &passphrase)?)
     })?;
     state.set(Some(keys));
-    status(&state).map_err(message)
+    status(&state).map_err(TeamsInitError::from)
+}
+
+/// Mail a new verification code (expiry included), e.g. when the last one
+/// expired before it was typed.
+#[tauri::command(async)]
+pub fn teams_request_email_code(server: String, email: String) -> Result<EmailCodeDto, String> {
+    on_teams_thread(move || {
+        let sent = block_on(session::request_email_code(&server, &email))?;
+        Ok(EmailCodeDto {
+            expires_in_secs: sent.expires_in_secs,
+        })
+    })
 }
 
 #[tauri::command(async)]
@@ -482,6 +571,7 @@ pub fn teams_invite(
             let role = if admin { Role::Admin } else { Role::Member };
             let (invite, admin_fingerprint) = s.invite(team_id, &email, role).await?;
             Ok(InviteDto {
+                emailed: invite.emailed,
                 email: invite.email,
                 expires_at: invite.expires_at,
                 token: invite
@@ -1043,5 +1133,28 @@ mod tests {
     fn worker_errors_become_messages() {
         let out: Result<(), String> = on_teams_thread(|| Err(anyhow::anyhow!("boom")));
         assert_eq!(out, Err("boom".to_string()));
+    }
+
+    /// The views switch on `kind`; these are the wire shapes they expect.
+    #[test]
+    fn init_errors_tell_the_ui_to_ask_for_a_code() {
+        let sent = serde_json::to_value(TeamsInitError::EmailCodeSent {
+            email: "ana@example.com".into(),
+            expires_in_secs: 900,
+        })
+        .unwrap();
+        assert_eq!(sent["kind"], "email_code_sent");
+        assert_eq!(sent["email"], "ana@example.com");
+        assert_eq!(sent["expires_in_secs"], 900);
+
+        let rejected = serde_json::to_value(TeamsInitError::EmailCodeRejected {
+            email: "ana@example.com".into(),
+        })
+        .unwrap();
+        assert_eq!(rejected["kind"], "email_code_rejected");
+
+        let failed = serde_json::to_value(TeamsInitError::from(anyhow::anyhow!("boom"))).unwrap();
+        assert_eq!(failed["kind"], "failed");
+        assert_eq!(failed["message"], "boom");
     }
 }

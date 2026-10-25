@@ -25,8 +25,8 @@ use anyhow::{anyhow, bail, Context, Result};
 use bssh_teams_proto::api::{
     AcceptInviteRequest, AuditKind, BillingInfo, BillingInterval, CheckoutRequest,
     ConnectionRecord, CreateAccountRequest, CreateInviteRequest, CreateTeamRequest, DeviceInfo,
-    ErrorCode, Invite, Member, MemberKind, OrgInfo, PutKeysRequest, Role, SignedAgentPolicy,
-    TeamInfo, VaultPayload,
+    EmailCodeRequest, EmailCodeResponse, ErrorCode, Invite, Member, MemberKind, OrgInfo,
+    PutKeysRequest, Role, SignedAgentPolicy, TeamInfo, VaultPayload,
 };
 use bssh_teams_proto::wire::{Fixed, PublicKey32};
 use chrono::{DateTime, Utc};
@@ -319,6 +319,10 @@ pub fn unlock(store: &TeamsStore, passphrase: &str) -> Result<Arc<DeviceKeys>> {
 /// Create an account and this machine's device on `server_url`. The device's
 /// private keys are sealed with `passphrase` and never leave the machine.
 /// `invite_token` is required by servers that only accept invited accounts.
+/// `email_code` is the code mailed by [`request_email_code`] when the server
+/// answered `EmailVerificationRequired`; [`init_interactive`] gets it for the
+/// CLI. Nothing is stored before the server accepts the account, so a failed
+/// attempt leaves no identity behind and can be retried.
 pub async fn init(
     store: &TeamsStore,
     server_url: &str,
@@ -326,6 +330,7 @@ pub async fn init(
     device_name: &str,
     passphrase: &str,
     invite_token: Option<&str>,
+    email_code: Option<&str>,
 ) -> Result<Identity> {
     if let Some(existing) = load_identity(store.database())? {
         bail!(
@@ -350,7 +355,10 @@ pub async fn init(
                 .map(str::trim)
                 .filter(|t| !t.is_empty())
                 .map(str::to_string),
-            email_code: None,
+            email_code: email_code
+                .map(str::trim)
+                .filter(|c| !c.is_empty())
+                .map(str::to_string),
         })
         .await
         .map_err(|e| {
@@ -383,6 +391,162 @@ pub async fn init(
         ],
     )?;
     Ok(identity)
+}
+
+/// Mail a one-time code to `email` (unauthenticated), to be passed to [`init`]
+/// as `email_code`. The server answers the same whether or not a code was
+/// sent, so this can't be used to learn which addresses exist.
+pub async fn request_email_code(server_url: &str, email: &str) -> Result<EmailCodeResponse> {
+    let server_url = validate_server_url(server_url)?;
+    let anon = TeamsClient::new(&server_url, Uuid::nil(), Arc::new(DeviceKeys::generate()))?;
+    Ok(anon
+        .request_email_code(&EmailCodeRequest {
+            email: email.trim().to_lowercase(),
+        })
+        .await?)
+}
+
+/// Wrong codes accepted before [`init_interactive`] gives up.
+const MAX_EMAIL_CODE_TRIES: usize = 3;
+/// Codes one run may mail: the first, plus one per empty line the user enters.
+const MAX_EMAIL_CODES: usize = 3;
+
+/// Reads the code that proves the account's email. The CLI asks on a terminal;
+/// tests answer from a script.
+pub trait EmailCodePrompt {
+    /// True when there is a terminal to ask on.
+    fn terminal(&self) -> bool;
+    /// Show `notice` (if any) and read one line: the code, or `None` for an
+    /// empty line ("mail me a new code").
+    fn read_code(&mut self, notice: Option<&str>) -> Result<Option<String>>;
+}
+
+/// [`init`] for `bssh teams init`: when the server answers
+/// `EmailVerificationRequired`, mail a code, ask for it on the terminal and
+/// retry with it. A refused code is asked for again, up to
+/// [`MAX_EMAIL_CODE_TRIES`] times; an empty line mails a new code (up to
+/// [`MAX_EMAIL_CODES`] per run).
+///
+/// Without a terminal the code is mailed anyway and the error says to rerun
+/// with `--email-code <CODE>`.
+#[allow(clippy::too_many_arguments)]
+pub async fn init_interactive(
+    store: &TeamsStore,
+    server_url: &str,
+    email: &str,
+    device_name: &str,
+    passphrase: &str,
+    invite_token: Option<&str>,
+    email_code: Option<&str>,
+    prompt: &mut dyn EmailCodePrompt,
+) -> Result<Identity> {
+    let mut code = email_code
+        .map(str::trim)
+        .filter(|c| !c.is_empty())
+        .map(str::to_string);
+    // The address the server sees, used in the notices too.
+    let email = email.trim().to_lowercase();
+    let mut refused = 0;
+    let mut mailed = 0;
+    loop {
+        let err = match init(
+            store,
+            server_url,
+            &email,
+            device_name,
+            passphrase,
+            invite_token,
+            code.as_deref(),
+        )
+        .await
+        {
+            Ok(identity) => return Ok(identity),
+            Err(e) => e,
+        };
+        let Some(teams) = err.downcast_ref::<TeamsError>() else {
+            return Err(err);
+        };
+        let wants_new_code = teams.is_email_verification_required();
+        if !wants_new_code && !teams.is_invalid_email_code() {
+            return Err(err);
+        }
+        // The first "send me a code" isn't a refusal; anything else (a code
+        // we gave was rejected, or the server still wants one) counts.
+        if !wants_new_code || code.is_some() {
+            refused += 1;
+            if refused >= MAX_EMAIL_CODE_TRIES {
+                bail!(
+                    "{server_url} refused the verification code {refused} times; wait for a \
+                     newer code to arrive and rerun with `--email-code <CODE>`"
+                );
+            }
+        }
+        if !prompt.terminal() {
+            let expires = mail_code(server_url, &email).await?;
+            bail!(
+                "{}: a new code was sent to {email} (valid {}), and this run has no terminal \
+                 to type it in; rerun with `--email-code <CODE>`",
+                if wants_new_code {
+                    format!("{server_url} needs to verify {email}")
+                } else {
+                    "the verification code was rejected".to_string()
+                },
+                validity(expires)
+            );
+        }
+        let mut notice = if wants_new_code && code.is_none() {
+            mailed += 1;
+            Some(sent_notice(&email, mail_code(server_url, &email).await?))
+        } else {
+            Some("That code is wrong, expired or already used.".to_string())
+        };
+        loop {
+            match prompt.read_code(notice.as_deref())? {
+                Some(typed) => {
+                    code = Some(typed);
+                    break;
+                }
+                None => {
+                    // Empty line: mail a new code and ask again.
+                    if mailed >= MAX_EMAIL_CODES {
+                        bail!(
+                            "this run already mailed {mailed} codes; wait for one to arrive \
+                             and rerun with `--email-code <CODE>`"
+                        );
+                    }
+                    mailed += 1;
+                    notice = Some(sent_notice(&email, mail_code(server_url, &email).await?));
+                }
+            }
+        }
+    }
+}
+
+/// "A verification code was sent to …", rounding up so a 90-second code
+/// doesn't read as valid for 1 minute less than it is.
+fn sent_notice(email: &str, expires_in_secs: u64) -> String {
+    format!(
+        "A verification code was sent to {email} (valid {}).",
+        validity(expires_in_secs)
+    )
+}
+
+/// "15 minutes" / "1 minute", never "0 minutes".
+fn validity(expires_in_secs: u64) -> String {
+    let mins = minutes(expires_in_secs);
+    if mins == 1 {
+        "1 minute".to_string()
+    } else {
+        format!("{mins} minutes")
+    }
+}
+
+fn minutes(secs: u64) -> u64 {
+    secs.div_ceil(60).max(1)
+}
+
+async fn mail_code(server_url: &str, email: &str) -> Result<u64> {
+    Ok(request_email_code(server_url, email).await?.expires_in_secs)
 }
 
 // ── Team sources (the local name of a team) ─────────────────────────────────
@@ -1899,5 +2063,285 @@ mod tests {
     fn unknown_member_is_an_error() {
         let members = vec![member(1, "a@x.io", vec![])];
         assert!(plan_removal(&members, "nobody@x.io", &HashMap::new(), 1, 0).is_err());
+    }
+
+    // ── Email verification on account creation ──────────────────────────────
+
+    use crate::services::teams::client::mock::mock_server;
+    use bssh_teams_proto::api::{CreateAccountResponse, EmailCodeResponse};
+
+    /// Answers `read_code` from a script and records the notices it was shown.
+    struct ScriptedPrompt {
+        terminal: bool,
+        answers: std::collections::VecDeque<Option<&'static str>>,
+        notices: Vec<String>,
+    }
+
+    impl ScriptedPrompt {
+        fn new(terminal: bool, answers: &[Option<&'static str>]) -> Self {
+            Self {
+                terminal,
+                answers: answers.iter().copied().collect(),
+                notices: Vec::new(),
+            }
+        }
+    }
+
+    impl EmailCodePrompt for ScriptedPrompt {
+        fn terminal(&self) -> bool {
+            self.terminal
+        }
+
+        fn read_code(&mut self, notice: Option<&str>) -> Result<Option<String>> {
+            if let Some(notice) = notice {
+                self.notices.push(notice.to_string());
+            }
+            Ok(self
+                .answers
+                .pop_front()
+                .expect("the code was asked for more often than scripted")
+                .map(str::to_string))
+        }
+    }
+
+    fn local_store(dir: &tempfile::TempDir) -> TeamsStore {
+        TeamsStore::open(&AppConfig {
+            database_path: dir.path().join("bssh.db"),
+            ..Default::default()
+        })
+        .unwrap()
+    }
+
+    fn verification_required() -> String {
+        r#"{"code":"email_verification_required","message":"verify your email first"}"#.to_string()
+    }
+
+    fn invalid_code() -> String {
+        r#"{"code":"invalid_email_code","message":"that code is wrong or expired"}"#.to_string()
+    }
+
+    fn code_sent(expires_in_secs: u64) -> String {
+        serde_json::to_string(&EmailCodeResponse { expires_in_secs }).unwrap()
+    }
+
+    fn account_created() -> String {
+        serde_json::to_string(&CreateAccountResponse {
+            account_id: Uuid::from_u128(5),
+            device_id: Uuid::from_u128(6),
+        })
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn init_mails_a_code_and_retries_with_it() {
+        let (url, seen) = mock_server(|i| match i {
+            0 => (403, verification_required()),
+            1 => (200, code_sent(900)),
+            _ => (200, account_created()),
+        })
+        .await;
+        let dir = tempfile::tempdir().unwrap();
+        let store = local_store(&dir);
+        let mut prompt = ScriptedPrompt::new(true, &[Some("123456")]);
+
+        let identity = init_interactive(
+            &store,
+            &url,
+            "Ana@Example.com",
+            "laptop",
+            "a long passphrase",
+            None,
+            None,
+            &mut prompt,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(identity.email, "ana@example.com");
+        assert_eq!(identity.account_id, Uuid::from_u128(5));
+        assert!(load_identity(store.database()).unwrap().is_some());
+        assert_eq!(
+            prompt.notices,
+            ["A verification code was sent to ana@example.com (valid 15 minutes)."]
+        );
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 3, "required, code mailed, retry: {seen:#?}");
+        assert!(
+            seen[0].starts_with("POST /v1/accounts HTTP/1.1"),
+            "{}",
+            seen[0]
+        );
+        assert!(!seen[0].contains("email_code"), "{}", seen[0]);
+        assert!(
+            seen[1].starts_with("POST /v1/accounts/email-code HTTP/1.1"),
+            "{}",
+            seen[1]
+        );
+        assert!(
+            seen[1].contains(r#""email":"ana@example.com""#),
+            "{}",
+            seen[1]
+        );
+        assert!(
+            seen[2].starts_with("POST /v1/accounts HTTP/1.1"),
+            "{}",
+            seen[2]
+        );
+        assert!(seen[2].contains(r#""email_code":"123456""#), "{}", seen[2]);
+    }
+
+    #[tokio::test]
+    async fn init_sends_a_code_it_was_given() {
+        let (url, seen) = mock_server(|_| (200, account_created())).await;
+        let dir = tempfile::tempdir().unwrap();
+        let store = local_store(&dir);
+
+        init_interactive(
+            &store,
+            &url,
+            "ana@example.com",
+            "laptop",
+            "a long passphrase",
+            None,
+            Some("777777"),
+            &mut ScriptedPrompt::new(true, &[]),
+        )
+        .await
+        .unwrap();
+
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 1, "{seen:#?}");
+        assert!(seen[0].contains(r#""email_code":"777777""#), "{}", seen[0]);
+    }
+
+    #[tokio::test]
+    async fn init_without_a_terminal_mails_a_code_and_says_how_to_rerun() {
+        let (url, seen) = mock_server(|i| match i {
+            0 => (403, verification_required()),
+            _ => (200, code_sent(600)),
+        })
+        .await;
+        let dir = tempfile::tempdir().unwrap();
+        let store = local_store(&dir);
+
+        let err = init_interactive(
+            &store,
+            &url,
+            "ana@example.com",
+            "laptop",
+            "a long passphrase",
+            None,
+            None,
+            &mut ScriptedPrompt::new(false, &[]),
+        )
+        .await
+        .unwrap_err();
+
+        let text = err.to_string();
+        assert!(text.contains("no terminal"), "{text}");
+        assert!(
+            text.contains("a new code was sent to ana@example.com (valid 10 minutes)"),
+            "{text}"
+        );
+        assert!(text.contains("rerun with `--email-code <CODE>`"), "{text}");
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 2, "the code was requested: {seen:#?}");
+        assert!(
+            seen[1].starts_with("POST /v1/accounts/email-code HTTP/1.1"),
+            "{}",
+            seen[1]
+        );
+        assert!(load_identity(store.database()).unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn init_reprompts_after_a_refused_code_and_gives_up_after_three() {
+        let (url, seen) = mock_server(|i| match i {
+            0 => (403, verification_required()),
+            1 => (200, code_sent(900)),
+            2..=4 => (403, invalid_code()),
+            _ => (200, account_created()),
+        })
+        .await;
+        let dir = tempfile::tempdir().unwrap();
+        let store = local_store(&dir);
+        let mut prompt =
+            ScriptedPrompt::new(true, &[Some("111111"), Some("222222"), Some("333333")]);
+
+        let err = init_interactive(
+            &store,
+            &url,
+            "ana@example.com",
+            "laptop",
+            "a long passphrase",
+            None,
+            None,
+            &mut prompt,
+        )
+        .await
+        .unwrap_err();
+
+        let text = err.to_string();
+        assert!(
+            text.contains("refused the verification code 3 times"),
+            "{text}"
+        );
+        assert!(text.contains("`--email-code <CODE>`"), "{text}");
+        assert_eq!(prompt.notices.len(), 3, "{:?}", prompt.notices);
+        assert_eq!(
+            prompt.notices[0],
+            "A verification code was sent to ana@example.com (valid 15 minutes)."
+        );
+        assert_eq!(
+            prompt.notices[1],
+            "That code is wrong, expired or already used."
+        );
+        assert_eq!(prompt.notices[2], prompt.notices[1]);
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 5, "one code mailed, three refused: {seen:#?}");
+        // Nothing half-set-up blocks the rerun the error asks for.
+        assert!(load_identity(store.database()).unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn an_empty_line_mails_a_new_code() {
+        let (url, seen) = mock_server(|i| match i {
+            0 => (403, verification_required()),
+            1 | 2 => (200, code_sent(60)),
+            _ => (200, account_created()),
+        })
+        .await;
+        let dir = tempfile::tempdir().unwrap();
+        let store = local_store(&dir);
+        let mut prompt = ScriptedPrompt::new(true, &[None, Some("424242")]);
+
+        init_interactive(
+            &store,
+            &url,
+            "ana@example.com",
+            "laptop",
+            "a long passphrase",
+            None,
+            None,
+            &mut prompt,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(prompt.notices.len(), 2);
+        assert!(
+            prompt
+                .notices
+                .iter()
+                .all(|n| n.ends_with("(valid 1 minute).")),
+            "{:?}",
+            prompt.notices
+        );
+        let seen = seen.lock().unwrap();
+        let mailed = seen
+            .iter()
+            .filter(|h| h.starts_with("POST /v1/accounts/email-code HTTP/1.1"))
+            .count();
+        assert_eq!(mailed, 2, "the empty line mailed one more: {seen:#?}");
     }
 }

@@ -139,6 +139,7 @@ pub fn run() {
             commands::predict_connections,
             commands::teams_status,
             commands::teams_init,
+            commands::teams_request_email_code,
             commands::teams_unlock,
             commands::teams_lock,
             commands::teams_create,
