@@ -2,7 +2,9 @@
 //!
 //! Connects to every live run socket, lists the approval requests waiting for a human, shows
 //! the card (what it does as bssh read it, the commands, "the agent says") and sends the
-//! decision. This is the trusted channel: the agent's process can't reach it.
+//! decision. This is the trusted channel: the agent's process can't reach it. Deciding needs
+//! a person at a terminal (stdin, stdout and stderr on a TTY), so a pipe can only list or
+//! deny; approving is never scriptable.
 
 use crate::cli::parser_ai::AiArgsApprove;
 use crate::config::AppConfig;
@@ -49,6 +51,7 @@ pub async fn execute(args: AiArgsApprove, config: AppConfig) -> Result<()> {
         println!("No pending approvals.");
         return Ok(());
     }
+    approval_gate(&args, interactive())?;
 
     let style = Style::terminal();
     if args.list {
@@ -61,6 +64,9 @@ pub async fn execute(args: AiArgsApprove, config: AppConfig) -> Result<()> {
     let idx = match &args.request_id {
         Some(id) => find_request(&all, id)?,
         None if all.len() == 1 => 0,
+        None if !interactive() => {
+            bail!("give the request id: several requests are pending and picking one needs a terminal")
+        }
         None => pick(&style, &clients, &all)?,
     };
     let (ci, req) = all[idx].clone();
@@ -144,7 +150,8 @@ fn result_line(
     }
     if r.tier == Tier::TwoPerson {
         return format!(
-            "{} Your approval is recorded. It needs one more person: anyone else who may approve.",
+            "{} Your approval is recorded as the first of two. Local approvals all count as one \
+             person, so a second person has to approve it on the Teams relay.",
             style.mark(Glyph::Ask)
         );
     }
@@ -240,14 +247,14 @@ fn choice_for(word: &str, can_grant: bool) -> Choice {
     }
 }
 
-/// One key in raw mode on a terminal; a line of text when stdin is a pipe.
+/// One key in raw mode on a terminal.
+///
+/// `bssh ai approve` decides for a person, so it reads only from a terminal: a line from a
+/// pipe (`echo a | bssh ai approve`, or anything that can write the caller's stdin) must
+/// never approve or grant.
 fn read_choice(can_grant: bool) -> Result<Choice> {
-    if !std::io::stdin().is_terminal() {
-        let mut line = String::new();
-        if std::io::stdin().lock().read_line(&mut line)? == 0 {
-            return Ok(Choice::Skip);
-        }
-        return Ok(choice_for(&line, can_grant));
+    if !interactive() {
+        bail!("approvals need a human at a terminal; without one use `--deny` or the desktop app");
     }
     struct RawMode;
     impl Drop for RawMode {
@@ -270,6 +277,29 @@ fn read_choice(can_grant: bool) -> Result<Choice> {
             _ => Choice::Other,
         });
     }
+}
+
+/// Whether this process is talking to a person: stdin, stdout and stderr on a terminal.
+fn interactive() -> bool {
+    std::io::stdin().is_terminal()
+        && std::io::stdout().is_terminal()
+        && std::io::stderr().is_terminal()
+}
+
+/// Listing and denying decide nothing for the agent, so they stay scriptable.
+fn scripted_ok(args: &AiArgsApprove) -> bool {
+    args.list || args.deny
+}
+
+/// Refuse a decision with nobody behind it.
+fn approval_gate(args: &AiArgsApprove, tty: bool) -> Result<()> {
+    if tty || scripted_ok(args) {
+        return Ok(());
+    }
+    bail!(
+        "approvals need a human at a terminal (or the desktop app): stdin, stdout and stderr \
+         must be a TTY. Without one only `bssh ai approve --list` and `--deny` work."
+    )
 }
 
 // ----------------------------------------------------------------- lines
@@ -1282,6 +1312,9 @@ pub(crate) fn build_grant(r: &ApprovalRequest, minutes: u32) -> Option<Grant> {
     let ApprovalSubject::Call { call, .. } = &r.subject else {
         return None;
     };
+    // A grant must name the host it covers: the broker refuses a grant without one, so
+    // offering `*` here would only promise something that is then rejected.
+    let hosts = call.host.clone()?;
     let target = match call.tool {
         ToolName::EditFile => call.path.clone(),
         ToolName::Service => call
@@ -1295,7 +1328,7 @@ pub(crate) fn build_grant(r: &ApprovalRequest, minutes: u32) -> Option<Grant> {
         grant_id: uuid::Uuid::new_v4().to_string(),
         run_id: Some(r.run_id.clone()),
         tool: call.tool,
-        hosts: call.host.clone().unwrap_or_else(|| "*".into()),
+        hosts,
         target,
         expires_at: (chrono::Utc::now() + chrono::Duration::minutes(i64::from(minutes)))
             .to_rfc3339(),
@@ -1615,8 +1648,37 @@ mod tests {
             "✗ Denied. opencode 2.1.2 is told \"denied by ana@cli\" and nothing ran."
         );
         let two = service_request(Tier::TwoPerson);
-        assert!(result_line(&s, &two, true, "ana@cli", false)
-            .contains("Your approval is recorded. It needs one more person"));
+        assert!(
+            result_line(&s, &two, true, "ana@cli", false).contains("recorded as the first of two")
+        );
+    }
+
+    fn approve_args() -> AiArgsApprove {
+        AiArgsApprove {
+            request_id: None,
+            deny: false,
+            reason: None,
+            list: false,
+            grant: None,
+        }
+    }
+
+    #[test]
+    fn deciding_needs_a_terminal_but_listing_and_denying_do_not() {
+        let mut a = approve_args();
+        assert!(approval_gate(&a, false).is_err(), "a pipe can't approve");
+        assert!(approval_gate(&a, true).is_ok());
+        a.request_id = Some("440947ca".into());
+        a.grant = Some(60);
+        assert!(
+            approval_gate(&a, false).is_err(),
+            "granting is still approving"
+        );
+        a.deny = true;
+        assert!(approval_gate(&a, false).is_ok());
+        let mut l = approve_args();
+        l.list = true;
+        assert!(approval_gate(&l, false).is_ok());
     }
 
     #[test]
@@ -1706,6 +1768,18 @@ mod tests {
 
         let g = build_grant(&service_request(Tier::OutOfBand), 5).unwrap();
         assert_eq!(g.target.as_deref(), Some("nginx"));
+
+        // A call without a host can't be granted: the broker needs a host to scope it to.
+        let mut c = call(ToolName::Run, Some("uptime"));
+        c.host = None;
+        assert!(build_grant(
+            &base(ApprovalSubject::Call {
+                call: c,
+                analysis: None,
+            }),
+            5
+        )
+        .is_none());
     }
 
     #[test]

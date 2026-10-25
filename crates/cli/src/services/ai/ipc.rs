@@ -24,6 +24,9 @@ pub enum ClientMsg {
     ListPending,
     /// Active grants of this run (answered with `ServerMsg::Grants`).
     ListGrants,
+    /// Answer a request. The server checks it: a grant is narrowed to the request (tool,
+    /// exact host, this run, server id, at most 8 h), and a two-person request never
+    /// completes from local approvals — those all count as one person.
     Decide {
         request_id: String,
         outcome: ApprovalOutcome,

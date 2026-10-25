@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **An agent could approve for itself.** The Claude Code guard hook now blocks `bssh`/`bayesian-ssh` too, not just raw `ssh`/`scp`: anything that reaches a host (`connect`, `exec`, `upload`, `download`, `forward`, `proxy`, and a bare `bssh <name>`) or decides approvals (`ai approve`, `ai grant`, `ai stop`, …) is refused, while read-only subcommands (`list`, `show`, `why`, `history`, `stats`, `doctor`, `ping`, `ai explain/log/watch`) pass. `bssh ai approve` only decides from a terminal (stdin, stdout and stderr on a TTY); a pipe can just `--list` or `--deny`.
+- Approvals over the control socket are checked by the broker instead of trusted: a grant is narrowed to the request's tool and exact host, this run, a server-generated id, and at most 8 hours. A two-person request never completes from local approvals (they all come from one machine): at most one is recorded and it still ends "needs Teams (two approvers)".
+
 ## [2.13.3] - 2026-10-25
 
 ### Fixed
