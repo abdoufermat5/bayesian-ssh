@@ -1610,7 +1610,7 @@ pub(crate) fn materialize_into(
         .filter(|c| c.source_id != Some(source.id))
         .map(|c| c.name)
         .collect();
-    let plan = inventory::plan(&discovered, &existing, &taken, &source.name);
+    let plan = inventory::plan(&discovered, &existing, &taken, &source);
     inventory::apply(db, config, &source, plan, None)
 }
 

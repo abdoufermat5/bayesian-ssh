@@ -45,3 +45,16 @@ pub fn ai_dir(config: &crate::config::AppConfig) -> PathBuf {
         .map(|p| p.join("ai"))
         .unwrap_or_else(|| PathBuf::from("ai"))
 }
+
+/// Inventory source name that owns a connection, when it came from one. Used to decide
+/// whether its tags are listed in `ai.trusted_tag_sources`.
+pub fn source_name(
+    config: &crate::config::AppConfig,
+    conn: &crate::models::Connection,
+) -> Option<String> {
+    let id = conn.source_id?;
+    crate::database::Database::new(config)
+        .ok()
+        .and_then(|db| db.get_source(&id.to_string()).ok().flatten())
+        .map(|source| source.name)
+}

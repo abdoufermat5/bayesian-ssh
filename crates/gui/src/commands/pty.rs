@@ -210,6 +210,10 @@ pub fn spawn_pty(
         .get_connection(&connection_name)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Connection '{}' not found", connection_name))?;
+    if connection.pending_change.is_some() {
+        // The dialog must show the old and new route before ssh runs.
+        return Err(bayesian_ssh::services::pending::desktop_error(&connection));
+    }
 
     // Record last used
     let mut updated_conn = connection.clone();

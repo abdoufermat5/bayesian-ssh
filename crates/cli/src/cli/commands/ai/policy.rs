@@ -25,7 +25,15 @@ pub async fn execute(args: AiArgsPolicy, config: AppConfig) -> Result<()> {
         AiPolicyCommands::Show { name } => {
             let policy = policy::resolve(&config, &name)
                 .map_err(|e| anyhow::anyhow!("policy '{name}': {e}"))?;
-            print!("{}", render_show(&Style::terminal(), &name, &policy));
+            print!(
+                "{}",
+                render_show(
+                    &Style::terminal(),
+                    &name,
+                    &policy,
+                    &config.ai.trusted_tag_sources
+                )
+            );
             Ok(())
         }
         AiPolicyCommands::Test { file, policy, host } => {
@@ -66,7 +74,12 @@ pub(crate) fn render_list(style: &Style, policies: &BTreeMap<String, Policy>) ->
 }
 
 /// `bssh ai policy show`: human-readable policy details.
-pub(crate) fn render_show(style: &Style, name: &str, policy: &Policy) -> String {
+pub(crate) fn render_show(
+    style: &Style,
+    name: &str,
+    policy: &Policy,
+    trusted_tag_sources: &[String],
+) -> String {
     let mut out = String::new();
     let header = style.facts(&[
         &format!("policy {name}"),
@@ -100,10 +113,26 @@ pub(crate) fn render_show(style: &Style, name: &str, policy: &Policy) -> String 
             policy.approval.two_person.join(", ")
         ));
     }
+    if !policy.approval.two_person_hosts.is_empty() {
+        app_parts.push(format!(
+            "two-person on hosts: {}",
+            policy.approval.two_person_hosts.join(", ")
+        ));
+    }
     row(
         "approval",
         &style.facts(&app_parts.iter().map(|s| s.as_str()).collect::<Vec<_>>()),
     );
+
+    let tag_trust = if trusted_tag_sources.is_empty() {
+        "hand-added connections only".to_string()
+    } else {
+        format!(
+            "hand-added connections · sources: {}",
+            trusted_tag_sources.join(", ")
+        )
+    };
+    row("tag trust", &tag_trust);
 
     let reads = if policy.read_paths.is_empty() {
         "any in scope".to_string()
@@ -481,11 +510,13 @@ async fn host_facts(config: &AppConfig, name: Option<&str>) -> Result<HostFacts>
     let Some(connection) = service.get_connection(name).await? else {
         bail!("host '{name}' not found");
     };
-    Ok(HostFacts {
-        name: connection.name,
-        tags: connection.tags,
-        enforcement: Enforcement::default(),
-    })
+    let source = crate::services::ai::source_name(config, &connection);
+    Ok(policy::connection_facts(
+        &connection,
+        source.as_deref(),
+        &config.ai.trusted_tag_sources,
+        Enforcement::default(),
+    ))
 }
 
 #[cfg(test)]
@@ -975,15 +1006,17 @@ mod tests {
         policy.scope.hosts = vec!["web-1".to_string()];
         policy.approval.in_client = vec!["staging".to_string()];
         policy.approval.two_person = vec!["prod".to_string()];
+        policy.approval.two_person_hosts = vec!["db-*".to_string()];
         policy.read_paths = vec!["/var/log/*".to_string()];
         policy.write_paths = vec!["/var/www/*".to_string()];
         policy.deny_paths = vec!["/etc/shadow".to_string()];
         policy.deny = vec!["reboot".to_string()];
 
-        let text = render_show(&Style::plain(), "prod", &policy);
+        let text = render_show(&Style::plain(), "prod", &policy, &["aws-prod".to_string()]);
         assert!(text.contains("policy prod · profile operate"));
         assert!(text.contains("scope       tags: prod · hosts: web-1"));
-        assert!(text.contains("approval    default: out-of-band · in-client on tags: staging · two-person on tags: prod"));
+        assert!(text.contains("approval    default: out-of-band · in-client on tags: staging · two-person on tags: prod · two-person on hosts: db-*"));
+        assert!(text.contains("tag trust   hand-added connections · sources: aws-prod"));
         assert!(text.contains("reads       /var/log/*"));
         assert!(text.contains("writes      /var/www/*"));
         assert!(text.contains("denies      /etc/shadow, reboot"));
@@ -998,9 +1031,10 @@ mod tests {
             color: true,
             unicode: true,
         };
-        let text = render_show(&style, "default", &policy);
+        let text = render_show(&style, "default", &policy, &[]);
         assert!(text.contains("\x1b[90mscope\x1b[0m"));
         assert!(text.contains("\x1b[90mbudgets\x1b[0m"));
+        assert!(text.contains("\x1b[90mtag trust\x1b[0m"));
     }
 
     #[test]

@@ -15,6 +15,7 @@
   import SettingsView from "$lib/components/SettingsView.svelte";
   import SFTPView from "$lib/components/SFTPView.svelte";
   import ConnectionModal from "$lib/components/modals/ConnectionModal.svelte";
+  import ConnectionChangeModal from "$lib/components/modals/ConnectionChangeModal.svelte";
   import EnvModal from "$lib/components/modals/EnvModal.svelte";
   import AgentModal from "$lib/components/modals/AgentModal.svelte";
   import KerberosModal from "$lib/components/modals/KerberosModal.svelte";
@@ -37,6 +38,8 @@
   import { notify } from "$lib/stores/notifications.svelte";
   import {
     getTerminalState,
+    acceptPendingChange,
+    dismissPendingChange,
     initTerminalListeners,
     teardownTerminalListeners,
     setTerminalsVisible,
@@ -57,6 +60,7 @@
   import { appState } from "$lib/stores/appState.svelte";
 
   const terminalState = getTerminalState();
+  const pendingPrompt = $derived(terminalState.pendingChange);
   const kerberosState = getKerberosState();
 
   $effect(() => {
@@ -344,6 +348,7 @@
       bind:modalUser={appState.modalUser}
       bind:modalPort={appState.modalPort}
       bind:modalUseKerberos={appState.modalUseKerberos}
+      bind:modalForwardAgent={appState.modalForwardAgent}
       bind:modalBastion={appState.modalBastion}
       bind:modalBastionUser={appState.modalBastionUser}
       bind:modalKeyPath={appState.modalKeyPath}
@@ -351,6 +356,14 @@
       onClose={() => (appState.showModal = false)}
       onSave={appState.saveConnection}
       onBrowseKey={appState.browseKey}
+    />
+  {/if}
+
+  {#if pendingPrompt}
+    <ConnectionChangeModal
+      prompt={pendingPrompt}
+      onConfirm={acceptPendingChange}
+      onCancel={dismissPendingChange}
     />
   {/if}
 

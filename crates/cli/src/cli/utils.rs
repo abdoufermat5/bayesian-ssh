@@ -366,6 +366,15 @@ pub fn show_connection_details(connection: &Connection) -> Result<()> {
     }
 
     println!(
+        "  Agent forwarding: {}",
+        if connection.forward_agent {
+            "Enabled"
+        } else {
+            "Disabled"
+        }
+    );
+
+    println!(
         "  Created:  {}",
         connection.created_at.format("%Y-%m-%d %H:%M:%S UTC")
     );
@@ -380,6 +389,17 @@ pub fn show_connection_details(connection: &Connection) -> Result<()> {
 
     if !connection.aliases.is_empty() {
         println!("  Aliases:  {}", connection.aliases.join(", "));
+    }
+
+    if let Some(change) = &connection.pending_change {
+        println!(
+            "\n  ⚠️  Pending team sync change ({}):",
+            change.detected_at.format("%Y-%m-%d %H:%M:%S UTC")
+        );
+        for line in crate::services::pending::describe(connection) {
+            println!("     {line}");
+        }
+        println!("     Confirm with `bssh confirm {}`", connection.name);
     }
 
     println!("\n  SSH Command: {}", connection.to_ssh_command());

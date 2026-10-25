@@ -22,11 +22,20 @@
 //! 10. write tools: ask, with the tier from the approval rules
 //!
 //! Every reason starts with the rule that produced it (`scope:`, `budget.calls_per_min:`...).
+//!
+//! # Which tags count
+//!
+//! A tag can relax a decision (`scope.tags`, `approval.in_client`) only when the policy
+//! trusts it: the connection was added by hand (`source_id` is `None`), or its inventory
+//! source is named in `ai.trusted_tag_sources`. Teams vaults and cloud inventories hold tags
+//! anyone with write access there can change, so by default they can only tighten: every tag
+//! counts for `approval.two_person` and `approval.two_person_hosts`. Host globs
+//! (`scope.hosts`) are unaffected.
 
 use super::store::{AiStore, CounterKind};
 use super::types::{
-    Analysis, Budgets, Decision, Grant, HostFacts, JailKind, Policy, PolicyEngine, Profile,
-    RiskTag, Scope, Tier, ToolCall, ToolName,
+    Analysis, Budgets, Decision, Enforcement, Grant, HostFacts, JailKind, Policy, PolicyEngine,
+    Profile, RiskTag, Scope, Tier, ToolCall, ToolName,
 };
 use crate::config::AppConfig;
 use crate::models::Connection;
@@ -176,16 +185,70 @@ fn union(mut base: Vec<String>, extra: &[String]) -> Vec<String> {
 // ---------------------------------------------------------------- scope
 
 /// Is this connection visible to the agent at all?
-pub fn host_in_scope(policy: &Policy, conn: &Connection) -> bool {
-    in_scope(&policy.scope, &conn.name, &conn.tags)
+///
+/// `tags_trusted` says whether the connection's tags may widen the scope; see
+/// [`tags_trusted`] for how to decide it.
+pub fn host_in_scope(policy: &Policy, conn: &Connection, tags_trusted: bool) -> bool {
+    in_scope(&policy.scope, &conn.name, &conn.tags, tags_trusted)
 }
 
-fn in_scope(scope: &Scope, name: &str, tags: &[String]) -> bool {
-    scope
-        .tags
-        .iter()
-        .any(|t| t == ALL_HOSTS || tags.iter().any(|h| h == t))
+fn in_scope(scope: &Scope, name: &str, tags: &[String], tags_trusted: bool) -> bool {
+    scope.tags.iter().any(|t| t == ALL_HOSTS)
+        || (tags_trusted && scope.tags.iter().any(|t| tags.iter().any(|h| h == t)))
         || scope.hosts.iter().any(|h| glob_match(h, name, false))
+}
+
+/// May this connection's tags relax the policy?
+///
+/// Connections added by hand have no source, so bssh owns their tags. A source-managed
+/// connection is trusted only when its source name is listed in `ai.trusted_tag_sources`.
+pub fn tags_trusted(
+    trusted_sources: &[String],
+    conn: &Connection,
+    source_name: Option<&str>,
+) -> bool {
+    conn.source_id.is_none()
+        || source_name.is_some_and(|name| trusted_sources.iter().any(|t| t == name))
+}
+
+/// [`HostFacts`] for a connection, with the trust of its tags.
+pub fn connection_facts(
+    conn: &Connection,
+    source_name: Option<&str>,
+    trusted_sources: &[String],
+    enforcement: Enforcement,
+) -> HostFacts {
+    HostFacts {
+        name: conn.name.clone(),
+        tags: conn.tags.clone(),
+        tags_trusted: tags_trusted(trusted_sources, conn, source_name),
+        tag_source: source_name.map(str::to_string),
+        enforcement,
+    }
+}
+
+/// Tags that would have relaxed the decision but were ignored because their source is not
+/// trusted, plus how to trust it. `rules` is `scope.tags` or `approval.in_client`.
+fn ignored_tag_note(rules: &[String], host: &HostFacts) -> Option<String> {
+    if host.tags_trusted {
+        return None;
+    }
+    let matched: Vec<&str> = rules
+        .iter()
+        .filter(|t| host.tags.iter().any(|h| h == *t))
+        .map(String::as_str)
+        .collect();
+    if matched.is_empty() {
+        return None;
+    }
+    let from = match &host.tag_source {
+        Some(source) => format!("inventory source '{source}'"),
+        None => "a source not listed in ai.trusted_tag_sources".to_string(),
+    };
+    Some(format!(
+        "tags [{}] from {from} were ignored; add the source name to ai.trusted_tag_sources to let its tags relax the policy",
+        matched.join(", ")
+    ))
 }
 
 // ---------------------------------------------------------------- matching helpers
@@ -744,19 +807,39 @@ fn low_risk(analysis: Option<&Analysis>) -> bool {
 }
 
 /// Tier for something that must ask (design 6.3).
+///
+/// `host_name` is the effective target (the facts' name, else the call's host). Two-person
+/// approval reads every tag, trusted or not, and `two_person_hosts` as well: a stricter rule
+/// must not depend on who can edit a source. In-client approval reads trusted tags only.
 fn tier_for(
     policy: &Policy,
     call: &ToolCall,
     analysis: Option<&Analysis>,
     host: &HostFacts,
+    host_name: &str,
 ) -> Tier {
-    let has = |list: &[String]| host.tags.iter().any(|t| list.contains(t));
-    if has(&policy.approval.two_person) {
+    let two_person = policy
+        .approval
+        .two_person
+        .iter()
+        .any(|t| host.tags.contains(t))
+        || policy
+            .approval
+            .two_person_hosts
+            .iter()
+            .any(|h| glob_match(h, host_name, false));
+    if two_person {
         return Tier::TwoPerson;
     }
     // `edit_file` and `service` have no shell command to analyze; both are undoable.
     let reversible_tool = matches!(call.tool, ToolName::EditFile | ToolName::Service);
-    if has(&policy.approval.in_client) && (low_risk(analysis) || reversible_tool) {
+    let in_client = host.tags_trusted
+        && policy
+            .approval
+            .in_client
+            .iter()
+            .any(|t| host.tags.contains(t));
+    if in_client && (low_risk(analysis) || reversible_tool) {
         return Tier::InClient;
     }
     policy.approval.default
@@ -915,11 +998,13 @@ impl DefaultPolicyEngine {
             if needs_host(call.tool) {
                 return deny("target: the call names no host".into());
             }
-        } else if !in_scope(&policy.scope, &host_name, &host.tags) {
+        } else if !in_scope(&policy.scope, &host_name, &host.tags, host.tags_trusted) {
             self.note(&call.run_id, CounterKind::Probe);
-            return deny(format!(
-                "scope: host '{host_name}' is not in this policy's scope"
-            ));
+            let mut reason = format!("scope: host '{host_name}' is not in this policy's scope");
+            if let Some(note) = ignored_tag_note(&policy.scope.tags, host) {
+                reason = format!("{reason} ({note})");
+            }
+            return deny(reason);
         }
 
         // 2. budgets
@@ -979,13 +1064,23 @@ impl DefaultPolicyEngine {
             return deny(format!("deny: the command matches '{pat}'"));
         }
 
+        // Everything that asks goes through here: it picks the tier and says when a tag that
+        // would have allowed in-client approval was ignored because its source is not trusted.
+        let ask = |reason: String| {
+            let reason = match ignored_tag_note(&policy.approval.in_client, host) {
+                Some(note) => format!("{reason}; {note}"),
+                None => reason,
+            };
+            Decision::Ask {
+                tier: tier_for(policy, call, analysis, host, &host_name),
+                reason,
+            }
+        };
+
         // A glob or a run-time path could still name a deny path, and the analyzer can't
         // settle it: never allow those automatically, whatever the grants say.
         if let Some(reason) = unsure {
-            return Decision::Ask {
-                tier: tier_for(policy, call, analysis, host),
-                reason,
-            };
+            return ask(reason);
         }
 
         // 6. write_paths
@@ -1012,10 +1107,6 @@ impl DefaultPolicyEngine {
         }
 
         // 8. reads
-        let ask = |reason: String| Decision::Ask {
-            tier: tier_for(policy, call, analysis, host),
-            reason,
-        };
         match call.tool {
             ToolName::ListHosts | ToolName::HostInfo | ToolName::Status => {
                 return Decision::Allow {
@@ -1114,7 +1205,7 @@ impl PolicyEngine for DefaultPolicyEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::ai::types::{Enforcement, SimpleCommand};
+    use crate::services::ai::types::{ApprovalRules, Enforcement, SimpleCommand};
     use chrono::Utc;
     use std::collections::BTreeSet;
 
@@ -1144,10 +1235,21 @@ mod tests {
         HostFacts {
             name: name.into(),
             tags: tags.iter().map(|s| s.to_string()).collect(),
+            tags_trusted: true,
+            tag_source: None,
             enforcement: Enforcement {
                 jail,
                 ..Default::default()
             },
+        }
+    }
+
+    /// The same host, but its tags come from a source `ai.trusted_tag_sources` doesn't name.
+    fn untrusted_host(name: &str, tags: &[&str], source: &str) -> HostFacts {
+        HostFacts {
+            tags_trusted: false,
+            tag_source: Some(source.into()),
+            ..host(name, tags, JailKind::None)
         }
     }
 
@@ -1985,6 +2087,79 @@ mod tests {
     }
 
     #[test]
+    fn untrusted_tags_do_not_allow_in_client_approval() {
+        let fx = fixture();
+        let mut p = operate();
+        // The host is in scope by name: only the in-client tag is at issue.
+        p.scope = Scope {
+            tags: Vec::new(),
+            hosts: vec!["web-*".into()],
+        };
+        p.approval.in_client = vec!["staging".into()];
+
+        let untrusted = untrusted_host("web-1", &["staging"], "aws-prod");
+        let d = fx.engine.decide(
+            &p,
+            &path_call(ToolName::EditFile, "web-1", "/etc/nginx/a"),
+            None,
+            &untrusted,
+        );
+        assert_eq!(tier(&d), Tier::OutOfBand);
+        let why = reason(&d);
+        assert!(why.contains("ai.trusted_tag_sources"), "{why}");
+        assert!(why.contains("aws-prod"), "{why}");
+
+        let trusted = host("web-1", &["staging"], JailKind::None);
+        let d = fx.engine.decide(
+            &p,
+            &path_call(ToolName::EditFile, "web-1", "/etc/nginx/a"),
+            None,
+            &trusted,
+        );
+        assert_eq!(tier(&d), Tier::InClient);
+    }
+
+    #[test]
+    fn two_person_applies_from_untrusted_tags() {
+        let fx = fixture();
+        let mut p = operate();
+        p.scope = Scope {
+            tags: Vec::new(),
+            hosts: vec!["db-*".into()],
+        };
+        p.approval.two_person = vec!["prod-db".into()];
+        // A tag from a source nobody listed must still tighten the decision.
+        let h = untrusted_host("db-1", &["prod-db"], "aws-prod");
+        let d = fx
+            .engine
+            .decide(&p, &cmd_call(ToolName::Run, "db-1", "ls"), None, &h);
+        assert_eq!(tier(&d), Tier::TwoPerson);
+    }
+
+    #[test]
+    fn two_person_hosts_glob_needs_no_tag() {
+        let fx = fixture();
+        let mut p = operate();
+        p.scope = Scope {
+            tags: Vec::new(),
+            hosts: vec!["db-*".into(), "web-*".into()],
+        };
+        p.approval.two_person_hosts = vec!["db-*".into()];
+        let h = host("db-1", &[], JailKind::None);
+        let d = fx
+            .engine
+            .decide(&p, &cmd_call(ToolName::Run, "db-1", "ls"), None, &h);
+        assert_eq!(tier(&d), Tier::TwoPerson);
+
+        // A host outside the glob keeps the default tier.
+        let h = host("web-1", &[], JailKind::None);
+        let d = fx
+            .engine
+            .decide(&p, &cmd_call(ToolName::Run, "web-1", "ls"), None, &h);
+        assert_eq!(tier(&d), Tier::OutOfBand);
+    }
+
+    #[test]
     fn tier_follows_configured_default() {
         let fx = fixture();
         let mut p = operate();
@@ -2294,7 +2469,7 @@ mod tests {
         let cfg = AppConfig::default();
         let p = resolve(&cfg, "default").unwrap();
         assert_eq!(p.profile, Profile::Observe);
-        assert!(in_scope(&p.scope, "anything", &[]));
+        assert!(in_scope(&p.scope, "anything", &[], true));
         assert!(!p.read_paths.is_empty());
         assert!(!p.deny_paths.is_empty());
         assert!(!p.deny.is_empty());
@@ -2314,7 +2489,7 @@ mod tests {
         let mut cfg = AppConfig::default();
         cfg.ai.policies.insert("default".into(), Policy::default());
         let p = resolve(&cfg, "default").unwrap();
-        assert!(!in_scope(&p.scope, "web-1", &["staging".into()]));
+        assert!(!in_scope(&p.scope, "web-1", &["staging".into()], true));
     }
 
     #[test]
@@ -2355,12 +2530,13 @@ mod tests {
     fn resolve_keeps_user_empty_write_paths_and_approval() {
         let mut cfg = AppConfig::default();
         let user: Policy = serde_json::from_str(
-            r#"{"profile":"operate","approval":{"two_person":["prod-db"]},"write_paths":["/etc/nginx/**"]}"#,
+            r#"{"profile":"operate","approval":{"two_person":["prod-db"],"two_person_hosts":["db-*"]},"write_paths":["/etc/nginx/**"]}"#,
         )
         .unwrap();
         cfg.ai.policies.insert("ops".into(), user);
         let p = resolve(&cfg, "ops").unwrap();
         assert_eq!(p.approval.two_person, vec!["prod-db".to_string()]);
+        assert_eq!(p.approval.two_person_hosts, vec!["db-*".to_string()]);
         assert_eq!(p.write_paths, vec!["/etc/nginx/**".to_string()]);
     }
 
@@ -2378,18 +2554,89 @@ mod tests {
         );
         conn.tags = vec!["staging".into()];
         let mut p = Policy::default();
-        assert!(!host_in_scope(&p, &conn));
+        assert!(!host_in_scope(&p, &conn, true));
         p.scope.tags = vec!["staging".into()];
-        assert!(host_in_scope(&p, &conn));
+        assert!(host_in_scope(&p, &conn, true));
         p.scope.tags = vec!["prod".into()];
-        assert!(!host_in_scope(&p, &conn));
+        assert!(!host_in_scope(&p, &conn, true));
         p.scope.hosts = vec!["web-*".into()];
-        assert!(host_in_scope(&p, &conn));
+        assert!(host_in_scope(&p, &conn, true));
         p.scope = Scope {
             tags: vec![ALL_HOSTS.into()],
             hosts: vec![],
         };
-        assert!(host_in_scope(&p, &conn));
+        assert!(host_in_scope(&p, &conn, true));
+    }
+
+    #[test]
+    fn source_tags_count_for_scope_only_when_trusted() {
+        let fx = fixture();
+        let mut p = builtin_profile(Profile::Observe);
+        p.scope.tags = vec!["prod".into()];
+
+        let untrusted = untrusted_host("db-1", &["prod"], "aws-prod");
+        let d = fx
+            .engine
+            .decide(&p, &call(ToolName::Observe, Some("db-1")), None, &untrusted);
+        assert!(matches!(&d, Decision::Deny { .. }), "{d:?}");
+        let why = reason(&d);
+        assert!(why.contains("not in this policy's scope"), "{why}");
+        assert!(why.contains("ai.trusted_tag_sources"), "{why}");
+        assert!(why.contains("aws-prod"), "{why}");
+
+        let trusted = host("db-1", &["prod"], JailKind::None);
+        let d = fx
+            .engine
+            .decide(&p, &call(ToolName::Observe, Some("db-1")), None, &trusted);
+        assert!(matches!(&d, Decision::Allow { .. }), "{d:?}");
+    }
+
+    #[test]
+    fn connection_facts_follow_the_connection_source() {
+        let mut conn = Connection::new(
+            "web-1".into(),
+            "h".into(),
+            "u".into(),
+            22,
+            None,
+            None,
+            false,
+            None,
+        );
+        conn.tags = vec!["prod".into()];
+
+        let local = connection_facts(&conn, None, &[], Enforcement::default());
+        assert!(local.tags_trusted);
+        assert_eq!(local.tag_source, None);
+
+        conn.source_id = Some(uuid::Uuid::new_v4());
+        let untrusted = connection_facts(&conn, Some("aws-prod"), &[], Enforcement::default());
+        assert!(!untrusted.tags_trusted);
+        assert_eq!(untrusted.tag_source.as_deref(), Some("aws-prod"));
+        assert_eq!(untrusted.tags, vec!["prod".to_string()]);
+
+        let trusted = connection_facts(
+            &conn,
+            Some("aws-prod"),
+            &["aws-prod".to_string()],
+            Enforcement::default(),
+        );
+        assert!(trusted.tags_trusted);
+        // A listed source whose name no longer resolves is not trusted.
+        assert!(!tags_trusted(&["aws-prod".to_string()], &conn, None));
+    }
+
+    #[test]
+    fn approval_rules_two_person_hosts_default_and_round_trip() {
+        let empty: ApprovalRules = serde_json::from_str("{}").unwrap();
+        assert!(empty.two_person_hosts.is_empty());
+
+        let rules = ApprovalRules {
+            two_person_hosts: vec!["db-*".into()],
+            ..ApprovalRules::default()
+        };
+        let json = serde_json::to_string(&rules).unwrap();
+        assert_eq!(serde_json::from_str::<ApprovalRules>(&json).unwrap(), rules);
     }
 
     // ---- helpers
@@ -2453,7 +2700,9 @@ mod tests {
         HostFacts {
             name: "web-1".into(),
             tags: vec!["staging".into()],
+            tags_trusted: true,
             enforcement: Enforcement::default(),
+            ..HostFacts::default()
         }
     }
 

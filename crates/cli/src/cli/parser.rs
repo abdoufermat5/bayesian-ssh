@@ -144,6 +144,12 @@ pub enum Commands {
         /// Path to an SSH private key
         #[arg(short = 'i', long, value_name = "FILE")]
         key: Option<String>,
+        /// Forward your ssh-agent to the server (ssh -A). Off by default
+        #[arg(long, conflicts_with = "no_forward_agent")]
+        forward_agent: bool,
+        /// Explicitly do not forward your ssh-agent (the default)
+        #[arg(long, conflicts_with = "forward_agent")]
+        no_forward_agent: bool,
         /// Tags for grouping and filtering (repeatable or comma-separated)
         #[arg(short = 't', long, value_name = "TAG", value_delimiter = ',')]
         tags: Vec<String>,
@@ -189,6 +195,20 @@ pub enum Commands {
         target: String,
     },
 
+    /// Accept the route changes a team sync made to a connection
+    #[command(
+        long_about = "A team member can edit a shared connection. When a sync changes its host, \
+            port, user, bastion or Kerberos setting, bssh ignores the new route until you confirm it \
+            (agent forwarding also stays off).\n\n\
+            Examples:\n\
+              bssh confirm db-prod\n\
+              bssh connect db-prod      # asks y/N interactively, or points here"
+    )]
+    Confirm {
+        /// Connection name, alias, or ID with a pending change
+        target: String,
+    },
+
     /// Edit one or more settings of an existing connection
     #[command(long_about = "Modify fields on a saved connection.\n\n\
             Only the fields you pass are updated; everything else stays unchanged.\n\n\
@@ -226,6 +246,12 @@ pub enum Commands {
         /// Set or change the SSH private key path
         #[arg(long, value_name = "FILE")]
         key: Option<String>,
+        /// Forward your ssh-agent to the server (ssh -A)
+        #[arg(long, conflicts_with = "no_forward_agent")]
+        forward_agent: bool,
+        /// Stop forwarding your ssh-agent
+        #[arg(long, conflicts_with = "forward_agent")]
+        no_forward_agent: bool,
         /// Add tags (repeatable or comma-separated)
         #[arg(long, value_name = "TAG", value_delimiter = ',')]
         add_tags: Vec<String>,
@@ -994,6 +1020,46 @@ mod tests {
             }) => assert_eq!(email_code, None),
             _ => unreachable!(),
         }
+    }
+
+    #[test]
+    fn forward_agent_flags_parse() {
+        let cli = Cli::try_parse_from(["bssh", "add", "n", "h", "--forward-agent"]).unwrap();
+        match cli.command {
+            Some(Commands::Add {
+                forward_agent,
+                no_forward_agent,
+                ..
+            }) => {
+                assert!(forward_agent);
+                assert!(!no_forward_agent);
+            }
+            _ => panic!("expected `add`"),
+        }
+
+        let cli = Cli::try_parse_from(["bssh", "edit", "n", "--no-forward-agent"]).unwrap();
+        match cli.command {
+            Some(Commands::Edit {
+                forward_agent,
+                no_forward_agent,
+                ..
+            }) => {
+                assert!(!forward_agent);
+                assert!(no_forward_agent);
+            }
+            _ => panic!("expected `edit`"),
+        }
+
+        assert!(Cli::try_parse_from([
+            "bssh",
+            "add",
+            "n",
+            "h",
+            "--forward-agent",
+            "--no-forward-agent"
+        ])
+        .is_err());
+        assert!(Cli::try_parse_from(["bssh", "confirm", "db-prod"]).is_ok());
     }
 }
 

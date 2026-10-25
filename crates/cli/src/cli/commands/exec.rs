@@ -120,6 +120,12 @@ pub async fn execute(
         return Ok(());
     }
 
+    // A team sync may have redirected any of these hosts. Ask once per
+    // connection (interactive) or refuse before running anything.
+    for connection in &targets {
+        ssh_service.confirm_pending_change(connection)?;
+    }
+
     if targets.len() == 1 {
         let connection = &targets[0];
         info!("exec '{}' on {}", cmd_str, connection.host);

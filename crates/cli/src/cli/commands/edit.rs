@@ -16,6 +16,8 @@ pub async fn execute(
     no_bastion: bool,
     bastion_user: Option<String>,
     key: Option<String>,
+    forward_agent: bool,
+    no_forward_agent: bool,
     add_tags: Vec<String>,
     remove_tags: Vec<String>,
     config: AppConfig,
@@ -36,6 +38,8 @@ pub async fn execute(
         no_bastion,
         bastion_user,
         key,
+        forward_agent,
+        no_forward_agent,
         add_tags,
         remove_tags,
     )
@@ -55,6 +59,8 @@ async fn update_connection(
     no_bastion: bool,
     bastion_user: Option<String>,
     key: Option<String>,
+    forward_agent: bool,
+    no_forward_agent: bool,
     add_tags: Vec<String>,
     remove_tags: Vec<String>,
 ) -> Result<()> {
@@ -87,6 +93,12 @@ async fn update_connection(
     if let Some(key) = key {
         connection.key_path = Some(key);
     }
+    if forward_agent {
+        connection.forward_agent = true;
+    }
+    if no_forward_agent {
+        connection.forward_agent = false;
+    }
 
     // Handle tags
     for tag in add_tags {
@@ -117,6 +129,14 @@ async fn update_connection(
     println!(
         "  Kerberos: {}",
         if connection.use_kerberos {
+            "Enabled"
+        } else {
+            "Disabled"
+        }
+    );
+    println!(
+        "  Agent forwarding: {}",
+        if connection.forward_agent {
             "Enabled"
         } else {
             "Disabled"

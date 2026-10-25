@@ -7,6 +7,10 @@ export interface Connection {
   bastion?: string;
   bastion_user?: string;
   use_kerberos: boolean;
+  /** `ssh -A`: hand the local ssh-agent to the host. Opt-in, per connection. */
+  forward_agent: boolean;
+  /** Route changes a team sync made, waiting for the user to confirm them. */
+  pending_change?: PendingChange | null;
   key_path?: string;
   created_at: string;
   last_used?: string;
@@ -14,6 +18,20 @@ export interface Connection {
   source_id?: string;
   external_id?: string;
   stale_since?: string;
+}
+
+export interface RouteValues {
+  host: string;
+  port: number;
+  user: string;
+  bastion?: string;
+  bastion_user?: string;
+  use_kerberos: boolean;
+}
+
+export interface PendingChange {
+  detected_at: string;
+  previous: RouteValues;
 }
 
 // "team" sources are bssh Teams vaults: created and synced by `bssh teams`, never added here.
@@ -628,7 +646,12 @@ export interface AiBudgets {
 export interface AiPolicy {
   profile: "observe" | "operate" | "oncall";
   scope: AiScope;
-  approval: { default: AiTier; in_client: string[]; two_person: string[] };
+  approval: {
+    default: AiTier;
+    in_client: string[];
+    two_person: string[];
+    two_person_hosts: string[];
+  };
   read_paths: string[];
   deny_paths: string[];
   write_paths: string[];
@@ -642,4 +665,6 @@ export interface AiSettingsView {
   policies: Record<string, AiPolicy>;
   record_output: boolean;
   approval_timeout_secs: number;
+  /** Inventory sources whose tags may widen scope or allow in-client approval. */
+  trusted_tag_sources: string[];
 }

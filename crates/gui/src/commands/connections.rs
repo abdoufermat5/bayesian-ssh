@@ -59,6 +59,7 @@ pub fn add_connection(
     bastion_user: Option<String>,
     key_path: Option<String>,
     tags: Vec<String>,
+    forward_agent: Option<bool>,
 ) -> Result<(), String> {
     let (db, config) = get_db_and_config()?;
 
@@ -80,6 +81,7 @@ pub fn add_connection(
         key_path,
     );
 
+    connection.forward_agent = forward_agent.unwrap_or(false);
     for tag in tags {
         connection.add_tag(tag);
     }
@@ -100,6 +102,7 @@ pub fn edit_connection(
     bastion_user: Option<String>,
     key_path: Option<String>,
     tags: Vec<String>,
+    forward_agent: Option<bool>,
 ) -> Result<(), String> {
     let (db, _config) = get_db_and_config()?;
 
@@ -133,6 +136,8 @@ pub fn edit_connection(
         source_id: existing.source_id,
         external_id: existing.external_id,
         stale_since: existing.stale_since,
+        forward_agent: forward_agent.unwrap_or(existing.forward_agent),
+        pending_change: existing.pending_change,
     };
 
     for tag in tags {
@@ -140,6 +145,19 @@ pub fn edit_connection(
     }
 
     db.update_connection(&connection).map_err(|e| e.to_string())
+}
+
+/// Clear the route change a team sync made to a connection, after the user
+/// has seen it in the confirmation dialog.
+#[tauri::command(async)]
+pub fn confirm_connection_change(id_or_name: String) -> Result<(), String> {
+    let (db, _config) = get_db_and_config()?;
+    let connection = db
+        .get_connection(&id_or_name)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Connection '{}' not found", id_or_name))?;
+    db.clear_pending_change(&connection.id)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command(async)]
@@ -217,6 +235,11 @@ pub async fn run_batch_command(
             })
             .collect();
         return Ok(results);
+    }
+
+    // A team sync may have redirected a host since the selection was made.
+    if let Some(changed) = targets.iter().find(|c| c.pending_change.is_some()) {
+        return Err(bayesian_ssh::services::pending::refusal(changed));
     }
 
     let conn_lookup: HashMap<String, Connection> = targets

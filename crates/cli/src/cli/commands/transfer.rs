@@ -147,6 +147,10 @@ pub async fn execute_upload(
         return Ok(());
     }
 
+    for connection in &targets {
+        ssh_service.confirm_pending_change(connection)?;
+    }
+
     println!(
         "Uploading {} ({}) → {} on {} host(s)",
         local_basename(&plan.local),
@@ -349,6 +353,7 @@ pub async fn execute_download(
 ) -> Result<()> {
     let ssh_service = SshService::new(config.clone())?;
     let connection = resolve_connection(&ssh_service, &target, "download", true, &config).await?;
+    ssh_service.confirm_pending_change(&connection)?;
 
     let transfer = TransferService::new(config)?;
 

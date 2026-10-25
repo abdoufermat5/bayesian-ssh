@@ -34,6 +34,12 @@ pub async fn execute(
         return Ok(());
     }
 
+    // A probe authenticates to the host, so a team-sync redirect needs the
+    // same confirmation as a full session.
+    for connection in &targets {
+        ssh_service.confirm_pending_change(connection)?;
+    }
+
     if targets.len() == 1 {
         let connection = &targets[0];
         println!(
@@ -120,7 +126,8 @@ pub async fn execute(
 /// All options precede the destination and `--` ends option parsing, so a
 /// host/user value starting with `-` can never be read as an ssh option.
 /// Bastion handling mirrors the subprocess transport: Kerberos + bastion is
-/// an *interactive* bastion (ssh to the bastion on port 22, pass
+/// an *interactive* bastion (ssh to the bastion, whose port comes from the
+/// stored value when there is one and from ~/.ssh/config otherwise, and pass
 /// `user@target` as its sole argument); otherwise the bastion is a classic
 /// jump host reached via `-J`, so `ConnectTimeout`/`BatchMode` cover both hops.
 fn ping_args(connection: &Connection, timeout_secs: u64) -> Vec<String> {
@@ -142,20 +149,20 @@ fn ping_args(connection: &Connection, timeout_secs: u64) -> Vec<String> {
             .bastion_user
             .as_deref()
             .unwrap_or(&connection.user);
-        let jump = format!("{}@{}", bastion_user, bastion);
+        let (bastion_host, bastion_port) = crate::models::split_bastion(bastion);
         if connection.use_kerberos {
+            args.extend(["-o".into(), "GSSAPIDelegateCredentials=yes".into()]);
+            if let Some(port) = bastion_port {
+                args.extend(["-p".into(), port.to_string()]);
+            }
             args.extend([
-                "-o".into(),
-                "GSSAPIDelegateCredentials=yes".into(),
-                "-p".into(),
-                "22".into(),
                 "--".into(),
-                jump,
+                format!("{bastion_user}@{bastion_host}"),
                 target,
             ]);
             return args;
         }
-        args.extend(["-J".into(), jump]);
+        args.extend(["-J".into(), format!("{bastion_user}@{bastion}")]);
     }
     args.extend([
         "-p".into(),
@@ -233,10 +240,17 @@ mod tests {
         let args = ping_args(&conn(Some("bastion.corp"), true), 5);
         let n = args.len();
         assert_eq!(
-            &args[n - 4..],
-            ["22", "--", "jump@bastion.corp", "deploy@web.example.com"]
+            &args[n - 3..],
+            ["--", "jump@bastion.corp", "deploy@web.example.com"]
         );
+        // No stored port: ~/.ssh/config decides, not a hard-coded 22.
+        assert!(!args.contains(&"-p".to_string()));
         assert!(args.contains(&"BatchMode=yes".to_string()));
         assert!(!args.contains(&"-J".to_string()));
+
+        let args = ping_args(&conn(Some("bastion.corp:2200"), true), 5);
+        let p = args.iter().position(|a| a == "-p").expect("-p present");
+        assert_eq!(args[p + 1], "2200");
+        assert!(args.contains(&"jump@bastion.corp".to_string()));
     }
 }

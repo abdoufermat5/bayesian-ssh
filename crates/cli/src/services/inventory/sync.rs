@@ -61,10 +61,12 @@ pub fn plan(
     discovered: &[DiscoveredHost],
     existing_for_source: &[Connection],
     taken_names: &HashSet<String>,
-    source_name: &str,
+    source: &Source,
 ) -> SyncPlan {
     let mut plan = SyncPlan::default();
     let now = Utc::now();
+    let authoritative = source.kind == SourceKind::Team;
+    let source_name = source.name.as_str();
 
     let mut used_names: HashSet<String> = taken_names.clone();
     used_names.extend(existing_for_source.iter().map(|c| c.name.clone()));
@@ -106,7 +108,13 @@ pub fn plan(
                 || updated.port != existing.port
                 || updated.user != existing.user
                 || updated.key_path != existing.key_path
-                || updated.tags != existing.tags;
+                || updated.tags != existing.tags
+                // A team vault is authoritative for routing, so a bastion or
+                // Kerberos change must reach `apply` even on its own.
+                || (authoritative
+                    && (host.bastion != existing.bastion
+                        || host.bastion_user != existing.bastion_user
+                        || host.use_kerberos != existing.use_kerberos));
             // Provider values reach the ssh argv, so an update must pass the
             // same validation as a new host.
             if changed {
@@ -248,10 +256,36 @@ pub fn apply(
         }
         if source.kind == SourceKind::Team {
             // A team vault is authoritative for routing: a removed bastion or
-            // a Kerberos change must propagate, not just additions.
+            // a Kerberos change must propagate, not just additions. Any route
+            // change waits for the user's confirmation before the next
+            // connect, and drops agent forwarding (a remote edit must never
+            // re-enable it).
             updated.bastion = host.bastion.clone();
             updated.bastion_user = host.bastion_user.clone();
             updated.use_kerberos = host.use_kerberos;
+            let route_changed = updated.host != existing.host
+                || updated.port != existing.port
+                || updated.user != existing.user
+                || updated.bastion != existing.bastion
+                || updated.bastion_user != existing.bastion_user
+                || updated.use_kerberos != existing.use_kerberos;
+            if route_changed {
+                // Successive edits before a confirmation keep the last confirmed route
+                // as "before", so a second edit can't launder the first one.
+                updated.pending_change = Some(match &existing.pending_change {
+                    Some(earlier) => earlier.clone(),
+                    None => crate::models::PendingChange::detect(existing, now),
+                });
+                updated.forward_agent = false;
+            }
+            // Back on the confirmed route: nothing left to confirm.
+            if updated
+                .pending_change
+                .as_ref()
+                .is_some_and(|c| c.previous == crate::models::RouteValues::of(&updated))
+            {
+                updated.pending_change = None;
+            }
         } else if host.bastion.is_some() {
             updated.bastion = host.bastion.clone();
             updated.bastion_user = host.bastion_user.clone();
@@ -320,8 +354,8 @@ fn insert_connection(tx: &Transaction, connection: &Connection) -> Result<()> {
     tx.execute(
         "INSERT INTO connections
          (id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at,
-          last_used, tags, source_id, external_id, stale_since)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          last_used, tags, source_id, external_id, stale_since, forward_agent, pending_change)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         params![
             connection.id.to_string(),
             connection.name,
@@ -338,6 +372,12 @@ fn insert_connection(tx: &Transaction, connection: &Connection) -> Result<()> {
             connection.source_id.map(|id| id.to_string()),
             connection.external_id,
             connection.stale_since.map(|t| t.to_rfc3339()),
+            connection.forward_agent,
+            connection
+                .pending_change
+                .as_ref()
+                .map(serde_json::to_string)
+                .transpose()?,
         ],
     )?;
     replace_tags(tx, connection)?;
@@ -347,8 +387,9 @@ fn insert_connection(tx: &Transaction, connection: &Connection) -> Result<()> {
 fn update_connection(tx: &Transaction, connection: &Connection) -> Result<()> {
     tx.execute(
         "UPDATE connections SET host = ?1, user = ?2, port = ?3, bastion = ?4,
-            bastion_user = ?5, key_path = ?6, tags = ?7, stale_since = ?8
-         WHERE id = ?9",
+            bastion_user = ?5, key_path = ?6, tags = ?7, stale_since = ?8,
+            use_kerberos = ?9, forward_agent = ?10, pending_change = ?11
+         WHERE id = ?12",
         params![
             connection.host,
             connection.user,
@@ -358,6 +399,13 @@ fn update_connection(tx: &Transaction, connection: &Connection) -> Result<()> {
             connection.key_path,
             serde_json::to_string(&connection.tags)?,
             connection.stale_since.map(|t| t.to_rfc3339()),
+            connection.use_kerberos,
+            connection.forward_agent,
+            connection
+                .pending_change
+                .as_ref()
+                .map(serde_json::to_string)
+                .transpose()?,
             connection.id.to_string(),
         ],
     )?;
@@ -429,6 +477,10 @@ mod tests {
         connection
     }
 
+    fn source(kind: SourceKind) -> Source {
+        Source::new("aws-prod".into(), kind, serde_json::Value::Null)
+    }
+
     #[test]
     fn plans_add_update_unchanged_stale_unstale_and_name_collisions() {
         let existing_rows = vec![
@@ -453,7 +505,12 @@ mod tests {
         let mut taken = HashSet::new();
         taken.insert("web".to_string());
 
-        let plan = plan(&discovered_hosts, &existing_rows, &taken, "aws-prod");
+        let plan = plan(
+            &discovered_hosts,
+            &existing_rows,
+            &taken,
+            &source(SourceKind::Aws),
+        );
 
         assert_eq!(plan.update.len(), 1);
         assert_eq!(plan.update[0].1.host, "10.0.0.10");
@@ -477,5 +534,184 @@ mod tests {
             ]
         );
         assert_eq!(plan.duplicates, ["dup"]);
+    }
+
+    fn test_db() -> (tempfile::TempDir, Database, AppConfig) {
+        let dir = tempfile::tempdir().unwrap();
+        let config = AppConfig {
+            database_path: dir.path().join("test.db"),
+            ..Default::default()
+        };
+        let db = Database::new(&config).unwrap();
+        (dir, db, config)
+    }
+
+    fn synced_source(kind: SourceKind, db: &Database) -> Source {
+        let source = Source::new("team-alpha".into(), kind, serde_json::Value::Null);
+        db.add_source(&source).unwrap();
+        source
+    }
+
+    fn stored_host(db: &Database, source: &Source, forward_agent: bool) -> Connection {
+        let mut conn = Connection::new(
+            "db-prod".into(),
+            "db.example".into(),
+            "alice".into(),
+            22,
+            Some("bastion.example".into()),
+            None,
+            true,
+            None,
+        );
+        conn.source_id = Some(source.id);
+        conn.external_id = Some("entry-1".into());
+        conn.forward_agent = forward_agent;
+        db.add_connection(&conn).unwrap();
+        conn
+    }
+
+    fn moved_host() -> Vec<DiscoveredHost> {
+        vec![DiscoveredHost {
+            external_id: "entry-1".into(),
+            name: "db-prod".into(),
+            host: "attacker.example".into(),
+            user: Some("alice".into()),
+            port: Some(22),
+            bastion: Some("bastion.example".into()),
+            use_kerberos: true,
+            ..Default::default()
+        }]
+    }
+
+    fn apply_move(db: &Database, config: &AppConfig, source: &Source) {
+        let existing = db.connections_for_source(source.id).unwrap();
+        let plan = plan(&moved_host(), &existing, &HashSet::new(), source);
+        assert_eq!(plan.update.len(), 1, "the host change is an update");
+        apply(db, config, source, plan, None).unwrap();
+    }
+
+    #[test]
+    fn a_team_host_change_waits_for_confirmation_and_drops_agent_forwarding() {
+        let (_dir, db, config) = test_db();
+        let source = synced_source(SourceKind::Team, &db);
+        stored_host(&db, &source, true);
+
+        apply_move(&db, &config, &source);
+
+        let stored = db.get_connection("db-prod").unwrap().unwrap();
+        assert_eq!(stored.host, "attacker.example");
+        let change = stored.pending_change.expect("pending change recorded");
+        assert_eq!(change.previous.host, "db.example");
+        assert!(
+            !stored.forward_agent,
+            "a remote edit must not keep forwarding the agent"
+        );
+    }
+
+    #[test]
+    fn successive_team_edits_keep_the_confirmed_route_as_before() {
+        let (_dir, db, config) = test_db();
+        let source = synced_source(SourceKind::Team, &db);
+        stored_host(&db, &source, false);
+        apply_move(&db, &config, &source);
+
+        // A second edit before the user confirmed: "before" stays the confirmed host.
+        let mut host = moved_host().remove(0);
+        host.host = "attacker2.example".into();
+        let existing = db.connections_for_source(source.id).unwrap();
+        apply(
+            &db,
+            &config,
+            &source,
+            plan(&[host], &existing, &HashSet::new(), &source),
+            None,
+        )
+        .unwrap();
+        let stored = db.get_connection("db-prod").unwrap().unwrap();
+        assert_eq!(stored.host, "attacker2.example");
+        let change = stored.pending_change.expect("still pending");
+        assert_eq!(change.previous.host, "db.example");
+
+        // Reverted to the confirmed route: the pending change goes away.
+        let mut host = moved_host().remove(0);
+        host.host = "db.example".into();
+        let existing = db.connections_for_source(source.id).unwrap();
+        apply(
+            &db,
+            &config,
+            &source,
+            plan(&[host], &existing, &HashSet::new(), &source),
+            None,
+        )
+        .unwrap();
+        let stored = db.get_connection("db-prod").unwrap().unwrap();
+        assert_eq!(stored.host, "db.example");
+        assert!(
+            stored.pending_change.is_none(),
+            "{:?}",
+            stored.pending_change
+        );
+    }
+
+    #[test]
+    fn a_team_bastion_only_change_is_also_recorded() {
+        let (_dir, db, config) = test_db();
+        let source = synced_source(SourceKind::Team, &db);
+        stored_host(&db, &source, false);
+
+        let mut host = moved_host().remove(0);
+        host.host = "db.example".into();
+        host.bastion = Some("evil-bastion.example".into());
+        let plan = plan(
+            &[host],
+            &db.connections_for_source(source.id).unwrap(),
+            &HashSet::new(),
+            &source,
+        );
+        assert_eq!(
+            plan.update.len(),
+            1,
+            "a bastion-only change must reach apply"
+        );
+        apply(&db, &config, &source, plan, None).unwrap();
+
+        let stored = db.get_connection("db-prod").unwrap().unwrap();
+        let change = stored.pending_change.expect("pending change recorded");
+        assert_eq!(change.previous.bastion.as_deref(), Some("bastion.example"));
+        assert_eq!(stored.bastion.as_deref(), Some("evil-bastion.example"));
+    }
+
+    #[test]
+    fn a_non_team_sync_marks_nothing_and_keeps_forward_agent() {
+        let (_dir, db, config) = test_db();
+        let source = synced_source(SourceKind::Aws, &db);
+        stored_host(&db, &source, true);
+
+        apply_move(&db, &config, &source);
+
+        let stored = db.get_connection("db-prod").unwrap().unwrap();
+        assert_eq!(stored.host, "attacker.example");
+        assert!(
+            stored.pending_change.is_none(),
+            "AWS IPs churn; no confirmation"
+        );
+        assert!(stored.forward_agent, "the local choice is preserved");
+    }
+
+    #[test]
+    fn a_first_team_materialization_starts_without_forwarding_or_a_pending_change() {
+        let (_dir, db, config) = test_db();
+        let source = synced_source(SourceKind::Team, &db);
+
+        let plan = plan(&moved_host(), &[], &HashSet::new(), &source);
+        assert_eq!(plan.add.len(), 1);
+        apply(&db, &config, &source, plan, None).unwrap();
+
+        let stored = db.get_connection("db-prod").unwrap().unwrap();
+        assert!(
+            stored.pending_change.is_none(),
+            "new entries need no confirmation"
+        );
+        assert!(!stored.forward_agent);
     }
 }

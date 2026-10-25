@@ -61,6 +61,8 @@ impl Cli {
                 bastion_user,
                 key,
                 tags,
+                forward_agent,
+                no_forward_agent,
             } => {
                 commands::add::execute(
                     name,
@@ -73,6 +75,7 @@ impl Cli {
                     bastion_user,
                     key,
                     tags,
+                    forward_agent && !no_forward_agent,
                     config,
                 )
                 .await
@@ -86,6 +89,7 @@ impl Cli {
                 commands::remove::execute(target, tag, force, config).await
             }
             Commands::Show { target } => commands::show::execute(target, config).await,
+            Commands::Confirm { target } => commands::confirm::execute(target, config).await,
             Commands::Edit {
                 target,
                 name,
@@ -97,6 +101,8 @@ impl Cli {
                 no_bastion,
                 bastion_user,
                 key,
+                forward_agent,
+                no_forward_agent,
                 add_tags,
                 remove_tags,
             } => {
@@ -111,6 +117,8 @@ impl Cli {
                     no_bastion,
                     bastion_user,
                     key,
+                    forward_agent,
+                    no_forward_agent,
                     add_tags,
                     remove_tags,
                     config,

@@ -319,6 +319,33 @@ pub fn check_listen(listen: &str, allow_remote: bool) -> Result<SocketAddr> {
     Ok(addr)
 }
 
+/// The gateway's hosts all come from the team vault, whose tags any member can edit, so
+/// they only widen the scope when `ai.trusted_tag_sources` names the team's source. A
+/// policy scoped by tags would otherwise see no host at all: say so at startup.
+fn untrusted_scope_tags_warning(
+    policy: &Policy,
+    team_source: Option<&str>,
+    trusted_sources: &[String],
+) -> Option<String> {
+    let tags: Vec<&str> = policy
+        .scope
+        .tags
+        .iter()
+        .map(String::as_str)
+        .filter(|t| *t != super::policy::ALL_HOSTS)
+        .collect();
+    if tags.is_empty() || team_source.is_some_and(|s| trusted_sources.iter().any(|t| t == s)) {
+        return None;
+    }
+    let source = team_source.unwrap_or("<the team's source>");
+    Some(format!(
+        "the policy scopes hosts by tag ({}), but tags from source '{source}' are ignored for \
+         scope: any team member can edit them. Scope by host name (scope.hosts), or add \
+         '{source}' to ai.trusted_tag_sources if you trust every member's edits",
+        tags.join(", ")
+    ))
+}
+
 /// Run the gateway until Ctrl-C.
 pub async fn serve(config: AppConfig, opts: ServeOptions, backend: &dyn McpBackend) -> Result<()> {
     let addr = check_listen(&opts.listen, opts.allow_remote)?;
@@ -338,6 +365,23 @@ pub async fn serve(config: AppConfig, opts: ServeOptions, backend: &dyn McpBacke
         team_id: runtime.cred.team_id,
         agent_name: runtime.cred.agent_name.clone(),
     }));
+
+    let team_source = crate::database::Database::new(&agent_config)
+        .and_then(|db| crate::services::teams::session::local_teams(&db))
+        .ok()
+        .and_then(|teams| {
+            teams
+                .into_iter()
+                .find(|(id, _)| *id == runtime.cred.team_id)
+                .map(|(_, source)| source.name)
+        });
+    if let Some(warning) = untrusted_scope_tags_warning(
+        &refreshed.policy.policy,
+        team_source.as_deref(),
+        &config.ai.trusted_tag_sources,
+    ) {
+        eprintln!("warning: {warning}");
+    }
 
     let state = GatewayState::new(TokenVerifier::for_credential(&runtime.cred)?);
     let ctx = GatewayContext {
@@ -662,5 +706,19 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(r.status(), 501);
+    }
+
+    #[test]
+    fn warns_when_scope_tags_come_from_an_untrusted_team_source() {
+        let mut policy = Policy::default();
+        assert!(untrusted_scope_tags_warning(&policy, Some("acme"), &[]).is_none());
+        policy.scope.tags = vec![super::super::policy::ALL_HOSTS.into()];
+        assert!(untrusted_scope_tags_warning(&policy, Some("acme"), &[]).is_none());
+        policy.scope.tags.push("staging".into());
+        let w = untrusted_scope_tags_warning(&policy, Some("acme"), &[]).expect("warning");
+        assert!(w.contains("staging") && w.contains("'acme'"), "{w}");
+        assert!(w.contains("ai.trusted_tag_sources"), "{w}");
+        assert!(untrusted_scope_tags_warning(&policy, Some("acme"), &["acme".into()]).is_none());
+        assert!(untrusted_scope_tags_warning(&policy, None, &["acme".into()]).is_some());
     }
 }

@@ -448,11 +448,17 @@ test.describe("AI settings", () => {
       settings: {
         approval_timeout_secs: 300,
         record_output: true,
+        trusted_tag_sources: [],
         policies: {
           default: {
             profile: "operate",
             scope: { tags: ["staging", "dev"], hosts: ["bastion"] },
-            approval: { default: "out-of-band", in_client: ["staging"], two_person: ["prod-db"] },
+            approval: {
+              default: "out-of-band",
+              in_client: ["staging"],
+              two_person: ["prod-db"],
+              two_person_hosts: ["db-*"],
+            },
             read_paths: ["/var/log/**"],
             deny_paths: ["/etc/shadow"],
             write_paths: ["/etc/nginx/**"],

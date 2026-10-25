@@ -21,6 +21,7 @@ pub async fn execute(target: String, port: u16, bind: String, config: AppConfig)
     let connection =
         crate::cli::utils::resolve_connection(&ssh_service, &target, "proxy", true, &config)
             .await?;
+    ssh_service.confirm_pending_change(&connection)?;
 
     let kind = pick_kind(&connection, &config);
 

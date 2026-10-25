@@ -16,7 +16,13 @@ pub enum TransportKind {
 }
 
 pub fn pick_kind(conn: &Connection, cfg: &AppConfig) -> TransportKind {
-    if cfg.transport.force_subprocess || conn.use_kerberos || conn.bastion.is_some() {
+    // The built-in transport cannot forward the ssh-agent, so a connection
+    // that asks for `ssh -A` must go through the system ssh binary.
+    if cfg.transport.force_subprocess
+        || conn.use_kerberos
+        || conn.forward_agent
+        || conn.bastion.is_some()
+    {
         TransportKind::Subprocess
     } else {
         TransportKind::Native
@@ -100,6 +106,13 @@ mod tests {
     fn bastion_forces_subprocess() {
         let mut conn = simple_conn();
         conn.bastion = Some("bastion.example.com".into());
+        assert_eq!(pick_kind(&conn, &simple_cfg()), TransportKind::Subprocess);
+    }
+
+    #[test]
+    fn agent_forwarding_forces_subprocess() {
+        let mut conn = simple_conn();
+        conn.forward_agent = true;
         assert_eq!(pick_kind(&conn, &simple_cfg()), TransportKind::Subprocess);
     }
 

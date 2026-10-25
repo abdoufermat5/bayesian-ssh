@@ -1002,6 +1002,8 @@ mod tests {
                 "bssh run web1 -- uptime",
                 "bssh upload web1 ./f /tmp/",
                 "bssh download web1 /etc/passwd ./",
+                // Accepting a team sync's route change is the human's call.
+                "bssh confirm web1",
                 "bssh forward db1 -L 5432:localhost:5432",
                 "bssh tunnel db1 -L 5432:localhost:5432",
                 "bssh proxy web1 -D 1080",
