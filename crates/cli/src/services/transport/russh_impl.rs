@@ -15,7 +15,7 @@ use russh::ChannelMsg;
 use tokio::io::AsyncReadExt;
 use tracing::{debug, info, warn};
 
-use crate::config::AppConfig;
+use crate::config::{AppConfig, HostKeyPolicy};
 use crate::models::Connection;
 use crate::services::auth;
 use crate::services::known_hosts;
@@ -69,6 +69,40 @@ fn host_key_blob(server_key: &PublicKeyOrCertificate) -> Vec<u8> {
     }
 }
 
+/// What to do with the host key `check` reported, under `policy`.
+///
+/// Pure — no I/O, no server — so every policy × result combination is
+/// testable. `@revoked` keys are refused under every policy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HostKeyVerdict {
+    /// Known and unchanged, or a changed key accepted because checking is off.
+    Accept,
+    /// First sight of the host under `accept-new`/`off`: trust and pin it.
+    AcceptAndPin,
+    /// Unknown host under `strict`.
+    RefuseUnknown,
+    /// Changed key under `strict`/`accept-new` — possibly a MITM.
+    RefuseMismatch,
+    /// Key marked `@revoked` in known_hosts.
+    RefuseRevoked,
+}
+
+fn host_key_verdict(policy: HostKeyPolicy, check: &known_hosts::CheckResult) -> HostKeyVerdict {
+    use known_hosts::CheckResult as R;
+    match check {
+        R::KnownGood => HostKeyVerdict::Accept,
+        R::Revoked { .. } => HostKeyVerdict::RefuseRevoked,
+        R::Mismatch { .. } => match policy {
+            HostKeyPolicy::Off => HostKeyVerdict::Accept,
+            HostKeyPolicy::Strict | HostKeyPolicy::AcceptNew => HostKeyVerdict::RefuseMismatch,
+        },
+        R::Unknown => match policy {
+            HostKeyPolicy::Strict => HostKeyVerdict::RefuseUnknown,
+            HostKeyPolicy::AcceptNew | HostKeyPolicy::Off => HostKeyVerdict::AcceptAndPin,
+        },
+    }
+}
+
 impl client::Handler for ClientHandler {
     type Error = anyhow::Error;
 
@@ -85,72 +119,86 @@ impl client::Handler for ClientHandler {
         let key_type = known_hosts::blob_key_type(&key_bytes)
             .ok_or_else(|| anyhow!("malformed host key blob from {}", self.hostname))?;
 
-        match known_hosts::check(&khf, &self.hostname, self.port, key_type, &key_bytes)? {
-            known_hosts::CheckResult::Revoked { remote_fp } => Err(anyhow!(
-                "REVOKED host key presented by {}:{} (fingerprint: {remote_fp})\n\
-                 The key is marked @revoked in known_hosts; refusing to connect.",
-                self.hostname,
-                self.port
-            )),
-            known_hosts::CheckResult::KnownGood => {
-                debug!("Host key verified for {}:{}", self.hostname, self.port);
-                self.host_key_accepted = true;
-                Ok(true)
-            }
-            known_hosts::CheckResult::Mismatch {
-                stored_fp,
-                remote_fp,
-            } => {
-                let policy = &self.config.transport.strict_host_key_checking;
-                if policy == "off" {
+        let policy = self.config.transport.host_key_policy();
+        let check = known_hosts::check(&khf, &self.hostname, self.port, key_type, &key_bytes)?;
+        let verdict = host_key_verdict(policy, &check);
+
+        match verdict {
+            HostKeyVerdict::Accept => {
+                if let known_hosts::CheckResult::Mismatch {
+                    stored_fp,
+                    remote_fp,
+                } = &check
+                {
                     warn!(
                         "Host key mismatch for {} (stored={stored_fp}, remote={remote_fp}) — \
                          strict_host_key_checking=off, continuing",
                         self.hostname
                     );
-                    self.host_key_accepted = true;
-                    Ok(true)
                 } else {
-                    Err(anyhow!(
-                        "HOST KEY CHANGED for {}:{}\n\
-                         Stored  : {stored_fp}\n\
-                         Remote  : {remote_fp}\n\
-                         This could indicate a man-in-the-middle attack.\n\
-                         Remove the old key from known_hosts if this is expected.",
-                        self.hostname,
-                        self.port
-                    ))
+                    debug!("Host key verified for {}:{}", self.hostname, self.port);
                 }
+                self.host_key_accepted = true;
+                Ok(true)
             }
-            known_hosts::CheckResult::Unknown => {
-                let policy = &self.config.transport.strict_host_key_checking;
+            HostKeyVerdict::AcceptAndPin => {
                 let remote_fp = known_hosts::fingerprint_sha256(&key_bytes);
-                if policy == "strict" {
-                    Err(anyhow!(
-                        "Unknown host {}:{} (fingerprint: {remote_fp})\n\
-                         Refusing under strict_host_key_checking=strict.",
-                        self.hostname,
-                        self.port
-                    ))
+                // accept-new (or off): print fingerprint and persist
+                if self.quiet {
+                    info!(
+                        "accepting new host key for {}:{} ({key_type}, {remote_fp})",
+                        self.hostname, self.port
+                    );
                 } else {
-                    // accept-new — print fingerprint and persist
-                    if self.quiet {
-                        info!(
-                            "accepting new host key for {}:{} ({key_type}, {remote_fp})",
-                            self.hostname, self.port
-                        );
-                    } else {
-                        eprintln!(
-                            "The authenticity of host '{}:{}' can't be established.\n\
-                             {key_type} key fingerprint is {}.\n\
-                             Host key added to known_hosts.",
-                            self.hostname, self.port, remote_fp
-                        );
-                    }
-                    known_hosts::append(&khf, &self.hostname, self.port, key_type, &key_bytes)?;
-                    self.host_key_accepted = true;
-                    Ok(true)
+                    eprintln!(
+                        "The authenticity of host '{}:{}' can't be established.\n\
+                         {key_type} key fingerprint is {}.\n\
+                         Host key added to known_hosts.",
+                        self.hostname, self.port, remote_fp
+                    );
                 }
+                known_hosts::append(&khf, &self.hostname, self.port, key_type, &key_bytes)?;
+                self.host_key_accepted = true;
+                Ok(true)
+            }
+            HostKeyVerdict::RefuseUnknown => {
+                let remote_fp = known_hosts::fingerprint_sha256(&key_bytes);
+                Err(anyhow!(
+                    "Unknown host {}:{} (fingerprint: {remote_fp})\n\
+                     Refusing under strict_host_key_checking=strict.",
+                    self.hostname,
+                    self.port
+                ))
+            }
+            HostKeyVerdict::RefuseMismatch => {
+                let (stored_fp, remote_fp) = match &check {
+                    known_hosts::CheckResult::Mismatch {
+                        stored_fp,
+                        remote_fp,
+                    } => (stored_fp.as_str(), remote_fp.as_str()),
+                    _ => ("?", "?"),
+                };
+                Err(anyhow!(
+                    "HOST KEY CHANGED for {}:{}\n\
+                     Stored  : {stored_fp}\n\
+                     Remote  : {remote_fp}\n\
+                     This could indicate a man-in-the-middle attack.\n\
+                     Remove the old key from known_hosts if this is expected.",
+                    self.hostname,
+                    self.port
+                ))
+            }
+            HostKeyVerdict::RefuseRevoked => {
+                let remote_fp = match &check {
+                    known_hosts::CheckResult::Revoked { remote_fp } => remote_fp.as_str(),
+                    _ => "?",
+                };
+                Err(anyhow!(
+                    "REVOKED host key presented by {}:{} (fingerprint: {remote_fp})\n\
+                     The key is marked @revoked in known_hosts; refusing to connect.",
+                    self.hostname,
+                    self.port
+                ))
             }
         }
     }
@@ -925,4 +973,81 @@ async fn proxy_tcp_channel(
     let mut tcp = stream;
     let mut ssh = channel.into_stream();
     let _ = copy_bidirectional(&mut tcp, &mut ssh).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{host_key_verdict, HostKeyVerdict};
+    use crate::config::HostKeyPolicy;
+    use crate::services::known_hosts::CheckResult;
+
+    fn mismatch() -> CheckResult {
+        CheckResult::Mismatch {
+            stored_fp: "SHA256:stored".into(),
+            remote_fp: "SHA256:remote".into(),
+        }
+    }
+
+    #[test]
+    fn known_good_key_is_accepted_under_every_policy() {
+        for policy in [
+            HostKeyPolicy::Strict,
+            HostKeyPolicy::AcceptNew,
+            HostKeyPolicy::Off,
+        ] {
+            assert_eq!(
+                host_key_verdict(policy, &CheckResult::KnownGood),
+                HostKeyVerdict::Accept,
+                "{policy:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_host_is_refused_only_under_strict() {
+        assert_eq!(
+            host_key_verdict(HostKeyPolicy::Strict, &CheckResult::Unknown),
+            HostKeyVerdict::RefuseUnknown
+        );
+        for policy in [HostKeyPolicy::AcceptNew, HostKeyPolicy::Off] {
+            assert_eq!(
+                host_key_verdict(policy, &CheckResult::Unknown),
+                HostKeyVerdict::AcceptAndPin,
+                "{policy:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn changed_key_is_refused_unless_checking_is_off() {
+        for policy in [HostKeyPolicy::Strict, HostKeyPolicy::AcceptNew] {
+            assert_eq!(
+                host_key_verdict(policy, &mismatch()),
+                HostKeyVerdict::RefuseMismatch,
+                "{policy:?}"
+            );
+        }
+        assert_eq!(
+            host_key_verdict(HostKeyPolicy::Off, &mismatch()),
+            HostKeyVerdict::Accept
+        );
+    }
+
+    #[test]
+    fn revoked_key_is_refused_under_every_policy() {
+        let revoked = CheckResult::Revoked {
+            remote_fp: "SHA256:revoked".into(),
+        };
+        for policy in [
+            HostKeyPolicy::Strict,
+            HostKeyPolicy::AcceptNew,
+            HostKeyPolicy::Off,
+        ] {
+            assert_eq!(
+                host_key_verdict(policy, &revoked),
+                HostKeyVerdict::RefuseRevoked,
+                "{policy:?}"
+            );
+        }
+    }
 }

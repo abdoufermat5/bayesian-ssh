@@ -268,6 +268,10 @@ pub enum Commands {
         /// Connection search algorithm: "bayesian" (usage-ranked) or "fuzzy" (substring)
         #[arg(long, value_parser = ["bayesian", "fuzzy"], value_name = "MODE")]
         search_mode: Option<String>,
+        /// Host-key verification: "strict", "accept-new" (pin first-seen) or "off"
+        /// ("yes"/"no" are accepted as aliases of strict/off)
+        #[arg(long, value_name = "POLICY")]
+        strict_host_key_checking: Option<String>,
         /// Enable or disable session output recording ("on" or "off")
         #[arg(long, value_parser = ["on", "off"], value_name = "STATE")]
         recording: Option<String>,

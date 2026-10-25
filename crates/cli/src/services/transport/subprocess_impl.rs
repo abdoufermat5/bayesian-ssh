@@ -4,7 +4,7 @@
 
 #![allow(dead_code)]
 
-use crate::config::AppConfig;
+use crate::config::{AppConfig, HostKeyPolicy};
 use crate::models::Connection;
 use async_trait::async_trait;
 use std::path::PathBuf;
@@ -47,14 +47,15 @@ fn proxy_quote(value: &str) -> String {
     shell_quote(value).replace('%', "%%")
 }
 
-/// Map the config policy (`strict` | `accept-new` | `off`) onto a value the
-/// OpenSSH client accepts. `strict` is not an OpenSSH keyword — passing it
-/// verbatim makes `ssh` abort with "unsupported option".
+/// Map the config policy (`strict` | `accept-new` | `off`, plus the OpenSSH
+/// `yes`/`no` aliases) onto a value the OpenSSH client accepts. `strict` is
+/// not an OpenSSH keyword — passing it verbatim makes `ssh` abort with
+/// "unsupported option". An unrecognised value fails closed to `yes`.
 pub(crate) fn ssh_strict_host_key_value(policy: &str) -> &'static str {
-    match policy {
-        "strict" | "yes" => "yes",
-        "off" | "no" => "no",
-        _ => "accept-new",
+    match HostKeyPolicy::from_config(policy) {
+        HostKeyPolicy::Strict => "yes",
+        HostKeyPolicy::AcceptNew => "accept-new",
+        HostKeyPolicy::Off => "no",
     }
 }
 
@@ -310,19 +311,22 @@ impl SubprocessTransport {
     ///
     /// When Kerberos + bastion are both active the bastion is an *interactive*
     /// bastion: we SSH into it and pass `target_user@target` as argument.
-    /// Without Kerberos the bastion is a classic jump host using ProxyCommand with forced TTY.
+    /// Without Kerberos the bastion is a classic jump host using ProxyCommand
+    /// with forced TTY.
     ///
-    /// The target's host-key policy is left to the user's ssh configuration
-    /// (OpenSSH default: interactive `ask` prompt in the terminal).
-    pub fn build_shell_argv(conn: &Connection) -> Vec<String> {
-        Self::build_shell_argv_with_shkc(conn, "accept-new", false)
+    /// `policy` is applied to the bastion hop. The target's host-key prompt is
+    /// left to the user's ssh configuration (OpenSSH default: interactive
+    /// `ask` prompt in the terminal); CLI paths that must enforce the policy
+    /// on the target call `build_shell_argv_with_shkc` with enforcement on.
+    pub fn build_shell_argv(conn: &Connection, policy: HostKeyPolicy) -> Vec<String> {
+        Self::build_shell_argv_with_shkc(conn, policy, false)
     }
 
     /// `enforce_target_shkc`: also pass the policy for the target connection
     /// (CLI paths honour `transport.strict_host_key_checking`).
     fn build_shell_argv_with_shkc(
         conn: &Connection,
-        shkc: &str,
+        policy: HostKeyPolicy,
         enforce_target_shkc: bool,
     ) -> Vec<String> {
         let mut argv: Vec<String> = vec!["ssh".into()];
@@ -342,7 +346,7 @@ impl SubprocessTransport {
             argv.push("-o".into());
             argv.push(format!(
                 "StrictHostKeyChecking={}",
-                ssh_strict_host_key_value(shkc)
+                ssh_strict_host_key_value(policy.as_str())
             ));
         }
 
@@ -360,7 +364,7 @@ impl SubprocessTransport {
                 argv.push("-o".into());
                 argv.push(format!(
                     "ProxyCommand={}",
-                    jump_proxy_command(conn, " -tt -o RequestTTY=force", shkc)
+                    jump_proxy_command(conn, " -tt -o RequestTTY=force", policy.as_str())
                 ));
                 argv.push("-p".into());
                 argv.push(conn.port.to_string());
@@ -438,11 +442,8 @@ impl SubprocessTransport {
         let marker_start = format!("{marker}_START");
         let marker_end = format!("{marker}_END");
 
-        let mut argv = Self::build_shell_argv_with_shkc(
-            conn,
-            &self.config.transport.strict_host_key_checking,
-            true,
-        );
+        let mut argv =
+            Self::build_shell_argv_with_shkc(conn, self.config.transport.host_key_policy(), true);
         if let Some(pos) = argv.iter().position(|a| a == "-t" || a == "-tt") {
             argv[pos] = "-tt".into();
         }
@@ -804,11 +805,8 @@ impl SshTransport for SubprocessTransport {
         conn: &Connection,
         recorder: Option<crate::services::recording::SharedRecorder>,
     ) -> Result<i32, TransportError> {
-        let argv = Self::build_shell_argv_with_shkc(
-            conn,
-            &self.config.transport.strict_host_key_checking,
-            true,
-        );
+        let argv =
+            Self::build_shell_argv_with_shkc(conn, self.config.transport.host_key_policy(), true);
         let (cmd_name, args) = argv
             .split_first()
             .ok_or_else(|| TransportError::permanent(anyhow::anyhow!("empty argv")))?;
@@ -1074,8 +1072,20 @@ mod tests {
     }
 
     #[test]
+    fn ssh_shkc_value_accepts_ssh_aliases_and_fails_closed() {
+        assert_eq!(ssh_strict_host_key_value("strict"), "yes");
+        assert_eq!(ssh_strict_host_key_value("YES"), "yes");
+        assert_eq!(ssh_strict_host_key_value("accept-new"), "accept-new");
+        assert_eq!(ssh_strict_host_key_value("off"), "no");
+        assert_eq!(ssh_strict_host_key_value("no"), "no");
+        // A typo must not degrade to accept-new (which trusts an unknown host).
+        assert_eq!(ssh_strict_host_key_value("accept_new"), "yes");
+    }
+
+    #[test]
     fn shell_argv_simple() {
-        let argv = SubprocessTransport::build_shell_argv(&c(false, None, None));
+        let argv =
+            SubprocessTransport::build_shell_argv(&c(false, None, None), HostKeyPolicy::AcceptNew);
         assert_eq!(argv[0], "ssh");
         assert!(argv.contains(&"-p".to_string()));
         assert!(argv.contains(&"2222".to_string()));
@@ -1084,9 +1094,51 @@ mod tests {
 
     #[test]
     fn shell_argv_kerberos_adds_flags() {
-        let argv = SubprocessTransport::build_shell_argv(&c(true, None, None));
+        let argv =
+            SubprocessTransport::build_shell_argv(&c(true, None, None), HostKeyPolicy::AcceptNew);
         assert!(argv.contains(&"-tt".to_string()));
         assert!(argv.contains(&"-K".to_string()));
+    }
+
+    /// The bastion hop is the one bssh itself verifies, so it must follow the
+    /// configured policy instead of a hard-coded `accept-new`.
+    #[test]
+    fn shell_argv_bastion_hop_honours_the_configured_policy() {
+        let conn = c(false, Some("b.example"), None);
+        let expected = [
+            (HostKeyPolicy::Strict, "StrictHostKeyChecking=yes"),
+            (HostKeyPolicy::AcceptNew, "StrictHostKeyChecking=accept-new"),
+            (HostKeyPolicy::Off, "StrictHostKeyChecking=no"),
+        ];
+        for (policy, option) in expected {
+            let argv = SubprocessTransport::build_shell_argv(&conn, policy);
+            let proxy = argv
+                .iter()
+                .find(|a| a.starts_with("ProxyCommand="))
+                .expect("ProxyCommand present");
+            assert!(proxy.contains(option), "{policy:?}: {proxy}");
+            // The target prompt is still the user's ssh's (documented behaviour).
+            assert!(
+                !argv.iter().any(|a| a == option),
+                "{policy:?} leaks to target"
+            );
+        }
+    }
+
+    #[test]
+    fn shell_argv_direct_connection_leaves_target_prompt_to_ssh() {
+        // No bastion: nothing is enforced, OpenSSH's interactive `ask` applies.
+        for policy in [
+            HostKeyPolicy::Strict,
+            HostKeyPolicy::AcceptNew,
+            HostKeyPolicy::Off,
+        ] {
+            let argv = SubprocessTransport::build_shell_argv(&c(false, None, None), policy);
+            assert!(
+                !argv.iter().any(|a| a.starts_with("StrictHostKeyChecking=")),
+                "{policy:?}: {argv:?}"
+            );
+        }
     }
 
     #[test]
@@ -1096,7 +1148,7 @@ mod tests {
         let argv = SubprocessTransport::build_exec_argv(&conn, "uptime", "accept-new");
         let dd = argv.iter().position(|a| a == "--").expect("-- present");
         assert!(argv[dd + 1].starts_with("-oProxyCommand"));
-        let shell = SubprocessTransport::build_shell_argv(&conn);
+        let shell = SubprocessTransport::build_shell_argv(&conn, HostKeyPolicy::AcceptNew);
         let dd = shell.iter().position(|a| a == "--").expect("-- present");
         assert_eq!(dd, shell.len() - 2);
     }

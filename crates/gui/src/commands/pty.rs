@@ -216,9 +216,12 @@ pub fn spawn_pty(
     updated_conn.update_last_used();
     let _ = db.touch_connection(&updated_conn);
 
-    // Build the SSH command arguments
-    let argv =
-        bayesian_ssh::services::transport::SubprocessTransport::build_shell_argv(&connection);
+    // Build the SSH command arguments. The configured host-key policy covers
+    // the bastion hop; the target's prompt stays the user's ssh's.
+    let argv = bayesian_ssh::services::transport::SubprocessTransport::build_shell_argv(
+        &connection,
+        config.transport.host_key_policy(),
+    );
     let (cmd_name, args) = argv
         .split_first()
         .ok_or_else(|| "SSH command generation failed".to_string())?;
