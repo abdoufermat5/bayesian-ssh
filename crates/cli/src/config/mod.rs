@@ -30,15 +30,80 @@ impl Default for AuthConfig {
 #[serde(default)]
 pub struct TransportConfig {
     pub force_subprocess: bool,
-    pub strict_host_key_checking: String, // "strict" | "accept-new" | "off"
+    /// `strict` | `accept-new` | `off`; `yes`/`no` are accepted as aliases of
+    /// `strict`/`off`. Parsed by [`HostKeyPolicy`], never matched as a raw string.
+    pub strict_host_key_checking: String,
 }
 
 impl Default for TransportConfig {
     fn default() -> Self {
         Self {
             force_subprocess: false,
-            strict_host_key_checking: "accept-new".into(),
+            strict_host_key_checking: HostKeyPolicy::AcceptNew.as_str().into(),
         }
+    }
+}
+
+impl TransportConfig {
+    /// The host-key policy this config asks for. An unrecognised value fails
+    /// closed to [`HostKeyPolicy::Strict`] — never to `accept-new`.
+    pub fn host_key_policy(&self) -> HostKeyPolicy {
+        HostKeyPolicy::from_config(&self.strict_host_key_checking)
+    }
+
+    /// Replace an unrecognised policy with `strict` and return the offending
+    /// value so the caller can warn. Recognised aliases (`yes`/`no`) are left
+    /// alone: the value round-trips through serde untouched.
+    fn sanitise_host_key_policy(&mut self) -> Option<String> {
+        if HostKeyPolicy::parse(&self.strict_host_key_checking).is_some() {
+            return None;
+        }
+        Some(std::mem::replace(
+            &mut self.strict_host_key_checking,
+            HostKeyPolicy::Strict.as_str().to_string(),
+        ))
+    }
+}
+
+/// Host-key verification policy (`transport.strict_host_key_checking`).
+///
+/// A single parse feeds both transports and the audit checks, so `yes`/`no`
+/// (OpenSSH's own spelling) cannot mean different things on different paths.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostKeyPolicy {
+    /// Refuse hosts that are unknown or whose key changed.
+    Strict,
+    /// Refuse a changed key; trust a first-seen host key and pin it (TOFU).
+    AcceptNew,
+    /// Accept any host key, including a changed one.
+    Off,
+}
+
+impl HostKeyPolicy {
+    /// Canonical config value.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Strict => "strict",
+            Self::AcceptNew => "accept-new",
+            Self::Off => "off",
+        }
+    }
+
+    /// Parse a configured value. Accepts the documented values plus the
+    /// OpenSSH `yes`/`no` aliases, case-insensitively; `None` means the value
+    /// is not a policy at all.
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.to_ascii_lowercase().as_str() {
+            "strict" | "yes" => Some(Self::Strict),
+            "accept-new" => Some(Self::AcceptNew),
+            "off" | "no" => Some(Self::Off),
+            _ => None,
+        }
+    }
+
+    /// Parse a configured value, failing closed to [`Self::Strict`].
+    pub fn from_config(value: &str) -> Self {
+        Self::parse(value).unwrap_or(Self::Strict)
     }
 }
 
@@ -267,6 +332,19 @@ impl AppConfig {
             cfg
         };
 
+        // A hand-edited policy the parser does not recognise must not weaken
+        // verification: fall back to `strict` (not `accept-new`) and say so.
+        // Best effort write, like the log-level migration: an unwritable
+        // config dir must not break every command.
+        if let Some(bad) = config.transport.sanitise_host_key_policy() {
+            eprintln!(
+                "[warn] unknown transport.strict_host_key_checking '{}'; \
+                 using 'strict' (valid: strict, accept-new, off)",
+                bad.escape_debug()
+            );
+            let _ = config.save();
+        }
+
         // Ensure database path is absolute and uses the environment dir.
         // `starts_with` is purely lexical, so also reject `..` components
         // (`<env_dir>/../../elsewhere.db` would otherwise pass).
@@ -378,6 +456,10 @@ impl AppConfig {
             self.prediction.capture_cwd = capture_cwd;
         }
 
+        if let Some(policy) = updates.strict_host_key_checking {
+            self.transport.strict_host_key_checking = policy.as_str().to_string();
+        }
+
         self.save()
     }
 }
@@ -393,6 +475,9 @@ pub struct AppConfigUpdates {
     pub auto_save_history: Option<bool>,
     pub max_history_size: Option<usize>,
     pub search_mode: Option<String>,
+    /// Host-key policy to store; the caller must have parsed the value, so an
+    /// unknown setting is rejected before it can reach the config file.
+    pub strict_host_key_checking: Option<HostKeyPolicy>,
     pub recording_enabled: Option<bool>,
     pub recording_tags: Option<Vec<String>>,
     pub prediction_enabled: Option<bool>,
@@ -449,7 +534,7 @@ pub fn atomic_write(path: &std::path::Path, content: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::AppConfig;
+    use super::{AppConfig, HostKeyPolicy, TransportConfig};
 
     #[test]
     fn env_names_accept_ordinary_names() {
@@ -481,5 +566,69 @@ mod tests {
         v.as_object_mut().unwrap().remove("log_level_migrated");
         let cfg: AppConfig = serde_json::from_value(v).unwrap();
         assert!(!cfg.log_level_migrated);
+    }
+
+    #[test]
+    fn host_key_policy_parses_documented_values_and_ssh_aliases() {
+        for (value, expected) in [
+            ("strict", HostKeyPolicy::Strict),
+            ("STRICT", HostKeyPolicy::Strict),
+            ("Yes", HostKeyPolicy::Strict),
+            ("accept-new", HostKeyPolicy::AcceptNew),
+            ("Accept-New", HostKeyPolicy::AcceptNew),
+            ("off", HostKeyPolicy::Off),
+            ("NO", HostKeyPolicy::Off),
+        ] {
+            assert_eq!(HostKeyPolicy::parse(value), Some(expected), "{value}");
+        }
+        for value in ["", " accept-new", "accept_new", "ask", "maybe", "0"] {
+            assert_eq!(HostKeyPolicy::parse(value), None, "{value:?}");
+        }
+    }
+
+    #[test]
+    fn canonical_host_key_policy_values_round_trip() {
+        for policy in [
+            HostKeyPolicy::Strict,
+            HostKeyPolicy::AcceptNew,
+            HostKeyPolicy::Off,
+        ] {
+            assert_eq!(HostKeyPolicy::parse(policy.as_str()), Some(policy));
+        }
+    }
+
+    #[test]
+    fn unknown_host_key_policy_fails_closed_to_strict() {
+        assert_eq!(HostKeyPolicy::from_config("bogus"), HostKeyPolicy::Strict);
+        // The *default* is accept-new; a typo must not become the default.
+        assert_eq!(
+            HostKeyPolicy::from_config(HostKeyPolicy::AcceptNew.as_str()),
+            HostKeyPolicy::AcceptNew
+        );
+    }
+
+    #[test]
+    fn unknown_policy_is_replaced_by_strict_on_load() {
+        let mut transport = TransportConfig {
+            force_subprocess: false,
+            strict_host_key_checking: "strict-ish".into(),
+        };
+        assert_eq!(
+            transport.sanitise_host_key_policy().as_deref(),
+            Some("strict-ish")
+        );
+        assert_eq!(transport.strict_host_key_checking, "strict");
+        assert_eq!(transport.host_key_policy(), HostKeyPolicy::Strict);
+    }
+
+    #[test]
+    fn recognised_aliases_are_kept_untouched() {
+        let mut transport = TransportConfig {
+            force_subprocess: false,
+            strict_host_key_checking: "yes".into(),
+        };
+        assert_eq!(transport.sanitise_host_key_policy(), None);
+        assert_eq!(transport.strict_host_key_checking, "yes");
+        assert_eq!(transport.host_key_policy(), HostKeyPolicy::Strict);
     }
 }
