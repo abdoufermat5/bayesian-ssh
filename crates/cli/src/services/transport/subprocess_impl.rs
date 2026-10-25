@@ -334,8 +334,13 @@ impl SubprocessTransport {
         argv.push("-tt".into());
         argv.push("-o".into());
         argv.push("RequestTTY=force".into());
-        if conn.use_kerberos {
+        // `-A` hands the local agent to the remote host: only when this
+        // connection opted in. `-K` (Kerberos TGT delegation) follows
+        // `use_kerberos` on its own.
+        if conn.forward_agent {
             argv.push("-A".into());
+        }
+        if conn.use_kerberos {
             argv.push("-K".into());
         }
         if let Some(key) = &conn.key_path {
@@ -354,10 +359,13 @@ impl SubprocessTransport {
             let bu = conn.bastion_user.as_deref().unwrap_or(&conn.user);
             if conn.use_kerberos {
                 // Interactive bastion: connect to bastion, pass target as argument.
-                argv.push("-p".into());
-                argv.push("22".into());
+                let (bastion_host, bastion_port) = crate::models::split_bastion(bastion);
+                if let Some(port) = bastion_port {
+                    argv.push("-p".into());
+                    argv.push(port.to_string());
+                }
                 argv.push("--".into());
-                argv.push(format!("{bu}@{bastion}"));
+                argv.push(format!("{bu}@{bastion_host}"));
                 argv.push(format!("{}@{}", conn.user, conn.host));
             } else {
                 // ProxyCommand with forced TTY allocation on the bastion connection
@@ -1098,6 +1106,61 @@ mod tests {
             SubprocessTransport::build_shell_argv(&c(true, None, None), HostKeyPolicy::AcceptNew);
         assert!(argv.contains(&"-tt".to_string()));
         assert!(argv.contains(&"-K".to_string()));
+        // Agent forwarding is a per-connection opt-in, not a Kerberos side effect.
+        assert!(!argv.contains(&"-A".to_string()));
+    }
+
+    #[test]
+    fn shell_argv_forwards_the_agent_only_when_opted_in() {
+        let mut conn = c(true, None, None);
+        conn.forward_agent = true;
+        let argv = SubprocessTransport::build_shell_argv(&conn, HostKeyPolicy::AcceptNew);
+        let a = argv.iter().position(|x| x == "-A");
+        let k = argv.iter().position(|x| x == "-K");
+        assert!(a.is_some() && k.is_some() && a < Some(k.unwrap()));
+
+        // Without Kerberos, -A alone still needs the opt-in.
+        let plain =
+            SubprocessTransport::build_shell_argv(&c(false, None, None), HostKeyPolicy::AcceptNew);
+        assert!(!plain.contains(&"-A".to_string()));
+
+        let mut keyed = c(false, None, None);
+        keyed.forward_agent = true;
+        let argv = SubprocessTransport::build_shell_argv(&keyed, HostKeyPolicy::AcceptNew);
+        assert!(argv.contains(&"-A".to_string()));
+        assert!(!argv.contains(&"-K".to_string()));
+    }
+
+    #[test]
+    fn exec_argv_never_forwards_the_agent() {
+        for forward_agent in [false, true] {
+            let mut conn = c(true, None, None);
+            conn.forward_agent = forward_agent;
+            let argv = SubprocessTransport::build_exec_argv(&conn, "uptime", "accept-new");
+            assert!(!argv.contains(&"-A".to_string()), "{argv:?}");
+            assert!(argv.contains(&"-K".to_string()));
+        }
+    }
+
+    #[test]
+    fn interactive_bastion_uses_the_stored_port() {
+        let plain = SubprocessTransport::build_shell_argv(
+            &c(true, Some("b.example"), None),
+            HostKeyPolicy::AcceptNew,
+        );
+        assert!(!plain.contains(&"-p".to_string()), "{plain:?}");
+        assert!(plain.contains(&"alice@b.example".to_string()));
+
+        let ported = SubprocessTransport::build_shell_argv(
+            &c(true, Some("b.example:2222"), None),
+            HostKeyPolicy::AcceptNew,
+        );
+        let p = ported.iter().position(|a| a == "-p").expect("-p present");
+        assert_eq!(ported[p + 1], "2222");
+        assert!(
+            ported.contains(&"alice@b.example".to_string()),
+            "{ported:?}"
+        );
     }
 
     /// The bastion hop is the one bssh itself verifies, so it must follow the

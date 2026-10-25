@@ -332,6 +332,8 @@ fn read_mode_uses_the_agent_principal_when_the_ca_is_trusted() {
     let facts = |jail: JailKind, certificates: bool| HostFacts {
         name: "web-1".into(),
         tags: vec![],
+        tags_trusted: true,
+        tag_source: None,
         enforcement: Enforcement {
             jail,
             certificates,

@@ -117,6 +117,12 @@ pub struct AiConfig {
     pub record_output: bool,
     /// Approval requests with no answer expire as denied after this many seconds.
     pub approval_timeout_secs: u64,
+    /// Inventory source names (`bssh source list`) whose host tags may relax the AI policy:
+    /// scope by tag and `approval.in-client`. Tags on a connection added by hand are always
+    /// trusted; tags from a Teams vault or a cloud inventory are not, because anyone who can
+    /// edit that source can add or remove them. Every tag still counts toward
+    /// `approval.two-person`, which can only make a decision stricter.
+    pub trusted_tag_sources: Vec<String>,
 }
 
 impl Default for AiConfig {
@@ -125,6 +131,7 @@ impl Default for AiConfig {
             policies: Default::default(),
             record_output: true,
             approval_timeout_secs: 300,
+            trusted_tag_sources: Vec::new(),
         }
     }
 }
@@ -558,6 +565,30 @@ mod tests {
         let cfg = AppConfig::default();
         assert_eq!(cfg.log_level, "warn");
         assert!(cfg.log_level_migrated);
+    }
+
+    #[test]
+    fn ai_trusted_tag_sources_default_empty_and_round_trip() {
+        let mut cfg = AppConfig::default();
+        assert!(cfg.ai.trusted_tag_sources.is_empty());
+
+        cfg.ai.trusted_tag_sources = vec!["aws-prod".into(), "ansible".into()];
+        let v = serde_json::to_value(&cfg).unwrap();
+        assert_eq!(
+            v["ai"]["trusted_tag_sources"],
+            serde_json::json!(["aws-prod", "ansible"])
+        );
+        let back: AppConfig = serde_json::from_value(v).unwrap();
+        assert_eq!(back.ai.trusted_tag_sources, cfg.ai.trusted_tag_sources);
+
+        // A config written before the setting existed trusts no source's tags.
+        let mut v = serde_json::to_value(AppConfig::default()).unwrap();
+        v["ai"]
+            .as_object_mut()
+            .unwrap()
+            .remove("trusted_tag_sources");
+        let old: AppConfig = serde_json::from_value(v).unwrap();
+        assert!(old.ai.trusted_tag_sources.is_empty());
     }
 
     #[test]

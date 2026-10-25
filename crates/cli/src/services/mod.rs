@@ -6,6 +6,7 @@ pub mod crypto;
 pub mod inventory;
 pub mod kerberos;
 pub mod known_hosts;
+pub mod pending;
 pub mod pty;
 pub mod recording;
 pub mod security;

@@ -74,6 +74,7 @@ pub async fn execute(
                     conn.bastion_user,
                     conn.key_path,
                     conn.tags,
+                    conn.forward_agent,
                 )
                 .await
             {
@@ -152,6 +153,8 @@ async fn import_host(
             bastion_user,
             host.identity_file.clone(),
             vec!["imported".to_string()],
+            // Agent forwarding is a local, per-connection decision.
+            false,
         )
         .await?;
 

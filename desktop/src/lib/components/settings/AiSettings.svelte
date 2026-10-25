@@ -128,6 +128,23 @@
             </div>
             <div class="setting-control">{@render values(p.approval.two_person)}</div>
           </div>
+          <div class="setting-row">
+            <div class="setting-row-main">
+              <span class="setting-title">Two approvals on hosts</span>
+              <span class="setting-meta">Connection-name globs that need a second person, whatever their tags say.</span>
+            </div>
+            <div class="setting-control">{@render values(p.approval.two_person_hosts)}</div>
+          </div>
+        </div>
+
+        <div class="settings-group mt-3">
+          <div class="setting-row">
+            <div class="setting-row-main">
+              <span class="setting-title">Trusted tag sources</span>
+              <span class="setting-meta">Inventory sources whose tags may widen scope or allow in-client approval. Tags from any other source can only tighten the policy.</span>
+            </div>
+            <div class="setting-control">{@render values(view.trusted_tag_sources)}</div>
+          </div>
         </div>
 
         <div class="settings-group mt-3">

@@ -15,6 +15,7 @@ pub async fn execute(
     bastion_user: Option<String>,
     key: Option<String>,
     tags: Vec<String>,
+    forward_agent: bool,
     config: AppConfig,
 ) -> Result<()> {
     info!("Adding new connection: {} -> {}", name, host);
@@ -33,6 +34,7 @@ pub async fn execute(
             bastion_user,
             key,
             tags,
+            forward_agent,
         )
         .await?;
 

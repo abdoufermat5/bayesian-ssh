@@ -36,8 +36,12 @@ fn build_ls_argv(conn: &Connection, path: &str, shkc: &str) -> (Vec<String>, boo
 
     let mut argv: Vec<String> = vec!["ssh".into()];
 
-    if conn.use_kerberos {
+    if conn.forward_agent {
+        // `-A` hands the local agent to the remote host; opt-in per
+        // connection, and reset by a team sync that changes the route.
         argv.push("-A".into());
+    }
+    if conn.use_kerberos {
         argv.push("-K".into());
     }
     if let Some(ref key_path) = conn.key_path {
@@ -56,12 +60,16 @@ fn build_ls_argv(conn: &Connection, path: &str, shkc: &str) -> (Vec<String>, boo
         let bu = conn.bastion_user.as_deref().unwrap_or(&conn.user);
         if conn.use_kerberos {
             // Interactive bastion: SSH into the bastion and pass target as argument.
-            // No remote command in argv — we send it via stdin.
+            // No remote command in argv — we send it via stdin. The bastion
+            // port is only pinned when the stored value carries one.
+            let (bastion_host, bastion_port) = crate::models::split_bastion(bastion);
             argv.push("-tt".into());
-            argv.push("-p".into());
-            argv.push("22".into());
+            if let Some(port) = bastion_port {
+                argv.push("-p".into());
+                argv.push(port.to_string());
+            }
             argv.push("--".into());
-            argv.push(format!("{bu}@{bastion}"));
+            argv.push(format!("{bu}@{bastion_host}"));
             argv.push(format!("{}@{}", conn.user, conn.host));
         } else {
             // Classic jump host via ProxyCommand (shell-quoted: the value is
@@ -388,6 +396,11 @@ pub fn list_remote_directory(
         .get_connection(connection_name)
         .map_err(|e| format!("Database error: {e}"))?
         .ok_or_else(|| format!("Connection '{connection_name}' not found."))?;
+    if conn.pending_change.is_some() {
+        // Same refusal as the terminal: no connection to a redirected host
+        // until the team-sync change is confirmed.
+        return Err(crate::services::pending::refusal(&conn));
+    }
 
     let path = if remote_path.trim().is_empty() {
         ".".to_string()
@@ -413,9 +426,52 @@ pub fn list_remote_directory(
 
 #[cfg(test)]
 mod tests {
-    use super::parse_sftp_output;
+    use super::{build_ls_argv, parse_sftp_output};
+    use crate::models::Connection;
     use std::os::unix::process::ExitStatusExt;
     use std::process::{ExitStatus, Output};
+
+    fn conn(kerberos: bool, bastion: Option<&str>) -> Connection {
+        Connection::new(
+            "web".into(),
+            "web.internal".into(),
+            "alice".into(),
+            2222,
+            bastion.map(Into::into),
+            Some("jump".into()),
+            kerberos,
+            None,
+        )
+    }
+
+    #[test]
+    fn listing_forwards_the_agent_only_when_opted_in() {
+        let (argv, _) = build_ls_argv(&conn(true, None), "/", "accept-new");
+        assert!(argv.contains(&"-K".to_string()));
+        assert!(!argv.contains(&"-A".to_string()));
+
+        let mut forwarded = conn(true, None);
+        forwarded.forward_agent = true;
+        let (argv, _) = build_ls_argv(&forwarded, "/", "accept-new");
+        assert!(argv.contains(&"-A".to_string()) && argv.contains(&"-K".to_string()));
+    }
+
+    #[test]
+    fn listing_uses_the_bastion_port_only_when_stored() {
+        let (argv, interactive) =
+            build_ls_argv(&conn(true, Some("bastion.example")), "/", "accept-new");
+        assert!(interactive);
+        assert!(!argv.contains(&"22".to_string()), "{argv:?}");
+        assert!(argv.contains(&"jump@bastion.example".to_string()));
+
+        let (argv, _) = build_ls_argv(&conn(true, Some("bastion.example:2222")), "/", "accept-new");
+        let port = argv.iter().position(|a| a == "-p").expect("-p present");
+        assert_eq!(argv[port + 1], "2222");
+        assert!(
+            argv.contains(&"jump@bastion.example".to_string()),
+            "{argv:?}"
+        );
+    }
 
     fn ok_output(stdout: &str) -> Output {
         Output {

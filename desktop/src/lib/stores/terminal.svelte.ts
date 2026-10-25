@@ -63,6 +63,36 @@ export interface ConnectFailure {
   detail: string;
 }
 
+/** Prefix spawn_pty uses for a team-sync route change waiting for confirmation. */
+const PENDING_CHANGE_PREFIX = "connection-change-pending:";
+
+/** A team-sync route change the desktop must show before connecting. */
+interface PendingChangeError {
+  name: string;
+  detected_at: string;
+  changes: string[];
+}
+
+export interface PendingChangePrompt {
+  tabId: string;
+  connection: Connection;
+  changes: string[];
+  detectedAt: string;
+}
+
+/** Route change waiting for the user; renders `ConnectionChangeModal`. */
+let pendingChange = $state<PendingChangePrompt | null>(null);
+
+function parsePendingChangeError(e: unknown): PendingChangeError | null {
+  const message = String(e);
+  if (!message.startsWith(PENDING_CHANGE_PREFIX)) return null;
+  try {
+    return JSON.parse(message.slice(PENDING_CHANGE_PREFIX.length)) as PendingChangeError;
+  } catch {
+    return null;
+  }
+}
+
 /** ssh exits with 255 for its own errors; one that ends this soon never connected. */
 const SSH_ERROR_EXIT = 255;
 const CONNECT_WINDOW_MS = 30_000;
@@ -882,6 +912,23 @@ async function startSession(tab: TabState, conn: Connection): Promise<void> {
     await syncActiveSessionCount();
   } catch (e: unknown) {
     if (!findTab(tab.id)) return;
+    // A team sync moved this host. Never connect until the user has seen
+    // the old and the new route and accepted it.
+    const pending = parsePendingChangeError(e);
+    if (pending) {
+      pendingChange = {
+        tabId: tab.id,
+        connection: conn,
+        changes: pending.changes,
+        detectedAt: pending.detected_at,
+      };
+      failConnect(tab, {
+        title: `"${conn.name}" was changed by a team sync`,
+        hint: "Confirm the new host, bastion and credentials before connecting.",
+        detail: pending.changes.join("\n"),
+      });
+      return;
+    }
     const message = String(e);
     failConnect(tab, {
       title: `Couldn't start the session to ${conn.name}`,
@@ -889,6 +936,26 @@ async function startSession(tab: TabState, conn: Connection): Promise<void> {
       detail: message,
     });
   }
+}
+
+/** Accept the pending team-sync change and retry the blocked connection. */
+export async function acceptPendingChange(): Promise<void> {
+  const prompt = pendingChange;
+  if (!prompt) return;
+  pendingChange = null;
+  try {
+    await invoke("confirm_connection_change", { idOrName: prompt.connection.name });
+  } catch (e: unknown) {
+    notify(`Failed to confirm the change: ${String(e)}`, "error");
+    return;
+  }
+  const tab = findTab(prompt.tabId);
+  if (tab) await startSession(tab, prompt.connection);
+}
+
+/** Keep the change unconfirmed: the tab stays in its error state. */
+export function dismissPendingChange(): void {
+  pendingChange = null;
 }
 
 /**
@@ -1176,6 +1243,9 @@ export function getTerminalState() {
     },
     get count() {
       return tabs.length;
+    },
+    get pendingChange() {
+      return pendingChange;
     },
     get detachedCount() {
       return detachedSessions.length;

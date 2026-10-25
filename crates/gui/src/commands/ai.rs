@@ -94,6 +94,7 @@ pub struct AiSettingsView {
     pub policies: BTreeMap<String, Policy>,
     pub record_output: bool,
     pub approval_timeout_secs: u64,
+    pub trusted_tag_sources: Vec<String>,
 }
 
 // ---------------------------------------------------------------- sink
@@ -855,6 +856,7 @@ pub fn ai_settings() -> Result<AiSettingsView, String> {
         policies: config.ai.policies,
         record_output: config.ai.record_output,
         approval_timeout_secs: config.ai.approval_timeout_secs,
+        trusted_tag_sources: config.ai.trusted_tag_sources,
     })
 }
 

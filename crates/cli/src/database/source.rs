@@ -153,7 +153,7 @@ impl Database {
     pub fn connections_for_source(&self, id: Uuid) -> Result<Vec<Connection>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path,
-                    created_at, last_used, source_id, external_id, stale_since
+                    created_at, last_used, source_id, external_id, stale_since, forward_agent, pending_change
              FROM connections WHERE source_id = ?1 ORDER BY name ASC",
         )?;
         let rows = stmt.query_map(params![id.to_string()], |row| {

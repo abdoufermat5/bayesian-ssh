@@ -139,6 +139,10 @@ fn generate_ssh_config(connections: &[Connection]) -> String {
             config.push_str("    GSSAPIDelegateCredentials yes\n");
         }
 
+        if conn.forward_agent {
+            config.push_str("    ForwardAgent yes\n");
+        }
+
         config.push('\n');
     }
 
@@ -153,4 +157,34 @@ fn expand_tilde(path: &str) -> String {
         }
     }
     path.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::generate_ssh_config;
+    use crate::models::Connection;
+
+    fn conn(kerberos: bool, forward_agent: bool) -> Connection {
+        let mut conn = Connection::new(
+            "web".into(),
+            "web.internal".into(),
+            "alice".into(),
+            22,
+            None,
+            None,
+            kerberos,
+            None,
+        );
+        conn.forward_agent = forward_agent;
+        conn
+    }
+
+    #[test]
+    fn ssh_config_exports_forward_agent_only_when_it_is_enabled() {
+        assert!(generate_ssh_config(&[conn(true, false)]).contains("GSSAPIAuthentication yes"));
+        assert!(!generate_ssh_config(&[conn(true, false)]).contains("ForwardAgent"));
+
+        let config = generate_ssh_config(&[conn(true, true)]);
+        assert!(config.contains("    ForwardAgent yes\n"), "{config}");
+    }
 }

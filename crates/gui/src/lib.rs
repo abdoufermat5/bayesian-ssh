@@ -73,6 +73,7 @@ pub fn run() {
             add_connection,
             edit_connection,
             remove_connection,
+            commands::confirm_connection_change,
             get_stats,
             get_history,
             pick_key_file,

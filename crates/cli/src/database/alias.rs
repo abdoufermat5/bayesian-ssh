@@ -71,7 +71,7 @@ impl Database {
         let mut stmt = self.conn.prepare(
             "SELECT c.id, c.name, c.host, c.user, c.port, c.bastion, c.bastion_user,
                     c.use_kerberos, c.key_path, c.created_at, c.last_used,
-                    c.source_id, c.external_id, c.stale_since
+                    c.source_id, c.external_id, c.stale_since, c.forward_agent, c.pending_change
              FROM connections c
              JOIN aliases a ON c.id = a.connection_id
              WHERE a.alias = ?",

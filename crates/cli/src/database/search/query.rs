@@ -129,7 +129,7 @@ impl Database {
     ) -> Result<Vec<Connection>> {
         let column = field.column();
         let sql = format!(
-            "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used, source_id, external_id, stale_since
+            "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used, source_id, external_id, stale_since, forward_agent, pending_change
              FROM connections
              WHERE {column} LIKE ? ESCAPE '\\' COLLATE NOCASE
              ORDER BY last_used DESC NULLS LAST, name ASC
@@ -152,7 +152,7 @@ impl Database {
     }
 
     fn enhanced_fuzzy_search(&self, query: &str, limit: usize) -> Result<Vec<Connection>> {
-        let sql = "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used, source_id, external_id, stale_since
+        let sql = "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used, source_id, external_id, stale_since, forward_agent, pending_change
                    FROM connections
                    ORDER BY last_used DESC NULLS LAST, name ASC";
         let mut stmt = self.conn.prepare(sql)?;
@@ -176,7 +176,7 @@ impl Database {
     pub(super) fn search_in_tags(&self, query: &str, limit: usize) -> Result<Vec<Connection>> {
         let sql = "SELECT c.id, c.name, c.host, c.user, c.port, c.bastion, c.bastion_user,
                           c.use_kerberos, c.key_path, c.created_at, c.last_used,
-                          c.source_id, c.external_id, c.stale_since
+                          c.source_id, c.external_id, c.stale_since, c.forward_agent, c.pending_change
                    FROM connections c
                    JOIN connection_tags ct ON c.id = ct.connection_id
                    WHERE ct.tag = ?
