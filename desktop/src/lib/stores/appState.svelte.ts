@@ -95,6 +95,7 @@ export class AppStateStore {
   modalUser = $state("");
   modalPort = $state(22);
   modalUseKerberos = $state(false);
+  modalForwardAgent = $state(false);
   modalBastion = $state("");
   modalBastionUser = $state("");
   modalKeyPath = $state("");
@@ -627,6 +628,7 @@ export class AppStateStore {
         user: conn.user,
         port: conn.port,
         kerberos: conn.use_kerberos,
+        forwardAgent: conn.forward_agent,
         bastion: conn.bastion || null,
         bastionUser: conn.bastion_user || null,
         keyPath: conn.key_path || null,
@@ -749,6 +751,7 @@ export class AppStateStore {
     this.modalUser = "";
     this.modalPort = 22;
     this.modalUseKerberos = false;
+    this.modalForwardAgent = false;
     this.modalBastion = "";
     this.modalBastionUser = "";
     this.modalKeyPath = "";
@@ -764,6 +767,7 @@ export class AppStateStore {
     this.modalUser = conn.user;
     this.modalPort = conn.port;
     this.modalUseKerberos = conn.use_kerberos;
+    this.modalForwardAgent = conn.forward_agent;
     this.modalBastion = conn.bastion || "";
     this.modalBastionUser = conn.bastion_user || "";
     this.modalKeyPath = conn.key_path || "";
@@ -788,6 +792,7 @@ export class AppStateStore {
       user: this.modalUser.trim() || null,
       port: this.modalPort || null,
       kerberos: this.modalUseKerberos || null,
+      forwardAgent: this.modalForwardAgent,
       bastion: this.modalBastion.trim() || null,
       bastionUser: this.modalBastionUser.trim() || null,
       keyPath: this.modalKeyPath.trim() || null,
@@ -802,6 +807,7 @@ export class AppStateStore {
           user: this.modalUser,
           port: this.modalPort,
           kerberos: this.modalUseKerberos,
+          forwardAgent: this.modalForwardAgent,
         });
         notify("Host updated successfully", "success");
       } else {

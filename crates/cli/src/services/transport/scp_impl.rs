@@ -18,20 +18,9 @@ use tracing::{debug, info};
 
 use crate::models::Connection;
 
-/// Ensure the bastion SCP wrapper script exists and return its path.
-///
-/// The script is written once to `~/.local/share/bayesian-ssh/scp-wrapper.sh`.
-/// It is safe to overwrite on every call so updates propagate automatically.
-pub fn ensure_scp_wrapper() -> Result<PathBuf> {
-    let data_dir = dirs::data_dir()
-        .unwrap_or_else(|| PathBuf::from("~/.local/share"))
-        .join("bayesian-ssh");
-    std::fs::create_dir_all(&data_dir)
-        .with_context(|| format!("create data dir {}", data_dir.display()))?;
-
-    let wrapper = data_dir.join("scp-wrapper.sh");
-
-    let script = r#"#!/bin/sh
+/// Template of the interactive-bastion SCP wrapper. `create_bastion_wrapper`
+/// substitutes the bastion, its port and the agent flag for each connection.
+pub const SCP_WRAPPER_TEMPLATE: &str = r#"#!/bin/sh
 # bayesian-ssh SCP wrapper for interactive bastions (auto-generated)
 # Translates scp's internal SSH invocation into the bastion --osh scp protocol.
 while ! [ "$1" = "--" ] ; do
@@ -49,10 +38,23 @@ done
 host="$2"
 scpcmd=$(echo "$3" | sed -e 's/#/##/g;s/ /#/g')
 username=$(echo "$remoteuser" | awk '{print $2}')
-exec ssh -A -T -K "$username"@BASTION_PLACEHOLDER $sshcmdline -- $remoteuser $remoteport --host "$host" --osh scp --scp-cmd "$scpcmd"
+exec sshAGENT_FLAG -T -KBASTION_PORT "$username"@BASTION_PLACEHOLDER $sshcmdline -- $remoteuser $remoteport --host "$host" --osh scp --scp-cmd "$scpcmd"
 "#;
 
-    std::fs::write(&wrapper, script)
+/// Ensure the bastion SCP wrapper script exists and return its path.
+///
+/// The script is written once to `~/.local/share/bayesian-ssh/scp-wrapper.sh`.
+/// It is safe to overwrite on every call so updates propagate automatically.
+pub fn ensure_scp_wrapper() -> Result<PathBuf> {
+    let data_dir = dirs::data_dir()
+        .unwrap_or_else(|| PathBuf::from("~/.local/share"))
+        .join("bayesian-ssh");
+    std::fs::create_dir_all(&data_dir)
+        .with_context(|| format!("create data dir {}", data_dir.display()))?;
+
+    let wrapper = data_dir.join("scp-wrapper.sh");
+
+    std::fs::write(&wrapper, SCP_WRAPPER_TEMPLATE)
         .with_context(|| format!("write scp wrapper to {}", wrapper.display()))?;
 
     #[cfg(unix)]
@@ -65,10 +67,33 @@ exec ssh -A -T -K "$username"@BASTION_PLACEHOLDER $sshcmdline -- $remoteuser $re
     Ok(wrapper)
 }
 
-/// Create a connection-specific wrapper by substituting the bastion hostname.
+/// Fill the wrapper's placeholders for one connection.
+///
+/// The bastion hostname is interpolated into a `sh` script — quote it so a
+/// malicious hostname cannot inject shell commands. The port is only passed
+/// when the stored value has one, so ~/.ssh/config decides otherwise. `-A`
+/// (agent forwarding) is added only when the connection opted in.
+fn render_bastion_wrapper(template: &str, conn: &Connection) -> String {
+    let bastion = conn.bastion.as_deref().unwrap_or_default();
+    let (bastion_host, bastion_port) = crate::models::split_bastion(bastion);
+    let quoted = crate::services::transport::subprocess_impl::shell_quote(bastion_host);
+    let agent_flag = if conn.forward_agent { " -A" } else { "" };
+    let port_flag = bastion_port
+        .map(|port| format!(" -p {port}"))
+        .unwrap_or_default();
+    template
+        .replace("BASTION_PLACEHOLDER", &quoted)
+        .replace("AGENT_FLAG", agent_flag)
+        .replace("BASTION_PORT", &port_flag)
+}
+
+/// Create a connection-specific wrapper by substituting the bastion hostname,
+/// its port (when the stored value carries one) and whether the agent may be
+/// forwarded.
 ///
 /// Returns the path to the generated script.
-fn create_bastion_wrapper(bastion: &str) -> Result<PathBuf> {
+fn create_bastion_wrapper(conn: &Connection) -> Result<PathBuf> {
+    let bastion = conn.bastion.as_deref().unwrap_or_default();
     let data_dir = dirs::data_dir()
         .unwrap_or_else(|| PathBuf::from("~/.local/share"))
         .join("bayesian-ssh");
@@ -89,12 +114,9 @@ fn create_bastion_wrapper(bastion: &str) -> Result<PathBuf> {
 
     let template = ensure_scp_wrapper()?;
     let script = std::fs::read_to_string(&template)?;
-    // The bastion hostname is interpolated into a `sh` script — quote it so
-    // a malicious hostname cannot inject shell commands.
-    let quoted = crate::services::transport::subprocess_impl::shell_quote(bastion);
-    let script = script.replace("BASTION_PLACEHOLDER", &quoted);
+    let script = render_bastion_wrapper(&script, conn);
 
-    std::fs::write(&wrapper_path, &script)?;
+    std::fs::write(&wrapper_path, script)?;
 
     #[cfg(unix)]
     {
@@ -166,8 +188,7 @@ fn build_scp_argv(
 
     if conn.use_kerberos && conn.bastion.is_some() {
         // Interactive bastion mode — use the wrapper script.
-        let bastion = conn.bastion.as_deref().unwrap();
-        let wrapper = create_bastion_wrapper(bastion)?;
+        let wrapper = create_bastion_wrapper(conn)?;
         info!("using SCP bastion wrapper: {}", wrapper.display());
         argv.push("-S".into());
         argv.push(wrapper.to_string_lossy().into_owned());
@@ -354,6 +375,36 @@ mod tests {
 
         assert!(argv.contains(&"-S".to_string()));
         assert!(argv.contains(&"-O".to_string()));
+    }
+
+    #[test]
+    fn wrapper_forwards_the_agent_only_when_opted_in() {
+        let plain = render_bastion_wrapper(SCP_WRAPPER_TEMPLATE, &conn(true, Some("b.example")));
+        assert!(
+            plain.contains("exec ssh -T -K \"$username\"@b.example "),
+            "{plain}"
+        );
+        assert!(!plain.contains("-A "), "{plain}");
+
+        let mut forwarded = conn(true, Some("b.example"));
+        forwarded.forward_agent = true;
+        let script = render_bastion_wrapper(SCP_WRAPPER_TEMPLATE, &forwarded);
+        assert!(
+            script.contains("exec ssh -A -T -K \"$username\"@b.example "),
+            "{script}"
+        );
+    }
+
+    #[test]
+    fn wrapper_uses_the_bastion_port_only_when_stored() {
+        let mined =
+            render_bastion_wrapper(SCP_WRAPPER_TEMPLATE, &conn(true, Some("b.example:2222")));
+        assert!(
+            mined.contains("-K -p 2222 \"$username\"@b.example "),
+            "{mined}"
+        );
+        let plain = render_bastion_wrapper(SCP_WRAPPER_TEMPLATE, &conn(true, Some("b.example")));
+        assert!(!plain.contains(" -p "), "{plain}");
     }
 
     #[test]

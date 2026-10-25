@@ -6,6 +6,7 @@ pub mod backup;
 pub mod close;
 pub mod completions;
 pub mod config;
+pub mod confirm;
 pub mod connect;
 pub mod desktop;
 pub mod doctor;

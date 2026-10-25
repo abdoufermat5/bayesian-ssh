@@ -106,6 +106,9 @@ pub async fn start_upload(
     if targets.is_empty() {
         return Err("No valid target connections selected".to_string());
     }
+    if let Some(changed) = targets.iter().find(|c| c.pending_change.is_some()) {
+        return Err(bayesian_ssh::services::pending::refusal(changed));
+    }
 
     let mut locals = Vec::with_capacity(local_paths.len());
     for path in &local_paths {

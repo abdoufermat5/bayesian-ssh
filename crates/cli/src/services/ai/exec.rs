@@ -171,6 +171,9 @@ impl Executor for AiExecutor {
         mode: ExecMode,
         limits: ExecLimits,
     ) -> anyhow::Result<ExecResult> {
+        // An agent runs without a human in the loop: a team sync that moved
+        // this host must be confirmed first, never followed silently.
+        crate::services::pending::ensure_cleared(conn)?;
         let (conn, command, opts) = self.prepare(conn, command, &mode, &limits)?;
         let started = Instant::now();
         let out = execute_with_fallback(&conn, &self.config, |transport| {

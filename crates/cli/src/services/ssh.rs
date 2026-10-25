@@ -2,6 +2,7 @@ use crate::config::AppConfig;
 use crate::database::Database;
 use crate::models::{Connection, Session};
 use anyhow::Result;
+use std::io::IsTerminal;
 use std::process::Stdio;
 use tokio::process::Command as TokioCommand;
 use tracing::{error, info, warn};
@@ -33,6 +34,7 @@ impl SshService {
         // Try to find connection in database first (also checks aliases)
         if let Some(mut connection) = self.database.get_connection_or_alias(target)? {
             info!("Found existing connection: {}", connection.name);
+            self.confirm_pending_change(&connection)?;
 
             // Override with command line arguments if provided
             if let Some(user) = user {
@@ -225,6 +227,7 @@ impl SshService {
         bastion_user: Option<String>,
         key: Option<String>,
         tags: Vec<String>,
+        forward_agent: bool,
     ) -> Result<()> {
         // Determine bastion configuration
         let final_bastion = if no_bastion {
@@ -261,6 +264,7 @@ impl SshService {
 
         // Add tags
         let mut conn = connection;
+        conn.forward_agent = forward_agent;
         for tag in tags {
             conn.add_tag(tag);
         }
@@ -285,6 +289,56 @@ impl SshService {
 
     pub async fn get_connection(&self, target: &str) -> Result<Option<Connection>> {
         self.database.get_connection(target)
+    }
+
+    /// The database this service opened (for the small admin operations that
+    /// do not need a full service round-trip, like clearing a pending change).
+    pub fn database(&self) -> &crate::database::Database {
+        &self.database
+    }
+
+    /// Accept a team sync's route change before using the connection.
+    ///
+    /// On a terminal the old and new values are shown and the user answers
+    /// y/N; the pending change is cleared only on yes. Without a terminal
+    /// (batch exec, pipes, the desktop app) this refuses with an error that
+    /// names `bssh confirm <name>`.
+    pub fn confirm_pending_change(&self, connection: &Connection) -> Result<()> {
+        self.confirm_pending_change_with(connection, std::io::stdin().is_terminal())
+    }
+
+    /// [`Self::confirm_pending_change`] with the terminal decision supplied by
+    /// the caller, so tests can exercise both branches without a TTY.
+    fn confirm_pending_change_with(
+        &self,
+        connection: &Connection,
+        interactive: bool,
+    ) -> Result<()> {
+        let Some(change) = &connection.pending_change else {
+            return Ok(());
+        };
+        if !interactive {
+            return crate::services::pending::ensure_cleared(connection);
+        }
+
+        println!(
+            "⚠️  '{}' was changed by a team sync ({}):",
+            connection.name,
+            change.detected_at.format("%Y-%m-%d %H:%M:%S UTC")
+        );
+        for line in crate::services::pending::describe(connection) {
+            println!("     {line}");
+        }
+        println!("   Agent forwarding is off for this connection until you confirm.");
+        if crate::cli::utils::confirm("Connect with these new values?", false)? {
+            self.database.clear_pending_change(&connection.id)?;
+            return Ok(());
+        }
+        anyhow::bail!(
+            "refusing to connect to '{}'; confirm the change with `bssh confirm {}`",
+            connection.name,
+            connection.name
+        )
     }
 
     pub async fn update_connection(&self, mut connection: Connection) -> Result<()> {
@@ -376,6 +430,7 @@ impl SshService {
         record: Option<bool>,
     ) -> Result<()> {
         info!("Connecting to connection: {}", connection.name);
+        self.confirm_pending_change(connection)?;
 
         // Create a mutable copy to apply overrides
         let mut conn = connection.clone();
@@ -414,5 +469,78 @@ impl SshService {
 
         // Execute the connection
         self.execute_ssh(&conn, record).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::PendingChange;
+    use chrono::Utc;
+
+    fn service() -> (tempfile::TempDir, SshService) {
+        let dir = tempfile::tempdir().unwrap();
+        let config = AppConfig {
+            database_path: dir.path().join("test.db"),
+            ..Default::default()
+        };
+        let service = SshService::new(config).unwrap();
+        (dir, service)
+    }
+
+    fn redirected(service: &SshService) -> Connection {
+        let mut conn = Connection::new(
+            "team-host".into(),
+            "attacker.example".into(),
+            "alice".into(),
+            22,
+            None,
+            None,
+            true,
+            None,
+        );
+        let mut previous = conn.clone();
+        previous.host = "real.example".into();
+        conn.pending_change = Some(PendingChange::detect(&previous, Utc::now()));
+        conn.forward_agent = false;
+        service.database().add_connection(&conn).unwrap();
+        conn
+    }
+
+    #[test]
+    fn non_interactive_connect_refuses_until_the_change_is_confirmed() {
+        let (_dir, service) = service();
+        let conn = redirected(&service);
+
+        let err = service
+            .confirm_pending_change_with(&conn, false)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("bssh confirm team-host"), "{err}");
+
+        // `bssh confirm` clears the record; the gate then lets the connect run.
+        service.database().clear_pending_change(&conn.id).unwrap();
+        let cleared = service
+            .database()
+            .get_connection("team-host")
+            .unwrap()
+            .unwrap();
+        assert!(service.confirm_pending_change_with(&cleared, false).is_ok());
+    }
+
+    #[test]
+    fn connections_without_a_pending_change_are_untouched() {
+        let (_dir, service) = service();
+        let conn = Connection::new(
+            "plain".into(),
+            "h.example".into(),
+            "alice".into(),
+            22,
+            None,
+            None,
+            false,
+            None,
+        );
+        assert!(service.confirm_pending_change_with(&conn, false).is_ok());
     }
 }

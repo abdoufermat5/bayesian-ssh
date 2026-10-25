@@ -29,6 +29,7 @@ pub async fn execute(source: String, new_name: String, config: AppConfig) -> Res
             original.bastion_user.clone(),
             original.key_path.clone(),
             original.tags.clone(),
+            original.forward_agent,
         )
         .await?;
 

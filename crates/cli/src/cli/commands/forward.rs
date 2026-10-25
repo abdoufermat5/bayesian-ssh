@@ -20,6 +20,7 @@ pub async fn execute(target: String, local: String, config: AppConfig) -> Result
     let connection =
         crate::cli::utils::resolve_connection(&ssh_service, &target, "forward", true, &config)
             .await?;
+    ssh_service.confirm_pending_change(&connection)?;
 
     let kind = pick_kind(&connection, &config);
 

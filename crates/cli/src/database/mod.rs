@@ -22,7 +22,7 @@ pub use search::{Prediction, RankContext, ScoreBreakdown, SearchField};
 pub use session::live_pid;
 pub use source::SourceSummary;
 
-const SCHEMA_VERSION: i32 = 10;
+const SCHEMA_VERSION: i32 = 11;
 
 /// How long a statement waits on a lock held by another process (the CLI
 /// and the desktop app share the same database file) before failing with
@@ -170,6 +170,10 @@ impl Database {
         if current < 10 {
             self.migrate_v10_sessions_target()?;
             self.set_schema_version(10)?;
+        }
+        if current < 11 {
+            self.migrate_v11_forward_agent()?;
+            self.set_schema_version(11)?;
         }
         Ok(())
     }
@@ -419,6 +423,23 @@ impl Database {
              LEFT JOIN connections c ON c.id = s.connection_id;
              DROP TABLE sessions;
              ALTER TABLE sessions_v10 RENAME TO sessions;",
+        )?;
+        Ok(())
+    }
+
+    /// v11: agent forwarding becomes an explicit per-connection setting, and a
+    /// team sync records the route changes it made until the user confirms
+    /// them.
+    ///
+    /// Local Kerberos connections used to get `-A` implicitly: they keep
+    /// forwarding so the owner's bastion setups keep working. Connections
+    /// owned by a source (Teams, cloud inventories) start without it.
+    fn migrate_v11_forward_agent(&self) -> Result<()> {
+        self.conn.execute_batch(
+            "ALTER TABLE connections ADD COLUMN forward_agent BOOLEAN NOT NULL DEFAULT 0;
+             ALTER TABLE connections ADD COLUMN pending_change TEXT;
+             UPDATE connections SET forward_agent = 1
+                 WHERE use_kerberos = 1 AND source_id IS NULL;",
         )?;
         Ok(())
     }
@@ -695,7 +716,16 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(teams, 0, "v7 has no teams tables");
-            db.add_connection(&sample("keepme")).unwrap();
+            // Raw insert: `add_connection` writes columns v7 does not have yet.
+            db.conn
+                .execute(
+                    "INSERT INTO connections
+                     (id, name, host, user, port, use_kerberos, created_at, tags)
+                     VALUES ('11111111-1111-1111-1111-111111111111', 'keepme',
+                             'h.example', 'u', 22, 0, '2026-01-01T00:00:00Z', '[]')",
+                    [],
+                )
+                .unwrap();
         }
 
         let db = Database::new(&config).unwrap();
@@ -726,6 +756,95 @@ mod tests {
             assert_eq!(n, 1, "missing table {table}");
         }
         assert!(db.get_connection("keepme").unwrap().is_some());
+    }
+
+    #[test]
+    fn v10_database_backfills_forward_agent_only_for_local_kerberos() {
+        let dir = tempdir().unwrap();
+        let config = AppConfig {
+            database_path: dir.path().join("test.db"),
+            ..Default::default()
+        };
+        let source_id = "11111111-1111-1111-1111-111111111111";
+        {
+            // Build a genuine v10 database: no forward_agent column yet.
+            let db = Database::open(&config).unwrap();
+            db.migrate_v1_create_core_tables().unwrap();
+            db.migrate_v2_add_sessions_transport().unwrap();
+            db.migrate_v3_create_tags_and_status().unwrap();
+            db.migrate_v4_purge_orphans().unwrap();
+            db.migrate_v5_session_recordings().unwrap();
+            db.migrate_v6_session_context().unwrap();
+            db.migrate_v7_inventory_sources().unwrap();
+            db.migrate_v8_teams_tables().unwrap();
+            db.migrate_v9_teams_trust().unwrap();
+            db.migrate_v10_sessions_target().unwrap();
+            db.set_schema_version(10).unwrap();
+
+            db.conn
+                .execute(
+                    "INSERT INTO sources (id, name, kind, config, created_at)
+                     VALUES (?1, 'team', 'team', '{}', '2026-01-01T00:00:00Z')",
+                    [source_id],
+                )
+                .unwrap();
+            for (id, name, kerberos, source) in [
+                ("aaaaaaaa-1111-1111-1111-111111111111", "local-krb", 1, None),
+                (
+                    "bbbbbbbb-1111-1111-1111-111111111111",
+                    "local-plain",
+                    0,
+                    None,
+                ),
+                (
+                    "cccccccc-1111-1111-1111-111111111111",
+                    "team-krb",
+                    1,
+                    Some(source_id),
+                ),
+            ] {
+                db.conn
+                    .execute(
+                        "INSERT INTO connections
+                         (id, name, host, user, port, use_kerberos, created_at, tags, source_id)
+                         VALUES (?1, ?2, 'h.example', 'u', 22, ?3, '2026-01-01T00:00:00Z', '[]', ?4)",
+                        rusqlite::params![id, name, kerberos, source],
+                    )
+                    .unwrap();
+            }
+        }
+
+        let db = Database::new(&config).unwrap();
+        assert_eq!(db.current_schema_version().unwrap(), SCHEMA_VERSION);
+        let forwarded = |name: &str| db.get_connection(name).unwrap().unwrap().forward_agent;
+        // The owner's existing Kerberos bastions keep working.
+        assert!(forwarded("local-krb"));
+        assert!(!forwarded("local-plain"));
+        // Source-managed rows never inherit agent forwarding.
+        assert!(!forwarded("team-krb"));
+    }
+
+    #[test]
+    fn clearing_a_pending_change_leaves_the_route_alone() {
+        let dir = tempdir().unwrap();
+        let db = open(dir.path());
+        let mut conn = sample("web");
+        conn.pending_change = Some(crate::models::PendingChange::detect(
+            &sample("web"),
+            chrono::Utc::now(),
+        ));
+        db.add_connection(&conn).unwrap();
+        assert!(db
+            .get_connection("web")
+            .unwrap()
+            .unwrap()
+            .pending_change
+            .is_some());
+
+        db.clear_pending_change(&conn.id).unwrap();
+        let stored = db.get_connection("web").unwrap().unwrap();
+        assert!(stored.pending_change.is_none());
+        assert_eq!(stored.host, "h.example.com");
     }
 
     #[test]
@@ -804,7 +923,16 @@ mod tests {
             db.migrate_v8_teams_tables().unwrap();
             db.migrate_v9_teams_trust().unwrap();
             db.set_schema_version(9).unwrap();
-            db.add_connection(&conn).unwrap();
+            // Raw insert: `add_connection` writes columns v9 does not have yet.
+            db.conn
+                .execute(
+                    "INSERT INTO connections
+                     (id, name, host, user, port, use_kerberos, created_at, tags)
+                     VALUES (?1, 'web', 'h.example.com', 'u', 22, 0,
+                             '2026-01-01T00:00:00Z', '[]')",
+                    [conn.id.to_string()],
+                )
+                .unwrap();
             db.conn
                 .execute(
                     "INSERT INTO sessions (id, connection_id, started_at, status, status_kind)

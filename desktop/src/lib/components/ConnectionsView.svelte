@@ -449,6 +449,14 @@
       Jump
     </span>
   {/if}
+  {#if conn.pending_change}
+    <span
+      class="badge badge-warning"
+      title={`A team sync changed this host's route (${conn.pending_change.detected_at}). Confirm it before connecting.`}
+    >
+      Unconfirmed
+    </span>
+  {/if}
   {#if conn.stale_since}
     <span
       class="badge badge-warning"

@@ -67,7 +67,7 @@ pub fn sync_source(name: String, dry_run: bool) -> Result<sync::SyncReport, Stri
         .map(|connection| connection.name)
         .collect();
 
-    let plan = sync::plan(&discovered, &existing, &taken_names, &source.name);
+    let plan = sync::plan(&discovered, &existing, &taken_names, &source);
     if dry_run {
         return Ok(plan.report(true));
     }

@@ -9,6 +9,7 @@
     modalUser: string;
     modalPort: number;
     modalUseKerberos: boolean;
+    modalForwardAgent: boolean;
     modalBastion: string;
     modalBastionUser: string;
     modalKeyPath: string;
@@ -25,6 +26,7 @@
     modalUser = $bindable(),
     modalPort = $bindable(),
     modalUseKerberos = $bindable(),
+    modalForwardAgent = $bindable(),
     modalBastion = $bindable(),
     modalBastionUser = $bindable(),
     modalKeyPath = $bindable(),
@@ -182,6 +184,19 @@
           <span class="text-xs text-muted">Authenticate with your Kerberos ticket.</span>
         </span>
         <input id="c-krb" type="checkbox" class="switch" bind:checked={modalUseKerberos} />
+      </label>
+
+      <label
+        for="c-agent"
+        class="flex cursor-pointer items-center justify-between gap-4 rounded-md border border-border px-3 py-2.5"
+      >
+        <span class="flex min-w-0 flex-col gap-0.5">
+          <span class="text-sm text-primary">Forward SSH agent</span>
+          <span class="text-xs text-muted">
+            Lets processes on the host use your local keys (ssh -A). Off unless you need it.
+          </span>
+        </span>
+        <input id="c-agent" type="checkbox" class="switch" bind:checked={modalForwardAgent} />
       </label>
 
       <div class="field">

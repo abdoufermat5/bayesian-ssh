@@ -286,7 +286,7 @@ fn sync_sources(
             .map(|connection| connection.name)
             .collect();
 
-        let plan = sync::plan(&discovered, &existing, &taken_names, &source.name);
+        let plan = sync::plan(&discovered, &existing, &taken_names, &source);
         print_plan(&plan);
 
         if dry_run {

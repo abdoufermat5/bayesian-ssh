@@ -37,8 +37,8 @@ impl Database {
         tx.execute(
             "INSERT INTO connections
              (id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used, tags,
-              source_id, external_id, stale_since)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              source_id, external_id, stale_since, forward_agent, pending_change)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 host = excluded.host,
@@ -52,7 +52,9 @@ impl Database {
                 tags = excluded.tags,
                 source_id = excluded.source_id,
                 external_id = excluded.external_id,
-                stale_since = excluded.stale_since",
+                stale_since = excluded.stale_since,
+                forward_agent = excluded.forward_agent,
+                pending_change = excluded.pending_change",
             params![
                 connection.id.to_string(),
                 connection.name,
@@ -69,6 +71,12 @@ impl Database {
                 connection.source_id.map(|id| id.to_string()),
                 connection.external_id,
                 connection.stale_since.map(|d| d.to_rfc3339()),
+                connection.forward_agent,
+                connection
+                    .pending_change
+                    .as_ref()
+                    .map(serde_json::to_string)
+                    .transpose()?,
             ],
         )?;
 
@@ -93,7 +101,7 @@ impl Database {
 
     pub fn get_connection(&self, name_or_id: &str) -> Result<Option<Connection>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used, source_id, external_id, stale_since
+            "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used, source_id, external_id, stale_since, forward_agent, pending_change
              FROM connections
              WHERE id = ? OR name = ?",
         )?;
@@ -117,7 +125,7 @@ impl Database {
         recent_only: bool,
     ) -> Result<Vec<Connection>> {
         let mut query = String::from(
-            "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used, source_id, external_id, stale_since
+            "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used, source_id, external_id, stale_since, forward_agent, pending_change
              FROM connections",
         );
 
@@ -199,7 +207,8 @@ impl Database {
             "UPDATE connections SET
              name = ?, host = ?, user = ?, port = ?, bastion = ?, bastion_user = ?,
              use_kerberos = ?, key_path = ?, last_used = ?, tags = ?,
-             source_id = ?, external_id = ?, stale_since = ?
+             source_id = ?, external_id = ?, stale_since = ?,
+             forward_agent = ?, pending_change = ?
              WHERE id = ?",
             params![
                 connection.name,
@@ -215,6 +224,12 @@ impl Database {
                 connection.source_id.map(|id| id.to_string()),
                 connection.external_id,
                 connection.stale_since.map(|d| d.to_rfc3339()),
+                connection.forward_agent,
+                connection
+                    .pending_change
+                    .as_ref()
+                    .map(serde_json::to_string)
+                    .transpose()?,
                 connection.id.to_string(),
             ],
         )?;
@@ -258,6 +273,16 @@ impl Database {
                 connection.last_used.map(|d| d.to_rfc3339()),
                 connection.id.to_string()
             ],
+        )?;
+        Ok(())
+    }
+
+    /// Accept the route changes a team sync made to `id`: clear the pending
+    /// record so the next connect proceeds normally.
+    pub fn clear_pending_change(&self, id: &uuid::Uuid) -> Result<()> {
+        self.conn.execute(
+            "UPDATE connections SET pending_change = NULL WHERE id = ?",
+            params![id.to_string()],
         )?;
         Ok(())
     }
@@ -337,6 +362,12 @@ impl Database {
                     .ok()
                     .map(|dt| dt.with_timezone(&chrono::Utc))
             }),
+            forward_agent: row.get(14)?,
+            // A row written by a newer build with an unknown shape must not
+            // take the whole connection list down: treat it as unconfirmed.
+            pending_change: row
+                .get::<_, Option<String>>(15)?
+                .and_then(|s| serde_json::from_str(&s).ok()),
         })
     }
 
@@ -360,7 +391,7 @@ impl Database {
         let most_used = self
             .conn
             .query_row(
-                "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used, source_id, external_id, stale_since
+                "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used, source_id, external_id, stale_since, forward_agent, pending_change
                  FROM connections
                  WHERE last_used IS NOT NULL
                  ORDER BY last_used DESC
@@ -372,7 +403,7 @@ impl Database {
 
         // Single query for the ten most-recently-used.
         let mut recent_stmt = self.conn.prepare(
-            "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used, source_id, external_id, stale_since
+            "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used, source_id, external_id, stale_since, forward_agent, pending_change
              FROM connections
              WHERE last_used IS NOT NULL
              ORDER BY last_used DESC
