@@ -49,10 +49,29 @@ pub async fn execute(args: AiArgsDoctor, config: AppConfig) -> Result<()> {
         let all = crate::services::SshService::new(config.clone())?
             .list_connections(None, false)
             .await?;
+        // A source we can't read fails closed: its tags don't widen the policy.
+        let sources: std::collections::HashMap<_, _> = crate::database::Database::new(&config)
+            .and_then(|db| db.list_sources())
+            .map(|list| {
+                list.into_iter()
+                    .map(|summary| (summary.source.id, summary.source.name))
+                    .collect()
+            })
+            .unwrap_or_default();
         match &pol {
             Ok(p) => all
                 .into_iter()
-                .filter(|c| policy::host_in_scope(p, c))
+                .filter(|c| {
+                    let source = c
+                        .source_id
+                        .and_then(|id| sources.get(&id))
+                        .map(String::as_str);
+                    policy::host_in_scope(
+                        p,
+                        c,
+                        policy::tags_trusted(&config.ai.trusted_tag_sources, c, source),
+                    )
+                })
                 .collect(),
             Err(_) => all,
         }

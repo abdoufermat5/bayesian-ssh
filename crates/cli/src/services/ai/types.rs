@@ -122,7 +122,8 @@ pub enum Profile {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Scope {
-    /// Hosts carrying any of these tags are in scope. Empty = no host.
+    /// Hosts carrying any of these tags are in scope. Empty = no host. Only trusted tags
+    /// count ([`HostFacts::tags_trusted`]).
     pub tags: Vec<String>,
     /// Extra hosts by connection name.
     pub hosts: Vec<String>,
@@ -133,10 +134,15 @@ pub struct Scope {
 pub struct ApprovalRules {
     /// Tier used for anything that asks, unless a tag rule below applies.
     pub default: Tier,
-    /// Tags where T1 (in-client) is allowed for low-risk reversible changes.
+    /// Tags where T1 (in-client) is allowed for low-risk reversible changes. Only trusted
+    /// tags count ([`HostFacts::tags_trusted`]).
     pub in_client: Vec<String>,
-    /// Tags that need T3.
+    /// Tags that need T3. Every tag counts, trusted or not.
     pub two_person: Vec<String>,
+    /// Connection-name globs that need T3, checked alongside `two_person`. Tags on a
+    /// source-managed connection can be removed by whoever edits that source, so a
+    /// host-name rule is the way to make two-person approval stick.
+    pub two_person_hosts: Vec<String>,
 }
 
 impl Default for ApprovalRules {
@@ -145,6 +151,7 @@ impl Default for ApprovalRules {
             default: Tier::OutOfBand,
             in_client: Vec::new(),
             two_person: Vec::new(),
+            two_person_hosts: Vec::new(),
         }
     }
 }
@@ -205,10 +212,22 @@ pub struct Policy {
 }
 
 /// What the policy engine knows about the target host.
+///
+/// Tags appear twice over: [`HostFacts::tags`] holds every tag from any source and is what
+/// tightening rules (`approval.two_person`) read; only [`HostFacts::tags_trusted`] tags may
+/// relax a decision (scope by tag, `approval.in_client`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HostFacts {
     pub name: String,
     pub tags: Vec<String>,
+    /// True when bssh owns the tags: a connection added by hand, or a source listed in
+    /// `ai.trusted_tag_sources`. Tags from a Teams vault or a cloud inventory can be
+    /// changed by people outside the policy, so by default they only tighten.
+    #[serde(default)]
+    pub tags_trusted: bool,
+    /// Inventory source the tags came from, named when a tag was ignored.
+    #[serde(default)]
+    pub tag_source: Option<String>,
     pub enforcement: Enforcement,
 }
 

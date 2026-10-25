@@ -105,7 +105,9 @@ impl HostSource for StaticHosts {
     }
 }
 
-pub type ScopeFn = Arc<dyn Fn(&Policy, &Connection) -> bool + Send + Sync>;
+/// Visibility check: policy, connection, and whether that connection's tags may relax the
+/// policy (`ai.trusted_tag_sources`). Most implementations are [`policy::host_in_scope`].
+pub type ScopeFn = Arc<dyn Fn(&Policy, &Connection, bool) -> bool + Send + Sync>;
 
 /// Everything a run calls out to. All injectable.
 pub struct RunDeps {
@@ -163,6 +165,8 @@ pub struct RunContext {
     calls: Mutex<VecDeque<Instant>>,
     denials: Mutex<VecDeque<Instant>>,
     facts: tokio::sync::Mutex<HashMap<String, Enforcement>>,
+    /// Inventory source names by source id, resolved once for tag trust.
+    source_names: Mutex<HashMap<uuid::Uuid, Option<String>>>,
     access: Mutex<Vec<AccessGrant>>,
     pending: Mutex<HashMap<String, PendingInfo>>,
     changes_used: AtomicU32,
@@ -225,6 +229,7 @@ impl RunContext {
             calls: Mutex::new(VecDeque::new()),
             denials: Mutex::new(VecDeque::new()),
             facts: tokio::sync::Mutex::new(HashMap::new()),
+            source_names: Mutex::new(HashMap::new()),
             access: Mutex::new(Vec::new()),
             pending: Mutex::new(HashMap::new()),
             changes_used: AtomicU32::new(0),
@@ -482,7 +487,7 @@ impl RunContext {
     // ------------------------------------------------------------ hosts
 
     pub fn in_scope(&self, conn: &Connection) -> bool {
-        if (self.deps.scope)(&self.policy, conn) {
+        if (self.deps.scope)(&self.policy, conn, self.tags_trusted(conn)) {
             return true;
         }
         let now = Instant::now();
@@ -566,11 +571,40 @@ impl RunContext {
                 e
             }
         };
+        let source = self.source_name(conn);
         HostFacts {
             name: conn.name.clone(),
             tags: conn.tags.clone(),
+            tags_trusted: policy::tags_trusted(
+                &self.config.ai.trusted_tag_sources,
+                conn,
+                source.as_deref(),
+            ),
+            tag_source: source,
             enforcement,
         }
+    }
+
+    /// The inventory source a connection came from, resolved once per source id.
+    fn source_name(&self, conn: &Connection) -> Option<String> {
+        let id = conn.source_id?;
+        if let Ok(cache) = self.source_names.lock() {
+            if let Some(name) = cache.get(&id) {
+                return name.clone();
+            }
+        }
+        let name = crate::services::ai::source_name(&self.config, conn);
+        if let Ok(mut cache) = self.source_names.lock() {
+            cache.insert(id, name.clone());
+        }
+        name
+    }
+
+    /// May this connection's tags relax the policy? Sources other than bssh's own
+    /// connections count only when `ai.trusted_tag_sources` names them.
+    fn tags_trusted(&self, conn: &Connection) -> bool {
+        let source = self.source_name(conn);
+        policy::tags_trusted(&self.config.ai.trusted_tag_sources, conn, source.as_deref())
     }
 
     /// Set a host's enforcement without probing it (gateway-side knowledge, tests).
