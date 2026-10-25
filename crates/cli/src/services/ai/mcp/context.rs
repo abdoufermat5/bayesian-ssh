@@ -259,7 +259,11 @@ impl RunContext {
         let deps = RunDeps {
             hosts: Arc::new(DbHosts::new(&config)),
             files: Arc::new(SftpFiles::new(&config)),
-            executor: Arc::new(AiExecutor::new(&config).with_read_paths(policy.read_paths.clone())),
+            executor: Arc::new(
+                AiExecutor::new(&config)
+                    .with_read_paths(policy.read_paths.clone())
+                    .with_deny_paths(policy.deny_paths.clone()),
+            ),
             broker: broker.clone(),
             analyzer: Arc::new(ShellAnalyzer::new()),
             redactor,
@@ -574,10 +578,12 @@ impl RunContext {
         self.facts.lock().await.insert(host.to_string(), e);
     }
 
-    /// Mode for read-only work: the jail when the host has one.
+    /// Mode for read-only work: the host's jail, run as the low-privilege agent principal
+    /// when the host trusts our CA (so deny paths are enforced by that user's permissions).
     pub fn read_mode(facts: &HostFacts) -> ExecMode {
         match facts.enforcement.jail {
             JailKind::None => ExecMode::Plain,
+            k if facts.enforcement.certificates => ExecMode::JailedAsAgent(k),
             k => ExecMode::Jailed(k),
         }
     }
@@ -763,7 +769,7 @@ impl RunContext {
         mode: ExecMode,
         limits: ExecLimits,
     ) -> Result<Executed, ToolError> {
-        let jailed = matches!(mode, ExecMode::Jailed(_));
+        let jailed = mode.is_jailed();
         let raw = self
             .deps
             .executor

@@ -27,6 +27,9 @@ pub const NOTICE: &str =
 /// Default and largest `read_file` window.
 pub const READ_DEFAULT: u64 = 64 * 1024;
 pub const READ_MAX: u64 = 256 * 1024;
+/// Bound on the `readlink -f` that resolves a `read_file` target on the host.
+const RESOLVE_TIMEOUT: Duration = Duration::from_secs(15);
+const RESOLVE_MAX_BYTES: usize = 8 * 1024;
 const LOG_LINES_DEFAULT: u32 = 200;
 const LOG_LINES_MAX: u32 = 1000;
 const ACCESS_MAX_SECS: u64 = 8 * 3600;
@@ -742,8 +745,50 @@ async fn observe_tool(ctx: &Arc<RunContext>, a: ObserveArgs) -> ToolResult {
     })
 }
 
+/// Resolve `path` on the host with `readlink -f -- <path>`, as the connection's user.
+///
+/// The deny/read checks in [`read_file`] are lexical, so a symlink inside a readable
+/// directory could point at a secret. The target is resolved first and the read then uses
+/// the resolved path. Anything but one absolute path back is an error: a caller decides
+/// that as a refusal, never as an allow.
+async fn resolve_path(
+    ctx: &Arc<RunContext>,
+    conn: &Connection,
+    path: &str,
+) -> Result<String, String> {
+    let cmd = format!("readlink -f -- {}", sh_quote(path));
+    let limits = ExecLimits {
+        timeout: RESOLVE_TIMEOUT,
+        max_output_bytes: RESOLVE_MAX_BYTES,
+    };
+    let res = ctx
+        .deps
+        .executor
+        .exec(conn, &cmd, ExecMode::Plain, limits)
+        .await
+        .map_err(|e| format!("could not resolve the path: {e:#}"))?;
+    if res.timed_out {
+        return Err("could not resolve the path: timed out".into());
+    }
+    if res.truncated {
+        return Err("could not resolve the path: output too long".into());
+    }
+    if res.exit_code != Some(0) {
+        return Err(format!(
+            "could not resolve the path on the host (readlink exit {:?})",
+            res.exit_code
+        ));
+    }
+    // The host's answer is untrusted: exactly one absolute path, no extra lines.
+    let out = res.stdout.trim_end_matches(['\n', '\r']);
+    if out.is_empty() || out.contains(['\n', '\r']) {
+        return Err("could not resolve the path: unexpected output".into());
+    }
+    super::util::normalize_path(out).map_err(|e| format!("resolved path '{out}': {e}"))
+}
+
 async fn read_file(ctx: &Arc<RunContext>, a: ReadFileArgs) -> ToolResult {
-    let path = ctx.clean_path(&a.path)?;
+    let requested = ctx.clean_path(&a.path)?;
     let (offset, length) = match &a.range {
         Some(r) => (r.offset, r.length.clamp(1, READ_MAX)),
         None => (0, READ_DEFAULT),
@@ -752,14 +797,36 @@ async fn read_file(ctx: &Arc<RunContext>, a: ReadFileArgs) -> ToolResult {
         ToolName::ReadFile,
         Some(&a.host),
         None,
-        Some(path.clone()),
-        json!({ "host": a.host, "path": path, "offset": offset, "length": length }),
+        Some(requested.clone()),
+        json!({ "host": a.host, "path": requested, "offset": offset, "length": length }),
     );
-    if let Some(why) = ctx.path_denied(&path) {
-        return Err(ctx.deny_call(&call, &format!("{path}: {why}")));
+    if let Some(why) = ctx.path_denied(&requested) {
+        return Err(ctx.deny_call(&call, &format!("{requested}: {why}")));
     }
     let conn = ctx.resolve_host(&a.host).await?;
     let facts = ctx.facts(&conn).await;
+    // Only the host knows what a symlink points at; the checks so far are lexical.
+    let path = match resolve_path(ctx, &conn, &requested).await {
+        Ok(p) => p,
+        Err(why) => return Err(ctx.deny_call(&call, &format!("{requested}: {why}"))),
+    };
+    // The policy and the deny paths judge the file that is actually read, not the link.
+    let call = ctx.new_call(
+        ToolName::ReadFile,
+        Some(&a.host),
+        None,
+        Some(path.clone()),
+        json!({
+            "host": a.host,
+            "path": path,
+            "requested_path": requested,
+            "offset": offset,
+            "length": length
+        }),
+    );
+    if let Some(why) = ctx.path_denied(&path) {
+        return Err(ctx.deny_call(&call, &format!("{path} (from {requested}): {why}")));
+    }
     ctx.authorize(&call, None, &facts).await?;
     let file = ctx
         .deps
@@ -859,7 +926,7 @@ async fn search_logs(ctx: &Arc<RunContext>, a: SearchLogsArgs) -> ToolResult {
     let facts = ctx.facts(&conn).await;
     ctx.authorize(&call, None, &facts).await?;
     let mode = RunContext::read_mode(&facts);
-    let jailed = matches!(mode, ExecMode::Jailed(_));
+    let jailed = mode.is_jailed();
     let ex = ctx
         .exec(&conn, &call, &cmd, mode, ExecLimits::default())
         .await?;
@@ -921,7 +988,7 @@ pub async fn run_readonly_on(
     }
     ctx.authorize(&call, Some(&analysis), &facts).await?;
     let mode = RunContext::read_mode(&facts);
-    let jailed = matches!(mode, ExecMode::Jailed(_));
+    let jailed = mode.is_jailed();
     let ex = ctx
         .exec(conn, &call, command, mode, ExecLimits::default())
         .await?;

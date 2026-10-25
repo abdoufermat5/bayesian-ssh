@@ -82,7 +82,9 @@ impl GatewayRuns {
             hosts: Arc::new(DbHosts::new(&gw.config)),
             files: Arc::new(SftpFiles::new(&gw.config)),
             executor: Arc::new(
-                AiExecutor::new(&gw.config).with_read_paths(policy.read_paths.clone()),
+                AiExecutor::new(&gw.config)
+                    .with_read_paths(policy.read_paths.clone())
+                    .with_deny_paths(policy.deny_paths.clone()),
             ),
             broker: gw.broker.clone(),
             analyzer: Arc::new(ShellAnalyzer::new()),
