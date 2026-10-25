@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.4] - 2026-10-25
+
 ### Added
 - **bssh Teams: email verification and mailed invites.** When the server needs proof that you own the account's address, `bssh teams init` mails a code and asks for it on the terminal (three tries; an empty line mails a new one), and `--email-code <CODE>` does the same for scripts. Without a terminal it mails the code and says to rerun with `--email-code`. The desktop app's setup form and the invite onboarding ask for the code too, and can send a new one. `bssh teams invite` now says when the server emailed the invite to the invitee, still prints the token as a fallback, and repeats that your device fingerprint goes to them personally, out of band: the server never chooses what they trust.
 
