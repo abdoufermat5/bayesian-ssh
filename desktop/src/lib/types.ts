@@ -613,7 +613,12 @@ export interface AiBudgets {
 export interface AiPolicy {
   profile: "observe" | "operate" | "oncall";
   scope: AiScope;
-  approval: { default: AiTier; in_client: string[]; two_person: string[] };
+  approval: {
+    default: AiTier;
+    in_client: string[];
+    two_person: string[];
+    two_person_hosts: string[];
+  };
   read_paths: string[];
   deny_paths: string[];
   write_paths: string[];
@@ -627,4 +632,6 @@ export interface AiSettingsView {
   policies: Record<string, AiPolicy>;
   record_output: boolean;
   approval_timeout_secs: number;
+  /** Inventory sources whose tags may widen scope or allow in-client approval. */
+  trusted_tag_sources: string[];
 }

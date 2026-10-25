@@ -375,11 +375,13 @@ async fn host_facts(config: &AppConfig, name: Option<&str>) -> Result<HostFacts>
     let Some(connection) = service.get_connection(name).await? else {
         bail!("host '{name}' not found");
     };
-    Ok(HostFacts {
-        name: connection.name,
-        tags: connection.tags,
-        enforcement: Enforcement::default(),
-    })
+    let source = crate::services::ai::source_name(config, &connection);
+    Ok(policy::connection_facts(
+        &connection,
+        source.as_deref(),
+        &config.ai.trusted_tag_sources,
+        Enforcement::default(),
+    ))
 }
 
 #[cfg(test)]
@@ -702,6 +704,61 @@ mod tests {
         assert!(text.contains("db-1 · policy default"));
         assert!(text.contains("1  ls -la"));
         assert_eq!(analyzer.seen.lock().unwrap().as_slice(), ["ls -la"]);
+    }
+
+    #[test]
+    fn explain_says_when_a_scope_tag_was_ignored() {
+        use crate::models::Connection;
+        use crate::services::ai::types::{Policy, Profile};
+
+        let dir = tempfile::tempdir().unwrap();
+        let mut config = AppConfig {
+            database_path: dir.path().join("history.db"),
+            ..AppConfig::default()
+        };
+        let mut p = Policy {
+            profile: Profile::Operate,
+            ..Policy::default()
+        };
+        p.scope.tags = vec!["prod".into()];
+        config.ai.policies.insert("ops".into(), p.clone());
+
+        let mut conn = Connection::new(
+            "db-1".into(),
+            "h".into(),
+            "u".into(),
+            22,
+            None,
+            None,
+            false,
+            None,
+        );
+        conn.tags = vec!["prod".into()];
+        conn.source_id = Some(uuid::Uuid::new_v4());
+        let facts = policy::connection_facts(
+            &conn,
+            Some("aws-prod"),
+            &config.ai.trusted_tag_sources,
+            Enforcement::default(),
+        );
+        assert!(!facts.tags_trusted);
+
+        let (_, text) = explain_report(
+            &Style::plain(),
+            &ShellAnalyzer::new(),
+            "ls",
+            "ops",
+            Some("db-1"),
+            &facts.tags,
+            |analysis| {
+                let engine = DefaultPolicyEngine::new(Arc::new(AiStore::open(&config)?));
+                let call = tool_call("ls", &facts, analysis);
+                Ok(engine.decide(&p, &call, Some(analysis), &facts))
+            },
+        );
+        assert!(text.contains("nobody is asked"), "{text}");
+        assert!(text.contains("ai.trusted_tag_sources"), "{text}");
+        assert!(text.contains("aws-prod"), "{text}");
     }
 
     #[test]

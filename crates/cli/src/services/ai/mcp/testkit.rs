@@ -390,7 +390,7 @@ pub fn kit(policy: Policy, engine: FakeEngine, hosts: Vec<Connection>) -> Kit {
         redactor: Arc::new(MaskRedactor),
         engine: Arc::new(engine),
         audit: audit.clone(),
-        scope: Arc::new(|_p, c| !c.tags.iter().any(|t| t == "hidden")),
+        scope: Arc::new(|_p, c, _tags_trusted| !c.tags.iter().any(|t| t == "hidden")),
         elicitor: Some(Arc::new(McpElicitor::default())),
     };
     let ctx = RunContext::new(config, "default".into(), policy, deps);
