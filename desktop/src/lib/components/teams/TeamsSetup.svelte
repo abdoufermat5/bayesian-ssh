@@ -1,9 +1,14 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { Users } from "lucide-svelte";
-  import type { TeamsStatus } from "$lib/types";
+  import type { EmailCodeResult, TeamsStatus } from "$lib/types";
   import { notify } from "$lib/stores/notifications.svelte";
-  import { parseInvite, type ParsedInvite } from "./teams";
+  import {
+    emailCodeNotice,
+    parseInvite,
+    teamsInitError,
+    type ParsedInvite,
+  } from "./teams";
 
   let {
     onDone,
@@ -20,6 +25,11 @@
   let inviteText = $state("");
   let busy = $state(false);
   let error = $state<string | null>(null);
+  /** The server asked to verify the email: show the code field and ask again. */
+  let codeNeeded = $state(false);
+  let emailCode = $state("");
+  let codeNotice = $state<string | null>(null);
+  let resending = $state(false);
 
   const invite = $derived(inviteText.trim() ? parseInvite(inviteText) : null);
 
@@ -36,6 +46,7 @@
     if (!/^\S+@\S+$/.test(email.trim())) return "Enter your email";
     if (pass1.length < 8) return "The passphrase needs at least 8 characters";
     if (pass1 !== pass2) return "The passphrases don't match";
+    if (codeNeeded && !emailCode.trim()) return "Enter the verification code";
     return null;
   });
 
@@ -51,14 +62,44 @@
         passphrase: pass1,
         // Servers that only accept invited accounts check the pasted invite.
         inviteToken: invite?.token ?? null,
+        // Sent only once the server asked for it.
+        emailCode: codeNeeded ? emailCode.trim() : null,
       });
       pass1 = pass2 = "";
       notify("Teams is set up on this device", "success");
       onDone(next, invite?.token || invite?.fingerprint ? invite : null);
     } catch (err) {
-      error = String(err);
+      const init = teamsInitError(err);
+      if (init?.kind === "email_code_sent" || init?.kind === "email_code_rejected") {
+        codeNeeded = true;
+        emailCode = "";
+        codeNotice = emailCodeNotice(init);
+      } else if (init?.kind === "failed") {
+        error = init.message;
+      } else {
+        error = String(err);
+      }
     } finally {
       busy = false;
+    }
+  }
+
+  async function sendNewCode() {
+    if (resending || busy) return;
+    resending = true;
+    error = null;
+    try {
+      const sent = await invoke<EmailCodeResult>("teams_request_email_code", {
+        server: server.trim(),
+        email: email.trim(),
+      });
+      codeNeeded = true;
+      emailCode = "";
+      codeNotice = emailCodeNotice({ kind: "email_code_sent", email: email.trim(), expires_in_secs: sent.expires_in_secs });
+    } catch (err) {
+      error = String(err);
+    } finally {
+      resending = false;
     }
   }
 </script>
@@ -131,6 +172,31 @@
     <label class="field-label" for="teams-pass2">Repeat passphrase</label>
     <input id="teams-pass2" class="input" type="password" bind:value={pass2} autocomplete="new-password" />
   </div>
+
+  {#if codeNeeded}
+    <div class="field">
+      <label class="field-label" for="teams-setup-code">Verification code</label>
+      <input
+        id="teams-setup-code"
+        class="input input-mono"
+        bind:value={emailCode}
+        autocomplete="one-time-code"
+        inputmode="numeric"
+        aria-describedby="teams-setup-code-hint"
+        data-autofocus
+      />
+      <span id="teams-setup-code-hint" class="field-hint">
+        {codeNotice ?? `Enter the code the server emailed to ${email.trim()}.`}
+      </span>
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+      <button type="button" class="btn btn-secondary btn-sm" onclick={sendNewCode} disabled={resending || busy}>
+        {#if resending}<span class="spinner size-3"></span>{/if}
+        Send a new code
+      </button>
+      <span class="type-meta">or wait for the last one to arrive.</span>
+    </div>
+  {/if}
 
   {#if error}
     <div class="alert alert-error" role="alert">Setup failed: {error}</div>

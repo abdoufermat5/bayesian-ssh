@@ -47,6 +47,12 @@ pub enum ErrorCode {
     /// 402: the team is read-only. It has more members than the free seats
     /// and no active subscription: pulls work, changes don't.
     PaymentRequired,
+    /// 403: the server needs proof that the caller owns `email`: request a
+    /// code with `POST /v1/accounts/email-code` and resend with `email_code`.
+    EmailVerificationRequired,
+    /// 403: the `email_code` is wrong, expired, already used, or was tried
+    /// too often. Request a new one.
+    InvalidEmailCode,
     /// A code this client doesn't know (sent by a newer server).
     #[serde(other)]
     Unknown,
@@ -74,6 +80,27 @@ pub struct CreateAccountRequest {
     /// accounts check it here; it is not consumed (`/invites/accept` does).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub invite_token: Option<String>,
+    /// The code mailed by `POST /v1/accounts/email-code`, when the server
+    /// answered `EmailVerificationRequired`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email_code: Option<String>,
+}
+
+/// `POST /v1/accounts/email-code` (unauthenticated): mail a one-time code to
+/// `email`, proving ownership for [`CreateAccountRequest::email_code`].
+///
+/// The answer is the same whether or not a code was sent (unknown, already
+/// registered or not allowed to sign up), so it can't be used to probe which
+/// addresses exist. Codes are single use and short lived.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EmailCodeRequest {
+    pub email: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EmailCodeResponse {
+    /// How long a code stays valid.
+    pub expires_in_secs: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -255,9 +282,11 @@ pub struct CreateInviteRequest {
     pub role: Role,
 }
 
-/// `token` is returned once and never again; the admin sends it to the
-/// invitee out of band together with their own device's Ed25519 fingerprint,
-/// which the invitee pins as the team's trust root.
+/// `token` is returned once and never again. When the server can send mail it
+/// also mails the token to the invitee (`emailed`); otherwise the admin sends
+/// it out of band. Either way the admin gives their own device's Ed25519
+/// fingerprint out of band, never through the server: the invitee pins it as
+/// the team's trust root.
 ///
 /// `GET /v1/teams/{team_id}/invites` (admin) returns the pending, unexpired
 /// invites as `Vec<Invite>`, all with `token: None`.
@@ -272,6 +301,9 @@ pub struct Invite {
     pub role: Role,
     pub expires_at: DateTime<Utc>,
     pub token: Option<String>,
+    /// The server mailed the token to `email` (only set on creation).
+    #[serde(default)]
+    pub emailed: bool,
 }
 
 /// `POST /v1/invites/accept`. The caller's device joins with no team key
@@ -796,12 +828,35 @@ mod tests {
                 ed25519_public: Fixed::ZERO,
             },
             invite_token: None,
+            email_code: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         assert!(!json.contains("invite_token"), "{json}");
+        assert!(!json.contains("email_code"), "{json}");
         // A request from an older client still parses.
         let old: CreateAccountRequest = serde_json::from_str(&json).unwrap();
         assert_eq!(old.invite_token, None);
+        assert_eq!(old.email_code, None);
+    }
+
+    #[test]
+    fn invites_from_older_servers_are_not_emailed() {
+        let json = r#"{"invite_id":"00000000-0000-0000-0000-000000000001",
+            "team_id":"00000000-0000-0000-0000-000000000002","email":"ana@example.com",
+            "role":"member","expires_at":"2026-10-25T00:00:00Z","token":"t"}"#;
+        let invite: Invite = serde_json::from_str(json).unwrap();
+        assert!(!invite.emailed);
+    }
+
+    #[test]
+    fn email_verification_codes_round_trip() {
+        for code in [
+            ErrorCode::EmailVerificationRequired,
+            ErrorCode::InvalidEmailCode,
+        ] {
+            let json = serde_json::to_string(&code).unwrap();
+            assert_eq!(serde_json::from_str::<ErrorCode>(&json).unwrap(), code);
+        }
     }
 
     #[test]

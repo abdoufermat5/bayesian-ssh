@@ -1,4 +1,4 @@
-import type { TeamAudit, TeamInvite } from "$lib/types";
+import type { TeamAudit, TeamInvite, TeamsInitError } from "$lib/types";
 
 /** Base64 (no padding) of a SHA-256 digest: what follows `SHA256:`. */
 const FINGERPRINT_BODY_LENGTH = 43;
@@ -93,6 +93,29 @@ export function parseInvite(text: string): ParsedInvite {
 /** Team id named in a join error whose admin fingerprint didn't match. */
 export function teamIdFromJoinError(error: string): string | null {
   return /no admin device of team ([0-9a-f-]{36})/i.exec(error)?.[1] ?? null;
+}
+
+/**
+ * The structured rejection `teams_init` throws, or null for anything else
+ * (a string from another command, a network failure outside Tauri).
+ */
+export function teamsInitError(err: unknown): TeamsInitError | null {
+  if (err && typeof err === "object" && "kind" in err) return err as TeamsInitError;
+  return null;
+}
+
+/**
+ * "The server sent a code to ana@example.com (valid 15 minutes)." A rejected
+ * code mails nothing new: the user checks it or asks for a new one.
+ */
+export function emailCodeNotice(init: TeamsInitError): string {
+  if (init.kind === "email_code_rejected") {
+    return "That code is wrong, expired or already used. Check it, or send a new code.";
+  }
+  if (init.kind !== "email_code_sent") return "";
+  const minutes = Math.max(1, Math.ceil(init.expires_in_secs / 60));
+  const unit = minutes === 1 ? "minute" : "minutes";
+  return `The server sent a code to ${init.email} (valid ${minutes} ${unit}).`;
 }
 
 export type TeamTab = "hosts" | "members" | "audit";

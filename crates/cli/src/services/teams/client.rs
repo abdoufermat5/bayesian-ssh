@@ -70,6 +70,18 @@ impl TeamsError {
         self.code() == Some(ErrorCode::RotationRequired)
     }
 
+    /// The server wants proof that the account owns its email: request a code
+    /// with [`TeamsClient::request_email_code`] and retry with it in
+    /// [`CreateAccountRequest::email_code`].
+    pub fn is_email_verification_required(&self) -> bool {
+        self.code() == Some(ErrorCode::EmailVerificationRequired)
+    }
+
+    /// A mailed code was wrong, expired, already used or tried too often.
+    pub fn is_invalid_email_code(&self) -> bool {
+        self.code() == Some(ErrorCode::InvalidEmailCode)
+    }
+
     /// True for failures worth retrying later (network, 5xx, rate limit).
     pub fn is_transient(&self) -> bool {
         match self {
@@ -352,6 +364,16 @@ impl TeamsClient {
     }
 
     // -- accounts, devices, auth ---------------------------------------------
+
+    /// Mail a one-time code that proves `email` (unauthenticated). The answer
+    /// is the same whether or not a code was sent, so it says nothing about
+    /// which addresses exist; see [`CreateAccountRequest::email_code`].
+    pub async fn request_email_code(
+        &self,
+        req: &EmailCodeRequest,
+    ) -> ClientResult<EmailCodeResponse> {
+        self.post_plain("/accounts/email-code", req).await
+    }
 
     pub async fn create_account(
         &self,
@@ -673,13 +695,76 @@ impl TeamsTransport for TeamsClient {
     }
 }
 
+/// A tiny HTTP server for tests: answers connection `i` with `respond(i)`.
+/// Every request is recorded as its head followed by its body, so tests can
+/// check paths, headers and serialized bodies.
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use bssh_teams_proto::wire::Fixed;
-    use std::sync::Mutex;
+pub(crate) mod mock {
+    use std::sync::{Arc, Mutex};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
+
+    pub(crate) async fn mock_server<F>(respond: F) -> (String, Arc<Mutex<Vec<String>>>)
+    where
+        F: Fn(usize) -> (u16, String) + Send + 'static,
+    {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let seen2 = seen.clone();
+        tokio::spawn(async move {
+            let mut i = 0;
+            loop {
+                let (mut sock, _) = listener.accept().await.unwrap();
+                let mut buf = Vec::new();
+                let mut tmp = [0u8; 4096];
+                let head_end = loop {
+                    let n = sock.read(&mut tmp).await.unwrap();
+                    if n == 0 {
+                        break buf.len();
+                    }
+                    buf.extend_from_slice(&tmp[..n]);
+                    if let Some(p) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                        break p + 4;
+                    }
+                };
+                let head = String::from_utf8_lossy(&buf[..head_end]).to_string();
+                let clen = head
+                    .lines()
+                    .find_map(|l| {
+                        l.to_ascii_lowercase()
+                            .strip_prefix("content-length:")
+                            .map(|v| v.trim().parse::<usize>().unwrap_or(0))
+                    })
+                    .unwrap_or(0);
+                while buf.len() < head_end + clen {
+                    let n = sock.read(&mut tmp).await.unwrap();
+                    if n == 0 {
+                        break;
+                    }
+                    buf.extend_from_slice(&tmp[..n]);
+                }
+                let body = String::from_utf8_lossy(&buf[head_end..]).to_string();
+                seen2.lock().unwrap().push(format!("{head}{body}"));
+                let (status, body) = respond(i);
+                i += 1;
+                let resp = format!(
+                    "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = sock.write_all(resp.as_bytes()).await;
+                let _ = sock.shutdown().await;
+            }
+        });
+        (format!("http://{addr}"), seen)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::mock::mock_server;
+    use super::*;
+    use bssh_teams_proto::wire::Fixed;
 
     struct FakeSigner;
     impl AuthSigner for FakeSigner {
@@ -725,61 +810,6 @@ mod tests {
             Arc::new(FakeSigner),
         );
         assert!(matches!(r, Err(TeamsError::InsecureUrl(_))));
-    }
-
-    /// Minimal HTTP server: answers connection `i` with `respond(i)`.
-    async fn mock_server<F>(respond: F) -> (String, Arc<Mutex<Vec<String>>>)
-    where
-        F: Fn(usize) -> (u16, String) + Send + 'static,
-    {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        let seen = Arc::new(Mutex::new(Vec::new()));
-        let seen2 = seen.clone();
-        tokio::spawn(async move {
-            let mut i = 0;
-            loop {
-                let (mut sock, _) = listener.accept().await.unwrap();
-                let mut buf = Vec::new();
-                let mut tmp = [0u8; 4096];
-                let head_end = loop {
-                    let n = sock.read(&mut tmp).await.unwrap();
-                    if n == 0 {
-                        break buf.len();
-                    }
-                    buf.extend_from_slice(&tmp[..n]);
-                    if let Some(p) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
-                        break p + 4;
-                    }
-                };
-                let head = String::from_utf8_lossy(&buf[..head_end]).to_string();
-                let clen = head
-                    .lines()
-                    .find_map(|l| {
-                        l.to_ascii_lowercase()
-                            .strip_prefix("content-length:")
-                            .map(|v| v.trim().parse::<usize>().unwrap_or(0))
-                    })
-                    .unwrap_or(0);
-                while buf.len() < head_end + clen {
-                    let n = sock.read(&mut tmp).await.unwrap();
-                    if n == 0 {
-                        break;
-                    }
-                    buf.extend_from_slice(&tmp[..n]);
-                }
-                seen2.lock().unwrap().push(head);
-                let (status, body) = respond(i);
-                i += 1;
-                let resp = format!(
-                    "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                    body.len()
-                );
-                let _ = sock.write_all(resp.as_bytes()).await;
-                let _ = sock.shutdown().await;
-            }
-        });
-        (format!("http://{addr}"), seen)
     }
 
     fn challenge_json() -> String {
@@ -989,5 +1019,77 @@ mod tests {
             seen[5].to_ascii_lowercase().contains("bearer fresh"),
             "{seen:#?}"
         );
+    }
+
+    #[tokio::test]
+    async fn email_code_request_is_unauthenticated_json() {
+        let answer = serde_json::to_string(&EmailCodeResponse {
+            expires_in_secs: 900,
+        })
+        .unwrap();
+        let (url, seen) = mock_server(move |_| (200, answer.clone())).await;
+        let client = TeamsClient::new(&url, Uuid::new_v4(), Arc::new(FakeSigner)).unwrap();
+
+        let req = EmailCodeRequest {
+            email: "ana@example.com".into(),
+        };
+        let resp = client.request_email_code(&req).await.unwrap();
+        assert_eq!(resp.expires_in_secs, 900);
+
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 1, "one request, no auth handshake: {seen:#?}");
+        assert!(
+            seen[0].starts_with("POST /v1/accounts/email-code HTTP/1.1"),
+            "{}",
+            seen[0]
+        );
+        assert!(!seen[0].to_ascii_lowercase().contains("authorization"));
+        let body = serde_json::to_string(&req).unwrap();
+        assert!(seen[0].contains(&body), "{}", seen[0]);
+    }
+
+    #[tokio::test]
+    async fn email_verification_errors_keep_their_code() {
+        let required = serde_json::to_string(&ApiError {
+            code: ErrorCode::EmailVerificationRequired,
+            message: "verify your email first".into(),
+        })
+        .unwrap();
+        let invalid = serde_json::to_string(&ApiError {
+            code: ErrorCode::InvalidEmailCode,
+            message: "that code is wrong or expired".into(),
+        })
+        .unwrap();
+        let (url, _seen) = mock_server(move |i| match i {
+            0 => (403, required.clone()),
+            _ => (403, invalid.clone()),
+        })
+        .await;
+        let client = TeamsClient::new(&url, Uuid::new_v4(), Arc::new(FakeSigner)).unwrap();
+        let req = CreateAccountRequest {
+            email: "ana@example.com".into(),
+            device: NewDevice {
+                name: "laptop".into(),
+                x25519_public: Fixed([1u8; 32]),
+                ed25519_public: Fixed([2u8; 32]),
+            },
+            invite_token: None,
+            email_code: None,
+        };
+
+        let err = client.create_account(&req).await.unwrap_err();
+        assert!(err.is_email_verification_required(), "{err}");
+        assert!(!err.is_invalid_email_code(), "{err}");
+        assert_eq!(err.code(), Some(ErrorCode::EmailVerificationRequired));
+        // Still distinguishable in what the user reads.
+        assert!(
+            err.to_string().contains("EmailVerificationRequired"),
+            "{err}"
+        );
+
+        let err = client.create_account(&req).await.unwrap_err();
+        assert!(err.is_invalid_email_code(), "{err}");
+        assert!(!err.is_email_verification_required(), "{err}");
+        assert!(err.to_string().contains("InvalidEmailCode"), "{err}");
     }
 }

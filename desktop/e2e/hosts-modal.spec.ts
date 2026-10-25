@@ -74,6 +74,8 @@ test.describe("new host modal", () => {
       user: "deploy",
       port: 2222,
       kerberos: true,
+      // Kerberos no longer implies agent forwarding: it stays off until toggled.
+      forwardAgent: false,
       bastion: "jump.example.com",
       bastionUser: "jumpuser",
       keyPath: null,
