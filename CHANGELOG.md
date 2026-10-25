@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **bssh AI: deny paths can no longer be dodged around.** `run_readonly` now checks the paths a command actually names, not only arguments that start with `/`: input redirections (`cat < /etc/shadow`, `cat 0</etc/shadow`), unexpanded globs (`cat /etc/sha*`, `/etc/shado?`, `/etc/[s]hadow`), relative paths after a literal `cd` (`cd /etc && cat shadow`), `~`/`$HOME` paths (`cat ~/.ssh/id_rsa`) and paths attached to options (`diff --to-file=/etc/shadow`, `-f/etc/shadow`). A path that is only decided once the shell expands a glob, or that is built at run time from a variable (`$DIR/x`), asks for approval instead of running, and grants don't cover it. The default deny list also covers SSH host private keys (`.pub` files stay readable), `krb5.keytab` and `*.keytab`, `/etc/ssl/private/**`, `/etc/wireguard/**`, `/etc/sudoers`, `/etc/gshadow-`, `/etc/security/opasswd`, `/root/**`, Kubernetes and Rancher admin configs, `.kube/config`, `.netrc`, `.pgpass`, `.my.cnf`, `.docker/config.json`, `.git-credentials`, `/proc/*/environ` and `/proc/*/mem`.
+- Glob matching in the policy engine is iterative (no exponential backtracking), and `run`, `run_readonly` and `run_many` reject commands longer than 64 KiB before they are analyzed.
+
 ## [2.13.3] - 2026-10-25
 
 ### Fixed

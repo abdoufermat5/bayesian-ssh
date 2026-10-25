@@ -395,6 +395,9 @@ mod tests {
             args: args.iter().map(|arg| arg.to_string()).collect(),
             wrappers: Vec::new(),
             writes_to: Vec::new(),
+            reads_from: Vec::new(),
+            glob_args: Vec::new(),
+            cwd: None,
             tags: BTreeSet::new(),
             rule: None,
         }

@@ -78,6 +78,8 @@ struct Ctx {
     extra: BTreeSet<RiskTag>,
     /// Redirection targets written to, from the command and from enclosing groups.
     writes: Vec<String>,
+    /// Redirection targets read from, from the command and from enclosing groups.
+    reads: Vec<String>,
     depth: usize,
 }
 
@@ -96,10 +98,24 @@ impl Ctx {
     }
 }
 
+/// Where relative arguments of the commands we are about to walk resolve.
+#[derive(Clone, Default, PartialEq, Eq)]
+enum Cwd {
+    /// No `cd` on this command line: relative arguments stay relative.
+    #[default]
+    Untracked,
+    /// A literal absolute `cd`/`pushd` target.
+    Dir(String),
+    /// A `cd`/`pushd` to something we can't resolve (`cd $dir`, `cd ..`, `cd -`, `popd`):
+    /// relative arguments after it are not provably anything.
+    Changed,
+}
+
 #[derive(Default)]
 pub struct Walker {
     pub commands: Vec<SimpleCommand>,
     pub unknown: Option<String>,
+    cwd: Cwd,
 }
 
 pub fn walk(root: &Node) -> Walker {
@@ -276,9 +292,14 @@ impl Walker {
                 for w in words {
                     self.subs(&w.subs, &fresh);
                 }
-                let _ = matches!(kind, GroupKind::Function);
+                // A subshell and a function body run in their own directory;
+                // `{ ...; }` and `if`/loops/`case` keep the shell's.
+                let saved = self.cwd.clone();
                 for s in body {
                     self.node(s, &inner);
+                }
+                if matches!(kind, GroupKind::Subshell | GroupKind::Function) {
+                    self.cwd = saved;
                 }
             }
         }
@@ -314,11 +335,18 @@ impl Walker {
                 }
                 _ => false,
             };
-            if writes && !harmless_target(&target) {
+            let reads = matches!(r.kind, RedirKind::In | RedirKind::ReadWrite);
+            if harmless_target(&target) {
+                continue;
+            }
+            if writes {
                 if is_block_device(&target) {
                     ctx.extra.insert(RiskTag::Destructive);
                 }
-                ctx.writes.push(target);
+                ctx.writes.push(target.clone());
+            }
+            if reads {
+                ctx.reads.push(target);
             }
         }
     }
@@ -334,6 +362,20 @@ impl Walker {
             self.subs(&w.subs, &fresh);
         }
         self.redirs(&cmd.redirs, &mut ctx);
+        // After a `cd` to a target we can't resolve, a relative operand could be anything.
+        let relative = cmd.words.iter().skip(1).any(|w| {
+            let t = w.text();
+            !t.starts_with('-') && !t.starts_with('/')
+        }) || ctx
+            .writes
+            .iter()
+            .chain(ctx.reads.iter())
+            .any(|t| !t.starts_with('/'));
+        if self.cwd == Cwd::Changed && relative {
+            self.note_unknown(
+                "a relative path after a `cd` whose target is only known at run time",
+            );
+        }
         let args: Vec<Arg> = cmd.words.iter().flat_map(word_args).collect();
         if args.is_empty() {
             if !ctx.writes.is_empty() {
@@ -364,11 +406,22 @@ impl Walker {
         if let Some(reason) = class.unknown {
             self.note_unknown(reason);
         }
+        let cwd = chdir_option(args).or_else(|| match &self.cwd {
+            Cwd::Dir(d) => Some(d.clone()),
+            _ => None,
+        });
         self.commands.push(SimpleCommand {
             program: program.to_string(),
             args: args.iter().map(|a| a.text.clone()).collect(),
             wrappers: ctx.wrappers.clone(),
             writes_to: ctx.writes.clone(),
+            reads_from: ctx.reads.clone(),
+            glob_args: args
+                .iter()
+                .filter(|a| a.glob)
+                .map(|a| a.text.clone())
+                .collect(),
+            cwd,
             tags,
             rule: Some(class.rule),
         });
@@ -383,10 +436,29 @@ impl Walker {
             Ok(node) => {
                 let mut inner = ctx.clone();
                 inner.depth += 1;
+                // The inner shell starts in our directory but its `cd`s don't leak back.
+                let saved = self.cwd.clone();
                 self.node(&node, &inner);
+                self.cwd = saved;
             }
             Err(e) => self.note_unknown(format!("could not parse an inner shell string: {e}")),
         }
+    }
+
+    /// Track where relative arguments resolve: `cd /etc && cat shadow` reads `/etc/shadow`.
+    /// Only a literal absolute target is followable; anything else is `Changed`, so a later
+    /// relative operand makes the analysis `unknown`.
+    fn chdir(&mut self, prog: &str, args: &[Arg]) {
+        let target = if prog == "popd" {
+            None
+        } else {
+            args.iter()
+                .find(|a| a.text != "--" && !a.text.starts_with('-'))
+        };
+        self.cwd = match target {
+            Some(a) if !a.dynamic && a.text.starts_with('/') => Cwd::Dir(a.text.clone()),
+            _ => Cwd::Changed,
+        };
     }
 
     // ------------------------------------------------------------ commands
@@ -431,6 +503,11 @@ impl Walker {
             }
             "xargs" => self.xargs(&text, rest, ctx),
             "watch" => self.watch(&text, rest, ctx),
+            "cd" | "pushd" | "popd" => {
+                self.chdir(&prog, rest);
+                let class = classify(&prog, rest);
+                self.emit(&text, rest, ctx, class);
+            }
             "sh" | "bash" | "dash" | "zsh" | "ksh" | "ash" | "mksh" | "rbash" | "fish" | "csh"
             | "tcsh" => self.shell(&text, &prog, rest, ctx),
             "eval" => {
@@ -1132,6 +1209,31 @@ impl Walker {
 
 // ---------------------------------------------------------------- words
 
+/// `git -C dir`, `tar -C dir`, `make --directory=dir`: the command reads its relative paths
+/// inside `dir`. Only literal absolute values count; anything else is no help.
+fn chdir_option(args: &[Arg]) -> Option<String> {
+    let mut i = 0;
+    while i < args.len() {
+        let t = args[i].text.as_str();
+        let value = if t == "-C" || t == "--directory" {
+            i += 1;
+            args.get(i).map(|v| v.text.clone())
+        } else {
+            t.strip_prefix("--directory=")
+                .or_else(|| t.strip_prefix("-C"))
+                .filter(|v| !v.is_empty())
+                .map(String::from)
+        };
+        if let Some(v) = value {
+            if v.starts_with('/') {
+                return Some(v);
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
 fn harmless_target(t: &str) -> bool {
     t == "/dev/null"
         || t == "/dev/stdout"
@@ -1160,10 +1262,18 @@ fn is_block_device(t: &str) -> bool {
     PREFIXES.iter().any(|p| t.starts_with(p))
 }
 
+/// Whether the shell expands this word as a glob: an unquoted `*`, `?` or `[`.
+fn shell_glob(w: &Word) -> bool {
+    w.parts
+        .iter()
+        .any(|p| matches!(p, Part::Lit { text, quoted: false } if text.contains(['*', '?', '['])))
+}
+
 /// One word becomes one argument, or several after brace expansion.
 fn word_args(w: &Word) -> Vec<Arg> {
     let text = w.text();
     let dynamic = w.is_dynamic();
+    let glob = shell_glob(w);
     let first_dyn = matches!(w.parts.first(), Some(Part::Dynamic(_)));
     let glob_lead = matches!(
         w.parts.first(),
@@ -1178,6 +1288,7 @@ fn word_args(w: &Word) -> Vec<Arg> {
                 text,
                 dynamic: true,
                 flaggy: true,
+                glob,
             }];
         }
         let chars: Vec<(char, bool)> = w
@@ -1194,16 +1305,21 @@ fn word_args(w: &Word) -> Vec<Arg> {
         return match brace_expand(&chars, &mut budget) {
             Some(items) => items
                 .into_iter()
-                .map(|t| Arg {
-                    flaggy: t.starts_with(['*', '?', '[']),
-                    text: t,
-                    dynamic: false,
+                .map(|t| {
+                    let glob = glob || t.contains(['*', '?', '[']);
+                    Arg {
+                        flaggy: t.starts_with(['*', '?', '[']),
+                        text: t,
+                        dynamic: false,
+                        glob,
+                    }
                 })
                 .collect(),
             None => vec![Arg {
                 text,
                 dynamic: true,
                 flaggy: true,
+                glob,
             }],
         };
     }
@@ -1212,6 +1328,7 @@ fn word_args(w: &Word) -> Vec<Arg> {
         text,
         dynamic,
         flaggy,
+        glob,
     }]
 }
 
