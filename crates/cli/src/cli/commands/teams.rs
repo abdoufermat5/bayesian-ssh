@@ -472,6 +472,10 @@ async fn run(command: TeamsCommands, store: &TeamsStore, config: &AppConfig) -> 
                 );
             }
             print_sync(sync.name.as_deref().unwrap_or("team"), &sync);
+            println!(
+                "   Kept '{}' here as a local connection (`bssh remove {}` deletes it).",
+                conn.name, conn.name
+            );
         }
 
         TeamsCommands::Members { team } => {

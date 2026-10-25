@@ -1432,11 +1432,18 @@ impl<'a> Session<'a> {
 
     /// Share a local connection with the team (or update it, if it already
     /// came from this team).
+    ///
+    /// A local connection becomes the team's: it is linked to the vault entry
+    /// before the sync, so the sync updates it instead of adding a renamed copy
+    /// (`name@team`), and teammates' later edits reach the connection the user
+    /// actually uses, behind the usual confirmation of route changes. A copy
+    /// left by an earlier share is adopted: its entry is reused and the copy
+    /// removed.
     pub async fn share(&self, team_id: Uuid, connection: &Connection) -> Result<(Uuid, TeamSync)> {
-        let entry_id = match team_of_connection(self.db(), connection)? {
-            Some((t, entry)) if t == team_id => Some(entry),
+        let (entry_id, unlinked) = match team_of_connection(self.db(), connection)? {
+            Some((t, entry)) if t == team_id => (entry, None),
             Some(_) => bail!("'{}' belongs to another team", connection.name),
-            None => None,
+            None => (self.link_to_team(team_id, connection)?, Some(connection)),
         };
         let record = ConnectionRecord {
             name: connection.name.clone(),
@@ -1449,18 +1456,56 @@ impl<'a> Session<'a> {
             tags: connection.tags.clone(),
             notes: None,
         };
-        let sync = self
-            .sync_team(team_id, vec![Edit::Connection { entry_id, record }])
-            .await?;
-        let id = sync.entry_ids.first().copied().unwrap_or_default();
-        Ok((id, sync))
+        let sync = match self
+            .sync_team(
+                team_id,
+                vec![Edit::Connection {
+                    entry_id: Some(entry_id),
+                    record,
+                }],
+            )
+            .await
+        {
+            Ok(sync) => sync,
+            Err(e) => {
+                // Unlink, or the next sync would find no entry for it and mark
+                // the user's own connection stale.
+                if let Some(original) = unlinked {
+                    self.db().update_connection(original)?;
+                }
+                return Err(e);
+            }
+        };
+        Ok((entry_id, sync))
     }
 
-    /// Delete a team connection from the vault for everyone.
+    /// Link a local connection to `team_id`'s source: see [`link_to_team_source`].
+    fn link_to_team(&self, team_id: Uuid, connection: &Connection) -> Result<Uuid> {
+        let (_, source) = local_teams(self.db())?
+            .into_iter()
+            .find(|(id, _)| *id == team_id)
+            .ok_or_else(|| anyhow!("team {team_id} has no local source"))?;
+        link_to_team_source(self.db(), &source, connection)
+    }
+
+    /// Delete a team connection from the vault for everyone. This machine
+    /// keeps it as a local connection.
     pub async fn unshare(&self, connection: &Connection) -> Result<TeamSync> {
         let (team_id, entry_id) = team_of_connection(self.db(), connection)?
             .ok_or_else(|| anyhow!("'{}' is not a team connection", connection.name))?;
-        self.sync_team(team_id, vec![Edit::Delete(entry_id)]).await
+        let sync = self
+            .sync_team(team_id, vec![Edit::Delete(entry_id)])
+            .await?;
+        // Gone for the team; here it goes back to being a local connection (a
+        // shared connection is often the sharer's own), not a stale one.
+        if let Some(mut local) = self.db().get_connection(&connection.id.to_string())? {
+            local.source_id = None;
+            local.external_id = None;
+            local.stale_since = None;
+            local.pending_change = None;
+            self.db().update_connection(&local)?;
+        }
+        Ok(sync)
     }
 
     /// The entry id of a team connection by its local name or alias.
@@ -1559,6 +1604,37 @@ impl<'a> Session<'a> {
             complete,
         })
     }
+}
+
+/// Link a local connection to a team `source` under a vault entry id, before
+/// the share's sync materializes the vault: the entry of a copy an earlier
+/// share left behind (`name@team`, `name@team-2`..., which is removed), or a
+/// new one. Returns the entry id.
+pub(crate) fn link_to_team_source(
+    db: &Database,
+    source: &Source,
+    connection: &Connection,
+) -> Result<Uuid> {
+    let copy_name = format!("{}@{}", connection.name, source.name);
+    let copy = db.connections_for_source(source.id)?.into_iter().find(|c| {
+        c.name == copy_name
+            || c.name
+                .strip_prefix(&copy_name)
+                .and_then(|rest| rest.strip_prefix('-'))
+                .is_some_and(|n| n.parse::<u32>().is_ok())
+    });
+    let entry_id = match &copy {
+        Some(c) => uuid(c.external_id.as_deref().unwrap_or_default())?,
+        None => Uuid::new_v4(),
+    };
+    if let Some(c) = copy {
+        db.remove_connection(&c.id.to_string())?;
+    }
+    let mut linked = connection.clone();
+    linked.source_id = Some(source.id);
+    linked.external_id = Some(entry_id.to_string());
+    db.update_connection(&linked)?;
+    Ok(entry_id)
 }
 
 /// Mirror a decrypted vault into `db` through the inventory machinery: hosts are
@@ -1942,6 +2018,138 @@ pub fn explain(err: &anyhow::Error) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn shared_record(c: &Connection) -> super::super::TeamConnection {
+        super::super::TeamConnection {
+            entry_id: Uuid::new_v4(),
+            revision: 1,
+            pending: false,
+            record: ConnectionRecord {
+                name: c.name.clone(),
+                host: c.host.clone(),
+                user: c.user.clone(),
+                port: c.port,
+                bastion: c.bastion.clone(),
+                bastion_user: c.bastion_user.clone(),
+                use_kerberos: c.use_kerberos,
+                tags: c.tags.clone(),
+                notes: None,
+            },
+        }
+    }
+
+    fn team_db() -> (tempfile::TempDir, Database, AppConfig, Uuid, Source) {
+        let dir = tempfile::tempdir().unwrap();
+        let config = AppConfig {
+            database_path: dir.path().join("bssh.db"),
+            ..AppConfig::default()
+        };
+        let db = Database::new(&config).unwrap();
+        let team_id = Uuid::new_v4();
+        let source = Source::new(
+            "homelab".into(),
+            SourceKind::Team,
+            serde_json::json!({ "team_id": team_id.to_string() }),
+        );
+        db.add_source(&source).unwrap();
+        (dir, db, config, team_id, source)
+    }
+
+    fn local_backup(db: &Database) -> Connection {
+        let mut c = Connection::new(
+            "backup-pc".into(),
+            "10.8.0.10".into(),
+            "abdoufermat".into(),
+            22,
+            None,
+            None,
+            false,
+            Some("/home/me/.ssh/id_rsa".into()),
+        );
+        c.forward_agent = true;
+        db.add_connection(&c).unwrap();
+        c
+    }
+
+    #[test]
+    fn sharing_links_the_local_connection_instead_of_adding_a_copy() {
+        let (_dir, db, config, team_id, source) = team_db();
+        let local = local_backup(&db);
+
+        let entry_id = link_to_team_source(&db, &source, &local).unwrap();
+        let mut shared = shared_record(&local);
+        shared.entry_id = entry_id;
+        let view = VaultView {
+            connections: vec![shared],
+            ..VaultView::default()
+        };
+        materialize_into(&db, &config, team_id, &view).unwrap();
+
+        let all = db.list_connections(None, false).unwrap();
+        assert_eq!(
+            all.len(),
+            1,
+            "{:?}",
+            all.iter().map(|c| &c.name).collect::<Vec<_>>()
+        );
+        let linked = db.get_connection("backup-pc").unwrap().unwrap();
+        assert_eq!(
+            linked.id, local.id,
+            "the user's own connection, not a new one"
+        );
+        assert_eq!(linked.source_id, Some(source.id));
+        assert_eq!(linked.external_id, Some(entry_id.to_string()));
+        // Local-only settings survive, and an unchanged route asks nothing.
+        assert_eq!(linked.key_path.as_deref(), Some("/home/me/.ssh/id_rsa"));
+        assert!(linked.forward_agent);
+        assert!(linked.pending_change.is_none());
+
+        // A teammate's edit now reaches it, behind the confirmation.
+        let mut moved = view.connections[0].clone();
+        moved.record.host = "10.10.10.30".into();
+        moved.revision = 2;
+        let view = VaultView {
+            connections: vec![moved],
+            ..VaultView::default()
+        };
+        materialize_into(&db, &config, team_id, &view).unwrap();
+        let moved = db.get_connection("backup-pc").unwrap().unwrap();
+        assert_eq!(moved.host, "10.10.10.30");
+        assert_eq!(moved.pending_change.unwrap().previous.host, "10.8.0.10");
+        assert!(!moved.forward_agent);
+    }
+
+    #[test]
+    fn sharing_again_adopts_the_copy_an_earlier_share_left() {
+        let (_dir, db, config, team_id, source) = team_db();
+        let local = local_backup(&db);
+        // Before the fix: the share's sync added the entry as `backup-pc@homelab`.
+        let earlier = shared_record(&local);
+        let view = VaultView {
+            connections: vec![earlier.clone()],
+            ..VaultView::default()
+        };
+        materialize_into(&db, &config, team_id, &view).unwrap();
+        assert!(db.get_connection("backup-pc@homelab").unwrap().is_some());
+
+        let entry_id = link_to_team_source(&db, &source, &local).unwrap();
+        assert_eq!(
+            entry_id, earlier.entry_id,
+            "the existing vault entry is reused"
+        );
+        materialize_into(&db, &config, team_id, &view).unwrap();
+
+        let names: Vec<String> = db
+            .list_connections(None, false)
+            .unwrap()
+            .into_iter()
+            .map(|c| c.name)
+            .collect();
+        assert_eq!(names, ["backup-pc"]);
+        let linked = db.get_connection("backup-pc").unwrap().unwrap();
+        assert_eq!(linked.id, local.id);
+        assert_eq!(linked.external_id, Some(earlier.entry_id.to_string()));
+    }
 
     fn api_error(status: u16, code: ErrorCode, message: &str) -> TeamsError {
         TeamsError::Api {
