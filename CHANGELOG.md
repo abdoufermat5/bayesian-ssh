@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.5] - 2026-10-25
+
 ### Changed
 - **bssh Teams: sharing a connection no longer leaves you two copies.** `bssh teams share` (and the desktop's share) turns the connection you shared into the team's connection, instead of adding the team's copy next to it as `name@team`. Your teammates' edits now reach the connection you actually use, behind the confirmation of route changes, and your key path and agent forwarding stay yours. Sharing a connection again adopts a `name@team` copy left by an earlier version and removes it. Like any team connection, a local edit you don't share again is replaced by the vault's version at the next sync. `bssh teams unshare` removes the connection from the team and keeps it on your machine as a local connection.
 
