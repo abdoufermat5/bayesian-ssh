@@ -53,6 +53,10 @@ pub enum ErrorCode {
     /// 403: the `email_code` is wrong, expired, already used, or was tried
     /// too often. Request a new one.
     InvalidEmailCode,
+    /// 403: the team's audit storage is full. The upload stored nothing: the
+    /// client keeps its events queued and tells the user. An admin raises the
+    /// limit on the server (or the operator does); the next upload goes through.
+    AuditQuotaExceeded,
     /// A code this client doesn't know (sent by a newer server).
     #[serde(other)]
     Unknown,
@@ -109,7 +113,20 @@ pub struct CreateAccountResponse {
     pub device_id: Uuid,
 }
 
-/// `POST /v1/devices`: add another device to the caller's account.
+/// `POST /v1/devices` (`AddDeviceRequest`, `AddDeviceResponse`): add another
+/// device to the caller's account. The server does **not** serve it: the types
+/// are kept for wire compatibility only. A bearer token alone must not be able
+/// to add a device, or a stolen one-hour token would become permanent access.
+///
+/// `DELETE /v1/devices/{device_id}` revokes a device: no body, 204. Allowed
+/// for the device's own account and for an active admin of a team in which the
+/// device's account is an active member. Accounts have one device each, so an
+/// owner revokes the device they are signed in on; a lost or stolen laptop is
+/// revoked by a team admin. Revocation is permanent: `revoked_at` is set, the
+/// device's tokens stop working at once, and every team where the account is
+/// an active member gets `rotation_required`, so the next key version leaves
+/// the device out. The device gets `Forbidden` everywhere. It stays in member
+/// device lists, with `revoked_at` set ([`DeviceInfo::revoked_at`]).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AddDeviceRequest {
     pub device: NewDevice,
@@ -779,9 +796,108 @@ pub struct IngestAuditResponse {
     pub duplicates: Vec<Uuid>,
 }
 
-/// `GET /v1/teams/{team_id}/audit?device_id=&entry_id=&kind=&actor=&since=&limit=`
-/// (admin) returns `Vec<AuditRecord>`, newest first, `limit` default 100, max
-/// 1000. `kind` is an [`AuditKind::as_str`] name, `actor` an exact actor name.
+/// Sort order of `GET /v1/teams/{team_id}/audit`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AuditOrder {
+    /// `received_at` descending, then `device_id` descending, then `seq`
+    /// descending: the newest events first. The default.
+    #[default]
+    Newest,
+    /// `device_id` ascending, then `seq` ascending: each device's hash chain
+    /// in order, one device after the other. For verification and export.
+    Chain,
+}
+
+/// Query string of `GET /v1/teams/{team_id}/audit` (admin). The response is
+/// `Vec<AuditRecord>` in the requested [`AuditOrder`].
+///
+/// Filters: `device_id`, `entry_id`, `kind` (an [`AuditKind::as_str`] name),
+/// `actor` (an exact actor name), `since` (`received_at >= since`: the time the
+/// server observed the event, not the signed `occurred_at`). `limit` is clamped
+/// by the server to 1 to 1000 (not rejected), default 100.
+///
+/// Paging is keyset-based: ask for a page, then ask again with the cursor of
+/// the last record ([`AuditListQuery::after`]) until a page holds fewer records
+/// than the effective (clamped) `limit`, which is the last. The cursor is stable
+/// while events keep arriving: new events never shift or repeat the pages
+/// already read.
+///
+/// - `order=newest` (default): cursor `before_received_at`, `before_device_id`
+///   and `before_seq`, all three or none. Returns the events strictly after
+///   that position in the newest-first order. All filters apply.
+/// - `order=chain`: cursor `after_device_id` and `after_seq`, both or none.
+///   Returns the events strictly after that position in the chain order. Only
+///   `device_id` and `limit` are allowed besides the cursor: a filter would
+///   drop events from the middle of a chain and break the contiguity that
+///   verification relies on.
+///
+/// Anything else is `InvalidRequest`: a partial cursor, a cursor of the other
+/// order, or a filter with `order=chain`.
+///
+/// A server older than paging ignores the cursor and the order and answers
+/// the first page again. A client that may talk to one must stop as soon as a
+/// page does not advance past its cursor (the last record is the same as the
+/// previous page's, or the page is not past the cursor in the requested
+/// order), instead of looping.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AuditListQuery {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<AuditKind>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actor: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub since: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+    /// Absent means [`AuditOrder::Newest`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub order: Option<AuditOrder>,
+    /// Newest cursor, with `before_device_id` and `before_seq`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before_received_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before_device_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before_seq: Option<u64>,
+    /// Chain cursor, with `after_seq`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after_device_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after_seq: Option<u64>,
+}
+
+impl AuditListQuery {
+    /// The query for the page after the one that ended with `last`: the
+    /// cursor of the query's order is set from `last` (the other order's
+    /// cursor is cleared), every other field is kept.
+    pub fn after(&self, last: &AuditRecord) -> AuditListQuery {
+        let mut next = self.clone();
+        match self.order.unwrap_or_default() {
+            AuditOrder::Newest => {
+                next.before_received_at = Some(last.received_at);
+                next.before_device_id = Some(last.event.device_id);
+                next.before_seq = Some(last.event.seq);
+                next.after_device_id = None;
+                next.after_seq = None;
+            }
+            AuditOrder::Chain => {
+                next.after_device_id = Some(last.event.device_id);
+                next.after_seq = Some(last.event.seq);
+                next.before_received_at = None;
+                next.before_device_id = None;
+                next.before_seq = None;
+            }
+        }
+        next
+    }
+}
+
+/// One stored audit event as `GET …/audit` returns it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AuditRecord {
     pub event: AuditEvent,
@@ -867,6 +983,103 @@ mod tests {
         let e: ApiError =
             serde_json::from_str(r#"{"code":"payment_required","message":"x"}"#).unwrap();
         assert_eq!(e.code, ErrorCode::PaymentRequired);
+    }
+
+    #[test]
+    fn audit_quota_code_round_trips() {
+        let json = serde_json::to_string(&ErrorCode::AuditQuotaExceeded).unwrap();
+        assert_eq!(json, "\"audit_quota_exceeded\"");
+        assert_eq!(
+            serde_json::from_str::<ErrorCode>(&json).unwrap(),
+            ErrorCode::AuditQuotaExceeded
+        );
+    }
+
+    fn record(device: u8, seq: u64, received_secs: i64) -> AuditRecord {
+        AuditRecord {
+            event: AuditEvent {
+                event_id: Uuid::from_bytes([9; 16]),
+                team_id: Uuid::from_bytes([1; 16]),
+                device_id: Uuid::from_bytes([device; 16]),
+                seq,
+                kind: AuditKind::SessionStart,
+                entry_id: None,
+                occurred_at: chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
+                prev_hash: Fixed::ZERO,
+                signature: Fixed::ZERO,
+                actor: None,
+                detail: None,
+            },
+            received_at: chrono::DateTime::from_timestamp(received_secs, 0).unwrap(),
+            client_ip: None,
+        }
+    }
+
+    #[test]
+    fn audit_order_is_lowercase_and_defaults_to_newest() {
+        assert_eq!(
+            serde_json::to_string(&AuditOrder::Chain).unwrap(),
+            "\"chain\""
+        );
+        assert_eq!(
+            serde_json::from_str::<AuditOrder>("\"newest\"").unwrap(),
+            AuditOrder::Newest
+        );
+        assert_eq!(AuditOrder::default(), AuditOrder::Newest);
+    }
+
+    #[test]
+    fn empty_audit_query_serializes_to_nothing() {
+        let json = serde_json::to_string(&AuditListQuery::default()).unwrap();
+        assert_eq!(json, "{}");
+        let q: AuditListQuery = serde_json::from_str(r#"{"kind":"vault_read","limit":5}"#).unwrap();
+        assert_eq!(q.kind, Some(AuditKind::VaultRead));
+        assert_eq!(q.limit, Some(5));
+    }
+
+    #[test]
+    fn after_sets_the_newest_cursor_and_keeps_filters() {
+        let q = AuditListQuery {
+            actor: Some("ci".into()),
+            limit: Some(50),
+            after_device_id: Some(Uuid::nil()),
+            after_seq: Some(3),
+            ..Default::default()
+        };
+        let next = q.after(&record(4, 7, 1_700_000_500));
+        assert_eq!(next.actor.as_deref(), Some("ci"));
+        assert_eq!(next.limit, Some(50));
+        assert_eq!(next.before_device_id, Some(Uuid::from_bytes([4; 16])));
+        assert_eq!(next.before_seq, Some(7));
+        assert_eq!(
+            next.before_received_at,
+            chrono::DateTime::from_timestamp(1_700_000_500, 0)
+        );
+        assert_eq!((next.after_device_id, next.after_seq), (None, None));
+    }
+
+    #[test]
+    fn after_sets_the_chain_cursor_in_chain_order() {
+        let q = AuditListQuery {
+            order: Some(AuditOrder::Chain),
+            device_id: Some(Uuid::from_bytes([4; 16])),
+            limit: Some(1000),
+            before_seq: Some(1),
+            ..Default::default()
+        };
+        let next = q.after(&record(4, 7, 1_700_000_500));
+        assert_eq!(next.order, Some(AuditOrder::Chain));
+        assert_eq!(next.device_id, Some(Uuid::from_bytes([4; 16])));
+        assert_eq!(next.after_device_id, Some(Uuid::from_bytes([4; 16])));
+        assert_eq!(next.after_seq, Some(7));
+        assert_eq!(
+            (
+                next.before_received_at,
+                next.before_device_id,
+                next.before_seq
+            ),
+            (None, None, None)
+        );
     }
 }
 
