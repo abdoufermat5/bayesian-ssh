@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.7] - 2026-10-26
+
 ### Fixed
 - **The AppImage starts for every user.** Its launcher (`AppRun.wrapped`) was packed executable only for its owner, so the AppImage failed with "Permission denied" when run under another user or in a sandbox such as the AppImage catalog's test. The release now repacks the AppImage with world-readable files and signs it again for the in-app updater.
 
