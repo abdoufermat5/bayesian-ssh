@@ -186,6 +186,29 @@ jobs:
           cd desktop
           npm run tauri build -- --target ${{ matrix.target }} --config "${{ runner.temp }}/tauri.release.conf.json"
 
+      # linuxdeploy packs AppRun.wrapped as 0770, so the AppImage only starts
+      # for its owner (the AppImage catalog test fails with "Permission
+      # denied"). Repack it with sane modes; that invalidates the updater
+      # signature, so sign the repacked file again.
+      - name: Fix AppImage permissions
+        shell: bash
+        env:
+          UPDATER_ENABLED: ${{ needs.gate.outputs.updater_enabled }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          file="$(find "target/${{ matrix.target }}/release/bundle" -type f -name '*.AppImage' | head -n 1)"
+          if [ -z "$file" ]; then
+            echo "::error::no .AppImage bundle produced"
+            exit 1
+          fi
+          scripts/fix-appimage.sh "$file" "${{ matrix.arch }}"
+          rm -f "${file}.sig"
+          if [ "$UPDATER_ENABLED" = "true" ]; then
+            file="$(realpath "$file")"
+            (cd desktop && npm run tauri signer sign -- "$file")
+          fi
+
       - name: Stage artifacts
         id: stage
         shell: bash
