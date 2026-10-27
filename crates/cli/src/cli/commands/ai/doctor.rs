@@ -170,7 +170,7 @@ fn render_text(report: &DoctorReport, policy_error: Option<String>) -> String {
     if clients.is_empty() {
         let _ = writeln!(
             s,
-            "  skip  no agent client found (Claude Code, Codex, Cursor, VS Code, Claude Desktop)"
+            "  skip  no agent client found (Claude Code, Codex, Cursor, VS Code, Claude Desktop, omp)"
         );
     }
     for c in clients {

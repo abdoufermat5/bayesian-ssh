@@ -11,6 +11,8 @@
 //! - Codex: `[mcp_servers.<name>]` with `command` and `args` in `~/.codex/config.toml`.
 //! - Cursor: `~/.cursor/mcp.json`, `mcpServers`. VS Code: user `mcp.json`, `servers` with `type`.
 //! - Claude Desktop: `claude_desktop_config.json`, `mcpServers`.
+//! - omp (oh-my-pi): `~/.omp/agent/mcp.json`, `mcpServers` with `type`. omp ignores other
+//!   clients' user configs (`~/.claude.json`, …) unless opted in, so it needs its own entry.
 
 use anyhow::{anyhow, bail, Context, Result};
 use serde_json::{json, Map, Value};
@@ -26,15 +28,17 @@ pub enum Client {
     Cursor,
     Vscode,
     ClaudeDesktop,
+    Omp,
 }
 
 impl Client {
-    pub const ALL: [Client; 5] = [
+    pub const ALL: [Client; 6] = [
         Client::ClaudeCode,
         Client::Codex,
         Client::Cursor,
         Client::Vscode,
         Client::ClaudeDesktop,
+        Client::Omp,
     ];
 
     pub fn parse(s: &str) -> Result<Self> {
@@ -44,8 +48,9 @@ impl Client {
             "cursor" => Client::Cursor,
             "vscode" | "vs-code" | "code" => Client::Vscode,
             "claude-desktop" | "claudedesktop" => Client::ClaudeDesktop,
+            "omp" | "oh-my-pi" => Client::Omp,
             other => bail!(
-                "unknown client '{other}' (use claude-code, codex, cursor, vscode or claude-desktop)"
+                "unknown client '{other}' (use claude-code, codex, cursor, vscode, claude-desktop or omp)"
             ),
         })
     }
@@ -57,6 +62,7 @@ impl Client {
             Client::Cursor => "cursor",
             Client::Vscode => "vscode",
             Client::ClaudeDesktop => "claude-desktop",
+            Client::Omp => "omp",
         }
     }
 
@@ -101,6 +107,7 @@ pub fn config_path(client: Client, home: &Path) -> PathBuf {
                 home.join(".config/Claude/claude_desktop_config.json")
             }
         }
+        Client::Omp => home.join(".omp").join("agent").join("mcp.json"),
     }
 }
 
@@ -177,7 +184,7 @@ fn mcp_args(policy: &str) -> Vec<String> {
 
 fn json_entry(client: Client, bin: &Path, policy: &str) -> Value {
     let mut o = Map::new();
-    if matches!(client, Client::ClaudeCode | Client::Vscode) {
+    if matches!(client, Client::ClaudeCode | Client::Vscode | Client::Omp) {
         o.insert("type".into(), json!("stdio"));
     }
     o.insert("command".into(), json!(bin.to_string_lossy()));
@@ -791,14 +798,22 @@ mod tests {
         let h = tempfile::tempdir().unwrap();
         let ai = h.path().join("ai");
         let bin = PathBuf::from("/b/bssh");
-        for c in [Client::Vscode, Client::Cursor, Client::ClaudeDesktop] {
+        for c in [
+            Client::Vscode,
+            Client::Cursor,
+            Client::ClaudeDesktop,
+            Client::Omp,
+        ] {
             run_install(&opts(c, h.path(), &ai, &bin, &[])).unwrap();
             let v: Value =
                 serde_json::from_str(&std::fs::read_to_string(config_path(c, h.path())).unwrap())
                     .unwrap();
             let e = &v[c.servers_key()]["bssh"];
             assert_eq!(e["command"], "/b/bssh", "{c:?}");
-            assert_eq!(e.get("type").is_some(), c == Client::Vscode);
+            assert_eq!(
+                e.get("type").is_some(),
+                matches!(c, Client::Vscode | Client::Omp)
+            );
         }
     }
 

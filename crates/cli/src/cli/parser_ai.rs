@@ -20,7 +20,7 @@ pub enum AiCommands {
     Log(AiArgsLog),
     /// Replay the recorded output of an agent run
     Replay(AiArgsReplay),
-    /// Configure an agent client (claude-code, codex, cursor, vscode, claude-desktop) to use bssh
+    /// Configure an agent client (claude-code, codex, cursor, vscode, claude-desktop, omp) to use bssh
     Install(AiArgsInstall),
     /// Prepare hosts for agents: create the low-privilege bssh-agent user (needs root once)
     Setup(AiArgsSetup),
@@ -137,7 +137,7 @@ pub struct AiArgsReplay {
 
 #[derive(Args, Debug)]
 pub struct AiArgsInstall {
-    /// claude-code, codex, cursor, vscode or claude-desktop
+    /// claude-code, codex, cursor, vscode, claude-desktop or omp
     pub client: String,
     #[arg(long, default_value = "default")]
     pub policy: String,

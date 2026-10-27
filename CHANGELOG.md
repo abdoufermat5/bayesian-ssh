@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`bssh ai install omp`** configures [omp](https://github.com/can1357/oh-my-pi) (oh-my-pi) in `~/.omp/agent/mcp.json`, and `bssh ai doctor` lists it. omp doesn't read other clients' user configs such as `~/.claude.json` unless they're opted in with `enabledProviders`, so `bssh ai install claude-code` alone didn't reach it.
+
 ## [2.13.8] - 2026-10-27
 
 ### Fixed
