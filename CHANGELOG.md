@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`bssh ai explain --host` and `bssh ai policy test --host` find hosts like every other command.** They only accepted a connection's exact name, so `--host up` failed with "host 'up' not found" where `bssh show up` lists the matches. They now resolve the name the same way `connect`, `show` and the rest do: an exact match first, then a fuzzy search that picks a single match on its own and lets you choose among several. The explain report names the host it resolved to, not the text you typed.
+
 ## [2.13.7] - 2026-10-26
 
 ### Fixed

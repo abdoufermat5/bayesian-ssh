@@ -507,9 +507,8 @@ async fn host_facts(config: &AppConfig, name: Option<&str>) -> Result<HostFacts>
         return Ok(HostFacts::default());
     };
     let service = SshService::new(config.clone())?;
-    let Some(connection) = service.get_connection(name).await? else {
-        bail!("host '{name}' not found");
-    };
+    let connection =
+        crate::cli::utils::resolve_connection(&service, name, "use", true, config).await?;
     let source = crate::services::ai::source_name(config, &connection);
     Ok(policy::connection_facts(
         &connection,

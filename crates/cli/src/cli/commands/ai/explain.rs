@@ -12,7 +12,7 @@ use crate::services::ai::types::{
 };
 use crate::services::ai::ui::{self, Glyph, Style, Tone, Verdict};
 use crate::services::SshService;
-use anyhow::{bail, Result};
+use anyhow::Result;
 use std::sync::Arc;
 
 pub async fn execute(args: AiArgsExplain, config: AppConfig) -> Result<()> {
@@ -31,7 +31,7 @@ pub async fn execute(args: AiArgsExplain, config: AppConfig) -> Result<()> {
         &analyzer,
         &command,
         &args.policy,
-        args.host.as_deref(),
+        args.host.as_ref().map(|_| facts.name.as_str()),
         &facts.tags,
         |analysis| decide(&config, &args.policy, &facts, &command, analysis),
     );
@@ -372,9 +372,8 @@ async fn host_facts(config: &AppConfig, name: Option<&str>) -> Result<HostFacts>
         return Ok(HostFacts::default());
     };
     let service = SshService::new(config.clone())?;
-    let Some(connection) = service.get_connection(name).await? else {
-        bail!("host '{name}' not found");
-    };
+    let connection =
+        crate::cli::utils::resolve_connection(&service, name, "use", true, config).await?;
     let source = crate::services::ai::source_name(config, &connection);
     Ok(policy::connection_facts(
         &connection,
@@ -770,7 +769,7 @@ mod tests {
             "default",
             None,
             &[],
-            |_| bail!("store locked"),
+            |_| anyhow::bail!("store locked"),
         );
         assert!(text.contains("[unavailable]  policy unavailable"));
         assert!(text.contains("store locked"));
