@@ -2,6 +2,7 @@ import type { Terminal } from "@xterm/xterm";
 import { invoke } from "@tauri-apps/api/core";
 import { mount, unmount } from "svelte";
 import PasteConfirm from "$lib/components/terminal/PasteConfirm.svelte";
+import { readClipboardText } from "$lib/utils/terminal-xterm";
 
 const IS_LINUX =
   typeof navigator !== "undefined" &&
@@ -47,7 +48,12 @@ export async function pasteIntoTerminal(term: Terminal, text: string): Promise<b
   }
   activeConfirmDialog = true;
 
-  const { promise, resolve } = Promise.withResolvers<boolean>();
+  // Not Promise.withResolvers: older WebKit webviews (macOS < 14.4) lack it,
+  // and throwing here would leave activeConfirmDialog stuck on.
+  let resolve!: (pasted: boolean) => void;
+  const promise = new Promise<boolean>((r) => {
+    resolve = r;
+  });
   let settled = false;
   let component: Record<string, any> | null = null;
 
@@ -130,7 +136,7 @@ export function attachPasteGuard(container: HTMLElement, term: Terminal): () => 
 
 /** Middle-click (auxclick button 1) paste. Linux: invoke("read_primary_selection"); if null,
  *  fall back to the most recent selection made in ANY xterm of this window (track via
- *  term.onSelectionChange; register each term). Other OS: navigator.clipboard.readText().
+ *  term.onSelectionChange; register each term). Other OS: the system clipboard.
  *  Routes through pasteIntoTerminal. Returns cleanup (also unregisters the selection tracker). */
 export function attachMiddleClickPaste(container: HTMLElement, term: Terminal): () => void {
   // Track selections made in this terminal for window-wide fallback
@@ -168,13 +174,9 @@ export function attachMiddleClickPaste(container: HTMLElement, term: Terminal): 
         void pasteIntoTerminal(term, lastWindowSelection);
       }
     } else {
-      try {
-        const clipText = await navigator.clipboard.readText();
-        if (clipText) {
-          void pasteIntoTerminal(term, clipText);
-        }
-      } catch {
-        // Swallow clipboard read errors
+      const clipText = await readClipboardText();
+      if (clipText) {
+        void pasteIntoTerminal(term, clipText);
       }
     }
   };

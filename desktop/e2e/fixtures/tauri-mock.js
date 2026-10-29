@@ -393,6 +393,8 @@
     redraw_pty: () => null,
     attach_pty_output: (a) => ({ session_id: a && a.sessionId, connection_name: "gpu-trainer", buffered_output: "" }),
     read_primary_selection: () => null,
+    read_clipboard_text: () => null,
+    write_clipboard_text: () => { throw new Error("no native clipboard in the browser"); },
     run_batch_command: async (a) => {
       await new Promise((r) => setTimeout(r, window.__BATCH_DELAY || 300));
       const ids = (a && (a.connectionIds || a.connection_ids)) || [];

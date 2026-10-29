@@ -192,14 +192,33 @@ export function downloadTerminalScrollback(term: Terminal, connectionName: strin
 }
 
 /**
- * Copy text to the clipboard with a WebKitGTK-safe fallback (Tauri's Linux
- * webview can reject `navigator.clipboard` outside of user-gesture paths).
+ * Read the system clipboard as text ("" when empty or unreadable).
+ *
+ * Goes through the backend first: WebKit, the webview on macOS and Linux,
+ * gates `navigator.clipboard.readText` behind a paste prompt or refuses it.
+ */
+export async function readClipboardText(): Promise<string> {
+  try {
+    const text = await invoke<string | null>("read_clipboard_text");
+    if (text) return text;
+  } catch {
+    // Backend clipboard unavailable — try the web API.
+  }
+  try {
+    return (await navigator.clipboard?.readText?.()) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Copy text to the clipboard through the backend, falling back to the web
+ * clipboard API and then to `execCommand` (the only path on some WebKitGTK
+ * builds).
  */
 export function copyTextWithFallback(text: string): void {
   if (!text) return;
   const legacyFallback = () => {
-    // Legacy fallback: hidden textarea + execCommand (still the only
-    // reliable path on some WebKitGTK builds).
     const textarea = document.createElement("textarea");
     textarea.value = text;
     textarea.style.position = "fixed";
@@ -214,11 +233,14 @@ export function copyTextWithFallback(text: string): void {
       document.body.removeChild(textarea);
     }
   };
-  if (typeof navigator.clipboard?.writeText === "function") {
-    navigator.clipboard.writeText(text).catch(legacyFallback);
-    return;
-  }
-  legacyFallback();
+  const webFallback = () => {
+    if (typeof navigator.clipboard?.writeText === "function") {
+      navigator.clipboard.writeText(text).catch(legacyFallback);
+      return;
+    }
+    legacyFallback();
+  };
+  invoke("write_clipboard_text", { text }).catch(webFallback);
 }
 
 let smartCopy = false;
@@ -315,14 +337,9 @@ export function attachXtermKeyHandler(
   };
 
   const pasteText = () => {
-    const doPaste = (text: string) => {
+    void readClipboardText().then((text) => {
       if (text) void pasteIntoTerminal(term, text);
-    };
-    if (typeof navigator.clipboard?.readText === "function") {
-      navigator.clipboard.readText().then(doPaste).catch((err) => {
-        console.error("Failed to read from clipboard", err);
-      });
-    }
+    });
   };
 
   /** Run `action` once per key press and keep the browser from acting too. */
@@ -603,12 +620,9 @@ export function createXtermSession(
 
   const cleanupContextMenu = attachTerminalContextMenu(container, term, {
     paste: () => {
-      const doPaste = (text: string) => {
+      void readClipboardText().then((text) => {
         if (text) void pasteIntoTerminal(term, text);
-      };
-      if (typeof navigator.clipboard?.readText === "function") {
-        navigator.clipboard.readText().then(doPaste).catch(() => {});
-      }
+      });
     },
     find: () => {
       options?.onOpenSearch?.();
