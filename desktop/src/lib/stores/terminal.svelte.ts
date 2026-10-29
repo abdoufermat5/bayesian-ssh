@@ -1,6 +1,7 @@
 import { tick } from "svelte";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, Channel } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import type { SearchAddon } from "@xterm/addon-search";
@@ -9,20 +10,19 @@ import { ensureKerberosForConnection } from "$lib/stores/kerberos.svelte";
 import { notify } from "$lib/stores/notifications.svelte";
 import { getCurrentXtermTheme } from "$lib/utils/theme";
 import {
-  attachXtermAddons,
-  attachXtermIo,
-  attachXtermKeyHandler,
-  attachXtermLinuxInputFix,
-  attachXtermMouseHandlers,
-  attachXtermPtyResize,
-  createOutputCoalescer,
+  createXtermSession,
   safeWrite,
   syncPtySize,
-  terminalShortcutId,
   waitForTerminalFont,
-  type OutputCoalescer,
+  type PtyChunk,
+  type XtermSessionHandle,
 } from "$lib/utils/terminal-xterm";
-
+import { snapshotTerminal } from "$lib/utils/terminal-snapshot";
+import {
+  requestAttentionIfUnfocused,
+  setWindowProgress,
+  type ProgressState,
+} from "$lib/utils/terminal-signals";
 type SettingsGetter = () => DesktopSettings | undefined;
 let _settingsGetter: SettingsGetter | null = null;
 
@@ -116,18 +116,20 @@ export interface TerminalTab {
   /** Live xterm instance (non-reactive lookup; check `ready` in templates). */
   readonly term: Terminal | undefined;
   readonly searchAddon: SearchAddon | undefined;
+  remoteTitle: string | null;
+  bell: boolean;
+  progress: { state: ProgressState; value: number } | null;
 }
 
 /** Non-reactive per-tab runtime: xterm objects, buffers and cleanups. */
 interface TabRuntime {
+  session?: XtermSessionHandle;
   term?: Terminal;
   fitAddon?: FitAddon;
   searchAddon?: SearchAddon;
-  coalescer?: OutputCoalescer;
   /** Output received while the tab is hidden or still being created. */
-  pending: string[];
+  pending: Array<{ data: string; bytes: number }>;
   pendingBytes: number;
-  cleanups: Array<() => void>;
   fitRaf: number | null;
   /** Cursor blink turned off while the Terminals view is hidden. */
   blinkSuspended: boolean;
@@ -147,6 +149,9 @@ class TabState implements TerminalTab {
   readonly conn: Connection | undefined;
   connectStartedAt = $state(Date.now());
   failure = $state.raw<ConnectFailure | null>(null);
+  remoteTitle = $state<string | null>(null);
+  bell = $state(false);
+  progress = $state<{ state: ProgressState; value: number } | null>(null);
 
   constructor(id: string, name: string, connectionName: string, status: TerminalTabStatus, conn?: Connection) {
     this.id = id;
@@ -250,7 +255,6 @@ let activeSessionCount = $state(0);
 let activeTabId = $state<string | null>(null);
 let listenersReady = false;
 let listenersInFlight: Promise<void> | null = null;
-let unlistenOutput: UnlistenFn | null = null;
 let unlistenExit: UnlistenFn | null = null;
 let unlistenExitStatus: UnlistenFn | null = null;
 /** Exit code of a finished session; arrives just before its `pty-exit`. */
@@ -280,14 +284,12 @@ function findDetachedSession(sessionId: string): DetachedSession | undefined {
 const MAX_PENDING_OUTPUT_BYTES = 256 * 1024;
 
 function flushRuntime(rt: TabRuntime) {
-  if (!rt.term || rt.pending.length === 0) return;
-  const combined = rt.pending.length === 1 ? rt.pending[0] : rt.pending.join("");
+  if (!rt.session || rt.pending.length === 0) return;
+  const chunks = rt.pending;
   rt.pending = [];
   rt.pendingBytes = 0;
-  if (rt.coalescer) {
-    rt.coalescer.push(combined);
-  } else {
-    safeWrite(rt.term, combined);
+  for (const chunk of chunks) {
+    rt.session.write(chunk.data, chunk.bytes);
   }
 }
 
@@ -298,10 +300,35 @@ export function flushPendingTabOutput(tab: Pick<TerminalTab, "id">) {
 
 export function setActiveTab(tabId: string | null) {
   if (activeTabId === tabId) return;
+
+  if (activeTabId) {
+    const oldRt = runtimes.get(activeTabId);
+    oldRt?.session?.setVisible(false);
+  }
+
   activeTabId = tabId;
-  if (!tabId) return;
+  if (!tabId) {
+    void setWindowProgress(0, 0);
+    return;
+  }
+
+  const tab = findTab(tabId);
+  if (tab) {
+    tab.bell = false;
+    if (tab.progress) {
+      void setWindowProgress(tab.progress.state, tab.progress.value);
+    } else {
+      void setWindowProgress(0, 0);
+    }
+  }
+
   const rt = runtimes.get(tabId);
   if (!rt) return;
+
+  if (terminalsVisible) {
+    rt.session?.setVisible(true);
+  }
+
   flushRuntime(rt);
   if (rt.term) {
     requestAnimationFrame(() => {
@@ -337,18 +364,30 @@ function setBlinkSuspended(rt: TabRuntime, suspend: boolean) {
 export function setTerminalsVisible(visible: boolean) {
   if (terminalsVisible === visible) return;
   terminalsVisible = visible;
-  for (const rt of runtimes.values()) setBlinkSuspended(rt, !visible);
+  for (const rt of runtimes.values()) {
+    setBlinkSuspended(rt, !visible);
+    if (!visible) {
+      rt.session?.setVisible(false);
+    }
+  }
   if (!visible || !activeTabId) return;
   const rt = runtimes.get(activeTabId);
-  if (rt) flushRuntime(rt);
+  if (rt) {
+    rt.session?.setVisible(true);
+    flushRuntime(rt);
+    scheduleFit(activeTabId);
+  }
 }
 
-function deliverPtyOutput(sessionId: string, data: string) {
-  if (!data) return;
-  // Cheap ownership guard: sessions shown elsewhere (pop-out windows,
-  // detached) have no runtime in this window.
+function deliverPtyOutput(sessionId: string, data: string, bytes: number) {
+  if (!data && bytes <= 0) return;
   const rt = runtimes.get(sessionId);
-  if (!rt) return;
+  if (!rt) {
+    if (bytes > 0) {
+      invoke("ack_pty", { sessionId, bytes }).catch(() => {});
+    }
+    return;
+  }
 
   // ssh's first output (banner, password prompt, remote prompt) means it is
   // past connecting; its text also explains a failure.
@@ -358,26 +397,22 @@ function deliverPtyOutput(sessionId: string, data: string) {
     rt.recentOutput = (rt.recentOutput + stripTerminalControls(data)).slice(-4000);
   }
 
-  if (terminalsVisible && sessionId === activeTabId && rt.coalescer) {
-    // Anything buffered while the tab was hidden must land before new output.
+  if (rt.session) {
     if (rt.pending.length > 0) flushRuntime(rt);
-    rt.coalescer.push(data);
+    rt.session.write(data, bytes);
     return;
   }
 
-  // Background tab (or terminal still being created): buffer in memory
-  // without triggering xterm redraws / layout computations.
-  rt.pending.push(data);
-  rt.pendingBytes += data.length;
-  if (rt.pendingBytes <= MAX_PENDING_OUTPUT_BYTES) return;
-  if (rt.coalescer) {
-    // Hand a busy hidden tab's output to xterm instead of silently dropping
-    // scrollback (and splitting escape sequences) once the buffer is full.
-    flushRuntime(rt);
-    return;
-  }
-  while (rt.pending.length > 1 && rt.pendingBytes > MAX_PENDING_OUTPUT_BYTES) {
-    rt.pendingBytes -= rt.pending.shift()!.length;
+  // Terminal still being created: buffer in memory until session mounts.
+  rt.pending.push({ data, bytes });
+  rt.pendingBytes += bytes;
+
+  while (rt.pending.length > 0 && rt.pendingBytes > MAX_PENDING_OUTPUT_BYTES) {
+    const dropped = rt.pending.shift()!;
+    rt.pendingBytes -= dropped.bytes;
+    if (dropped.bytes > 0) {
+      invoke("ack_pty", { sessionId, bytes: dropped.bytes }).catch(() => {});
+    }
   }
 }
 
@@ -422,10 +457,11 @@ function scheduleFit(tabId: string) {
 }
 
 function createRuntime(tabId: string): TabRuntime {
+  const existing = runtimes.get(tabId);
+  if (existing) return existing;
   const rt: TabRuntime = {
     pending: [],
     pendingBytes: 0,
-    cleanups: [],
     fitRaf: null,
     blinkSuspended: false,
     recentOutput: "",
@@ -439,16 +475,14 @@ function disposeRuntime(tabId: string) {
   if (!rt) return;
   runtimes.delete(tabId);
   if (rt.fitRaf !== null) cancelAnimationFrame(rt.fitRaf);
-  rt.coalescer?.dispose();
-  for (const cleanup of rt.cleanups) {
-    try {
-      cleanup();
-    } catch {
-      // Best effort.
+  for (const chunk of rt.pending) {
+    if (chunk.bytes > 0) {
+      invoke("ack_pty", { sessionId: tabId, bytes: chunk.bytes }).catch(() => {});
     }
   }
-  rt.term?.dispose();
   rt.pending = [];
+  rt.pendingBytes = 0;
+  rt.session?.dispose();
 }
 
 /** Re-measure open terminals when the font finished loading after timeout. */
@@ -479,49 +513,55 @@ async function openTerminalInstance(
     return null;
   }
 
-  const term = new Terminal(termOptions as ConstructorParameters<typeof Terminal>[0]);
-  const fitAddon = new FitAddon();
-  term.loadAddon(fitAddon);
-  const { searchAddon } = attachXtermAddons(term);
+  const tab = findTab(tabId);
 
-  term.open(container);
-  const outputCoalescer = createOutputCoalescer(term);
-
-  rt.term = term;
-  rt.fitAddon = fitAddon;
-  rt.searchAddon = searchAddon;
-  rt.coalescer = outputCoalescer;
-  rt.cleanups.push(attachXtermLinuxInputFix(container, term));
-  rt.cleanups.push(attachXtermMouseHandlers(container, term));
-
-  attachXtermIo(tabId, term);
-  attachXtermPtyResize(tabId, term);
-
-  const observer = new ResizeObserver(() => scheduleFit(tabId));
-  observer.observe(container);
-  rt.cleanups.push(() => observer.disconnect());
-
-  const onMouseDown = () => term.focus();
-  const onWheel = (e: WheelEvent) => {
-    // Ctrl / Cmd + wheel zoom.
-    if (!(e.ctrlKey || e.metaKey)) return;
-    e.preventDefault();
-    updateTerminalFontSize(terminalFontSize + (e.deltaY < 0 ? 1 : -1));
-  };
-  container.addEventListener("mousedown", onMouseDown);
-  container.addEventListener("wheel", onWheel, { passive: false });
-  rt.cleanups.push(() => {
-    container.removeEventListener("mousedown", onMouseDown);
-    container.removeEventListener("wheel", onWheel);
-  });
-
-  attachXtermKeyHandler(
-    term,
-    () => {
+  const session = createXtermSession(container, tabId, {
+    terminalOptions: termOptions,
+    getConnectionName: () => tab?.name ?? "terminal",
+    onOpenSearch: () => {
       toggleTerminalSearch(tabId);
     },
-    runTerminalShortcut,
-  );
+    onShortcut: runTerminalShortcut,
+    onZoom: (delta) => {
+      updateTerminalFontSize(terminalFontSize + delta);
+    },
+    signals: {
+      onTitle: (title) => {
+        if (tab) {
+          tab.remoteTitle = title ? title.trim() : null;
+        }
+      },
+      onBell: () => {
+        const isTabActive = tabId === activeTabId && terminalsVisible;
+        getCurrentWindow().isFocused().then((isFocused) => {
+          if (tab && (!isTabActive || !isFocused)) {
+            tab.bell = true;
+          }
+        }).catch(() => {
+          if (tab && (!isTabActive || !document.hasFocus())) {
+            tab.bell = true;
+          }
+        });
+        void requestAttentionIfUnfocused();
+      },
+      onProgress: (state, value) => {
+        if (tab) {
+          tab.progress = state === 0 ? null : { state, value };
+          if (tabId === activeTabId) {
+            void setWindowProgress(state, value);
+          }
+        }
+      },
+    },
+  });
+
+  rt.session = session;
+  rt.term = session.term;
+  rt.fitAddon = session.fitAddon;
+  rt.searchAddon = session.searchAddon;
+
+  const isVisible = tabId === activeTabId && terminalsVisible;
+  session.setVisible(isVisible);
 
   if (!terminalsVisible) setBlinkSuspended(rt, true);
 
@@ -529,28 +569,28 @@ async function openTerminalInstance(
   // output that arrived while this terminal was being created (reattach
   // race), then the banner.
   if (options?.replay) {
-    safeWrite(term, options.replay, () => {
-      term.scrollToBottom();
+    safeWrite(session.term, options.replay, () => {
+      session.term.scrollToBottom();
+      invoke("redraw_pty", { sessionId: tabId }).catch(() => {});
     });
   }
 
   if (rt.pending.length > 0) flushRuntime(rt);
 
   if (options?.banner && !options?.replay) {
-    safeWrite(term, `${options.banner}\r\n`, () => {
-      term.scrollToBottom();
+    safeWrite(session.term, `${options.banner}\r\n`, () => {
+      session.term.scrollToBottom();
     });
   }
 
-  const tab = findTab(tabId);
   if (tab) tab.ready = true;
 
   requestAnimationFrame(() => {
     scheduleFit(tabId);
-    term.focus();
+    session.term.focus();
   });
 
-  return term;
+  return session.term;
 }
 
 async function sealSessionUi(sessionId: string): Promise<void> {
@@ -599,6 +639,7 @@ async function mountReattachedSession(info: ReattachSessionPayload): Promise<voi
     requestAnimationFrame(() => {
       syncPtySize(tab.id, term);
       term.scrollToBottom();
+      invoke("redraw_pty", { sessionId: tab.id }).catch(() => {});
     });
   });
 }
@@ -671,13 +712,6 @@ export async function initTerminalListeners(onHistoryChanged?: HistoryCallback) 
     await syncPopoutSessions();
     await syncActiveSessionCount();
 
-    unlistenOutput = await listen("pty-output", (event) => {
-      const payload = event.payload as { session_id?: string; sessionId?: string; data: string };
-      const sessionId = payload.session_id ?? payload.sessionId;
-      if (!sessionId) return;
-      deliverPtyOutput(sessionId, payload.data);
-    });
-
     unlistenExitStatus = await listen("pty-exit-status", (event) => {
       const payload = event.payload as { session_id: string; exit_code: number };
       exitCodes.set(payload.session_id, payload.exit_code);
@@ -709,17 +743,21 @@ export async function initTerminalListeners(onHistoryChanged?: HistoryCallback) 
         // ssh gave up while connecting: keep the tab and explain, don't close it.
         if (rt) {
           flushRuntime(rt);
-          rt.coalescer?.flush();
         }
         failConnect(tab, describeConnectFailure(rt?.recentOutput ?? ""));
         void syncActiveSessionCount();
         return;
       }
-      if (tab) tab.status = "exited";
+      if (tab) {
+        tab.status = "exited";
+        tab.progress = null;
+        if (tab.id === activeTabId) {
+          void setWindowProgress(0, 0);
+        }
+      }
       if (rt) {
         // Flush pending output first so the disconnect notice lands after it.
         flushRuntime(rt);
-        rt.coalescer?.flush();
         safeWrite(rt.term, "\n\x1b[1;33mSession disconnected.\x1b[0m\r\n");
       }
 
@@ -735,13 +773,25 @@ export async function initTerminalListeners(onHistoryChanged?: HistoryCallback) 
     });
 
     unlistenSessionDocked = await listen("session-docked", async (event) => {
-      const info = event.payload as ReattachSessionPayload;
-      removePopoutSession(info.session_id);
+      const payload = event.payload as { session_id?: string; sessionId?: string; connection_name?: string; connectionName?: string };
+      const sessionId = payload.session_id ?? payload.sessionId;
+      if (!sessionId) return;
+      const connectionName = payload.connection_name ?? payload.connectionName ?? "Terminal";
+      removePopoutSession(sessionId);
+      createRuntime(sessionId);
       try {
+        const outputChannel = new Channel<PtyChunk>((chunk) => {
+          deliverPtyOutput(sessionId, chunk.data, chunk.bytes);
+        });
+        const info = await invoke<ReattachSessionPayload>("attach_pty_output", {
+          sessionId,
+          output: outputChannel,
+        });
         await mountReattachedSession(info);
-        notify(`"${info.connection_name}" docked — output restored`, "success");
+        notify(`"${info.connection_name || connectionName}" docked — output restored`, "success");
       } catch (e: unknown) {
-        notify(`Failed to dock "${info.connection_name}": ${String(e)}`, "error");
+        disposeRuntime(sessionId);
+        notify(`Failed to dock "${connectionName}": ${String(e)}`, "error");
       }
       await syncActiveSessionCount();
     });
@@ -764,13 +814,11 @@ export async function teardownTerminalListeners() {
   if (listenersInFlight) {
     await listenersInFlight.catch(() => {});
   }
-  unlistenOutput?.();
   unlistenExit?.();
   unlistenExitStatus?.();
   unlistenSessionClosed?.();
   unlistenSessionDocked?.();
   unlistenHistoryUpdated?.();
-  unlistenOutput = null;
   unlistenExit = null;
   unlistenExitStatus = null;
   unlistenSessionClosed = null;
@@ -895,10 +943,17 @@ async function startSession(tab: TabState, conn: Connection): Promise<void> {
   tab.failure = null;
   tab.status = "connecting";
   tab.connectStartedAt = Date.now();
-  const rt = runtimes.get(tab.id);
-  if (rt) rt.recentOutput = "";
+  const rt = createRuntime(tab.id);
+  rt.recentOutput = "";
   try {
-    await invoke("spawn_pty", { sessionId: tab.id, connectionName: conn.name });
+    const outputChannel = new Channel<PtyChunk>((chunk) => {
+      deliverPtyOutput(tab.id, chunk.data, chunk.bytes);
+    });
+    await invoke("spawn_pty", {
+      sessionId: tab.id,
+      connectionName: conn.name,
+      output: outputChannel,
+    });
     if (!findTab(tab.id)) {
       // Cancelled or closed while spawning.
       await invoke("close_pty", { sessionId: tab.id }).catch(() => {});
@@ -1068,9 +1123,11 @@ export async function detachTab(tabId: string): Promise<void> {
   const tab = findTab(tabId);
   if (!tab) return;
 
+  const rt = runtimes.get(tabId);
+  const snapshot = rt?.term ? snapshotTerminal(rt.term) : null;
   await sealSessionUi(tabId);
   try {
-    await invoke("detach_pty", { sessionId: tabId });
+    await invoke("detach_pty", { sessionId: tabId, snapshot });
   } catch (e: unknown) {
     // Session is already gone — don't leave a ghost tab behind.
     cleanupTabUi(tabId);
@@ -1096,9 +1153,11 @@ export async function popOutTab(tabId: string): Promise<void> {
   const tab = findTab(tabId);
   if (!tab) return;
 
+  const rt = runtimes.get(tabId);
+  const snapshot = rt?.term ? snapshotTerminal(rt.term) : null;
   await sealSessionUi(tabId);
   try {
-    await invoke("open_terminal_window", { sessionId: tabId, title: tab.name });
+    await invoke("open_terminal_window", { sessionId: tabId, title: tab.name, snapshot });
   } catch (e: unknown) {
     // Window could not be created — keep the tab so the session stays usable.
     notify(`Failed to open terminal window: ${String(e)}`, "error");
@@ -1115,7 +1174,7 @@ export async function popOutDetachedSession(sessionId: string): Promise<void> {
   if (!session) return;
 
   try {
-    await invoke("open_terminal_window", { sessionId, title: session.name });
+    await invoke("open_terminal_window", { sessionId, title: session.name, snapshot: null });
   } catch (e: unknown) {
     notify(`Failed to open terminal window: ${String(e)}`, "error");
     return;
@@ -1142,14 +1201,23 @@ export async function reattachSession(sessionId: string): Promise<void> {
   if (!detached) {
     throw new Error("Detached session not found.");
   }
-
-  const info = await invoke<ReattachSessionPayload>("reattach_pty", { sessionId });
-
-  removeDetachedSession(sessionId);
-
-  await mountReattachedSession(info);
-  notify(`"${info.connection_name}" reattached — output restored`, "success");
-  await syncActiveSessionCount();
+  createRuntime(sessionId);
+  try {
+    const outputChannel = new Channel<PtyChunk>((chunk) => {
+      deliverPtyOutput(sessionId, chunk.data, chunk.bytes);
+    });
+    const info = await invoke<ReattachSessionPayload>("reattach_pty", {
+      sessionId,
+      output: outputChannel,
+    });
+    removeDetachedSession(sessionId);
+    await mountReattachedSession(info);
+    notify(`"${info.connection_name}" reattached — output restored`, "success");
+    await syncActiveSessionCount();
+  } catch (e: unknown) {
+    disposeRuntime(sessionId);
+    throw e;
+  }
 }
 
 export async function dockPopoutSession(sessionId: string): Promise<void> {
@@ -1161,6 +1229,7 @@ export async function dockPopoutSession(sessionId: string): Promise<void> {
   await invoke("dock_popout_session", {
     sessionId,
     windowLabel: popout.windowLabel,
+    snapshot: null,
   });
 }
 

@@ -389,6 +389,10 @@
     list_detached_sessions: () => window.__MOCK_DETACHED || [],
     list_popout_sessions: () => window.__MOCK_POPOUTS || [],
     claim_popout_session: (a) => ({ session_id: a && a.sessionId, connection_name: "gpu-trainer", buffered_output: "researcher@gpu-a100:~$ nvidia-smi\r\n" }),
+    ack_pty: () => null,
+    redraw_pty: () => null,
+    attach_pty_output: (a) => ({ session_id: a && a.sessionId, connection_name: "gpu-trainer", buffered_output: "" }),
+    read_primary_selection: () => null,
     run_batch_command: async (a) => {
       await new Promise((r) => setTimeout(r, window.__BATCH_DELAY || 300));
       const ids = (a && (a.connectionIds || a.connection_ids)) || [];
@@ -504,13 +508,90 @@
       },
   };
 
+  const sessionChannels = new Map();
+
+  function isChannel(v) {
+    if (!v) return false;
+    if (typeof v === "string" && v.startsWith("__CHANNEL__:")) return true;
+    if (typeof v === "object") {
+      if (typeof v.toJSON === "function") {
+        try {
+          const json = v.toJSON();
+          if (typeof json === "string" && json.startsWith("__CHANNEL__:")) return true;
+        } catch {}
+      }
+      if (typeof v.__TAURI_TO_IPC_KEY__ === "function") {
+        try {
+          const res = v.__TAURI_TO_IPC_KEY__();
+          if (typeof res === "string" && res.startsWith("__CHANNEL__:")) return true;
+        } catch {}
+      }
+    }
+    return false;
+  }
+
+  function getChannelId(v) {
+    if (!v) return null;
+    if (typeof v === "string" && v.startsWith("__CHANNEL__:")) {
+      return parseInt(v.slice("__CHANNEL__:".length), 10);
+    }
+    if (typeof v === "object") {
+      if (typeof v.id === "number") return v.id;
+      if (typeof v.toJSON === "function") {
+        try {
+          const json = v.toJSON();
+          if (typeof json === "string" && json.startsWith("__CHANNEL__:")) {
+            return parseInt(json.slice("__CHANNEL__:".length), 10);
+          }
+        } catch {}
+      }
+      if (typeof v.__TAURI_TO_IPC_KEY__ === "function") {
+        try {
+          const res = v.__TAURI_TO_IPC_KEY__();
+          if (typeof res === "string" && res.startsWith("__CHANNEL__:")) {
+            return parseInt(res.slice("__CHANNEL__:".length), 10);
+          }
+        } catch {}
+      }
+    }
+    return null;
+  }
+
+  function sanitizeForLog(obj) {
+    if (obj === null || obj === undefined) return obj;
+    if (isChannel(obj)) return "__CHANNEL__";
+    if (Array.isArray(obj)) return obj.map(sanitizeForLog);
+    if (typeof obj === "object") {
+      const copy = {};
+      for (const [k, v] of Object.entries(obj)) {
+        copy[k] = sanitizeForLog(v);
+      }
+      return copy;
+    }
+    return obj;
+  }
+
   window.__IPC_LOG = [];
   window.__IPC_CALLS = (cmd) =>
     window.__IPC_LOG.filter((entry) => entry.cmd === cmd).map((entry) => entry.args);
   window.__MOCK_RESET = () => {
     window.__IPC_LOG.length = 0;
+    sessionChannels.clear();
   };
-
+  window.__MOCK_PTY_OUTPUT = (sessionId, data) => {
+    const entry = sessionChannels.get(sessionId);
+    if (!entry) {
+      console.warn("[mock] no channel for session", sessionId);
+      return false;
+    }
+    const bytes = new TextEncoder().encode(data).length;
+    const rawMessage = {
+      index: entry.nextIndex++,
+      message: { data, bytes },
+    };
+    window.__TAURI_INTERNALS__.runCallback(entry.channelId, rawMessage);
+    return true;
+  };
   // Tauri event delivery: `listen()` hands the backend a callback id, and
   // emitting replays the event through `runCallback`. `__MOCK_EMIT` stands in
   // for a Rust `emit` so tests (and the upload simulation) can push events.
@@ -540,7 +621,14 @@
     },
     convertFileSrc: (p) => p,
     invoke: async (cmd, args) => {
-      window.__IPC_LOG.push({ cmd, args: args === undefined ? null : args });
+      const sid = args && (args.sessionId || args.session_id);
+      if (sid && args && args.output) {
+        const channelId = getChannelId(args.output);
+        if (channelId != null) {
+          sessionChannels.set(sid, { channelId, nextIndex: 0 });
+        }
+      }
+      window.__IPC_LOG.push({ cmd, args: args === undefined ? null : sanitizeForLog(args) });
       if (cmd === "plugin:event|listen") {
         const event = args && args.event;
         const handler = args && args.handler;

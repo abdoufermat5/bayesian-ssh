@@ -52,6 +52,8 @@ export type MockOptions = {
 type MockWindow = Window & {
   __IPC_CALLS(cmd: string): unknown[];
   __MOCK_RESET(): void;
+  __MOCK_PTY_OUTPUT(sessionId: string, data: string): boolean;
+  __MOCK_EMIT(event: string, payload: unknown): void;
 };
 
 const mockWindow = () => window as unknown as MockWindow;
@@ -94,6 +96,10 @@ export type AppFixture = {
   openPalette(): Promise<void>;
   /** Switch views directly through the app store (fast path). */
   setActiveTab(tab: string): Promise<void>;
+  /** Send PTY output to a session via its recorded output channel. */
+  ptyOutput(sessionId: string, data: string): Promise<boolean>;
+  /** Send a mock backend event to all listeners. */
+  mockEmit(event: string, payload: unknown): Promise<void>;
   /** Clear the recorded IPC log. */
   clearIpc(): Promise<void>;
   /** Assert that no page errors / console errors were collected. */
@@ -188,8 +194,26 @@ export const test = base.extend<Fixtures>({
         if (!label) throw new Error(`unknown tab: ${tab}`);
         await app.nav(label);
       },
+      async ptyOutput(sessionId, data) {
+        return page.evaluate(
+          ([sid, d]) => (window as unknown as MockWindow).__MOCK_PTY_OUTPUT(sid, d),
+          [sessionId, data] as const,
+        );
+      },
+      async mockEmit(event, payload) {
+        await page.evaluate(
+          ([ev, pl]) => {
+            const win: MockWindow = window as unknown as MockWindow;
+            win.__MOCK_EMIT(ev, pl);
+          },
+          [event, payload] as const,
+        );
+      },
       async clearIpc() {
-        await page.evaluate(() => (window as unknown as MockWindow).__MOCK_RESET());
+        await page.evaluate(() => {
+          const win: MockWindow = window as unknown as MockWindow;
+          win.__MOCK_RESET();
+        });
       },
       async expectNoPageErrors() {
         const state = stateOf();

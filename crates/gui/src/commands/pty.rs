@@ -1,7 +1,10 @@
+use portable_pty::MasterPty;
 use serde::Serialize;
 use std::collections::hash_map::Entry;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{mpsc, Arc, Condvar, Mutex};
+use std::time::Duration;
+use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use uuid::Uuid;
 
@@ -10,16 +13,218 @@ use bayesian_ssh::database::Database;
 use bayesian_ssh::models::Session;
 
 use super::{
-    get_db_and_config, DetachedSessionInfo, PopoutMainOverlap, PopoutOwner, PopoutSessionInfo,
-    PtySession, PtyState, ReattachSessionInfo, MAIN_WINDOW_LABEL, MAX_DETACHED_BUFFER_BYTES,
-    REPLAY_TRIM_SLACK_BYTES,
+    get_db_and_config, DetachedSessionInfo, DockedSessionInfo, PopoutMainOverlap, PopoutOwner,
+    PopoutSessionInfo, PtySession, PtyState, ReattachSessionInfo, MAIN_WINDOW_LABEL,
+    MAX_DETACHED_BUFFER_BYTES, REPLAY_TRIM_SLACK_BYTES,
 };
 
-/// Live output payload consumed by the main window's `pty-output` listener.
-#[derive(Clone, Serialize)]
-struct PtyPayload<'a> {
-    session_id: &'a str,
-    data: &'a str,
+/// One batch of PTY output delivered on a session's output channel.
+///
+/// `bytes` is the UTF-8 byte length of `data`: the frontend acks exactly those
+/// bytes once xterm has consumed the chunk, which is what releases the reader
+/// thread's backpressure budget.
+#[derive(Clone, Debug, Serialize)]
+pub struct PtyChunk {
+    pub data: String,
+    pub bytes: usize,
+}
+
+/// Output the reader thread may hand to a channel before it parks and waits
+/// for the frontend to catch up.
+const OUTPUT_HIGH_WATER_BYTES: usize = 1024 * 1024;
+/// Once acks bring the outstanding bytes down to this, the reader resumes.
+const OUTPUT_LOW_WATER_BYTES: usize = 256 * 1024;
+/// How often a parked reader wakes up to re-check for cancellation, so a
+/// closed session can never leave it blocked forever.
+const OUTPUT_WAIT_POLL: Duration = Duration::from_millis(250);
+
+/// Byte counter behind the output channel's flow control.
+///
+/// The reader records what it handed to the frontend, `ack_pty` subtracts what
+/// xterm has consumed, and the reader parks once the outstanding amount reaches
+/// [`OUTPUT_HIGH_WATER_BYTES`], resuming when it is back at
+/// [`OUTPUT_LOW_WATER_BYTES`]. Deliberately free of Tauri types so the
+/// thresholds are unit-testable.
+#[derive(Default)]
+pub struct FlowControl {
+    state: Mutex<FlowState>,
+    wake: Condvar,
+}
+
+#[derive(Default)]
+struct FlowState {
+    /// Whether a sink is installed; without one nothing is counted or waited.
+    attached: bool,
+    /// Bytes sent on the sink that the frontend has not acked yet.
+    unacked: usize,
+}
+
+impl FlowControl {
+    fn lock(&self) -> std::sync::MutexGuard<'_, FlowState> {
+        self.state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// A sink was installed (or replaced): the new consumer has not received
+    /// any of the outstanding bytes, so the budget starts from zero again.
+    fn attach(&self) {
+        let mut state = self.lock();
+        state.attached = true;
+        state.unacked = 0;
+        drop(state);
+        self.wake.notify_all();
+    }
+
+    /// The sink went away (dock/detach/close/dead channel): stop counting and
+    /// release a parked reader.
+    fn detach(&self) {
+        let mut state = self.lock();
+        state.attached = false;
+        state.unacked = 0;
+        drop(state);
+        self.wake.notify_all();
+    }
+
+    /// Account for a chunk handed to the sink. Without a sink nothing is
+    /// counted, mirroring the fact that no wait can happen either.
+    fn record(&self, bytes: usize) {
+        let mut state = self.lock();
+        if !state.attached {
+            return;
+        }
+        state.unacked = state.unacked.saturating_add(bytes);
+    }
+
+    /// The frontend processed `bytes`: release that much budget.
+    fn ack(&self, bytes: usize) {
+        let mut state = self.lock();
+        state.unacked = state.unacked.saturating_sub(bytes);
+        drop(state);
+        self.wake.notify_all();
+    }
+
+    #[cfg(test)]
+    fn unacked(&self) -> usize {
+        self.lock().unacked
+    }
+
+    /// Whether the consumer is far enough behind to stop the reader: only a
+    /// full high-water mark triggers a pause, so a single chunk above the low
+    /// mark still goes through.
+    fn congested(&self) -> bool {
+        let state = self.lock();
+        state.attached && state.unacked >= OUTPUT_HIGH_WATER_BYTES
+    }
+
+    /// Park while the consumer is behind, re-checking [`OUTPUT_WAIT_POLL`] so a
+    /// cancelled session or a cleared sink never blocks the reader forever.
+    fn wait_while_congested(&self, stop: impl Fn() -> bool) {
+        if !self.congested() {
+            return;
+        }
+        loop {
+            if stop() {
+                return;
+            }
+            let state = self.lock();
+            if !state.attached || state.unacked <= OUTPUT_LOW_WATER_BYTES {
+                return;
+            }
+            // Nothing panics while the lock is held, so a poisoned mutex only
+            // means "woken up": keep the guard and re-check the condition.
+            let state = self
+                .wake
+                .wait_timeout(state, OUTPUT_WAIT_POLL)
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .0;
+            drop(state);
+        }
+    }
+}
+
+/// Per-session output sink: the channel currently attached (the main window or
+/// one pop-out window) plus its flow-control counter.
+///
+/// Cloning is cheap and shares the same sink, so the reader thread and the
+/// commands always see the same channel. `None` means nobody is listening:
+/// output then only lands in the replay buffer and the recorder.
+#[derive(Clone, Default)]
+pub struct OutputSink(Arc<OutputSinkInner>);
+
+#[derive(Default)]
+struct OutputSinkInner {
+    channel: Mutex<Option<Channel<PtyChunk>>>,
+    flow: FlowControl,
+}
+
+impl OutputSink {
+    pub fn new(channel: Channel<PtyChunk>) -> Self {
+        let sink = Self::default();
+        sink.set(channel);
+        sink
+    }
+
+    fn lock_channel(&self) -> std::sync::MutexGuard<'_, Option<Channel<PtyChunk>>> {
+        self.0
+            .channel
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Install (or replace) the channel.
+    pub fn set(&self, channel: Channel<PtyChunk>) {
+        *self.lock_channel() = Some(channel);
+        self.0.flow.attach();
+    }
+
+    /// Stop delivering: the session was docked, detached, reopened in a pop-out
+    /// window, closed, or its channel died. Returns the channel that was
+    /// attached, so a caller whose handover failed can put it back.
+    pub fn take(&self) -> Option<Channel<PtyChunk>> {
+        let previous = self.lock_channel().take();
+        self.0.flow.detach();
+        previous
+    }
+
+    /// Stop delivering and drop the channel.
+    pub fn clear(&self) {
+        let _ = self.take();
+    }
+
+    /// Hand one chunk to the attached channel. No sink means the chunk only
+    /// lives in the replay buffer.
+    fn send(&self, data: &str) {
+        // The channel mutex is held across the send so a concurrent `set`/
+        // `clear` cannot make us drop the channel that replaced this one.
+        let mut channel = self.lock_channel();
+        let Some(sink) = channel.as_ref() else {
+            return;
+        };
+        let chunk = PtyChunk {
+            data: data.to_string(),
+            bytes: data.len(),
+        };
+        // Count before sending: an ack for this chunk may arrive while the
+        // send is still in flight, and it must not be lost under the counter.
+        self.0.flow.record(chunk.bytes);
+        if sink.send(chunk).is_err() {
+            // The webview is gone (window closed or reloading): drop the sink
+            // so the reader stops accounting against a dead channel.
+            *channel = None;
+            self.0.flow.detach();
+        }
+    }
+
+    /// The frontend consumed `bytes`.
+    fn ack(&self, bytes: usize) {
+        self.0.flow.ack(bytes);
+    }
+
+    /// Park while the frontend is behind on this sink (see [`FlowControl`]).
+    fn wait_while_congested(&self, stop: impl Fn() -> bool) {
+        self.0.flow.wait_while_congested(stop);
+    }
 }
 
 /// Exit status of a session's child, sent just before `pty-exit` so the UI can
@@ -118,6 +323,49 @@ fn take_full_replay(session: &PtySession) -> String {
     buffer
 }
 
+/// Lock the gate that serialises the reader thread's "append to the replay
+/// buffer + deliver" step against commands swapping the sink or reading the
+/// replay.
+fn lock_output_gate(session: &PtySession) -> std::sync::MutexGuard<'_, ()> {
+    session
+        .output_gate
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Replace the replay buffer with a frontend snapshot: the terminal the user
+/// just left is now the whole history, and later output appends to it.
+fn apply_snapshot(session: &PtySession, snapshot: Option<String>) {
+    let Some(snapshot) = snapshot else {
+        return;
+    };
+    if let Ok(mut buffer) = session.output_buffer.lock() {
+        *buffer = snapshot;
+    }
+    if let Ok(mut offset) = session.replay_offset.lock() {
+        *offset = 0;
+    }
+}
+
+/// Attach a new sink and read the replay in one atomic step: a chunk is either
+/// still in the buffer (and replayed) or delivered live, never both and never
+/// neither.
+fn switch_sink_on(session: &PtySession, output: Channel<PtyChunk>) -> String {
+    let _gate = lock_output_gate(session);
+    session.sink.set(output);
+    take_full_replay(session)
+}
+
+/// Detach the current sink and (optionally) install the frontend snapshot of
+/// what it had displayed, in one atomic step. Returns the detached channel so
+/// a failed handover can restore it.
+fn switch_sink_off(session: &PtySession, snapshot: Option<String>) -> Option<Channel<PtyChunk>> {
+    let _gate = lock_output_gate(session);
+    let previous = session.sink.take();
+    apply_snapshot(session, snapshot);
+    previous
+}
+
 fn seal_replay_offset(session: &PtySession) {
     if let (Ok(buffer), Ok(mut offset)) =
         (session.output_buffer.lock(), session.replay_offset.lock())
@@ -172,14 +420,14 @@ fn reap_session(session: PtySession, app: &AppHandle) {
         mut child,
         db_session_id,
         input,
-        _master,
+        master,
         recorder,
         ..
     } = session;
     // Release our PTY ends first so the child sees the hangup before we block
     // (closing the input queue stops the writer thread, which drops the writer).
     drop(input);
-    drop(_master);
+    drop(master);
     let exit_code = child
         .wait()
         .map(|status| status.exit_code() as i32)
@@ -197,6 +445,7 @@ pub fn spawn_pty(
     state: State<'_, PtyState>,
     session_id: String,
     connection_name: String,
+    output: Channel<PtyChunk>,
 ) -> Result<(), String> {
     if state.lock_sessions().contains_key(&session_id) {
         // Overwriting the entry would drop the old PtySession without killing
@@ -301,7 +550,6 @@ pub fn spawn_pty(
     let cancelled = Arc::new(AtomicBool::new(false));
     let cancelled_clone = Arc::clone(&cancelled);
     let detached = Arc::new(AtomicBool::new(false));
-    let detached_clone = Arc::clone(&detached);
     let output_buffer = Arc::new(Mutex::new(String::new()));
     let output_buffer_clone = Arc::clone(&output_buffer);
     let replay_offset = Arc::new(Mutex::new(0));
@@ -309,22 +557,30 @@ pub fn spawn_pty(
     let popout_window = PopoutOwner::default();
     let popout_window_clone = popout_window.clone();
     let recorder_clone = recorder.clone();
+    // Sink installed before the reader thread starts, so the first chunk of
+    // output cannot be missed.
+    let sink = OutputSink::new(output);
+    let sink_clone = sink.clone();
+    let output_gate = Arc::new(Mutex::new(()));
+    let output_gate_clone = Arc::clone(&output_gate);
 
     let session = PtySession {
         input,
         child,
-        _master: spawned.master,
+        master: Arc::new(Mutex::new(spawned.master)),
         cancelled,
         db_session_id,
         connection_name: connection.name.clone(),
         detached,
         output_buffer,
         replay_offset,
+        output_gate,
+        sink,
         popout_window,
         recorder,
     };
 
-    // Store in global state — _master keeps the PTY master fd alive for the
+    // Store in global state — the master keeps the PTY fd alive for the
     // session duration. Re-check the id under the lock: commands run
     // concurrently, so another spawn may have claimed it meanwhile.
     {
@@ -352,40 +608,29 @@ pub fn spawn_pty(
 
     std::thread::spawn(move || {
         let mut reader = reader;
-        // Pop-out windows listen on the per-session event with the raw string.
-        let popout_output_event = format!("pty-output:{session_id_clone}");
 
         bayesian_ssh::services::pty::read_loop(&mut reader, |str_data| {
-            if let Some(ref rec) = recorder_clone {
+            if let Some(rec) = &recorder_clone {
                 if let Ok(mut g) = rec.lock() {
                     g.output(&str_data);
                 }
             }
 
-            append_to_output_buffer(&output_buffer_clone, &replay_offset_clone, &str_data);
-
-            if detached_clone.load(Ordering::SeqCst) {
-                return;
+            // Replay append and live delivery happen under one gate, so a
+            // command that swaps the sink (dock / re-attach / detach) can
+            // never replay a chunk that was also delivered on the channel.
+            {
+                let _gate = output_gate_clone
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                append_to_output_buffer(&output_buffer_clone, &replay_offset_clone, &str_data);
+                sink_clone.send(&str_data);
             }
 
-            // Emit each chunk once, to the window that owns the session: the
-            // main window consumes the shared `pty-output` event, a pop-out
-            // window its per-session `pty-output:{id}` event.
-            popout_window_clone.with(|owner| match owner {
-                Some(label) => {
-                    let _ = app_handle.emit_to(label, &popout_output_event, str_data.as_str());
-                }
-                None => {
-                    let _ = app_handle.emit_to(
-                        MAIN_WINDOW_LABEL,
-                        "pty-output",
-                        PtyPayload {
-                            session_id: &session_id_clone,
-                            data: &str_data,
-                        },
-                    );
-                }
-            });
+            // The frontend is behind: park until it acks down to the low-water
+            // mark (or the session is closed / the sink is cleared). No lock
+            // is held here, and the wait re-checks cancellation every 250 ms.
+            sink_clone.wait_while_congested(|| cancelled_clone.load(Ordering::SeqCst));
         });
         drop(recorder_clone);
 
@@ -475,12 +720,63 @@ pub fn resize_pty(
     let session = sessions
         .get(&session_id)
         .ok_or_else(|| format!("PTY session '{}' not found", session_id))?;
-    bayesian_ssh::services::pty::resize(session._master.as_ref(), cols, rows)?;
-    if let Some(ref rec) = session.recorder {
+    let master = session
+        .master
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    bayesian_ssh::services::pty::resize(master.as_ref(), cols, rows)?;
+    drop(master);
+    if let Some(rec) = &session.recorder {
         if let Ok(mut g) = rec.lock() {
             g.resize(cols, rows);
         }
     }
+    Ok(())
+}
+
+/// Force full-screen applications (vim, htop, less) to repaint: shrink the PTY
+/// by one row, then restore the size ~60 ms later from a background thread.
+/// The window-change signal makes them redraw everything, which repairs the
+/// screen after a snapshot replay. Purely a display concern, so the recorder
+/// is left alone.
+#[tauri::command]
+pub fn redraw_pty(state: State<'_, PtyState>, session_id: String) -> Result<(), String> {
+    let master = {
+        let sessions = state.lock_sessions();
+        let session = sessions
+            .get(&session_id)
+            .ok_or_else(|| format!("PTY session '{session_id}' not found"))?;
+        Arc::clone(&session.master)
+    };
+
+    let size = {
+        let master = master
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        MasterPty::get_size(master.as_ref()).map_err(|e| e.to_string())?
+    };
+
+    // One row less is a real size change, so the application gets SIGWINCH and
+    // repaints; the original size comes back once it had time to do so.
+    {
+        let master = master
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        bayesian_ssh::services::pty::resize(
+            master.as_ref(),
+            size.cols,
+            size.rows.saturating_sub(1).max(1),
+        )?;
+    }
+
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(60));
+        let master = master
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _ = bayesian_ssh::services::pty::resize(master.as_ref(), size.cols, size.rows);
+    });
+
     Ok(())
 }
 
@@ -495,10 +791,14 @@ pub fn seal_session_ui(state: State<'_, PtyState>, session_id: String) -> Result
 }
 
 #[tauri::command]
-pub fn detach_pty(state: State<'_, PtyState>, session_id: String) -> Result<(), String> {
-    let mut sessions = state.lock_sessions();
+pub fn detach_pty(
+    state: State<'_, PtyState>,
+    session_id: String,
+    snapshot: Option<String>,
+) -> Result<(), String> {
+    let sessions = state.lock_sessions();
     let session = sessions
-        .get_mut(&session_id)
+        .get(&session_id)
         .ok_or_else(|| format!("PTY session '{}' not found", session_id))?;
 
     if session.detached.load(Ordering::SeqCst) {
@@ -507,6 +807,9 @@ pub fn detach_pty(state: State<'_, PtyState>, session_id: String) -> Result<(), 
 
     session.detached.store(true, Ordering::SeqCst);
     session.popout_window.set(None);
+    // Nobody listens while detached: output only accrues in the replay buffer,
+    // seeded with what the frontend had on screen.
+    let _ = switch_sink_off(session, snapshot);
     Ok(())
 }
 
@@ -518,6 +821,7 @@ pub fn open_terminal_window(
     state: State<'_, PtyState>,
     session_id: String,
     title: String,
+    snapshot: Option<String>,
 ) -> Result<(), String> {
     let label = format!("terminal-{session_id}");
 
@@ -526,15 +830,17 @@ pub fn open_terminal_window(
         return Ok(());
     }
 
-    {
+    let previous_sink = {
         let sessions = state.lock_sessions();
         let session = sessions
             .get(&session_id)
             .ok_or_else(|| format!("PTY session '{session_id}' not found"))?;
-        // Route output to the new window before resuming it.
+        // The new window creates its own channel when it claims the session;
+        // until then nobody listens, so stop delivering to this window.
         session.popout_window.set(Some(label.clone()));
         session.detached.store(false, Ordering::SeqCst);
-    }
+        switch_sink_off(session, snapshot)
+    };
 
     let window_title = format!("{title} — Bayesian SSH");
     let built = WebviewWindowBuilder::new(
@@ -551,10 +857,13 @@ pub fn open_terminal_window(
 
     if let Err(e) = built {
         // No window will ever claim or dock this session: release the popout
-        // binding so the main window can keep using it.
+        // binding and hand output back to the window that still displays it.
         if let Some(session) = state.lock_sessions().get(&session_id) {
             if session.popout_window.get().as_deref() == Some(label.as_str()) {
                 session.popout_window.set(None);
+                if let Some(channel) = previous_sink {
+                    session.sink.set(channel);
+                }
             }
         }
         return Err(e.to_string());
@@ -568,10 +877,11 @@ pub fn claim_popout_session(
     state: State<'_, PtyState>,
     session_id: String,
     window_label: String,
+    output: Channel<PtyChunk>,
 ) -> Result<ReattachSessionInfo, String> {
-    let mut sessions = state.lock_sessions();
+    let sessions = state.lock_sessions();
     let session = sessions
-        .get_mut(&session_id)
+        .get(&session_id)
         .ok_or_else(|| format!("PTY session '{session_id}' not found"))?;
 
     match session.popout_window.get() {
@@ -585,13 +895,55 @@ pub fn claim_popout_session(
     }
 
     session.detached.store(false, Ordering::SeqCst);
-    let buffered_output = take_full_replay(session);
+    let buffered_output = switch_sink_on(session, output);
 
     Ok(ReattachSessionInfo {
         session_id: session_id.clone(),
         connection_name: session.connection_name.clone(),
         buffered_output,
     })
+}
+
+/// Re-attach the main window to a session that was just docked from its
+/// pop-out window. Sessions owned by a pop-out window or detached use
+/// `claim_popout_session` / `reattach_pty` instead.
+#[tauri::command]
+pub fn attach_pty_output(
+    state: State<'_, PtyState>,
+    session_id: String,
+    output: Channel<PtyChunk>,
+) -> Result<ReattachSessionInfo, String> {
+    let sessions = state.lock_sessions();
+    let session = sessions
+        .get(&session_id)
+        .ok_or_else(|| format!("PTY session '{session_id}' not found"))?;
+
+    if session.popout_window.get().is_some() {
+        return Err(format!(
+            "PTY session '{session_id}' is attached to a pop-out window"
+        ));
+    }
+    if session.detached.load(Ordering::SeqCst) {
+        return Err(format!("PTY session '{session_id}' is detached"));
+    }
+
+    let buffered_output = switch_sink_on(session, output);
+
+    Ok(ReattachSessionInfo {
+        session_id: session_id.clone(),
+        connection_name: session.connection_name.clone(),
+        buffered_output,
+    })
+}
+
+/// The frontend has written (or dropped) `bytes` of output. Acks race with
+/// session teardown by design, so an unknown session is not an error.
+#[tauri::command]
+pub fn ack_pty(state: State<'_, PtyState>, session_id: String, bytes: usize) -> Result<(), String> {
+    if let Some(session) = state.lock_sessions().get(&session_id) {
+        session.sink.ack(bytes);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -635,11 +987,12 @@ pub fn dock_popout_session(
     state: State<'_, PtyState>,
     session_id: String,
     window_label: String,
-) -> Result<ReattachSessionInfo, String> {
+    snapshot: Option<String>,
+) -> Result<(), String> {
     let info = {
-        let mut sessions = state.lock_sessions();
+        let sessions = state.lock_sessions();
         let session = sessions
-            .get_mut(&session_id)
+            .get(&session_id)
             .ok_or_else(|| format!("PTY session '{session_id}' not found"))?;
 
         if session.popout_window.get().as_deref() != Some(window_label.as_str()) {
@@ -648,22 +1001,26 @@ pub fn dock_popout_session(
 
         session.popout_window.set(None);
         session.detached.store(false, Ordering::SeqCst);
-        let buffered_output = take_full_replay(session);
+        // The main window re-attaches with `attach_pty_output` once it sees
+        // `session-docked`; until then output only accrues in the replay
+        // buffer, seeded with what the pop-out window had on screen.
+        let _ = switch_sink_off(session, snapshot);
 
-        ReattachSessionInfo {
+        DockedSessionInfo {
             session_id: session_id.clone(),
             connection_name: session.connection_name.clone(),
-            buffered_output,
         }
     };
 
-    let _ = app.emit("session-docked", info.clone());
+    // The main window owns the session again and replays it from its own
+    // buffer: send it the identity only.
+    let _ = app.emit("session-docked", info);
 
     if let Some(window) = app.get_webview_window(&window_label) {
         let _ = window.destroy();
     }
 
-    Ok(info)
+    Ok(())
 }
 
 #[tauri::command]
@@ -725,10 +1082,11 @@ pub fn focus_terminal_window(
 pub fn reattach_pty(
     state: State<'_, PtyState>,
     session_id: String,
+    output: Channel<PtyChunk>,
 ) -> Result<ReattachSessionInfo, String> {
-    let mut sessions = state.lock_sessions();
+    let sessions = state.lock_sessions();
     let session = sessions
-        .get_mut(&session_id)
+        .get(&session_id)
         .ok_or_else(|| format!("PTY session '{}' not found", session_id))?;
 
     if !session.detached.load(Ordering::SeqCst) {
@@ -737,7 +1095,7 @@ pub fn reattach_pty(
 
     session.popout_window.set(None);
     session.detached.store(false, Ordering::SeqCst);
-    let buffered_output = take_full_replay(session);
+    let buffered_output = switch_sink_on(session, output);
 
     Ok(ReattachSessionInfo {
         session_id: session_id.clone(),
@@ -767,6 +1125,10 @@ pub fn close_pty(
 
     if let Some(mut session) = session {
         session.cancelled.store(true, Ordering::SeqCst);
+        // Release a reader parked on flow control: the flag it re-checks is
+        // set, and clearing the sink notifies it right away instead of after
+        // the next 250 ms poll.
+        session.sink.clear();
 
         if close_window.unwrap_or(true) {
             if let Some(label) = session.popout_window.get() {
@@ -799,4 +1161,168 @@ pub fn close_all_ptys(app: AppHandle, state: State<'_, PtyState>) -> Result<usiz
     }
 
     Ok(count)
+}
+
+/// Read the PRIMARY selection on Linux, where middle-click paste uses it.
+#[cfg(target_os = "linux")]
+fn primary_selection() -> Option<String> {
+    use arboard::{Clipboard, GetExtLinux, LinuxClipboardKind};
+
+    let mut clipboard = Clipboard::new().ok()?;
+    clipboard
+        .get()
+        .clipboard(LinuxClipboardKind::Primary)
+        .text()
+        .ok()
+}
+
+/// Only X11 and Wayland have a PRIMARY selection; elsewhere middle-click paste
+/// falls back to the default clipboard in the frontend.
+#[cfg(not(target_os = "linux"))]
+fn primary_selection() -> Option<String> {
+    None
+}
+
+/// Read the PRIMARY selection, the X11/Wayland buffer middle-click paste uses.
+///
+/// Runs off the main thread because a selection owner that does not answer can
+/// make the clipboard backend block for a while. `None` when no owner answers
+/// or the backend is unavailable (headless session, no display server).
+#[tauri::command(async)]
+pub fn read_primary_selection() -> Option<String> {
+    primary_selection()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FlowControl, OUTPUT_HIGH_WATER_BYTES, OUTPUT_LOW_WATER_BYTES, OUTPUT_WAIT_POLL};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::mpsc::{channel, Receiver, RecvTimeoutError};
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    /// Start a waiter thread and signal when `wait_while_congested` returns.
+    fn spawn_waiter(
+        flow: &Arc<FlowControl>,
+        stop: impl Fn() -> bool + Send + 'static,
+    ) -> Receiver<()> {
+        let (tx, rx) = channel();
+        let flow = Arc::clone(flow);
+        std::thread::spawn(move || {
+            flow.wait_while_congested(stop);
+            let _ = tx.send(());
+        });
+        rx
+    }
+
+    /// Waiting longer than one poll interval without a signal proves the
+    /// reader is really parked.
+    fn assert_still_parked(rx: &Receiver<()>) {
+        assert_eq!(
+            rx.recv_timeout(OUTPUT_WAIT_POLL + Duration::from_millis(100)),
+            Err(RecvTimeoutError::Timeout),
+            "reader resumed before the frontend caught up"
+        );
+    }
+
+    fn assert_released(rx: &Receiver<()>) {
+        assert_eq!(
+            rx.recv_timeout(Duration::from_secs(2)),
+            Ok(()),
+            "reader stayed parked"
+        );
+    }
+
+    #[test]
+    fn reader_parks_at_high_water_and_resumes_at_low_water() {
+        let flow = Arc::new(FlowControl::default());
+        flow.attach();
+        flow.record(OUTPUT_HIGH_WATER_BYTES);
+        let waiter = spawn_waiter(&flow, || false);
+        assert_still_parked(&waiter);
+
+        // One byte above the low-water mark is still too much.
+        flow.ack(OUTPUT_HIGH_WATER_BYTES - OUTPUT_LOW_WATER_BYTES - 1);
+        assert_eq!(flow.unacked(), OUTPUT_LOW_WATER_BYTES + 1);
+        assert_still_parked(&waiter);
+
+        flow.ack(1);
+        assert_eq!(flow.unacked(), OUTPUT_LOW_WATER_BYTES);
+        assert_released(&waiter);
+    }
+
+    #[test]
+    fn reader_only_parks_once_the_high_water_mark_is_reached() {
+        let flow = Arc::new(FlowControl::default());
+        flow.attach();
+        // One byte short of the high-water mark: deliver it and keep going.
+        flow.record(OUTPUT_HIGH_WATER_BYTES - 1);
+        let waiter = spawn_waiter(&flow, || false);
+        assert_released(&waiter);
+
+        flow.record(1);
+        let waiter = spawn_waiter(&flow, || false);
+        assert_still_parked(&waiter);
+        flow.ack(usize::MAX);
+        assert_released(&waiter);
+    }
+
+    #[test]
+    fn nothing_is_counted_or_waited_for_without_a_sink() {
+        let flow = Arc::new(FlowControl::default());
+        flow.record(OUTPUT_HIGH_WATER_BYTES * 4);
+        // No sink attached: output is nobody's problem, so it is neither
+        // counted nor waited for.
+        assert_eq!(flow.unacked(), 0);
+        let waiter = spawn_waiter(&flow, || false);
+        assert_released(&waiter);
+    }
+
+    #[test]
+    fn replacing_or_clearing_the_sink_resets_and_releases() {
+        for clear in [true, false] {
+            let flow = Arc::new(FlowControl::default());
+            flow.attach();
+            flow.record(OUTPUT_HIGH_WATER_BYTES);
+            let waiter = spawn_waiter(&flow, || false);
+            assert_still_parked(&waiter);
+
+            // The budget belongs to the consumer that left.
+            if clear {
+                flow.detach();
+            } else {
+                flow.attach();
+            }
+            assert_eq!(flow.unacked(), 0);
+            assert_released(&waiter);
+        }
+    }
+
+    #[test]
+    fn ack_saturates_instead_of_underflowing() {
+        let flow = FlowControl::default();
+        flow.attach();
+        flow.record(OUTPUT_LOW_WATER_BYTES);
+        // A late or duplicated ack must not wrap the counter into a huge value
+        // that parks the reader forever.
+        flow.ack(usize::MAX);
+        assert_eq!(flow.unacked(), 0);
+        flow.ack(64);
+        assert_eq!(flow.unacked(), 0);
+    }
+
+    #[test]
+    fn cancelled_reader_leaves_the_wait() {
+        let flow = Arc::new(FlowControl::default());
+        flow.attach();
+        flow.record(OUTPUT_HIGH_WATER_BYTES);
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&cancelled);
+        let waiter = spawn_waiter(&flow, move || flag.load(Ordering::SeqCst));
+        assert_still_parked(&waiter);
+
+        // Polled, no notify needed: close_pty may only flip the flag.
+        cancelled.store(true, Ordering::SeqCst);
+        assert_released(&waiter);
+    }
 }

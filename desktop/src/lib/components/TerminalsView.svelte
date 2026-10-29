@@ -358,9 +358,13 @@
       >
         {#each terminalState.tabs as tab (tab.id)}
           {@const isActive = terminalState.activeTabId === tab.id}
+          {@const tabLabel = tab.remoteTitle?.trim() ? tab.remoteTitle : tab.name}
+          {@const tooltipTitle = tab.remoteTitle?.trim() && tab.remoteTitle.trim() !== tab.name
+            ? `${tab.name} — ${tab.remoteTitle.trim()}`
+            : tab.name}
           <div
             data-tab-id={tab.id}
-            class="group flex h-7 max-w-48 shrink-0 cursor-pointer items-center gap-2 rounded-md pl-2.5 pr-1 text-xs transition-colors duration-fast
+            class="group relative flex h-7 max-w-48 shrink-0 cursor-pointer items-center gap-2 overflow-hidden rounded-md pl-2.5 pr-1 text-xs transition-colors duration-fast
               {isActive ? 'bg-surface-active text-primary' : 'text-muted hover:bg-surface-hover hover:text-primary'}"
             use:tabPopOutDrag={tab.id}
             onclick={() => (terminalState.activeTabId = tab.id)}
@@ -379,10 +383,17 @@
             role="tab"
             tabindex="0"
             aria-selected={isActive}
-            title="{tab.name} · {statusLabel(tab.status)} — drag out to open in a window"
+            title="{tooltipTitle} · {statusLabel(tab.status)} — drag out to open in a window"
           >
             <span class="status-dot status-dot-sm {statusDot(tab.status)}" aria-hidden="true"></span>
-            <span class="min-w-0 truncate font-medium">{tab.name}</span>
+            <span class="min-w-0 truncate font-medium">{tabLabel}</span>
+            {#if tab.bell}
+              <span
+                class="status-dot status-dot-sm status-dot-warning shrink-0"
+                role="status"
+                aria-label="Bell"
+              ></span>
+            {/if}
             <button
               type="button"
               class="inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-muted transition-colors duration-fast hover:bg-surface-hover hover:text-primary focus-visible:opacity-100
@@ -396,6 +407,28 @@
             >
               <X size={14} />
             </button>
+            {#if tab.progress && tab.progress.state !== 0}
+              <div
+                class="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-border/40"
+                aria-hidden="true"
+              >
+                {#if tab.progress.state === 3}
+                  <div
+                    class="tab-progress-indeterminate h-full w-1/3 rounded-full bg-accent motion-reduce:animate-none"
+                  ></div>
+                {:else}
+                  {@const pState = tab.progress.state}
+                  {@const pRawVal = tab.progress.value}
+                  {@const pVal = Number.isFinite(pRawVal) ? pRawVal : 0}
+                  {@const pWidth = (pState === 2 || pState === 4) && pVal <= 0 ? 100 : Math.max(0, Math.min(100, pVal))}
+                  {@const pColor = pState === 2 ? 'bg-error' : pState === 4 ? 'bg-warning' : 'bg-accent'}
+                  <div
+                    class="h-full transition-[width] duration-base motion-reduce:transition-none {pColor}"
+                    style:width="{pWidth}%"
+                  ></div>
+                {/if}
+              </div>
+            {/if}
           </div>
         {/each}
 
@@ -628,7 +661,7 @@
           class="absolute inset-0 box-border overflow-hidden p-2"
           class:hidden={terminalState.activeTabId !== tab.id}
           role="tabpanel"
-          aria-label={tab.name}
+          aria-label={tab.remoteTitle ?? tab.name}
         >
           {#if tab.showSearch}
             <div class="popover absolute right-4 top-2 z-10 flex items-center gap-0.5">
@@ -842,5 +875,15 @@
   :global(.away-chip-dragging) {
     opacity: 0.5;
     cursor: grabbing;
+  }
+  .tab-progress-indeterminate {
+    animation: loader-slide 1.2s var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1)) infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tab-progress-indeterminate {
+      animation: none !important;
+      width: 100% !important;
+      opacity: 0.6;
+    }
   }
 </style>

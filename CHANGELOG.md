@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Desktop terminal: tab titles, bell and progress.** A tab shows the title the remote shell or program sets (OSC 0/2, e.g. `user@host:~/dir` or vim's file name), a dot when a background tab rings the bell (the window also asks for attention when it isn't focused), and a progress bar for programs that report progress with OSC 9;4. Pop-out windows take the title as their window title and show progress on the taskbar.
+- **Desktop terminal: right-click menu.** Copy, Paste, Select all, Find, Clear and Export scrollback. When the program running in the terminal uses the mouse (vim, htop, tmux with mouse on), right-click goes to it; hold Shift to open the menu.
+- **Desktop terminal: confirmation before pasting several lines.** Pasting text with line breaks (keyboard, menu or middle click) shows the lines first, since each one runs as a command; single-line pastes go straight through.
+
+### Changed
+- **Desktop terminal: middle click pastes the primary selection on Linux**, like other Linux terminals, instead of the clipboard. If the selection can't be read, it pastes the last text selected in a bssh terminal.
+- **Desktop terminal: pop-out windows behave like tabs**: middle-click paste and Ctrl+wheel zoom work there too, since both now build their terminal the same way.
+
+### Fixed
+- **Desktop terminal: Ctrl+C stops a flood of output at once.** Commands printing a lot (`cat` on a large file, `journalctl` without a pager) used to queue megabytes of output ahead of the terminal, so Ctrl+C only showed up once all of it had scrolled by, and the window's memory grew meanwhile. bssh now reads from ssh only as fast as the terminal displays, and output reaches each terminal over its own channel instead of an app-wide event.
+- **Desktop terminal: full-screen programs survive pop-out, dock and detach.** Moving a session running vim, htop or less to another window, or detaching and reattaching it, now restores the screen as it was, modes included, and asks the program to redraw, instead of replaying raw output that could start mid-sequence or miss the switch to the alternate screen.
+- **Desktop terminal: many open tabs keep GPU rendering.** Only visible terminals hold a WebGL context now, so opening many tabs no longer exhausts the webview's contexts and drops older tabs to slower rendering.
+
 ## [2.13.9] - 2026-10-27
 
 ### Added

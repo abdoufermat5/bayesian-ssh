@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import type { Terminal } from "@xterm/xterm";
+import { Terminal } from "@xterm/xterm";
+import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { SearchAddon } from "@xterm/addon-search";
 import {
@@ -15,7 +16,16 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 
 import { attachOrphanCompositionEndGuard } from "$lib/utils/terminal-composition-guard";
 import { TERMINAL_SHORTCUTS, type Combo } from "$lib/shortcuts";
+import { enableSnapshot } from "$lib/utils/terminal-snapshot";
+import { attachXtermSignals, type TerminalSignalHandlers } from "$lib/utils/terminal-signals";
+import { attachTerminalContextMenu } from "$lib/utils/terminal-context-menu";
+import {
+  attachPasteGuard,
+  attachMiddleClickPaste,
+  pasteIntoTerminal,
+} from "$lib/utils/terminal-paste";
 
+export type PtyChunk = { data: string; bytes: number };
 function writePty(sessionId: string, data: string): void {
   invoke("write_pty", { sessionId, data }).catch((err) => {
     console.error("write_pty failed:", err);
@@ -150,24 +160,7 @@ export function attachXtermAddons(term: Terminal): LoadedAddons {
     // Non-fatal if Unicode version 11 provider is already active.
   }
 
-  // WebGL renderer when available; xterm's built-in DOM renderer is the
-  // fallback (the canvas addon is not compatible with xterm 6).
-  let webglAddon: WebglAddon | undefined;
-  try {
-    const addon = new WebglAddon();
-    addon.onContextLoss(() => {
-      // A lost context would leave a blank terminal; disposing the addon
-      // hands rendering back to the DOM renderer.
-      addon.dispose();
-      if (webglAddon === addon) webglAddon = undefined;
-    });
-    term.loadAddon(addon);
-    webglAddon = addon;
-  } catch {
-    // WebGL unavailable — stay on the DOM renderer.
-  }
-
-  return { searchAddon, webLinksAddon, clipboardAddon, unicode11Addon, imageAddon, webglAddon };
+  return { searchAddon, webLinksAddon, clipboardAddon, unicode11Addon, imageAddon };
 }
 
 /** Export terminal scrollback buffer as a plain text string. */
@@ -323,11 +316,13 @@ export function attachXtermKeyHandler(
 
   const pasteText = () => {
     const doPaste = (text: string) => {
-      if (text) term.paste(text);
+      if (text) void pasteIntoTerminal(term, text);
     };
-    navigator.clipboard.readText().then(doPaste).catch((err) => {
-      console.error("Failed to read from clipboard", err);
-    });
+    if (typeof navigator.clipboard?.readText === "function") {
+      navigator.clipboard.readText().then(doPaste).catch((err) => {
+        console.error("Failed to read from clipboard", err);
+      });
+    }
   };
 
   /** Run `action` once per key press and keep the browser from acting too. */
@@ -395,26 +390,6 @@ export function attachXtermKeyHandler(
   });
 }
 
-/** Attach mouse listeners for middle-click paste and smooth selection handling. */
-export function attachXtermMouseHandlers(
-  container: HTMLElement,
-  term: Terminal,
-): () => void {
-  const handleAuxClick = (e: MouseEvent) => {
-    if (e.button === 1) { // Middle click paste
-      e.preventDefault();
-      navigator.clipboard.readText().then((text) => {
-        if (text) term.paste(text);
-      }).catch(() => {});
-    }
-  };
-
-  container.addEventListener("auxclick", handleAuxClick);
-  return () => {
-    container.removeEventListener("auxclick", handleAuxClick);
-  };
-}
-
 /**
  * Fix WebKitGTK+IBUS orphan composition events that break xterm input on Linux.
  * Returns a cleanup function — call before term.dispose().
@@ -436,7 +411,7 @@ export function attachXtermLinuxInputFix(
 
 export interface OutputCoalescer {
   /** Queue PTY output; it is written to the terminal on the next animation frame. */
-  push: (data: string) => void;
+  push: (data: string, bytes?: number) => void;
   /** Immediately write everything queued so far (e.g. before a scroll). */
   flush: () => void;
   /** Stop the flush timer and drop any queued output. */
@@ -460,9 +435,10 @@ const MAX_QUEUE_BYTES = 2 * 1024 * 1024;
  */
 export function createOutputCoalescer(
   term: Terminal,
-  options?: { onFlush?: () => void },
+  options?: { onFlush?: () => void; onAck?: (bytes: number) => void },
 ): OutputCoalescer {
   let pending = "";
+  let pendingBytes = 0;
   let rafId: number | null = null;
   let disposed = false;
 
@@ -474,18 +450,28 @@ export function createOutputCoalescer(
     }
   };
 
-  const writeChunked = (data: string) => {
-    if (disposed || !isTermAlive()) return;
+  const writeChunked = (data: string, bytes: number) => {
+    if (disposed || !isTermAlive()) {
+      if (bytes > 0) options?.onAck?.(bytes);
+      return;
+    }
     if (data.length <= MAX_WRITE_CHUNK) {
-      term.write(data, () => options?.onFlush?.());
+      term.write(data, () => {
+        options?.onFlush?.();
+        if (bytes > 0) options?.onAck?.(bytes);
+      });
       return;
     }
     let offset = 0;
     const writeNext = () => {
-      if (disposed || !isTermAlive()) return;
+      if (disposed || !isTermAlive()) {
+        if (bytes > 0) options?.onAck?.(bytes);
+        return;
+      }
       const chunk = data.slice(offset, offset + MAX_WRITE_CHUNK);
       if (!chunk) {
         options?.onFlush?.();
+        if (bytes > 0) options?.onAck?.(bytes);
         return;
       }
       offset += MAX_WRITE_CHUNK;
@@ -499,16 +485,22 @@ export function createOutputCoalescer(
       cancelAnimationFrame(rafId);
       rafId = null;
     }
-    if (disposed || !pending) return;
+    if (disposed || (!pending && pendingBytes === 0)) return;
     const data = pending;
+    const bytes = pendingBytes;
     pending = "";
-    writeChunked(data);
+    pendingBytes = 0;
+    writeChunked(data, bytes);
   };
 
   return {
-    push(data: string) {
-      if (disposed || !data) return;
+    push(data: string, bytes = 0) {
+      if (disposed || (!data && bytes <= 0)) {
+        if (disposed && bytes > 0) options?.onAck?.(bytes);
+        return;
+      }
       pending += data;
+      pendingBytes += bytes;
       // If queue is dangerously large, flush immediately to prevent OOM.
       if (pending.length >= MAX_QUEUE_BYTES) {
         flush();
@@ -524,11 +516,214 @@ export function createOutputCoalescer(
     flush,
     dispose() {
       disposed = true;
+      if (pendingBytes > 0) {
+        options?.onAck?.(pendingBytes);
+      }
       pending = "";
+      pendingBytes = 0;
       if (rafId !== null) {
         cancelAnimationFrame(rafId);
         rafId = null;
       }
     },
+  };
+}
+
+export interface XtermSessionOptions {
+  terminalOptions?: Record<string, unknown>;
+  onOpenSearch?: () => void;
+  onShortcut?: (id: string) => boolean;
+  signals?: TerminalSignalHandlers;
+  onZoom?: (delta: 1 | -1) => void;
+  getConnectionName?: () => string;
+}
+
+export interface XtermSessionHandle {
+  term: Terminal;
+  fitAddon: FitAddon;
+  searchAddon: SearchAddon;
+  setVisible: (visible: boolean) => void;
+  write: (data: string, bytes: number) => void;
+  dispose: () => void;
+}
+
+/**
+ * Shared factory for xterm sessions (main tabs and popout windows).
+ * Wires addons, snapshotting, signals, context menu, paste guard, middle-click paste,
+ * Linux input fix, shortcuts, keyboard handling, zoom, resize and IO.
+ */
+export function createXtermSession(
+  container: HTMLElement,
+  sessionId: string,
+  options?: XtermSessionOptions,
+): XtermSessionHandle {
+  const term = new Terminal(options?.terminalOptions as ConstructorParameters<typeof Terminal>[0]);
+  const fitAddon = new FitAddon();
+  term.loadAddon(fitAddon);
+
+  const { searchAddon } = attachXtermAddons(term);
+  enableSnapshot(term);
+
+  term.open(container);
+
+  let disposed = false;
+  let webglAddon: WebglAddon | undefined;
+  let webglFailed = false;
+
+  const setVisible = (visible: boolean) => {
+    if (disposed) return;
+    if (visible) {
+      if (!webglAddon && !webglFailed) {
+        try {
+          const addon = new WebglAddon();
+          addon.onContextLoss(() => {
+            addon.dispose();
+            if (webglAddon === addon) {
+              webglAddon = undefined;
+            }
+            webglFailed = true;
+          });
+          term.loadAddon(addon);
+          webglAddon = addon;
+        } catch {
+          webglFailed = true;
+        }
+      }
+    } else {
+      if (webglAddon) {
+        try {
+          webglAddon.dispose();
+        } catch {}
+        webglAddon = undefined;
+      }
+    }
+  };
+
+  const cleanupLinuxFix = attachXtermLinuxInputFix(container, term);
+
+  const cleanupContextMenu = attachTerminalContextMenu(container, term, {
+    paste: () => {
+      const doPaste = (text: string) => {
+        if (text) void pasteIntoTerminal(term, text);
+      };
+      if (typeof navigator.clipboard?.readText === "function") {
+        navigator.clipboard.readText().then(doPaste).catch(() => {});
+      }
+    },
+    find: () => {
+      options?.onOpenSearch?.();
+    },
+    exportScrollback: () => {
+      const name = options?.getConnectionName ? options.getConnectionName() : "terminal";
+      downloadTerminalScrollback(term, name);
+    },
+  });
+
+  const cleanupPasteGuard = attachPasteGuard(container, term);
+  const cleanupMiddleClick = attachMiddleClickPaste(container, term);
+
+  let cleanupSignals: (() => void) | undefined;
+  if (options?.signals) {
+    cleanupSignals = attachXtermSignals(term, {
+      onTitle: (title) => options.signals?.onTitle(title),
+      onBell: () => options.signals?.onBell(),
+      onProgress: (state, value) => options.signals?.onProgress(state, value),
+    });
+  }
+
+  attachXtermKeyHandler(term, options?.onOpenSearch, options?.onShortcut);
+  attachXtermPtyResize(sessionId, term);
+  attachXtermIo(sessionId, term);
+
+  let fitRaf: number | null = null;
+  const scheduleFit = () => {
+    if (disposed || fitRaf !== null) return;
+    fitRaf = requestAnimationFrame(() => {
+      fitRaf = null;
+      if (
+        disposed ||
+        !container.isConnected ||
+        container.offsetParent === null ||
+        container.clientWidth === 0 ||
+        container.clientHeight === 0
+      ) {
+        return;
+      }
+      try {
+        fitAddon.fit();
+      } catch {}
+    });
+  };
+
+  const resizeObserver = new ResizeObserver(() => scheduleFit());
+  resizeObserver.observe(container);
+
+  const onMouseDown = () => {
+    try {
+      term.focus();
+    } catch {}
+  };
+  container.addEventListener("mousedown", onMouseDown);
+
+  const onWheel = (e: WheelEvent) => {
+    if ((e.ctrlKey || e.metaKey) && options?.onZoom) {
+      e.preventDefault();
+      const delta: 1 | -1 = e.deltaY < 0 ? 1 : -1;
+      options.onZoom(delta);
+    }
+  };
+  container.addEventListener("wheel", onWheel, { passive: false });
+
+  const coalescer = createOutputCoalescer(term, {
+    onAck: (bytes) => {
+      if (bytes > 0) {
+        invoke("ack_pty", { sessionId, bytes }).catch(() => {});
+      }
+    },
+  });
+
+  const write = (data: string, bytes: number) => {
+    if (disposed) {
+      if (bytes > 0) {
+        invoke("ack_pty", { sessionId, bytes }).catch(() => {});
+      }
+      return;
+    }
+    coalescer.push(data, bytes);
+  };
+
+  const dispose = () => {
+    if (disposed) return;
+    disposed = true;
+
+    setVisible(false);
+    coalescer.dispose();
+
+    container.removeEventListener("wheel", onWheel);
+    container.removeEventListener("mousedown", onMouseDown);
+    resizeObserver.disconnect();
+    if (fitRaf !== null) {
+      cancelAnimationFrame(fitRaf);
+      fitRaf = null;
+    }
+
+    cleanupLinuxFix();
+    cleanupContextMenu();
+    cleanupPasteGuard();
+    cleanupMiddleClick();
+    cleanupSignals?.();
+
+    try {
+      term.dispose();
+    } catch {}
+  };
+
+  return {
+    term,
+    fitAddon,
+    searchAddon,
+    setVisible,
+    write,
+    dispose,
   };
 }
