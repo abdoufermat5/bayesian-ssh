@@ -12,10 +12,10 @@ use commands::{
     get_agent_status, get_connections, get_history, get_stats, get_workspace_info,
     import_ssh_config, list_detached_sessions, list_environments, list_popout_sessions,
     load_desktop_settings, needs_onboarding, open_terminal_window, pick_key_file,
-    pick_ssh_config_file, pick_upload_files, pick_upload_folder, quit_app, read_primary_selection,
-    reattach_pty, redraw_pty, remove_connection, remove_environment, resize_pty,
-    save_desktop_settings, save_workspace_config, seal_session_ui, set_active_env, spawn_pty,
-    start_agent, start_upload, write_pty, PtyState, UploadState,
+    pick_ssh_config_file, pick_upload_files, pick_upload_folder, quit_app, read_clipboard_text,
+    read_primary_selection, reattach_pty, redraw_pty, remove_connection, remove_environment,
+    resize_pty, save_desktop_settings, save_workspace_config, seal_session_ui, set_active_env,
+    spawn_pty, start_agent, start_upload, write_clipboard_text, write_pty, PtyState, UploadState,
 };
 use kerberos::{acquire_kerberos_ticket, get_kerberos_status, renew_kerberos_ticket};
 use std::collections::HashMap;
@@ -95,6 +95,8 @@ pub fn run() {
             ack_pty,
             redraw_pty,
             read_primary_selection,
+            read_clipboard_text,
+            write_clipboard_text,
             count_active_sessions,
             close_pty,
             close_all_ptys,

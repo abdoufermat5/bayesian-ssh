@@ -1163,17 +1163,50 @@ pub fn close_all_ptys(app: AppHandle, state: State<'_, PtyState>) -> Result<usiz
     Ok(count)
 }
 
+/// The system clipboard, opened once and kept for the app's lifetime. On X11
+/// and Wayland the process that copied must stay alive to serve the data, so a
+/// handle dropped right after a write would lose it.
+static CLIPBOARD: Mutex<Option<arboard::Clipboard>> = Mutex::new(None);
+
+fn with_clipboard<T>(
+    f: impl FnOnce(&mut arboard::Clipboard) -> Result<T, arboard::Error>,
+) -> Result<T, String> {
+    let mut guard = CLIPBOARD.lock().unwrap_or_else(|e| e.into_inner());
+    if guard.is_none() {
+        *guard = Some(arboard::Clipboard::new().map_err(|e| e.to_string())?);
+    }
+    let clipboard = guard.as_mut().expect("clipboard initialised above");
+    f(clipboard).map_err(|e| e.to_string())
+}
+
+/// Read the system clipboard as text.
+///
+/// The terminal uses this instead of `navigator.clipboard`, which WebKit (the
+/// macOS and Linux webviews) only allows behind a paste prompt or not at all.
+/// `None` when the clipboard is empty, holds no text, or is unavailable.
+#[tauri::command(async)]
+pub fn read_clipboard_text() -> Option<String> {
+    with_clipboard(|clipboard| clipboard.get_text()).ok()
+}
+
+/// Put text on the system clipboard (see [`read_clipboard_text`]).
+#[tauri::command(async)]
+pub fn write_clipboard_text(text: String) -> Result<(), String> {
+    with_clipboard(|clipboard| clipboard.set_text(text))
+}
+
 /// Read the PRIMARY selection on Linux, where middle-click paste uses it.
 #[cfg(target_os = "linux")]
 fn primary_selection() -> Option<String> {
-    use arboard::{Clipboard, GetExtLinux, LinuxClipboardKind};
+    use arboard::{GetExtLinux, LinuxClipboardKind};
 
-    let mut clipboard = Clipboard::new().ok()?;
-    clipboard
-        .get()
-        .clipboard(LinuxClipboardKind::Primary)
-        .text()
-        .ok()
+    with_clipboard(|clipboard| {
+        clipboard
+            .get()
+            .clipboard(LinuxClipboardKind::Primary)
+            .text()
+    })
+    .ok()
 }
 
 /// Only X11 and Wayland have a PRIMARY selection; elsewhere middle-click paste
