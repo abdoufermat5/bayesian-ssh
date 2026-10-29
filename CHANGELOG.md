@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.10] - 2026-10-29
+
 ### Added
 - **Desktop terminal: tab titles, bell and progress.** A tab shows the title the remote shell or program sets (OSC 0/2, e.g. `user@host:~/dir` or vim's file name), a dot when a background tab rings the bell (the window also asks for attention when it isn't focused), and a progress bar for programs that report progress with OSC 9;4. Pop-out windows take the title as their window title and show progress on the taskbar.
 - **Desktop terminal: right-click menu.** Copy, Paste, Select all, Find, Clear and Export scrollback. When the program running in the terminal uses the mouse (vim, htop, tmux with mouse on), right-click goes to it; hold Shift to open the menu.

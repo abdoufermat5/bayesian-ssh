@@ -1,6 +1,6 @@
 [package]
 name = "bayesian-ssh-gui"
-version = "2.13.9"
+version = "2.13.10"
 edition = "2021"
 authors = ["Abdoufermat5"]
 description = "Bayesian SSH Desktop GUI Client"

@@ -527,7 +527,7 @@ checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 
 [[package]]
 name = "bayesian-ssh"
-version = "2.13.9"
+version = "2.13.10"
 dependencies = [
  "aes-gcm 0.10.3",
  "anyhow",
@@ -578,7 +578,7 @@ dependencies = [
 
 [[package]]
 name = "bayesian-ssh-gui"
-version = "2.13.9"
+version = "2.13.10"
 dependencies = [
  "anyhow",
  "arboard",
