@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.14.0] - 2026-10-29
+
+### Fixed
+- **Desktop terminal: copy and paste work again on macOS and Linux.** 2.13.10 moved the terminal's copy and paste (keyboard shortcuts, right-click menu, middle click) onto the webview's clipboard API, which WebKit puts behind a paste prompt or refuses, so they stopped working. They now go through the system clipboard directly.
+- **Desktop terminal: pasting several lines works on older macOS.** On macOS before 14.4 the confirmation step failed and blocked every later multi-line paste until restart.
+
 ## [2.13.10] - 2026-10-29
 
 ### Added
