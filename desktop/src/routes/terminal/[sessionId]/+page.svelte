@@ -58,12 +58,12 @@
       // Continue docking even if seal fails.
     }
 
+    const snapshot = handle.getSnapshot();
     handle.releaseUi();
     handle = null;
-
     try {
       // Rust destroys this window after docking; no local destroy needed.
-      await dockPopoutToMain(sessionId);
+      await dockPopoutToMain(sessionId, snapshot);
     } catch (e: unknown) {
       loadError = String(e);
       closing = false;

@@ -51,5 +51,10 @@ tracing = "0.1"
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# PRIMARY selection (middle-click paste) for the terminal. `wayland-data-control`
+# makes it work on Wayland sessions instead of X11 only.
+[target.'cfg(target_os = "linux")'.dependencies]
+arboard = { version = "3", features = ["wayland-data-control"] }
+
 [dev-dependencies]
 tempfile = "3"

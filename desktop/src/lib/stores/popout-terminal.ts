@@ -1,27 +1,25 @@
 import { tick } from "svelte";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, Channel } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Terminal } from "@xterm/xterm";
-import { FitAddon } from "@xterm/addon-fit";
 import type { DesktopSettings } from "$lib/types";
 import { getCurrentXtermTheme } from "$lib/utils/theme";
 import { isTerminalFocused } from "$lib/utils/terminal-focus";
 import { buildTerminalOptions } from "$lib/stores/terminal.svelte";
 import {
-  attachXtermAddons,
-  attachXtermIo,
-  attachXtermKeyHandler,
-  attachXtermLinuxInputFix,
-  attachXtermPtyResize,
-  createOutputCoalescer,
+  createXtermSession,
   safeWrite,
   syncPtySize,
   waitForTerminalFont,
+  type PtyChunk,
+  type XtermSessionHandle,
 } from "$lib/utils/terminal-xterm";
+import { snapshotTerminal } from "$lib/utils/terminal-snapshot";
+import { requestAttentionIfUnfocused, setWindowProgress } from "$lib/utils/terminal-signals";
 
 export interface PopoutTerminalHandle {
   connectionName: string;
+  getSnapshot: () => string | null;
   releaseUi: () => void;
   shutdown: (options?: { closeWindow?: boolean }) => Promise<void>;
 }
@@ -37,39 +35,41 @@ export async function initPopoutTerminal(
   options?: { onExit?: () => void },
 ): Promise<PopoutTerminalHandle> {
   const windowLabel = getCurrentWindow().label;
-  const info = await invoke<ClaimInfo>("claim_popout_session", { sessionId, windowLabel });
-
-  let term: Terminal | null = null;
-  let fitAddon: FitAddon | null = null;
-  let resizeObserver: ResizeObserver | null = null;
-  let unlistenOutput: UnlistenFn | null = null;
-  let themeObserver: MutationObserver | null = null;
-  let compositionGuardCleanup: (() => void) | null = null;
-  let outputCoalescer: ReturnType<typeof createOutputCoalescer> | null = null;
+  let session: XtermSessionHandle | null = null;
   let closing = false;
+  let replayDone = false;
+  let earlyChunks: Array<{ data: string; bytes: number }> = [];
 
-  const fit = () => {
-    if (!term || !fitAddon) return;
-    try {
-      fitAddon.fit();
-    } catch {
-      // Container may not have dimensions yet.
+  const outputChannel = new Channel<PtyChunk>((chunk) => {
+    if (closing) {
+      if (chunk.bytes > 0) {
+        invoke("ack_pty", { sessionId, bytes: chunk.bytes }).catch(() => {});
+      }
+      return;
     }
-  };
+    if (!replayDone || !session) {
+      earlyChunks.push(chunk);
+      return;
+    }
+    session.write(chunk.data, chunk.bytes);
+  });
 
-  // Throttle refits to one per animation frame (window drags fire a storm
-  // of resize events).
-  let fitRaf: number | null = null;
-  const scheduleFit = () => {
-    if (fitRaf !== null) return;
-    fitRaf = requestAnimationFrame(() => {
-      fitRaf = null;
-      fit();
-    });
-  };
+  const info = await invoke<ClaimInfo>("claim_popout_session", {
+    sessionId,
+    windowLabel,
+    output: outputChannel,
+  });
+
+  let themeObserver: MutationObserver | null = null;
 
   const container = await waitForContainer("terminal-popout-root");
   if (!container) {
+    for (const chunk of earlyChunks) {
+      if (chunk.bytes > 0) {
+        invoke("ack_pty", { sessionId, bytes: chunk.bytes }).catch(() => {});
+      }
+    }
+    earlyChunks = [];
     throw new Error("Terminal container not found.");
   }
 
@@ -87,133 +87,136 @@ export async function initPopoutTerminal(
   const termOptions = buildTerminalOptions(settings);
   // Measure cells with the real font, not a fallback.
   await waitForTerminalFont(String(termOptions.fontFamily), () => {
-    if (!term) return;
-    const family = term.options.fontFamily;
-    term.options.fontFamily = "monospace";
-    term.options.fontFamily = family;
-    scheduleFit();
+    if (!session) return;
+    const family = session.term.options.fontFamily;
+    session.term.options.fontFamily = "monospace";
+    session.term.options.fontFamily = family;
+    session.fitAddon.fit();
   });
 
-  term = new Terminal(termOptions as ConstructorParameters<typeof Terminal>[0]);
+  const handleZoomDelta = (delta: 1 | -1) => {
+    if (!session) return;
+    const current = session.term.options.fontSize ?? 13;
+    const clamped = Math.max(8, Math.min(32, current + delta));
+    session.term.options.fontSize = clamped;
+    session.fitAddon.fit();
+  };
 
-  fitAddon = new FitAddon();
-  term.loadAddon(fitAddon);
-  attachXtermAddons(term);
-  term.open(container);
-  compositionGuardCleanup = attachXtermLinuxInputFix(container, term);
-  outputCoalescer = createOutputCoalescer(term);
-  term.focus();
-
-  container.addEventListener("mousedown", () => term!.focus());
-
-  // ── Register the live output listener BEFORE writing the replay buffer ──
-  // The backend resumes emitting `pty-output` events as soon as the session
-  // is claimed; any event that arrives before this listener exists is lost.
-  // With the listener registered first, output that arrives while the replay
-  // is being written lands behind it in xterm's write queue, preserving
-  // ordering and dropping nothing.
-  let unlistenExit: UnlistenFn | null = null;
-  unlistenOutput = await listen(`pty-output:${sessionId}`, (event) => {
-    const data = typeof event.payload === "string" ? event.payload : (event.payload as any)?.data;
-    if (data) {
-      outputCoalescer?.push(data);
-    }
+  session = createXtermSession(container, sessionId, {
+    terminalOptions: termOptions,
+    getConnectionName: () => info.connection_name,
+    onZoom: handleZoomDelta,
+    signals: {
+      onTitle: (title) => {
+        const displayTitle = title ? title.trim() : info.connection_name;
+        getCurrentWindow().setTitle(`${displayTitle} — Bayesian SSH`).catch(() => {});
+      },
+      onBell: () => {
+        void requestAttentionIfUnfocused();
+      },
+      onProgress: (state, value) => {
+        void setWindowProgress(state, value);
+      },
+    },
   });
 
-  unlistenExit = await listen(`pty-exit:${sessionId}`, () => {
-    outputCoalescer?.flush();
-    if (term) {
-      safeWrite(term, "\n\x1b[1;33mSession disconnected.\x1b[0m\r\n");
-    }
-    options?.onExit?.();
-  });
-
-  if (info.buffered_output) {
-    safeWrite(term, info.buffered_output, () => {
-      term?.scrollToBottom();
-    });
-  } else {
-    requestAnimationFrame(() => term?.scrollToBottom());
-  }
-
-  attachXtermIo(sessionId, term);
-  // `fit()` only resizes on real grid changes; the PTY hears about those.
-  attachXtermPtyResize(sessionId, term);
-  attachXtermKeyHandler(term);
+  // Popout is always visible; enable WebGL
+  session.setVisible(true);
 
   // Dynamic theme mutation observer
   themeObserver = new MutationObserver(() => {
-    if (term) {
-      term.options.theme = getCurrentXtermTheme();
+    if (session) {
+      session.term.options.theme = getCurrentXtermTheme();
     }
   });
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
 
-  // Ctrl + Mouse Wheel zoom
-  container.addEventListener("wheel", (e) => {
-    if (e.ctrlKey && term) {
-      e.preventDefault();
-      const current = term.options.fontSize ?? 13;
-      const newSize = e.deltaY < 0 ? current + 1 : current - 1;
-      const clamped = Math.max(8, Math.min(32, newSize));
-      term.options.fontSize = clamped;
-      scheduleFit();
-    }
-  }, { passive: false });
-
   // Keyboard shortcut zoom — skip when xterm has focus so vim/nano keys aren't stolen
   const handleKeydown = (e: KeyboardEvent) => {
-    if (isTerminalFocused() || !term) return;
-    const current = term.options.fontSize ?? 13;
+    if (isTerminalFocused() || !session) return;
     if (e.ctrlKey && (e.key === "=" || e.key === "+")) {
       e.preventDefault();
-      const clamped = Math.max(8, Math.min(32, current + 1));
-      term.options.fontSize = clamped;
-      scheduleFit();
+      handleZoomDelta(1);
     } else if (e.ctrlKey && e.key === "-") {
       e.preventDefault();
-      const clamped = Math.max(8, Math.min(32, current - 1));
-      term.options.fontSize = clamped;
-      scheduleFit();
+      handleZoomDelta(-1);
     } else if (e.ctrlKey && e.key === "0") {
       e.preventDefault();
       const resetSize = settings?.terminal_font_size ?? 13;
-      term.options.fontSize = resetSize;
-      scheduleFit();
+      session.term.options.fontSize = resetSize;
+      session.fitAddon.fit();
     }
   };
   window.addEventListener("keydown", handleKeydown);
 
-  resizeObserver = new ResizeObserver(() => scheduleFit());
-  resizeObserver.observe(container);
+  let unlistenExit: UnlistenFn | null = null;
+  unlistenExit = await listen(`pty-exit:${sessionId}`, () => {
+    void setWindowProgress(0, 0);
+    if (session) {
+      safeWrite(session.term, "\n\x1b[1;33mSession disconnected.\x1b[0m\r\n");
+    }
+    options?.onExit?.();
+  });
+
+  const flushEarlyChunks = () => {
+    replayDone = true;
+    if (session) {
+      for (const chunk of earlyChunks) {
+        session.write(chunk.data, chunk.bytes);
+      }
+    } else {
+      for (const chunk of earlyChunks) {
+        if (chunk.bytes > 0) {
+          invoke("ack_pty", { sessionId, bytes: chunk.bytes }).catch(() => {});
+        }
+      }
+    }
+    earlyChunks = [];
+  };
+
   requestAnimationFrame(() =>
     requestAnimationFrame(() => {
-      fit();
+      if (!session) {
+        flushEarlyChunks();
+        return;
+      }
+      session.fitAddon.fit();
       // The PTY still has the size of the view it came from.
-      if (term) syncPtySize(sessionId, term);
+      syncPtySize(sessionId, session.term);
+      session.term.focus();
+
+      if (info.buffered_output) {
+        safeWrite(session.term, info.buffered_output, () => {
+          session?.term.scrollToBottom();
+          flushEarlyChunks();
+          invoke("redraw_pty", { sessionId }).catch(() => {});
+        });
+      } else {
+        requestAnimationFrame(() => {
+          session?.term.scrollToBottom();
+          flushEarlyChunks();
+          invoke("redraw_pty", { sessionId }).catch(() => {});
+        });
+      }
     }),
   );
 
   const releaseUi = () => {
+    closing = true;
+    void setWindowProgress(0, 0);
     window.removeEventListener("keydown", handleKeydown);
-    compositionGuardCleanup?.();
-    compositionGuardCleanup = null;
     themeObserver?.disconnect();
     themeObserver = null;
-    unlistenOutput?.();
-    unlistenOutput = null;
     unlistenExit?.();
     unlistenExit = null;
-    resizeObserver?.disconnect();
-    resizeObserver = null;
-    outputCoalescer?.dispose();
-    outputCoalescer = null;
-    if (fitRaf !== null) {
-      cancelAnimationFrame(fitRaf);
-      fitRaf = null;
+    for (const chunk of earlyChunks) {
+      if (chunk.bytes > 0) {
+        invoke("ack_pty", { sessionId, bytes: chunk.bytes }).catch(() => {});
+      }
     }
-    term?.dispose();
-    term = null;
+    earlyChunks = [];
+    session?.dispose();
+    session = null;
   };
 
   const shutdown = async (options?: { closeWindow?: boolean }) => {
@@ -232,14 +235,21 @@ export async function initPopoutTerminal(
 
   return {
     connectionName: info.connection_name,
+    getSnapshot: () => {
+      return session ? snapshotTerminal(session.term) : null;
+    },
     releaseUi,
     shutdown,
   };
 }
 
-export async function dockPopoutToMain(sessionId: string): Promise<void> {
+export async function dockPopoutToMain(sessionId: string, snapshot?: string | null): Promise<void> {
   const windowLabel = getCurrentWindow().label;
-  await invoke("dock_popout_session", { sessionId, windowLabel });
+  await invoke("dock_popout_session", {
+    sessionId,
+    windowLabel,
+    snapshot: snapshot ?? null,
+  });
 }
 
 async function waitForContainer(elementId: string): Promise<HTMLElement | null> {

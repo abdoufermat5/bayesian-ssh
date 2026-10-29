@@ -1,4 +1,4 @@
-use portable_pty::Child;
+use portable_pty::{Child, MasterPty};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -73,8 +73,9 @@ pub const REPLAY_TRIM_SLACK_BYTES: usize = 64 * 1024;
 pub const MAIN_WINDOW_LABEL: &str = "main";
 
 /// Label of the pop-out window that owns a session, shared with the session's
-/// reader thread so live output is routed to that window only. `None` means
-/// the main window owns the session.
+/// reader thread so the exit event reaches that window. `None` means the main
+/// window owns the session. Live output does not use this: it goes through the
+/// session's [`OutputSink`].
 #[derive(Clone, Default)]
 pub struct PopoutOwner(Arc<Mutex<Option<String>>>);
 
@@ -96,11 +97,6 @@ impl PopoutOwner {
     pub fn is_none(&self) -> bool {
         self.lock().is_none()
     }
-
-    /// Run `f` with the current owner without cloning the label.
-    pub fn with<R>(&self, f: impl FnOnce(Option<&str>) -> R) -> R {
-        f(self.lock().as_deref())
-    }
 }
 
 pub struct PtySession {
@@ -108,8 +104,9 @@ pub struct PtySession {
     /// never blocks the IPC thread on a full PTY and keeps keystroke order.
     pub input: Sender<String>,
     pub child: Box<dyn Child + Send + Sync>,
-    /// Keeps the PTY master alive for the session's lifetime.
-    pub _master: Box<dyn portable_pty::MasterPty + Send>,
+    /// Keeps the PTY master alive for the session's lifetime. Behind a mutex so
+    /// `redraw_pty` can restore the size from a background thread.
+    pub master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
     /// Set to true by close_pty so the reader thread suppresses the pty-exit event.
     pub cancelled: Arc<AtomicBool>,
     /// Database session id when session logging is enabled.
@@ -118,6 +115,12 @@ pub struct PtySession {
     pub detached: Arc<AtomicBool>,
     pub output_buffer: Arc<Mutex<String>>,
     pub replay_offset: Arc<Mutex<usize>>,
+    /// Serialises the reader thread's "append to the replay buffer + deliver
+    /// on the sink" step against commands that swap the sink or read the
+    /// replay, so a chunk is never replayed and delivered live at once.
+    pub output_gate: Arc<Mutex<()>>,
+    /// Channel of the window that currently displays this session.
+    pub sink: OutputSink,
     pub popout_window: PopoutOwner,
     pub recorder: Option<bayesian_ssh::services::recording::SharedRecorder>,
 }
@@ -140,6 +143,15 @@ pub struct ReattachSessionInfo {
     pub session_id: String,
     pub connection_name: String,
     pub buffered_output: String,
+}
+
+/// Payload of the `session-docked` event: the pop-out window is gone and the
+/// main window should call `attach_pty_output` for this session. The replay is
+/// not included; the main window fetches it with that call.
+#[derive(Serialize, Clone, Debug)]
+pub struct DockedSessionInfo {
+    pub session_id: String,
+    pub connection_name: String,
 }
 
 #[derive(Serialize, Clone, Debug)]

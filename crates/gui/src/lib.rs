@@ -5,16 +5,17 @@ mod updater;
 
 use bayesian_ssh::services::agent;
 use commands::{
-    add_connection, add_key_to_agent, cancel_upload, check_popout_main_overlap,
-    claim_popout_session, close_all_ptys, close_pty, complete_onboarding, count_active_sessions,
-    create_environment, detach_pty, dock_popout_session, edit_connection, focus_terminal_window,
-    force_quit_app, get_active_env, get_agent_status, get_connections, get_history, get_stats,
-    get_workspace_info, import_ssh_config, list_detached_sessions, list_environments,
-    list_popout_sessions, load_desktop_settings, needs_onboarding, open_terminal_window,
-    pick_key_file, pick_ssh_config_file, pick_upload_files, pick_upload_folder, quit_app,
-    reattach_pty, remove_connection, remove_environment, resize_pty, save_desktop_settings,
-    save_workspace_config, seal_session_ui, set_active_env, spawn_pty, start_agent, start_upload,
-    write_pty, PtyState, UploadState,
+    ack_pty, add_connection, add_key_to_agent, attach_pty_output, cancel_upload,
+    check_popout_main_overlap, claim_popout_session, close_all_ptys, close_pty,
+    complete_onboarding, count_active_sessions, create_environment, detach_pty,
+    dock_popout_session, edit_connection, focus_terminal_window, force_quit_app, get_active_env,
+    get_agent_status, get_connections, get_history, get_stats, get_workspace_info,
+    import_ssh_config, list_detached_sessions, list_environments, list_popout_sessions,
+    load_desktop_settings, needs_onboarding, open_terminal_window, pick_key_file,
+    pick_ssh_config_file, pick_upload_files, pick_upload_folder, quit_app, read_primary_selection,
+    reattach_pty, redraw_pty, remove_connection, remove_environment, resize_pty,
+    save_desktop_settings, save_workspace_config, seal_session_ui, set_active_env, spawn_pty,
+    start_agent, start_upload, write_pty, PtyState, UploadState,
 };
 use kerberos::{acquire_kerberos_ticket, get_kerberos_status, renew_kerberos_ticket};
 use std::collections::HashMap;
@@ -86,10 +87,14 @@ pub fn run() {
             list_popout_sessions,
             reattach_pty,
             claim_popout_session,
+            attach_pty_output,
             dock_popout_session,
             check_popout_main_overlap,
             focus_terminal_window,
             open_terminal_window,
+            ack_pty,
+            redraw_pty,
+            read_primary_selection,
             count_active_sessions,
             close_pty,
             close_all_ptys,
