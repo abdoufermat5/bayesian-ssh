@@ -40,7 +40,7 @@ impl Database {
 
     /// Batch-fetch aliases for multiple connection IDs in a single query.
     /// Returns a map keyed by connection_id (as stored in the DB, i.e. string form).
-    pub(crate) fn get_aliases_for_connections(
+    pub(crate) fn aliases_for_connections(
         &self,
         connection_ids: &[String],
     ) -> Result<std::collections::HashMap<String, Vec<String>>> {
@@ -82,7 +82,7 @@ impl Database {
             let mut connection = self.row_to_connection(row)?;
             // Callers may write this connection back (`update_connection`
             // re-syncs tags from it), so it must carry its real tag set.
-            connection.tags = self.get_tags_for_connection(&connection.id.to_string())?;
+            connection.tags = self.tags_for_connection(&connection.id.to_string())?;
             Ok(Some(connection))
         } else {
             Ok(None)
@@ -142,7 +142,7 @@ mod tests {
         db.add_alias("dbp", &conn2.id.to_string()).unwrap();
 
         let ids = vec![conn1.id.to_string(), conn2.id.to_string()];
-        let map = db.get_aliases_for_connections(&ids).unwrap();
+        let map = db.aliases_for_connections(&ids).unwrap();
 
         let mut a1 = map.get(&conn1.id.to_string()).unwrap().clone();
         a1.sort();
@@ -160,7 +160,7 @@ mod tests {
             ..Default::default()
         };
         let db = Database::new(&config).unwrap();
-        let map = db.get_aliases_for_connections(&[]).unwrap();
+        let map = db.aliases_for_connections(&[]).unwrap();
         assert!(map.is_empty());
     }
 

@@ -142,7 +142,10 @@ fn parse_port(value: &str) -> Option<u16> {
 }
 
 impl Connection {
-    #[expect(clippy::too_many_arguments, reason = "pending refactor")]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "constructor signature is frozen (callers across cli/gui/inventory); see REFACTOR-REPORT.md"
+    )]
     pub fn new(
         name: String,
         host: String,

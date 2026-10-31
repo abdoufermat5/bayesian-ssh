@@ -169,7 +169,7 @@ impl Database {
 
         let mut connections = Vec::with_capacity(rows.len());
         for mut connection in rows {
-            connection.tags = self.get_tags_for_connection(&connection.id.to_string())?;
+            connection.tags = self.tags_for_connection(&connection.id.to_string())?;
             connections.push(connection);
         }
         Ok(connections)
