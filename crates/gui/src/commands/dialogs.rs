@@ -1,5 +1,6 @@
+use super::CommandError;
 #[tauri::command]
-pub fn pick_key_file(window: tauri::WebviewWindow) -> Result<Option<String>, String> {
+pub fn pick_key_file(window: tauri::WebviewWindow) -> Result<Option<String>, CommandError> {
     let ssh_dir = dirs::home_dir().map(|h| h.join(".ssh"));
 
     let mut dialog = rfd::FileDialog::new()
@@ -21,7 +22,7 @@ pub fn pick_key_file(window: tauri::WebviewWindow) -> Result<Option<String>, Str
 }
 
 #[tauri::command]
-pub fn pick_ssh_config_file(window: tauri::WebviewWindow) -> Result<Option<String>, String> {
+pub fn pick_ssh_config_file(window: tauri::WebviewWindow) -> Result<Option<String>, CommandError> {
     let ssh_dir = dirs::home_dir().map(|h| h.join(".ssh"));
 
     let mut dialog = rfd::FileDialog::new()
@@ -44,7 +45,7 @@ pub fn pick_ssh_config_file(window: tauri::WebviewWindow) -> Result<Option<Strin
 }
 
 #[tauri::command]
-pub fn pick_upload_files(window: tauri::WebviewWindow) -> Result<Vec<String>, String> {
+pub fn pick_upload_files(window: tauri::WebviewWindow) -> Result<Vec<String>, CommandError> {
     let mut dialog = rfd::FileDialog::new()
         .set_title("Select Files to Upload")
         .set_parent(&window);
@@ -66,7 +67,7 @@ pub fn pick_upload_files(window: tauri::WebviewWindow) -> Result<Vec<String>, St
 }
 
 #[tauri::command]
-pub fn pick_upload_folder(window: tauri::WebviewWindow) -> Result<Option<String>, String> {
+pub fn pick_upload_folder(window: tauri::WebviewWindow) -> Result<Option<String>, CommandError> {
     let mut dialog = rfd::FileDialog::new()
         .set_title("Select Folder to Upload")
         .set_parent(&window);
@@ -84,7 +85,7 @@ pub fn pick_upload_folder(window: tauri::WebviewWindow) -> Result<Option<String>
 }
 
 #[tauri::command]
-pub fn save_backup_file(window: tauri::WebviewWindow) -> Result<Option<String>, String> {
+pub fn save_backup_file(window: tauri::WebviewWindow) -> Result<Option<String>, CommandError> {
     let mut dialog = rfd::FileDialog::new()
         .set_title("Export Bayesian SSH Backup")
         .set_file_name("bayesian-ssh-backup.json")
@@ -106,7 +107,7 @@ pub fn save_backup_file(window: tauri::WebviewWindow) -> Result<Option<String>, 
 }
 
 #[tauri::command]
-pub fn pick_backup_file(window: tauri::WebviewWindow) -> Result<Option<String>, String> {
+pub fn pick_backup_file(window: tauri::WebviewWindow) -> Result<Option<String>, CommandError> {
     let mut dialog = rfd::FileDialog::new()
         .set_title("Select Bayesian SSH Backup File")
         .add_filter("Backup Files (*.json, *.enc)", &["json", "enc", "bak"])
