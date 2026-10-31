@@ -798,3 +798,29 @@ fn cd_tracking_resolves_relative_arguments() {
     // Absolute operands don't depend on the directory we lost track of.
     assert!(analyze("cd $d && cat /var/log/syslog").is_read_only());
 }
+
+/// The lexer's messages reach users through `unknown_reason`; `errors.rs` hints and callers
+/// match on them.
+#[test]
+fn lexer_errors_keep_their_messages() {
+    let nested = format!("echo {}x{}", "$(echo ".repeat(10), ")".repeat(10));
+    let cases = [
+        ("echo 'a", "unterminated single quote"),
+        ("echo \"a", "unterminated double quote"),
+        ("echo $(a", "unterminated $("),
+        ("echo ${a", "unterminated ${"),
+        ("echo `a", "unterminated backtick"),
+        ("cat <(a", "unterminated process substitution"),
+        ("echo $'a", "unterminated $'"),
+        ("cat <<", "here-doc without delimiter"),
+        ("cat <<\n", "here-doc without delimiter"),
+        (nested.as_str(), "substitutions nested too deep"),
+    ];
+    for (cmd, msg) in cases {
+        assert_eq!(
+            analyze(cmd).unknown_reason.as_deref(),
+            Some(format!("could not parse the command: {msg}").as_str()),
+            "{cmd:?}"
+        );
+    }
+}
