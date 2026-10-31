@@ -197,7 +197,7 @@ pub async fn upload_to_hosts(
     Ok(results.into_iter().flatten().collect())
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments, reason = "pending refactor")]
 async fn run_host(
     transfer: Arc<TransferService>,
     conn: Connection,

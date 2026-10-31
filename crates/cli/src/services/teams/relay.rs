@@ -71,7 +71,7 @@ pub struct RelayDecisionPayload {
 }
 
 /// Wire access to the relay. [`TeamsClient`] is the production impl.
-#[allow(clippy::double_must_use)]
+#[expect(clippy::double_must_use, reason = "pending refactor")]
 #[async_trait]
 pub trait RelayTransport: Send + Sync {
     async fn post_relay(&self, team_id: Uuid, msg: &RelayMessage) -> ClientResult<RelayAck>;
@@ -552,7 +552,7 @@ pub(crate) mod fake {
 }
 
 #[cfg(test)]
-#[allow(clippy::cloned_ref_to_slice_refs)]
+#[expect(clippy::cloned_ref_to_slice_refs, reason = "pending refactor")]
 mod tests {
     use super::fake::*;
     use super::*;

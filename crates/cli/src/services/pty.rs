@@ -5,8 +5,6 @@
 //! concerns (Tauri event emission, detached-session buffering) live in the
 //! GUI crate and pass callbacks into [`read_loop`].
 
-#![allow(dead_code)]
-
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use std::io::{Read, Write};
 

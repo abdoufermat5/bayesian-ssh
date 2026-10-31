@@ -7,8 +7,6 @@
 //! subprocess-based path (works for direct connections, classic jump-host
 //! bastions, and interactive Kerberos+bastion sessions).
 
-#![allow(dead_code)]
-
 use crate::config::AppConfig;
 use crate::database::Database;
 use crate::models::Connection;

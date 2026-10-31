@@ -3,7 +3,7 @@
 //! Implements `SshTransport` using the pure-Rust `russh` crate.
 //! Eligible connections (no kerberos, no bastion) use this path by default.
 
-#![allow(dead_code)]
+#![expect(dead_code, reason = "pending refactor")]
 
 use std::sync::Arc;
 

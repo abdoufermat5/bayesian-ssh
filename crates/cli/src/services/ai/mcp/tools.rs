@@ -1447,7 +1447,7 @@ async fn wait_approval(ctx: &Arc<RunContext>, a: WaitApprovalArgs) -> ToolResult
 }
 
 /// Cut very long text for summaries.
-#[allow(dead_code)]
+#[expect(dead_code, reason = "pending refactor")]
 fn short(s: &str) -> String {
     truncate_chars(s, 200).0
 }

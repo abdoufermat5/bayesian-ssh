@@ -4,8 +4,6 @@
 //! - `candidate_key_paths()` — ordered list of key files to try
 //! - `AgentClient` wrapper for ssh-agent protocol (via `russh::keys`)
 
-#![allow(dead_code)]
-
 use crate::config::AuthConfig;
 use crate::models::Connection;
 use russh::keys::PrivateKey;

@@ -786,7 +786,7 @@ pub enum Commands {
 }
 
 #[derive(Subcommand)]
-#[allow(clippy::large_enum_variant)]
+#[expect(clippy::large_enum_variant, reason = "pending refactor")]
 pub enum SourceCommands {
     /// Register a new inventory source (does not sync it)
     Add {

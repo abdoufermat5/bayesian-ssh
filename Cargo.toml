@@ -14,3 +14,11 @@ lto = "thin"           # Link-time optimization
 strip = "symbols"      # Strip debug symbols
 panic = "abort"        # Abort on panic (smaller binary)
 debug = false          # No debug info
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "warn"
+
+[workspace.lints.clippy]
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"
+undocumented_unsafe_blocks = "warn"

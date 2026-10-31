@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use crate::models::Connection;
 use async_trait::async_trait;
 use std::path::PathBuf;
@@ -217,7 +215,7 @@ pub struct RemoteEntry {
 
 /// SFTP session abstraction. Subprocess transport returns `Unsupported`.
 // `#[async_trait]` expands to `#[must_use]` on boxed futures; newer clippy flags that.
-#[allow(clippy::double_must_use)]
+#[expect(clippy::double_must_use, reason = "pending refactor")]
 #[async_trait]
 pub trait SftpSession: Send + Sync {
     async fn list(&self, path: &str) -> Result<Vec<RemoteEntry>, TransportError>;
@@ -246,7 +244,7 @@ pub trait SftpSession: Send + Sync {
 }
 
 /// Top-level SSH transport.
-#[allow(clippy::double_must_use)]
+#[expect(clippy::double_must_use, reason = "pending refactor")]
 #[async_trait]
 pub trait SshTransport: Send + Sync {
     async fn open_shell(&self, conn: &Connection, io: PtyIo)

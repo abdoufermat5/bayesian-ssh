@@ -189,7 +189,7 @@ pub(crate) fn current_call_slot() -> Option<Arc<CallSlot>> {
 }
 
 /// Where the inventory comes from (the bssh database). A trait so tests use a fixed list.
-#[allow(clippy::double_must_use)]
+#[expect(clippy::double_must_use, reason = "pending refactor")]
 #[async_trait]
 pub trait HostSource: Send + Sync {
     async fn list(&self) -> Result<Vec<Connection>>;
@@ -1338,7 +1338,6 @@ pub fn failed(msg: impl std::fmt::Display) -> ToolError {
     ToolError::Failed(msg.to_string())
 }
 
-#[allow(dead_code)]
 fn _assert_send_sync() {
     fn is<T: Send + Sync>() {}
     is::<RunContext>();

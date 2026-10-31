@@ -448,7 +448,7 @@ pub trait EmailCodePrompt {
 ///
 /// Without a terminal the code is mailed anyway and the error says to rerun
 /// with `--email-code <CODE>`.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments, reason = "pending refactor")]
 pub async fn init_interactive(
     store: &TeamsStore,
     server_url: &str,

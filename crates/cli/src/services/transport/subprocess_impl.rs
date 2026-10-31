@@ -2,7 +2,7 @@
 //!
 //! This is the existing behavior extracted behind the `SshTransport` trait.
 
-#![allow(dead_code)]
+#![expect(dead_code, reason = "pending refactor")]
 
 use crate::config::{AppConfig, HostKeyPolicy};
 use crate::models::Connection;
@@ -18,7 +18,6 @@ use super::types::{
 };
 
 pub struct SubprocessTransport {
-    #[allow(dead_code)]
     config: AppConfig,
 }
 

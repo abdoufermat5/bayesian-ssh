@@ -457,7 +457,7 @@ impl Database {
 
     /// Bayesian-inspired scoring: prior (frequency) × likelihood (match
     /// quality) × recency (temporal decay) × success × context factor.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments, reason = "pending refactor")]
     fn calculate_bayesian_score(
         &self,
         connection: &Connection,

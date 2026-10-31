@@ -48,7 +48,7 @@ pub fn predict_connections(
 }
 
 #[tauri::command(async)]
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments, reason = "pending refactor")]
 pub fn add_connection(
     name: String,
     host: String,
@@ -90,7 +90,7 @@ pub fn add_connection(
 }
 
 #[tauri::command(async)]
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments, reason = "pending refactor")]
 pub fn edit_connection(
     id: String,
     name: String,

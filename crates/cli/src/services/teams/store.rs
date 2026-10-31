@@ -469,7 +469,7 @@ impl TeamsStore {
     /// [`Self::append_audit_event_at`] for a bssh AI event: `actor` is signed
     /// with the event, `detail` (plaintext) is encrypted to the team audit key
     /// before signing, so the server never sees it.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments, reason = "pending refactor")]
     pub fn append_audit_event_full(
         &self,
         team_id: Uuid,

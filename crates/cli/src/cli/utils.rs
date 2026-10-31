@@ -117,7 +117,7 @@ pub fn print_connection_info(connection: &Connection, index: usize) {
 }
 
 /// Result type for interactive selection operations
-#[allow(clippy::large_enum_variant)]
+#[expect(clippy::large_enum_variant, reason = "pending refactor")]
 pub enum SelectionResult {
     /// User selected a connection
     Selected(Connection),

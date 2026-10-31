@@ -20,8 +20,6 @@
 //! the local store. Nothing here waits on the network; [`sync::SyncEngine`]
 //! reconciles with the server in the background.
 
-#![allow(dead_code)]
-
 pub mod agent;
 pub mod audit;
 pub mod billing;

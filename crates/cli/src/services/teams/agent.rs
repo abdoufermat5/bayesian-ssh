@@ -57,7 +57,7 @@ impl std::fmt::Debug for AgentCredential {
 }
 
 impl AgentCredential {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments, reason = "pending refactor")]
     pub fn new(
         server_url: String,
         team_id: Uuid,

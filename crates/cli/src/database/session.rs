@@ -345,7 +345,7 @@ impl Database {
     // Active session management
     // ──────────────────────────────────────────────────────────────────────────
 
-    #[allow(clippy::type_complexity)]
+    #[expect(clippy::type_complexity, reason = "pending refactor")]
     pub fn get_active_sessions(
         &self,
     ) -> Result<Vec<(String, Option<u32>, chrono::DateTime<chrono::Utc>)>> {
@@ -367,7 +367,7 @@ impl Database {
         Ok(sessions)
     }
 
-    #[allow(clippy::type_complexity)]
+    #[expect(clippy::type_complexity, reason = "pending refactor")]
     pub fn get_active_sessions_for_connection(
         &self,
         target: &str,

@@ -142,7 +142,7 @@ fn parse_port(value: &str) -> Option<u16> {
 }
 
 impl Connection {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments, reason = "pending refactor")]
     pub fn new(
         name: String,
         host: String,

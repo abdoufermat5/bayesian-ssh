@@ -27,12 +27,10 @@ impl Database {
     // Public search entry points
     // ──────────────────────────────────────────────────────────────────────────
 
-    #[allow(dead_code)]
     pub fn fuzzy_search_connections(&self, query: &str, limit: usize) -> Result<Vec<Connection>> {
         self.search_connections(query, limit, "fuzzy")
     }
 
-    #[allow(dead_code)]
     pub fn bayesian_search_connections(
         &self,
         query: &str,

@@ -575,7 +575,6 @@ fn tier_words(t: Tier) -> &'static str {
 // ------------------------------------------------------------------ card
 
 /// Everything the approver needs to decide, as text.
-#[allow(dead_code)]
 pub(crate) fn render_request(run: &RunHello, r: &ApprovalRequest) -> String {
     render_card(&Style::terminal(), run, r, Utc::now(), false)
 }

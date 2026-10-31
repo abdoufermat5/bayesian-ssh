@@ -91,7 +91,7 @@ pub fn validate_upload_flags(offset: u64, recursive: bool, host_count: usize) ->
 // Upload
 // ─────────────────────────────────────────────────────────────────────────────
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments, reason = "pending refactor")]
 pub async fn execute_upload(
     args: Vec<String>,
     all: bool,

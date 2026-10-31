@@ -30,7 +30,7 @@ const MAX_PUSH_ROUNDS: usize = 5;
 
 /// What the engine needs from the server. Implemented by
 /// [`TeamsClient`](super::client::TeamsClient); tests use an in-memory fake.
-#[allow(clippy::double_must_use)]
+#[expect(clippy::double_must_use, reason = "pending refactor")]
 #[async_trait(?Send)]
 pub trait TeamsTransport {
     async fn pull(&self, team_id: Uuid, since: u64, limit: u32) -> ClientResult<PullResponse>;

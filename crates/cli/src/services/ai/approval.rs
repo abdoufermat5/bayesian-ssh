@@ -25,7 +25,7 @@ use tokio::sync::{broadcast, oneshot};
 
 /// Asks the human through the agent's own client (MCP elicitation, tier T1).
 /// Implemented by the MCP layer; `Ok(None)` = the client can't elicit.
-#[allow(clippy::double_must_use)]
+#[expect(clippy::double_must_use, reason = "pending refactor")]
 #[async_trait]
 pub trait Elicitor: Send + Sync {
     async fn confirm(&self, req: &ApprovalRequest) -> anyhow::Result<Option<bool>>;

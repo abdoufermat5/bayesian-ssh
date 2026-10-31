@@ -39,7 +39,7 @@ pub struct FileRead {
     pub mode: Option<u32>,
 }
 
-#[allow(clippy::double_must_use)]
+#[expect(clippy::double_must_use, reason = "pending refactor")]
 #[async_trait]
 pub trait FileAccess: Send + Sync {
     async fn read(

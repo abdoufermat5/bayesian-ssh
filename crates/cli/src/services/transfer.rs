@@ -74,7 +74,7 @@ impl TransferService {
     /// `connection` is used only for logging. Callers that must resolve the
     /// remote destination (e.g. `stat` it) reuse their session here instead of
     /// paying for a second handshake.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments, reason = "pending refactor")]
     pub(crate) async fn upload_on(
         &self,
         sftp: &dyn crate::services::transport::types::SftpSession,
@@ -309,7 +309,7 @@ impl TransferService {
         Ok((file_count, total_bytes))
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments, reason = "pending refactor")]
     fn upload_dir_inner<'a>(
         sftp: &'a dyn crate::services::transport::types::SftpSession,
         local_dir: &'a Path,
