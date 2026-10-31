@@ -112,7 +112,7 @@ impl Database {
             let mut connection = self.row_to_connection(row)?;
             // `connection_tags` is authoritative. Never fall back to the
             // legacy JSON column: it is stale once tags have been removed.
-            connection.tags = self.get_tags_for_connection(&connection.id.to_string())?;
+            connection.tags = self.tags_for_connection(&connection.id.to_string())?;
             Ok(Some(connection))
         } else {
             Ok(None)
@@ -165,7 +165,7 @@ impl Database {
         }
 
         // Batch-fetch tags in a single query (avoids N+1).
-        let tag_map = self.get_tags_for_connections(&ids)?;
+        let tag_map = self.tags_for_connections(&ids)?;
         for conn in &mut connections {
             if let Some(tags) = tag_map.get(&conn.id.to_string()) {
                 conn.tags = tags.clone();
@@ -173,7 +173,7 @@ impl Database {
         }
 
         // Batch-fetch aliases in a single query as well.
-        let alias_map = self.get_aliases_for_connections(&ids)?;
+        let alias_map = self.aliases_for_connections(&ids)?;
         for conn in &mut connections {
             if let Some(aliases) = alias_map.get(&conn.id.to_string()) {
                 conn.aliases = aliases.clone();
@@ -329,7 +329,7 @@ impl Database {
 
     /// Convert a single row into a `Connection`. Tags are NOT read here;
     /// callers should fetch them from `connection_tags` (in a single batch
-    /// query where possible, see `get_tags_for_connections`).
+    /// query where possible, see [`Database::tags_for_connections`]).
     pub(crate) fn row_to_connection(&self, row: &rusqlite::Row) -> Result<Connection> {
         let id_str: String = row.get(0)?;
         let id = uuid::Uuid::parse_str(&id_str)?;
@@ -425,7 +425,7 @@ impl Database {
                 all_ids.push(id);
             }
         }
-        let tag_map = self.get_tags_for_connections(&all_ids)?;
+        let tag_map = self.tags_for_connections(&all_ids)?;
         for conn in &mut recent_connections {
             if let Some(tags) = tag_map.get(&conn.id.to_string()) {
                 conn.tags = tags.clone();
