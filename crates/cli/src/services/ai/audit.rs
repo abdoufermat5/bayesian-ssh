@@ -90,14 +90,20 @@ fn ensure_dir(dir: &Path) -> Result<()> {
     Ok(())
 }
 
-fn open_private(path: &Path, append: bool) -> Result<std::fs::File> {
+/// How [`open_private`] positions writes.
+#[derive(Clone, Copy)]
+enum WriteMode {
+    Append,
+    Overwrite,
+}
+
+fn open_private(path: &Path, mode: WriteMode) -> Result<std::fs::File> {
     let mut o = std::fs::OpenOptions::new();
     o.read(true).create(true);
-    if append {
-        o.append(true);
-    } else {
-        o.write(true);
-    }
+    match mode {
+        WriteMode::Append => o.append(true),
+        WriteMode::Overwrite => o.write(true),
+    };
     #[cfg(unix)]
     std::os::unix::fs::OpenOptionsExt::mode(&mut o, 0o600);
     let f = o
@@ -121,7 +127,7 @@ fn load_or_create_key(dir: &Path) -> Result<SigningKey> {
     let mut seed = [0u8; 32];
     rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut seed);
     let key = SigningKey::from_bytes(&seed);
-    let mut f = open_private(&kp, false)?;
+    let mut f = open_private(&kp, WriteMode::Overwrite)?;
     f.write_all(hex(&seed).as_bytes())?;
     f.flush()?;
     let pp = pub_path(dir);
@@ -173,7 +179,7 @@ impl LocalAudit {
     /// Append one event; returns the new entry's sequence number.
     pub fn append(&self, event: &AiEvent) -> Result<u64> {
         let value = serde_json::to_value(event)?;
-        let mut f = open_private(&self.dir.join("events.jsonl"), true)?;
+        let mut f = open_private(&self.dir.join("events.jsonl"), WriteMode::Append)?;
         // Several `bssh ai mcp` processes share the file: hold the lock for the whole append.
         f.lock().context("lock audit log")?;
         let res = self.append_locked(&mut f, value);

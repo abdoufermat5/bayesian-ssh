@@ -225,7 +225,7 @@ impl AiStore {
     }
 
     /// The recorded outcome of a decided request.
-    pub fn get_outcome(&self, request_id: &str) -> Result<Option<ApprovalOutcome>> {
+    pub fn outcome(&self, request_id: &str) -> Result<Option<ApprovalOutcome>> {
         let db = self.db()?;
         let raw: Option<Option<String>> = db
             .query_row(
@@ -595,10 +595,10 @@ mod tests {
         };
         s.record_outcome("q1", &out).unwrap();
         assert_eq!(s.request_status("q1").unwrap().as_deref(), Some("denied"));
-        assert_eq!(s.get_outcome("q1").unwrap(), Some(out));
+        assert_eq!(s.outcome("q1").unwrap(), Some(out));
         assert_eq!(s.pending_requests(None).unwrap().len(), 1);
         assert_eq!(s.expire_pending("r2").unwrap(), 1);
-        assert_eq!(s.get_outcome("q2").unwrap(), Some(ApprovalOutcome::Expired));
+        assert_eq!(s.outcome("q2").unwrap(), Some(ApprovalOutcome::Expired));
         assert!(s.request_status("zz").unwrap().is_none());
     }
 
