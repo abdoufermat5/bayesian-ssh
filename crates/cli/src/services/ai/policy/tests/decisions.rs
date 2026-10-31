@@ -1365,18 +1365,18 @@ fn host_in_scope_by_tag_name_and_wildcard() {
     );
     conn.tags = vec!["staging".into()];
     let mut p = Policy::default();
-    assert!(!host_in_scope(&p, &conn, true));
+    assert!(!host_in_scope(&p, &conn, TagTrust::Trusted));
     p.scope.tags = vec!["staging".into()];
-    assert!(host_in_scope(&p, &conn, true));
+    assert!(host_in_scope(&p, &conn, TagTrust::Trusted));
     p.scope.tags = vec!["prod".into()];
-    assert!(!host_in_scope(&p, &conn, true));
+    assert!(!host_in_scope(&p, &conn, TagTrust::Trusted));
     p.scope.hosts = vec!["web-*".into()];
-    assert!(host_in_scope(&p, &conn, true));
+    assert!(host_in_scope(&p, &conn, TagTrust::Trusted));
     p.scope = Scope {
         tags: vec![ALL_HOSTS.into()],
         hosts: vec![],
     };
-    assert!(host_in_scope(&p, &conn, true));
+    assert!(host_in_scope(&p, &conn, TagTrust::Trusted));
 }
 
 #[test]
@@ -1434,7 +1434,10 @@ fn connection_facts_follow_the_connection_source() {
     );
     assert!(trusted.tags_trusted);
     // A listed source whose name no longer resolves is not trusted.
-    assert!(!tags_trusted(&["aws-prod".to_string()], &conn, None));
+    assert_eq!(
+        tags_trusted(&["aws-prod".to_string()], &conn, None),
+        TagTrust::Untrusted
+    );
 }
 
 #[test]

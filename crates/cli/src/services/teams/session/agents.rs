@@ -7,7 +7,7 @@ use crate::config::AppConfig;
 use crate::services::teams::agent::{credential_path, AgentCredential, AgentCredentialParams};
 use crate::services::teams::client::TeamsClient;
 use crate::services::teams::crypto::{self, fingerprint, DeviceKeys};
-use crate::services::teams::relay::{IncomingRequest, Peer, RelayEndpoint};
+use crate::services::teams::relay::{ApprovalAnswer, IncomingRequest, Peer, RelayEndpoint};
 use anyhow::{anyhow, bail, Result};
 use bssh_teams_proto::api::{
     DeviceInfo, Member, MemberKind, PutKeysRequest, Role, SignedAgentPolicy,
@@ -258,7 +258,7 @@ impl<'a> Session<'a> {
         &self,
         team_id: Uuid,
         prefix: &str,
-        approve: bool,
+        answer: ApprovalAnswer,
         reason: Option<String>,
     ) -> Result<IncomingRequest> {
         let pending = self.pending_approvals(team_id).await?;
@@ -278,7 +278,7 @@ impl<'a> Session<'a> {
         let members = self.client.list_members(team_id).await?;
         ep.send_decision(
             &req,
-            approve,
+            answer,
             &self.identity.email,
             reason,
             None,

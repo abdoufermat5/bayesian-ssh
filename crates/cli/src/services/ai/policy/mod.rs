@@ -58,6 +58,6 @@ mod tests;
 pub use budget::{circuit_breaker, parse_duration, PROBE_LIMIT, PROBE_WINDOW};
 pub use engine::DefaultPolicyEngine;
 pub use profile::{builtin_profile, resolve};
-pub use scope::{connection_facts, host_in_scope, tags_trusted, ALL_HOSTS};
+pub use scope::{connection_facts, host_in_scope, tags_trusted, TagTrust, ALL_HOSTS};
 pub use tier::tier_for_call;
 pub use validation::{validation_warnings, validation_warnings_in};

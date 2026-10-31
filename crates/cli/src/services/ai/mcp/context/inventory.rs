@@ -2,6 +2,7 @@
 
 use crate::config::AppConfig;
 use crate::models::Connection;
+use crate::services::ai::policy::TagTrust;
 use crate::services::ai::types::Policy;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -50,4 +51,4 @@ impl HostSource for StaticHosts {
 
 /// Visibility check: policy, connection, and whether that connection's tags may relax the
 /// policy (`ai.trusted_tag_sources`). Most implementations are [`crate::services::ai::policy::host_in_scope`].
-pub type ScopeFn = Arc<dyn Fn(&Policy, &Connection, bool) -> bool + Send + Sync>;
+pub type ScopeFn = Arc<dyn Fn(&Policy, &Connection, TagTrust) -> bool + Send + Sync>;

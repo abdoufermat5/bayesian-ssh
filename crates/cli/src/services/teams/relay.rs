@@ -114,6 +114,13 @@ pub fn request_hash(plaintext: &[u8]) -> String {
         .collect()
 }
 
+/// An admin's answer to an approval request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ApprovalAnswer {
+    Approve,
+    Deny,
+}
+
 /// What waiting for decisions ended with.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Verdict {
@@ -343,7 +350,7 @@ impl RelayEndpoint {
     pub async fn send_decision(
         &self,
         req: &IncomingRequest,
-        approved: bool,
+        answer: ApprovalAnswer,
         by_email: &str,
         reason: Option<String>,
         grant: Option<Grant>,
@@ -354,7 +361,7 @@ impl RelayEndpoint {
             v: 1,
             request_id: req.relay_request_id,
             request_hash: req.request_hash.clone(),
-            approved,
+            approved: answer == ApprovalAnswer::Approve,
             by: by_email.to_string(),
             reason,
             grant,
@@ -628,7 +635,14 @@ mod tests {
 
         alice
             .1
-            .send_decision(&reqs[0], true, "alice@x.io", None, None, &admin_peers)
+            .send_decision(
+                &reqs[0],
+                ApprovalAnswer::Approve,
+                "alice@x.io",
+                None,
+                None,
+                &admin_peers,
+            )
             .await
             .unwrap();
         let v = c
@@ -674,7 +688,7 @@ mod tests {
             .1
             .send_decision(
                 &reqs[0],
-                false,
+                ApprovalAnswer::Deny,
                 "alice@x.io",
                 Some("not now".into()),
                 None,
@@ -728,7 +742,14 @@ mod tests {
             .unwrap();
         c.admins[0]
             .1
-            .send_decision(&reqs[0], true, "alice@x.io", None, None, &admin_peers)
+            .send_decision(
+                &reqs[0],
+                ApprovalAnswer::Approve,
+                "alice@x.io",
+                None,
+                None,
+                &admin_peers,
+            )
             .await
             .unwrap();
         let (reqs2, _) = c.admins[2]
@@ -738,7 +759,14 @@ mod tests {
             .unwrap();
         c.admins[2]
             .1
-            .send_decision(&reqs2[0], true, "alice@x.io", None, None, &admin_peers)
+            .send_decision(
+                &reqs2[0],
+                ApprovalAnswer::Approve,
+                "alice@x.io",
+                None,
+                None,
+                &admin_peers,
+            )
             .await
             .unwrap();
         // Same person twice: still waiting.
@@ -763,7 +791,14 @@ mod tests {
             .unwrap();
         c.admins[1]
             .1
-            .send_decision(&reqs3[0], true, "bob@x.io", None, None, &admin_peers)
+            .send_decision(
+                &reqs3[0],
+                ApprovalAnswer::Approve,
+                "bob@x.io",
+                None,
+                None,
+                &admin_peers,
+            )
             .await
             .unwrap();
         let v = c
@@ -809,7 +844,7 @@ mod tests {
             request_hash: hash.clone(),
         };
         evil_ep
-            .send_decision(&fake, true, "evil@x.io", None, None, &[])
+            .send_decision(&fake, ApprovalAnswer::Approve, "evil@x.io", None, None, &[])
             .await
             .unwrap();
 
@@ -823,7 +858,14 @@ mod tests {
         other.request_hash = "deadbeef".into();
         c.admins[0]
             .1
-            .send_decision(&other, true, "alice@x.io", None, None, &[])
+            .send_decision(
+                &other,
+                ApprovalAnswer::Approve,
+                "alice@x.io",
+                None,
+                None,
+                &[],
+            )
             .await
             .unwrap();
 
@@ -865,7 +907,14 @@ mod tests {
             .unwrap();
         c.admins[0]
             .1
-            .send_decision(&reqs[0], true, "alice@x.io", None, None, &admins)
+            .send_decision(
+                &reqs[0],
+                ApprovalAnswer::Approve,
+                "alice@x.io",
+                None,
+                None,
+                &admins,
+            )
             .await
             .unwrap();
         *c.relay.fail_polls.lock().unwrap() = 1;

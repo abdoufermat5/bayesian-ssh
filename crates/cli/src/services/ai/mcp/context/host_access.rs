@@ -106,7 +106,8 @@ impl RunContext {
                 &self.config.ai.trusted_tag_sources,
                 conn,
                 source.as_deref(),
-            ),
+            )
+            .is_trusted(),
             tag_source: source,
             enforcement,
             probe_error,
@@ -130,7 +131,7 @@ impl RunContext {
 
     /// May this connection's tags relax the policy? Sources other than bssh's own
     /// connections count only when `ai.trusted_tag_sources` names them.
-    fn tags_trusted(&self, conn: &Connection) -> bool {
+    fn tags_trusted(&self, conn: &Connection) -> policy::TagTrust {
         let source = self.source_name(conn);
         policy::tags_trusted(&self.config.ai.trusted_tag_sources, conn, source.as_deref())
     }

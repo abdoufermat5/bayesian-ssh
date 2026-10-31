@@ -404,6 +404,7 @@ mod tests {
     use crate::services::teams::codec::CryptoCodec;
     use crate::services::teams::crypto::{self, DeviceKeys, TeamKey};
     use crate::services::teams::relay::fake::{approval, cast};
+    use crate::services::teams::relay::ApprovalAnswer;
     use crate::services::teams::store::TeamLocal;
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -428,7 +429,14 @@ mod tests {
             assert_eq!(reqs[0].payload.agent, "deployer");
             assert_eq!(reqs[0].payload.required_approvals, 1);
             admin_ep
-                .send_decision(&reqs[0], true, "alice@x.io", None, None, &admins)
+                .send_decision(
+                    &reqs[0],
+                    ApprovalAnswer::Approve,
+                    "alice@x.io",
+                    None,
+                    None,
+                    &admins,
+                )
                 .await
                 .unwrap();
         });
@@ -465,7 +473,7 @@ mod tests {
                 let (reqs, _) = ep.pending_requests(&[agent_peer], 0, 5).await.unwrap();
                 assert_eq!(reqs[0].payload.required_approvals, 2);
                 let who = if i == 0 { "alice@x.io" } else { "bob@x.io" };
-                ep.send_decision(&reqs[0], true, who, None, None, &admins)
+                ep.send_decision(&reqs[0], ApprovalAnswer::Approve, who, None, None, &admins)
                     .await
                     .unwrap();
             }));
@@ -531,7 +539,7 @@ mod tests {
             let (reqs, _) = ep.pending_requests(&[ap], 0, 5).await.unwrap();
             ep.send_decision(
                 &reqs[0],
-                false,
+                ApprovalAnswer::Deny,
                 "alice@x.io",
                 Some("no".into()),
                 None,

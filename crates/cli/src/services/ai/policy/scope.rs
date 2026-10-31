@@ -9,31 +9,32 @@ pub const ALL_HOSTS: &str = "*";
 
 /// Is this connection visible to the agent at all?
 ///
-/// `tags_trusted` says whether the connection's tags may widen the scope; see
+/// `trust` says whether the connection's tags may widen the scope; see
 /// [`tags_trusted`] for how to decide it.
-pub fn host_in_scope(policy: &Policy, conn: &Connection, tags_trusted: bool) -> bool {
-    in_scope(
-        &policy.scope,
-        &conn.name,
-        &conn.tags,
-        TagTrust::from_flag(tags_trusted),
-    )
+pub fn host_in_scope(policy: &Policy, conn: &Connection, trust: TagTrust) -> bool {
+    in_scope(&policy.scope, &conn.name, &conn.tags, trust)
 }
 
 /// Whether a host's tags may widen the scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum TagTrust {
+pub enum TagTrust {
     Trusted,
     Untrusted,
 }
 
 impl TagTrust {
-    pub(super) fn from_flag(trusted: bool) -> Self {
+    /// The trust recorded in a serialized [`HostFacts::tags_trusted`] flag.
+    pub(crate) fn from_flag(trusted: bool) -> Self {
         if trusted {
             TagTrust::Trusted
         } else {
             TagTrust::Untrusted
         }
+    }
+
+    /// True for [`TagTrust::Trusted`].
+    pub fn is_trusted(self) -> bool {
+        self == TagTrust::Trusted
     }
 }
 
@@ -54,9 +55,10 @@ pub fn tags_trusted(
     trusted_sources: &[String],
     conn: &Connection,
     source_name: Option<&str>,
-) -> bool {
-    conn.source_id.is_none()
-        || source_name.is_some_and(|name| trusted_sources.iter().any(|t| t == name))
+) -> TagTrust {
+    let trusted = conn.source_id.is_none()
+        || source_name.is_some_and(|name| trusted_sources.iter().any(|t| t == name));
+    TagTrust::from_flag(trusted)
 }
 
 /// [`HostFacts`] for a connection, with the trust of its tags.
@@ -69,7 +71,7 @@ pub fn connection_facts(
     HostFacts {
         name: conn.name.clone(),
         tags: conn.tags.clone(),
-        tags_trusted: tags_trusted(trusted_sources, conn, source_name),
+        tags_trusted: tags_trusted(trusted_sources, conn, source_name).is_trusted(),
         tag_source: source_name.map(str::to_string),
         enforcement,
         ..HostFacts::default()

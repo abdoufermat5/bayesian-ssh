@@ -5,6 +5,7 @@ use super::sync::print_sync;
 use crate::cli::parser::TeamsAgentCommands;
 use crate::cli::utils::confirm;
 use crate::config::AppConfig;
+use crate::services::teams::relay::ApprovalAnswer;
 use crate::services::teams::session::{self, Session};
 use crate::services::teams::TeamsStore;
 use anyhow::Result;
@@ -14,13 +15,6 @@ struct Approval<'a> {
     team: &'a str,
     request: &'a str,
     reason: Option<String>,
-}
-
-/// What to do with a pending approval request.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Decision {
-    Approve,
-    Deny,
 }
 
 /// Runs an `agent` subcommand.
@@ -127,7 +121,7 @@ pub(super) async fn execute(
                 request: &request,
                 reason,
             };
-            decide(store, config, approval, Decision::Approve).await?;
+            decide(store, config, approval, ApprovalAnswer::Approve).await?;
         }
         TeamsAgentCommands::Deny {
             team,
@@ -139,7 +133,7 @@ pub(super) async fn execute(
                 request: &request,
                 reason,
             };
-            decide(store, config, approval, Decision::Deny).await?;
+            decide(store, config, approval, ApprovalAnswer::Deny).await?;
         }
     }
     Ok(())
@@ -153,21 +147,16 @@ async fn decide(
     store: &TeamsStore,
     config: &AppConfig,
     approval: Approval<'_>,
-    decision: Decision,
+    decision: ApprovalAnswer,
 ) -> Result<()> {
     let (team_id, _) = session::resolve_team(store.database(), approval.team)?;
     let s = Session::open(store, config, &passphrase(Passphrase::Existing)?)?;
     let req = s
-        .decide_approval(
-            team_id,
-            approval.request,
-            decision == Decision::Approve,
-            approval.reason,
-        )
+        .decide_approval(team_id, approval.request, decision, approval.reason)
         .await?;
     let r = &req.payload.request;
     let what = crate::services::ai::teams::describe(r);
-    if decision == Decision::Deny {
+    if decision == ApprovalAnswer::Deny {
         println!("🚫 Denied {} ({what}).", r.request_id);
     } else if r.tier == crate::services::ai::types::Tier::TwoPerson {
         // The gateway counts approvers: one admin approving twice still counts once.
