@@ -7,7 +7,11 @@ use super::files::{FileAccess, FileRead};
 use super::server::McpElicitor;
 use crate::config::AppConfig;
 use crate::models::Connection;
-use crate::services::ai::types::*;
+use crate::services::ai::types::{
+    AiEvent, Analysis, Analyzer, ApprovalBroker, ApprovalOutcome, ApprovalRequest, AuditSink,
+    Decision, ExecLimits, ExecMode, ExecResult, Executor, HostFacts, Policy, PolicyEngine,
+    Redaction, Redactor, RiskTag, Scope, Tier, ToolCall,
+};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use std::collections::{HashMap, VecDeque};
@@ -194,8 +198,8 @@ impl FakeBroker {
     }
 
     /// Only answer `request` once an outcome is pushed (for `pending`/`wait_approval`).
-    pub fn set_hold(&self, hold: bool) {
-        self.hold.store(hold, std::sync::atomic::Ordering::SeqCst);
+    pub fn hold(&self) {
+        self.hold.store(true, std::sync::atomic::Ordering::SeqCst);
     }
 
     pub fn push(&self, o: ApprovalOutcome) {
