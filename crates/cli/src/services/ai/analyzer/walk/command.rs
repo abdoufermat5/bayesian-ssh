@@ -1,6 +1,6 @@
 //! Dispatching one command word to its wrapper handler or the rule table.
 
-use crate::services::ai::analyzer::rules::{classify, Arg, Class};
+use crate::services::ai::analyzer::rules::{Arg, Class, classify};
 use crate::services::ai::analyzer::special::find_exec_commands;
 
 use super::opts::{basename, is_assignment, trusted_path};

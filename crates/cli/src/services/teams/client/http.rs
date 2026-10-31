@@ -8,8 +8,8 @@ use bssh_teams_proto::wire::{PublicKey32, Signature64};
 use bssh_teams_proto::{API_PREFIX, CLIENT_VERSION_HEADER, PROTOCOL_HEADER, PROTOCOL_VERSION};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use reqwest::{Method, Url};
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;
@@ -166,10 +166,10 @@ impl TeamsClient {
 
     pub(super) async fn token(&self) -> ClientResult<String> {
         let mut guard = self.token.lock().await;
-        if let Some(t) = guard.as_ref() {
-            if t.expires_at - ChronoDuration::seconds(TOKEN_SKEW_SECS) > Utc::now() {
-                return Ok(t.value.clone());
-            }
+        if let Some(t) = guard.as_ref()
+            && t.expires_at - ChronoDuration::seconds(TOKEN_SKEW_SECS) > Utc::now()
+        {
+            return Ok(t.value.clone());
         }
         let challenge = self.request_challenge().await?;
         let signature =

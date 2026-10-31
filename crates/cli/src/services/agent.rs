@@ -12,10 +12,10 @@ pub fn is_valid_socket(path: &str) -> bool {
     use std::os::unix::fs::FileTypeExt;
     use std::os::unix::net::UnixStream;
     let p = std::path::Path::new(path);
-    if let Ok(meta) = p.metadata() {
-        if meta.file_type().is_socket() {
-            return UnixStream::connect(p).is_ok();
-        }
+    if let Ok(meta) = p.metadata()
+        && meta.file_type().is_socket()
+    {
+        return UnixStream::connect(p).is_ok();
     }
     false
 }

@@ -1,5 +1,5 @@
-use super::open_db_and_config;
 use super::CommandError;
+use super::open_db_and_config;
 use bayesian_ssh::database::SourceSummary;
 use bayesian_ssh::models::{Source, SourceKind};
 use bayesian_ssh::services::inventory::{provider_for, sync};

@@ -41,11 +41,7 @@ enum Switch {
 
 impl Switch {
     fn of(flag: bool) -> Self {
-        if flag {
-            Self::On
-        } else {
-            Self::Off
-        }
+        if flag { Self::On } else { Self::Off }
     }
 }
 

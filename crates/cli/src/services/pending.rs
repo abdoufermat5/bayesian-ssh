@@ -7,7 +7,7 @@
 //! until the user sees them (`bssh confirm`, or the desktop dialog).
 
 use crate::models::Connection;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use serde::Serialize;
 
 /// Marker the desktop app matches to tell this refusal apart from an ssh

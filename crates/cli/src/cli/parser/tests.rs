@@ -34,15 +34,17 @@ fn org_commands_parse() {
     assert!(
         Cli::try_parse_from(["bssh", "org", "owners", "add", "platform", "bo@example.com"]).is_ok()
     );
-    assert!(Cli::try_parse_from([
-        "bssh",
-        "org",
-        "owners",
-        "remove",
-        "platform",
-        "bo@example.com"
-    ])
-    .is_ok());
+    assert!(
+        Cli::try_parse_from([
+            "bssh",
+            "org",
+            "owners",
+            "remove",
+            "platform",
+            "bo@example.com"
+        ])
+        .is_ok()
+    );
     assert!(Cli::try_parse_from(["bssh", "teams", "create", "infra", "--org", "platform"]).is_ok());
 
     let cli =
@@ -164,14 +166,16 @@ fn forward_agent_flags_parse() {
         _ => panic!("expected `edit`"),
     }
 
-    assert!(Cli::try_parse_from([
-        "bssh",
-        "add",
-        "n",
-        "h",
-        "--forward-agent",
-        "--no-forward-agent"
-    ])
-    .is_err());
+    assert!(
+        Cli::try_parse_from([
+            "bssh",
+            "add",
+            "n",
+            "h",
+            "--forward-agent",
+            "--no-forward-agent"
+        ])
+        .is_err()
+    );
     assert!(Cli::try_parse_from(["bssh", "confirm", "db-prod"]).is_ok());
 }

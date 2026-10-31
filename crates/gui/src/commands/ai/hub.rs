@@ -185,14 +185,14 @@ impl AiHub {
         self.apply(|st, fx| {
             st.tick += 1;
             let tick = st.tick;
-            if let Some(run) = st.runs.get_mut(run_id) {
-                if run.conn.as_ref().is_some_and(|c| c.id == conn_id) {
-                    run.conn = None;
-                    // Nobody can answer these any more.
-                    run.pending.clear();
-                    run.touched = tick;
-                    fx.changed = true;
-                }
+            if let Some(run) = st.runs.get_mut(run_id)
+                && run.conn.as_ref().is_some_and(|c| c.id == conn_id)
+            {
+                run.conn = None;
+                // Nobody can answer these any more.
+                run.pending.clear();
+                run.touched = tick;
+                fx.changed = true;
             }
         });
     }

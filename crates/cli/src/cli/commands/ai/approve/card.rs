@@ -2,8 +2,8 @@
 //! agent says, on one screen.
 
 use super::canvas::Canvas;
-use super::detail::{agent_says, call_body, rail_lines, side_steps, step_body, SideSection};
-use super::effects::{call_block, plan_blocks, what_section, Section};
+use super::detail::{SideSection, agent_says, call_body, rail_lines, side_steps, step_body};
+use super::effects::{Section, call_block, plan_blocks, what_section};
 use super::grant::QUICK_GRANT_MINUTES;
 use super::view::View;
 use super::words::{call_title, expiry_text, human_duration, kind_word, tier_words};

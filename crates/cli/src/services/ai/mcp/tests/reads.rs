@@ -2,7 +2,7 @@
 
 use super::support::{call, hosts, std_kit};
 use crate::services::ai::mcp::context::ToolError;
-use crate::services::ai::mcp::testkit::{allow_all, kit, policy, FakeEngine};
+use crate::services::ai::mcp::testkit::{FakeEngine, allow_all, kit, policy};
 use crate::services::ai::types::{
     AiEvent, ApprovalOutcome, ApprovalSubject, Decision, Enforcement, ExecMode, HostFacts,
     JailKind, ToolCall, ToolName,
@@ -98,13 +98,15 @@ async fn observe_parses_and_redacts_leaves() {
         "{mount}"
     );
     assert!(v["notice"].as_str().unwrap().contains("untrusted"));
-    assert!(call(
-        &k,
-        "observe",
-        json!({ "host": "web-1", "what": "nonsense" })
-    )
-    .await
-    .is_err());
+    assert!(
+        call(
+            &k,
+            "observe",
+            json!({ "host": "web-1", "what": "nonsense" })
+        )
+        .await
+        .is_err()
+    );
 }
 
 #[tokio::test]
@@ -138,10 +140,12 @@ async fn read_file_range_cap_deny_and_redaction() {
     )
     .await
     .unwrap();
-    assert!(v["untrusted_content"]
-        .as_str()
-        .unwrap()
-        .contains("«redacted:vault-secret»"));
+    assert!(
+        v["untrusted_content"]
+            .as_str()
+            .unwrap()
+            .contains("«redacted:vault-secret»")
+    );
     assert!(!v["untrusted_content"].as_str().unwrap().contains("hunter2"));
     assert_eq!(v["truncated"], false);
     assert_eq!(v["redactions"][0]["kind"], "vault-secret");
@@ -167,20 +171,24 @@ async fn read_file_range_cap_deny_and_redaction() {
             "{path}: {e}"
         );
     }
-    assert!(call(
-        &k,
-        "read_file",
-        json!({ "host": "web-1", "path": "/bin/blob" })
-    )
-    .await
-    .is_err());
-    assert!(call(
-        &k,
-        "read_file",
-        json!({ "host": "web-1", "path": "relative" })
-    )
-    .await
-    .is_err());
+    assert!(
+        call(
+            &k,
+            "read_file",
+            json!({ "host": "web-1", "path": "/bin/blob" })
+        )
+        .await
+        .is_err()
+    );
+    assert!(
+        call(
+            &k,
+            "read_file",
+            json!({ "host": "web-1", "path": "relative" })
+        )
+        .await
+        .is_err()
+    );
     // Refused calls are in the audit as denials.
     assert!(k.audit.calls().iter().any(
         |(c, d)| c.path.as_deref() == Some("/etc/shadow") && matches!(d, Decision::Deny { .. })
@@ -212,12 +220,13 @@ async fn read_file_denies_a_symlink_into_a_deny_path() {
     assert!(matches!(e, ToolError::Denied(_)), "{e}");
     assert!(e.to_string().contains("deny rule"), "{e}");
     // The refusal is audited against the target that was actually resolved.
-    assert!(k
-        .audit
-        .calls()
-        .iter()
-        .any(|(c, d)| matches!(d, Decision::Deny { .. })
-            && c.path.as_deref() == Some("/root/.ssh/id_ed25519")));
+    assert!(
+        k.audit
+            .calls()
+            .iter()
+            .any(|(c, d)| matches!(d, Decision::Deny { .. })
+                && c.path.as_deref() == Some("/root/.ssh/id_ed25519"))
+    );
 }
 
 #[tokio::test]
@@ -491,13 +500,15 @@ async fn run_many_fans_out_by_tag() {
     assert_eq!(v["count"], 2);
     assert_eq!(v["results"][0]["host"], "web-1");
     assert_eq!(v["results"][1]["result"]["untrusted_output"], "up 1 day");
-    assert!(call(
-        &k,
-        "run_many",
-        json!({ "tag": "hidden", "command": "uptime" })
-    )
-    .await
-    .is_err());
+    assert!(
+        call(
+            &k,
+            "run_many",
+            json!({ "tag": "hidden", "command": "uptime" })
+        )
+        .await
+        .is_err()
+    );
     // A non-read-only command asks once for every host; a denial runs nothing.
     k.broker.push(ApprovalOutcome::Denied {
         by: "alice".into(),
@@ -557,10 +568,11 @@ async fn jailed_hosts_run_readonly_inside_the_jail_and_certified_hosts_write_wit
     let v = call(&k, "observe", json!({ "host": "web-1", "what": "memory" })).await;
     assert!(v.is_err()); // unparsable fake output, but it must have run jailed
     let raw = k.exec.raw();
-    assert!(raw
-        .iter()
-        .filter(|(c, _)| c == "make report" || c.contains("free -b"))
-        .all(|(_, m)| *m == ExecMode::JailedAsAgent(JailKind::Landlock)));
+    assert!(
+        raw.iter()
+            .filter(|(c, _)| c == "make report" || c.contains("free -b"))
+            .all(|(_, m)| *m == ExecMode::JailedAsAgent(JailKind::Landlock))
+    );
 
     call(
         &k,
@@ -569,11 +581,12 @@ async fn jailed_hosts_run_readonly_inside_the_jail_and_certified_hosts_write_wit
     )
     .await
     .unwrap();
-    assert!(k
-        .exec
-        .raw()
-        .iter()
-        .any(|(c, m)| c == "touch /tmp/x" && *m == ExecMode::Certified));
+    assert!(
+        k.exec
+            .raw()
+            .iter()
+            .any(|(c, m)| c == "touch /tmp/x" && *m == ExecMode::Certified)
+    );
     // Another host stays plain.
     call(
         &k,
@@ -582,9 +595,10 @@ async fn jailed_hosts_run_readonly_inside_the_jail_and_certified_hosts_write_wit
     )
     .await
     .unwrap();
-    assert!(k
-        .exec
-        .raw()
-        .iter()
-        .any(|(c, m)| c == "touch /tmp/y" && *m == ExecMode::Plain));
+    assert!(
+        k.exec
+            .raw()
+            .iter()
+            .any(|(c, m)| c == "touch /tmp/y" && *m == ExecMode::Plain)
+    );
 }

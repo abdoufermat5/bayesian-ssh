@@ -6,8 +6,8 @@
 
 use aes_gcm::aead::{Aead, Payload};
 use aes_gcm::{Aes256Gcm, Key, KeyInit, Nonce};
-use base64::engine::general_purpose::STANDARD_NO_PAD;
 use base64::Engine;
+use base64::engine::general_purpose::STANDARD_NO_PAD;
 use bssh_teams_proto::api::{
     AuditDetail, AuditEvent, DeviceInfo, EncryptedEntry, NewDevice, RelayKind, RelayMessage,
     RelayRecipient, SignedAgentPolicy, VaultPayload, WrappedKey,
@@ -16,8 +16,8 @@ use bssh_teams_proto::layout;
 use bssh_teams_proto::wire::{Bytes, Fixed, PublicKey32, Signature64};
 use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
 use hkdf::Hkdf;
-use rand::rngs::OsRng;
 use rand::RngCore;
+use rand::rngs::OsRng;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 use uuid::Uuid;

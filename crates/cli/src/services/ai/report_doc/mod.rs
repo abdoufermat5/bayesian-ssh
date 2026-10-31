@@ -9,7 +9,7 @@ mod html;
 mod markdown;
 mod text;
 
-pub use format::{file_name, render, ReportFormat};
+pub use format::{ReportFormat, file_name, render};
 
 #[cfg(test)]
 mod tests;

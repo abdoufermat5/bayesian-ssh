@@ -21,7 +21,7 @@ use tauri::utils::config::BundleType;
 use tauri::{AppHandle, Manager, Runtime, Url};
 use tauri_plugin_updater::{Config, UpdaterExt};
 
-use crate::commands::{close_all_ptys, CommandError, PtyState};
+use crate::commands::{CommandError, PtyState, close_all_ptys};
 
 const ENDPOINT: &str =
     "https://github.com/abdoufermat5/bayesian-ssh/releases/latest/download/latest.json";
@@ -212,9 +212,11 @@ mod tests {
 
     #[test]
     fn missing_or_blank_key_is_an_explicit_error() {
-        assert!(require_key(None)
-            .unwrap_err()
-            .contains("BAYESIAN_SSH_UPDATER_PUBLIC_KEY"));
+        assert!(
+            require_key(None)
+                .unwrap_err()
+                .contains("BAYESIAN_SSH_UPDATER_PUBLIC_KEY")
+        );
         assert!(require_key(Some("  \n")).is_err());
         assert_eq!(require_key(Some(" abc\n")).unwrap(), "abc");
     }

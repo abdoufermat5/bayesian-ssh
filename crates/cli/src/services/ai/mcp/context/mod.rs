@@ -21,7 +21,7 @@ mod status;
 
 pub(crate) use call_slot::with_call_slot;
 pub use call_slot::{CallPhase, CallSlot};
-pub use error::{failed, ResumeError, ToolError, ToolResult};
+pub use error::{ResumeError, ToolError, ToolResult, failed};
 pub use execution::merge_redactions;
 pub use inventory::{DbHosts, HostSource, ScopeFn, StaticHosts};
 pub use run_context::{Executed, RunContext, RunDeps};

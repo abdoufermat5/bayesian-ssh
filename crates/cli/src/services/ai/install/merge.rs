@@ -1,7 +1,7 @@
 //! Merging the bssh entry into each client's config file.
 
-use anyhow::{anyhow, bail, Context, Result};
-use serde_json::{json, Map, Value};
+use anyhow::{Context, Result, anyhow, bail};
+use serde_json::{Map, Value, json};
 use std::path::Path;
 
 use super::client::{Client, SERVER_NAME};

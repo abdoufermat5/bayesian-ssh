@@ -4,8 +4,8 @@ use super::outputs::RedactionOut;
 use crate::services::ai::mcp::context::failed;
 use crate::services::ai::mcp::context::{ToolError, ToolResult};
 use crate::services::ai::types::Redaction;
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 pub(super) fn args<T: DeserializeOwned>(v: Value) -> Result<T, ToolError> {

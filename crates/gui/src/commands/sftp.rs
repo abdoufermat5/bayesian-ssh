@@ -7,6 +7,11 @@ pub fn list_remote_directory(
     connection_name: String,
     remote_path: String,
 ) -> Result<Vec<RemoteFileEntry>, CommandError> {
-    bayesian_ssh::services::sftp_shared::list_remote_directory(&connection_name, &remote_path)
-        .map_err(CommandError::from)
+    let config = super::load_config()?;
+    bayesian_ssh::services::sftp_shared::list_remote_directory(
+        &config,
+        &connection_name,
+        &remote_path,
+    )
+    .map_err(CommandError::from)
 }

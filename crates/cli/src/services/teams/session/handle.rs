@@ -1,15 +1,15 @@
 //! The unlocked [`Session`] and the lookups every workflow shares: local team
 //! rows, authors, approved devices and team keys.
 
-use super::identity::{require_identity, unlock, Identity};
+use super::identity::{Identity, require_identity, unlock};
 use super::local::{key32, uuid};
 use crate::config::AppConfig;
 use crate::database::Database;
 use crate::services::teams::client::TeamsClient;
-use crate::services::teams::codec::{unwrap_all, CryptoCodec};
-use crate::services::teams::crypto::{fingerprint, DeviceKeys, TeamKey};
+use crate::services::teams::codec::{CryptoCodec, unwrap_all};
+use crate::services::teams::crypto::{DeviceKeys, TeamKey, fingerprint};
 use crate::services::teams::store::{TeamLocal, TeamsStore};
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use bssh_teams_proto::api::{DeviceInfo, ErrorCode, Member, Role, TeamInfo};
 use bssh_teams_proto::wire::PublicKey32;
 use chrono::Utc;

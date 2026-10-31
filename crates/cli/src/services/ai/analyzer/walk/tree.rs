@@ -6,7 +6,7 @@ use crate::services::ai::analyzer::parser::parse_program;
 use crate::services::ai::analyzer::rules::{Arg, Class};
 use crate::services::ai::types::{RiskTag, SimpleCommand};
 
-use super::state::{Ctx, Cwd, Walker, RISKY_VARS, RISKY_VAR_PREFIXES};
+use super::state::{Ctx, Cwd, RISKY_VAR_PREFIXES, RISKY_VARS, Walker};
 use super::words::{chdir_option, harmless_target, is_block_device, word_args};
 
 impl Walker {

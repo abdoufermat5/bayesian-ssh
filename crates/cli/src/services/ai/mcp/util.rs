@@ -2,7 +2,7 @@
 //!
 //!
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use sha2::{Digest, Sha256};
 use std::time::Duration;
 

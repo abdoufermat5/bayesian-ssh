@@ -1,6 +1,6 @@
-use super::{config_str, config_strings, run_command, InventoryProvider};
+use super::{InventoryProvider, config_str, config_strings, run_command};
 use crate::models::{DiscoveredHost, Source};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use serde_json::Value;
 use tracing::warn;
 

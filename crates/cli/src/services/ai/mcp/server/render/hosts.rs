@@ -118,62 +118,62 @@ pub(super) fn render_status(v: &Value) -> String {
 
     let mut has_items = false;
 
-    if let Some(p_arr) = pending {
-        if !p_arr.is_empty() {
-            has_items = true;
-            lines.push("pending approvals:".to_string());
-            for p in p_arr {
-                let req_id = p["request_id"].as_str().unwrap_or("-");
-                let short_req = ui::short_id(req_id);
-                let summary = p["summary"].as_str().unwrap_or("");
-                lines.push(format!("  {short_req}: {summary}"));
-            }
+    if let Some(p_arr) = pending
+        && !p_arr.is_empty()
+    {
+        has_items = true;
+        lines.push("pending approvals:".to_string());
+        for p in p_arr {
+            let req_id = p["request_id"].as_str().unwrap_or("-");
+            let short_req = ui::short_id(req_id);
+            let summary = p["summary"].as_str().unwrap_or("");
+            lines.push(format!("  {short_req}: {summary}"));
         }
     }
 
-    if let Some(c_arr) = changes {
-        if !c_arr.is_empty() {
-            has_items = true;
-            lines.push("changes:".to_string());
-            for c in c_arr {
-                let id = c["change_id"].as_str().unwrap_or("-");
-                let short_c = ui::short_id(id);
-                let state = c["state"].as_str().unwrap_or("");
-                let title = c["title"].as_str().unwrap_or("");
-                lines.push(format!("  {short_c} · {state} · {title}"));
-            }
+    if let Some(c_arr) = changes
+        && !c_arr.is_empty()
+    {
+        has_items = true;
+        lines.push("changes:".to_string());
+        for c in c_arr {
+            let id = c["change_id"].as_str().unwrap_or("-");
+            let short_c = ui::short_id(id);
+            let state = c["state"].as_str().unwrap_or("");
+            let title = c["title"].as_str().unwrap_or("");
+            lines.push(format!("  {short_c} · {state} · {title}"));
         }
     }
 
-    if let Some(a_arr) = access {
-        if !a_arr.is_empty() {
-            has_items = true;
-            lines.push("access grants:".to_string());
-            for a in a_arr {
-                let exp = a["expires_in_secs"].as_u64().unwrap_or(0);
-                let dur = ui::duration_ms(exp * 1000);
-                let tags = a["scope"]["tags"]
-                    .as_array()
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(Value::as_str)
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    })
-                    .unwrap_or_default();
-                let hosts = a["scope"]["hosts"]
-                    .as_array()
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(Value::as_str)
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    })
-                    .unwrap_or_default();
-                lines.push(format!(
-                    "  tags: [{tags}], hosts: [{hosts}] (expires in {dur})"
-                ));
-            }
+    if let Some(a_arr) = access
+        && !a_arr.is_empty()
+    {
+        has_items = true;
+        lines.push("access grants:".to_string());
+        for a in a_arr {
+            let exp = a["expires_in_secs"].as_u64().unwrap_or(0);
+            let dur = ui::duration_ms(exp * 1000);
+            let tags = a["scope"]["tags"]
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(Value::as_str)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .unwrap_or_default();
+            let hosts = a["scope"]["hosts"]
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(Value::as_str)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .unwrap_or_default();
+            lines.push(format!(
+                "  tags: [{tags}], hosts: [{hosts}] (expires in {dur})"
+            ));
         }
     }
 

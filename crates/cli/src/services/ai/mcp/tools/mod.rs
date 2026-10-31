@@ -18,16 +18,16 @@ mod run_state;
 
 pub use definitions::definitions;
 pub use dispatch::call;
-pub use exec::{run_readonly_on, MAX_COMMAND_BYTES};
+pub use exec::{MAX_COMMAND_BYTES, run_readonly_on};
 pub use inputs::{
     ByteRange, ChangeIdArgs, EditFileArgs, HostArgs, ListHostsArgs, NoArgs, ObserveArgs,
     ReadFileArgs, RequestAccessArgs, RunArgs, RunManyArgs, ScopeArg, SearchLogsArgs, ServiceArgs,
     WaitApprovalArgs,
 };
-pub use names::{name_str, parse_tool, ALL_TOOLS};
+pub use names::{ALL_TOOLS, name_str, parse_tool};
 pub use outputs::{
     AccessOut, ApplyOut, EditOut, EnforcementOut, ExecOut, FileOut, HostEntry, HostInfoOut,
-    HostListOut, ObserveOut, ProposeOut, RedactionOut, RunManyEntry, RunManyOut, ServiceOut,
-    StatusOut, UndoOut, WaitApprovalOut, NOTICE,
+    HostListOut, NOTICE, ObserveOut, ProposeOut, RedactionOut, RunManyEntry, RunManyOut,
+    ServiceOut, StatusOut, UndoOut, WaitApprovalOut,
 };
-pub use read::{log_command, READ_DEFAULT, READ_MAX};
+pub use read::{READ_DEFAULT, READ_MAX, log_command};

@@ -11,13 +11,13 @@ mod root;
 mod scripts;
 mod sudoers;
 
-pub use check::{check_host, HostReport};
-pub use root::{root_command, run_root_script, RootRun, SudoPassword};
+pub use check::{HostReport, check_host};
+pub use root::{RootRun, SudoPassword, root_command, run_root_script};
 pub use scripts::{
-    agent_user_script, trust_script, AGENT_HOME, AGENT_USER, BACKUP_DIR, EGRESS_NOTE, EXIT_NO_SUDO,
-    EXIT_SUDO_PASSWORD, HOST_CA_FILE, HOST_PRINCIPALS_DIR,
+    AGENT_HOME, AGENT_USER, BACKUP_DIR, EGRESS_NOTE, EXIT_NO_SUDO, EXIT_SUDO_PASSWORD,
+    HOST_CA_FILE, HOST_PRINCIPALS_DIR, agent_user_script, trust_script,
 };
-pub use sudoers::{sudoers_suggestions, SudoersSuggestion};
+pub use sudoers::{SudoersSuggestion, sudoers_suggestions};
 
 #[cfg(test)]
 mod tests;

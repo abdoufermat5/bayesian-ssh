@@ -2,11 +2,11 @@
 //! waiting device, and revoking an invite.
 
 use super::members::MemberRef;
-use super::passphrase::{passphrase, Passphrase};
+use super::passphrase::{Passphrase, passphrase};
 use crate::config::AppConfig;
-use crate::services::teams::session::{self, JoinWith, PendingDevice, Session};
 use crate::services::teams::TeamsStore;
-use anyhow::{anyhow, bail, Result};
+use crate::services::teams::session::{self, JoinWith, PendingDevice, Session};
+use anyhow::{Result, anyhow, bail};
 use bssh_teams_proto::api::{Invite, Role};
 
 /// The arguments of `bssh teams invite`.

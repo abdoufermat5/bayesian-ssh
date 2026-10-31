@@ -9,9 +9,9 @@ use crate::models::Connection;
 use std::process::Stdio;
 use tokio::process::Command as TokioCommand;
 
-use super::argv::{prepare_ssh_command, ShellExtras};
-use super::process::classify_ssh_failure;
 use super::SubprocessTransport;
+use super::argv::{ShellExtras, prepare_ssh_command};
+use super::process::classify_ssh_failure;
 use crate::services::transport::types::{ExecOptions, ExecOutput, LimitedOutput, TransportError};
 
 impl SubprocessTransport {
@@ -61,7 +61,7 @@ impl SubprocessTransport {
             .split_first()
             .ok_or_else(|| TransportError::permanent(anyhow::anyhow!("empty argv")))?;
 
-        let mut child = prepare_ssh_command(cmd_name)
+        let mut child = prepare_ssh_command(cmd_name, self.config.auth.agent_socket.as_deref())
             .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -418,16 +418,16 @@ impl SubprocessTransport {
                     return Ok(LimitedOutput {
                         timed_out: true,
                         ..LimitedOutput::default()
-                    })
+                    });
                 }
             },
             None => run.await?,
         };
         let limited = LimitedOutput::from_output(out, opts.max_output_bytes);
-        if opts.non_interactive {
-            if let Some(err) = classify_ssh_failure(&limited, Some(conn)) {
-                return Err(err);
-            }
+        if opts.non_interactive
+            && let Some(err) = classify_ssh_failure(&limited, Some(conn))
+        {
+            return Err(err);
         }
         Ok(limited)
     }

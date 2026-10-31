@@ -1,16 +1,15 @@
 use std::process::Command;
 
 use tauri::{
-    include_image,
+    AppHandle, Emitter, Manager, include_image,
     menu::{Menu, MenuBuilder, MenuItemBuilder, SubmenuBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, Manager,
 };
 
 // Tray icons must stay small; use the dedicated 32x32 asset instead of the 512px window icon.
 const TRAY_ICON: tauri::image::Image<'static> = include_image!("icons/32x32.png");
 
-use crate::commands::{close_all_ptys, open_db_and_config, CommandError, PtyState};
+use crate::commands::{CommandError, PtyState, close_all_ptys, open_db_and_config};
 
 pub fn build_tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let show_i = MenuItemBuilder::new("Open Bayesian SSH")
@@ -21,26 +20,25 @@ pub fn build_tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let mut submenu_builder = SubmenuBuilder::new(app, "Quick Connect");
     let mut has_connections = false;
 
-    if let Ok((db, _config)) = open_db_and_config() {
-        if let Ok(conns) = db.list_connections(None, false) {
-            for conn in conns.iter().take(10) {
-                let id = format!("connect:{}", conn.name);
-                if let Ok(item) = MenuItemBuilder::new(&conn.name).id(id).build(app) {
-                    submenu_builder = submenu_builder.item(&item);
-                    has_connections = true;
-                }
+    if let Ok((db, _config)) = open_db_and_config()
+        && let Ok(conns) = db.list_connections(None, false)
+    {
+        for conn in conns.iter().take(10) {
+            let id = format!("connect:{}", conn.name);
+            if let Ok(item) = MenuItemBuilder::new(&conn.name).id(id).build(app) {
+                submenu_builder = submenu_builder.item(&item);
+                has_connections = true;
             }
         }
     }
 
-    if !has_connections {
-        if let Ok(item) = MenuItemBuilder::new("No Servers Configured")
+    if !has_connections
+        && let Ok(item) = MenuItemBuilder::new("No Servers Configured")
             .id("no_servers")
             .enabled(false)
             .build(app)
-        {
-            submenu_builder = submenu_builder.item(&item);
-        }
+    {
+        submenu_builder = submenu_builder.item(&item);
     }
 
     let submenu = submenu_builder.build()?;

@@ -1,12 +1,12 @@
 //! Team billing: the plan summary, the checkout page and the browser helper
 //! shared with `bssh org`.
 
-use super::passphrase::{passphrase, Passphrase};
+use super::passphrase::{Passphrase, passphrase};
 use crate::config::AppConfig;
+use crate::services::teams::TeamsStore;
 use crate::services::teams::billing::{self, ReadOnlyReason};
 use crate::services::teams::orgs;
 use crate::services::teams::session::{self, Session};
-use crate::services::teams::TeamsStore;
 use anyhow::Result;
 use bssh_teams_proto::api::{BillingInfo, BillingInterval, Plan};
 

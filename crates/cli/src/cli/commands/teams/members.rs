@@ -1,12 +1,12 @@
 //! `bssh teams members` and `bssh teams remove`: who is in a team, their
 //! devices, and removing a member with a key rotation.
 
-use super::passphrase::{passphrase, Passphrase};
+use super::passphrase::{Passphrase, passphrase};
 use super::sync::print_sync;
 use crate::cli::utils::confirm;
 use crate::config::AppConfig;
-use crate::services::teams::session::{self, Session};
 use crate::services::teams::TeamsStore;
+use crate::services::teams::session::{self, Session};
 use anyhow::Result;
 use bssh_teams_proto::api::Role;
 

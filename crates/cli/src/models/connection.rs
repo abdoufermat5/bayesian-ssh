@@ -269,7 +269,7 @@ pub struct ConnectionStats {
 
 #[cfg(test)]
 mod tests {
-    use super::{split_bastion, Connection, PendingChange};
+    use super::{Connection, PendingChange, split_bastion};
     use chrono::Utc;
 
     fn conn(bastion: Option<&str>, kerberos: bool) -> Connection {

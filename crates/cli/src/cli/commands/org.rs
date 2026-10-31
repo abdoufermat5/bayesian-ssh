@@ -2,12 +2,12 @@
 //! no name on the server, so it is labelled by its owners' emails and `<org>`
 //! arguments accept an id prefix or one of its team names.
 
-use crate::cli::commands::teams::{open_in_browser, passphrase, print_billing, Passphrase};
+use crate::cli::commands::teams::{Passphrase, open_in_browser, passphrase, print_billing};
 use crate::cli::{OrgCommands, OrgOwnerCommands};
 use crate::config::AppConfig;
+use crate::services::teams::TeamsStore;
 use crate::services::teams::orgs;
 use crate::services::teams::session::{self, Session};
-use crate::services::teams::TeamsStore;
 use anyhow::Result;
 use bssh_teams_proto::api::{BillingInterval, OrgInfo, OrgRole};
 use uuid::Uuid;

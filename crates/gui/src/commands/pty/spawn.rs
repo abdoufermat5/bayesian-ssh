@@ -4,13 +4,13 @@ use super::lifecycle::reap_session;
 use super::output::{OutputSink, PtyChunk};
 use super::replay::append_to_output_buffer;
 use crate::commands::CommandError;
-use crate::commands::{open_db_and_config, PopoutOwner, PtySession, PtyState, MAIN_WINDOW_LABEL};
+use crate::commands::{MAIN_WINDOW_LABEL, PopoutOwner, PtySession, PtyState, open_db_and_config};
 use bayesian_ssh::models::Session;
 use portable_pty::MasterPty;
 use serde::Serialize;
 use std::collections::hash_map::Entry;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, State};
@@ -73,6 +73,7 @@ pub fn spawn_pty(
             args,
             rows: bayesian_ssh::services::pty::DEFAULT_ROWS,
             cols: bayesian_ssh::services::pty::DEFAULT_COLS,
+            agent_socket: config.auth.agent_socket.as_deref(),
         })?;
 
     let child = spawned.child;
@@ -195,10 +196,10 @@ pub fn spawn_pty(
         let mut reader = reader;
 
         bayesian_ssh::services::pty::read_loop(&mut reader, |str_data| {
-            if let Some(rec) = &recorder_clone {
-                if let Ok(mut g) = rec.lock() {
-                    g.output(&str_data);
-                }
+            if let Some(rec) = &recorder_clone
+                && let Ok(mut g) = rec.lock()
+            {
+                g.output(&str_data);
             }
 
             // Replay append and live delivery happen under one gate, so a
@@ -313,10 +314,10 @@ pub fn resize_pty(
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     bayesian_ssh::services::pty::resize(master.as_ref(), cols, rows)?;
     drop(master);
-    if let Some(rec) = &session.recorder {
-        if let Ok(mut g) = rec.lock() {
-            g.resize(cols, rows);
-        }
+    if let Some(rec) = &session.recorder
+        && let Ok(mut g) = rec.lock()
+    {
+        g.resize(cols, rows);
     }
     Ok(())
 }

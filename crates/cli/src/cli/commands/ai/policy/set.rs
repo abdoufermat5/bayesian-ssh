@@ -5,7 +5,7 @@ use crate::config::AppConfig;
 use crate::services::ai::policy;
 use crate::services::ai::types::{Profile, Scope};
 use crate::services::ai::ui::{Style, Tone};
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 
 /// What `bssh ai policy set` was asked to write.
 pub(super) struct SetPolicy<'a> {

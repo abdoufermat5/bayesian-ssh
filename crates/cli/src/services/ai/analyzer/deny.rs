@@ -25,12 +25,12 @@ pub fn matches_deny(pattern: &str, analysis: &Analysis) -> bool {
 }
 
 fn pattern_words(pattern: &str) -> Vec<String> {
-    if let Ok(super::ast::Node::Seq(items)) = super::parser::parse_program(pattern, 0) {
-        if let [super::ast::Node::Simple(cmd)] = items.as_slice() {
-            if cmd.assigns.is_empty() && cmd.redirs.is_empty() {
-                return cmd.words.iter().map(|w| w.text()).collect();
-            }
-        }
+    if let Ok(super::ast::Node::Seq(items)) = super::parser::parse_program(pattern, 0)
+        && let [super::ast::Node::Simple(cmd)] = items.as_slice()
+        && cmd.assigns.is_empty()
+        && cmd.redirs.is_empty()
+    {
+        return cmd.words.iter().map(|w| w.text()).collect();
     }
     pattern.split_whitespace().map(str::to_string).collect()
 }

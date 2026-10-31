@@ -33,9 +33,9 @@ mod unix_impl {
     use super::{AiArgsWatch, AppConfig};
     use crate::cli::commands::ai::approve::render_request;
     use crate::services::ai::ai_dir;
-    use crate::services::ai::control_client::{list_sockets, ControlClient, RunHello};
+    use crate::services::ai::control_client::{ControlClient, RunHello, list_sockets};
     use crate::services::ai::feed::{
-        event_line, event_run_id, request_lines, run_header, FeedContext, Folder, RunHeader,
+        FeedContext, Folder, RunHeader, event_line, event_run_id, request_lines, run_header,
     };
     use crate::services::ai::ipc::{ClientMsg, ServerMsg};
     use crate::services::ai::types::{AiEvent, ApprovalOutcome, ApprovalRequest, Tier};
@@ -46,8 +46,8 @@ mod unix_impl {
     use std::collections::{HashMap, HashSet};
     use std::io::{IsTerminal, Write};
     use std::path::PathBuf;
-    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::{Duration, Instant};
     use tokio::sync::mpsc;
 
@@ -141,11 +141,7 @@ mod unix_impl {
 
     impl Out {
         fn eol(&self) -> &'static str {
-            if self.term.is_tty() {
-                "\r\n"
-            } else {
-                "\n"
-            }
+            if self.term.is_tty() { "\r\n" } else { "\n" }
         }
 
         fn clear_footer(&mut self, w: &mut impl Write) {
@@ -330,10 +326,10 @@ mod unix_impl {
         }
 
         fn event(&mut self, ev: AiEvent) {
-            if let Ok(key) = serde_json::to_string(&ev) {
-                if self.replayed.remove(&key) {
-                    return;
-                }
+            if let Ok(key) = serde_json::to_string(&ev)
+                && self.replayed.remove(&key)
+            {
+                return;
             }
             self.event_at(ev, Utc::now());
         }
@@ -633,12 +629,11 @@ mod unix_impl {
             let stop = stop.clone();
             std::thread::spawn(move || {
                 while !stop.load(Ordering::Relaxed) {
-                    if event::poll(Duration::from_millis(100)).unwrap_or(false) {
-                        if let Ok(Event::Key(k)) = event::read() {
-                            if tx.send(Msg::Key(k)).is_err() {
-                                break;
-                            }
-                        }
+                    if event::poll(Duration::from_millis(100)).unwrap_or(false)
+                        && let Ok(Event::Key(k)) = event::read()
+                        && tx.send(Msg::Key(k)).is_err()
+                    {
+                        break;
                     }
                 }
             });
@@ -690,11 +685,10 @@ mod unix_impl {
                             tokio::spawn(connect(sock, args.run.clone(), tx.clone()));
                         }
                     }
-                    if last_event.elapsed() > Duration::from_secs(2) {
-                        if let Some(l) = w.folder.flush(&w.style) {
+                    if last_event.elapsed() > Duration::from_secs(2)
+                        && let Some(l) = w.folder.flush(&w.style) {
                             w.print(&[l]);
                         }
-                    }
                 }
                 _ = tokio::signal::ctrl_c(), if !term.is_tty() => break,
                 msg = rx.recv() => {

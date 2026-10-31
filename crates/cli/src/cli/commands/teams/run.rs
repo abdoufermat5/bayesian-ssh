@@ -4,8 +4,8 @@
 use super::{agents, audit, billing, device, invite, members, registry, setup, sharing, sync};
 use crate::cli::TeamsCommands;
 use crate::config::AppConfig;
-use crate::services::teams::session;
 use crate::services::teams::TeamsStore;
+use crate::services::teams::session;
 use anyhow::Result;
 use bssh_teams_proto::api::{BillingInterval, Role};
 

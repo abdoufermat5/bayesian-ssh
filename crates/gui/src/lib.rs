@@ -1,3 +1,4 @@
+mod agent_socket;
 mod commands;
 mod kerberos;
 mod tray;
@@ -5,8 +6,8 @@ mod updater;
 
 use bayesian_ssh::services::agent;
 use commands::{
-    ack_pty, add_connection, add_key_to_agent, attach_pty_output, cancel_upload,
-    check_popout_main_overlap, claim_popout_session, close_all_ptys, close_pty,
+    PtyState, UploadState, ack_pty, add_connection, add_key_to_agent, attach_pty_output,
+    cancel_upload, check_popout_main_overlap, claim_popout_session, close_all_ptys, close_pty,
     complete_onboarding, count_active_sessions, create_environment, detach_pty,
     dock_popout_session, edit_connection, focus_terminal_window, force_quit_app, get_active_env,
     get_agent_status, get_connections, get_history, get_stats, get_workspace_info,
@@ -15,7 +16,7 @@ use commands::{
     pick_ssh_config_file, pick_upload_files, pick_upload_folder, quit_app, read_clipboard_text,
     read_primary_selection, reattach_pty, redraw_pty, remove_connection, remove_environment,
     resize_pty, save_desktop_settings, save_workspace_config, seal_session_ui, set_active_env,
-    spawn_pty, start_agent, start_upload, write_clipboard_text, write_pty, PtyState, UploadState,
+    spawn_pty, start_agent, start_upload, write_clipboard_text, write_pty,
 };
 use kerberos::{acquire_kerberos_ticket, get_kerberos_status, renew_kerberos_ticket};
 use std::collections::HashMap;
@@ -26,6 +27,7 @@ use tauri::{Manager, WindowEvent};
 pub fn run() {
     #[cfg(unix)]
     init_shell_env();
+    agent_socket::init_from_env();
 
     let mut context = tauri::generate_context!();
     let mut builder = tauri::Builder::default()
@@ -191,16 +193,19 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
+/// Import the login shell's environment (PATH, ssh-agent, Kerberos, display).
+///
+/// Writes the process environment, so it must run before any other thread
+/// exists: `run` calls it first, before building the Tauri app.
 #[cfg(unix)]
 fn init_shell_env() {
     // ── Strategy 1: read systemd user environment (covers PATH, DBUS, DISPLAY …) ──
     if let Ok(output) = std::process::Command::new("systemctl")
         .args(["--user", "show-environment"])
         .output()
+        && output.status.success()
     {
-        if output.status.success() {
-            apply_env_vars(&String::from_utf8_lossy(&output.stdout));
-        }
+        apply_env_vars(&String::from_utf8_lossy(&output.stdout));
     }
 
     // ── Strategy 2: login-shell env (covers NVM, pyenv, .profile exports …) ──
@@ -208,37 +213,42 @@ fn init_shell_env() {
     if let Ok(output) = std::process::Command::new(&shell)
         .args(["-l", "-c", "env"])
         .output()
+        && output.status.success()
     {
-        if output.status.success() {
-            apply_env_vars(&String::from_utf8_lossy(&output.stdout));
-        }
+        apply_env_vars(&String::from_utf8_lossy(&output.stdout));
     }
 
     // ── Verify inherited SSH_AUTH_SOCK ──
-    if let Ok(sock) = std::env::var("SSH_AUTH_SOCK") {
-        if !agent::is_valid_socket(&sock) {
-            std::env::remove_var("SSH_AUTH_SOCK");
-        }
+    if let Ok(sock) = std::env::var("SSH_AUTH_SOCK")
+        && !agent::is_valid_socket(&sock)
+    {
+        // SAFETY: startup only: `run` calls `init_shell_env` before Tauri or anything
+        // else starts a thread, so nothing can read the environment concurrently.
+        unsafe { std::env::remove_var("SSH_AUTH_SOCK") };
     }
 
     // ── Strategy 3: probe for an SSH agent socket if none is set ──
-    if std::env::var("SSH_AUTH_SOCK").is_err() {
-        if let Some(sock) = agent::find_ssh_agent_socket() {
-            std::env::set_var("SSH_AUTH_SOCK", &sock);
-            // Also propagate into the systemd user session for child processes
-            let _ = std::process::Command::new("systemctl")
-                .args([
-                    "--user",
-                    "set-environment",
-                    &format!("SSH_AUTH_SOCK={sock}"),
-                ])
-                .output();
-        }
+    if std::env::var("SSH_AUTH_SOCK").is_err()
+        && let Some(sock) = agent::find_ssh_agent_socket()
+    {
+        // SAFETY: startup only: `run` calls `init_shell_env` before Tauri or anything
+        // else starts a thread, so nothing can read the environment concurrently.
+        unsafe { std::env::set_var("SSH_AUTH_SOCK", &sock) };
+        // Also propagate into the systemd user session for child processes
+        let _ = std::process::Command::new("systemctl")
+            .args([
+                "--user",
+                "set-environment",
+                &format!("SSH_AUTH_SOCK={sock}"),
+            ])
+            .output();
     }
 }
 
 /// Parse `KEY=VALUE` lines (from `env` or `systemctl show-environment`) and
 /// selectively set the ones that SSH / Kerberos / PATH need.
+///
+/// Called only from [`init_shell_env`], so the same single-thread rule applies.
 #[cfg(unix)]
 fn apply_env_vars(text: &str) {
     const KEYS: &[&str] = &[
@@ -272,7 +282,9 @@ fn apply_env_vars(text: &str) {
                 {
                     continue;
                 }
-                std::env::set_var(key, val);
+                // SAFETY: startup only: `run` calls `init_shell_env` before Tauri or anything
+                // else starts a thread, so nothing can read the environment concurrently.
+                unsafe { std::env::set_var(key, val) };
             }
         }
     }

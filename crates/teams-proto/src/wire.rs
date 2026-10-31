@@ -1,9 +1,9 @@
 //! Binary field types. Everything binary travels as standard base64 (with
 //! padding); fixed-size fields reject the wrong length at deserialization.
 
-use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
-use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use base64::engine::general_purpose::STANDARD;
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use std::fmt;
 
 /// A fixed-length byte string (keys, nonces, signatures, hashes).

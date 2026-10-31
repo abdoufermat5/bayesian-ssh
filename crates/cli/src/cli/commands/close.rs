@@ -2,9 +2,9 @@
 
 use crate::cli::utils::{confirm, format_elapsed, truncate_display};
 use crate::config::AppConfig;
-use crate::database::{live_pid, ActiveSession, Database};
+use crate::database::{ActiveSession, Database, live_pid};
 use anyhow::Result;
-use nix::sys::signal::{kill, Signal};
+use nix::sys::signal::{Signal, kill};
 
 /// Whether destructive session operations ask before acting.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -17,11 +17,7 @@ enum Confirmation {
 
 impl From<bool> for Confirmation {
     fn from(force: bool) -> Self {
-        if force {
-            Self::Skip
-        } else {
-            Self::Ask
-        }
+        if force { Self::Skip } else { Self::Ask }
     }
 }
 
@@ -227,10 +223,10 @@ fn cleanup_stale_sessions(db: &Database, config: &AppConfig) -> Result<()> {
     if config.recording.retention_days > 0 {
         let pruned = db.prune_recordings(config.recording.retention_days)?;
         for path in &pruned {
-            if let Err(e) = std::fs::remove_file(path) {
-                if e.kind() != std::io::ErrorKind::NotFound {
-                    tracing::warn!("Failed to delete expired recording '{path}': {e}");
-                }
+            if let Err(e) = std::fs::remove_file(path)
+                && e.kind() != std::io::ErrorKind::NotFound
+            {
+                tracing::warn!("Failed to delete expired recording '{path}': {e}");
             }
         }
         if !pruned.is_empty() {

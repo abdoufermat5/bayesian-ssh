@@ -5,8 +5,8 @@ use super::replay::{seal_replay_offset, switch_sink_off, switch_sink_on};
 use crate::commands::CommandError;
 use crate::commands::{DetachedSessionInfo, PtyState, ReattachSessionInfo};
 use std::sync::atomic::Ordering;
-use tauri::ipc::Channel;
 use tauri::State;
+use tauri::ipc::Channel;
 
 #[tauri::command]
 pub fn seal_session_ui(state: State<'_, PtyState>, session_id: String) -> Result<(), CommandError> {

@@ -38,5 +38,5 @@ mod tests;
 pub use context::{DbHosts, HostSource, RunContext, RunDeps, ScopeFn, StaticHosts, ToolError};
 pub use files::{FileAccess, FileRead, SftpFiles};
 pub use http::RmcpBackend;
-pub use server::{build_server, BsshMcp, McpElicitor};
+pub use server::{BsshMcp, McpElicitor, build_server};
 pub use stdio::serve_stdio;

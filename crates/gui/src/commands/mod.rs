@@ -59,8 +59,24 @@ impl PtyState {
     }
 }
 
+/// The active config for connecting: when `config.json` names no ssh-agent
+/// socket, the one the app is using (see [`crate::agent_socket`]) fills in.
+/// Not for configs that are saved back, which would persist that socket.
+pub fn load_config() -> Result<AppConfig, CommandError> {
+    let mut config = AppConfig::load(None)?;
+    fill_agent_socket(&mut config, crate::agent_socket::current());
+    Ok(config)
+}
+
+/// Use `socket` for `config` unless `config.json` already names one.
+fn fill_agent_socket(config: &mut AppConfig, socket: Option<String>) {
+    if config.auth.agent_socket.is_none() {
+        config.auth.agent_socket = socket.map(PathBuf::from);
+    }
+}
+
 pub fn open_db_and_config() -> Result<(Database, AppConfig), CommandError> {
-    let config = AppConfig::load(None)?;
+    let config = load_config()?;
     let db = Database::new(&config)?;
     Ok((db, config))
 }
@@ -305,10 +321,8 @@ pub fn default_terminal_scrollback() -> u32 {
 
 impl Default for DesktopSettings {
     fn default() -> Self {
-        // Try to detect current SSH_AUTH_SOCK from environment
-        let current_sock = std::env::var("SSH_AUTH_SOCK")
-            .ok()
-            .filter(|s| !s.is_empty());
+        // Start from the agent socket the app is using.
+        let current_sock = crate::agent_socket::current();
         Self {
             theme: default_theme(),
             auto_start_agent: false,
@@ -395,7 +409,30 @@ pub fn sync_search_mode_to_config(fuzzy: bool) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::DesktopSettings;
+    use super::{AppConfig, DesktopSettings, fill_agent_socket};
+    use std::path::PathBuf;
+
+    #[test]
+    fn app_agent_socket_fills_in_only_when_config_names_none() {
+        let mut config = AppConfig::default();
+        fill_agent_socket(&mut config, Some("/run/app.sock".into()));
+        assert_eq!(
+            config.auth.agent_socket,
+            Some(PathBuf::from("/run/app.sock"))
+        );
+
+        let mut config = AppConfig::default();
+        config.auth.agent_socket = Some(PathBuf::from("/run/config.sock"));
+        fill_agent_socket(&mut config, Some("/run/app.sock".into()));
+        assert_eq!(
+            config.auth.agent_socket,
+            Some(PathBuf::from("/run/config.sock"))
+        );
+
+        let mut config = AppConfig::default();
+        fill_agent_socket(&mut config, None);
+        assert_eq!(config.auth.agent_socket, None);
+    }
 
     /// Settings saved by a version that still had snippets must keep loading.
     #[test]
@@ -403,10 +440,12 @@ mod tests {
         let mut saved = serde_json::to_value(DesktopSettings::default()).unwrap();
         saved["confirm_snippet_execution"] = serde_json::json!(false);
         let loaded: DesktopSettings = serde_json::from_value(saved).unwrap();
-        assert!(serde_json::to_value(&loaded)
-            .unwrap()
-            .get("confirm_snippet_execution")
-            .is_none());
+        assert!(
+            serde_json::to_value(&loaded)
+                .unwrap()
+                .get("confirm_snippet_execution")
+                .is_none()
+        );
     }
 
     #[test]

@@ -93,12 +93,12 @@ pub fn open_terminal_window(
     if let Err(e) = built {
         // No window will ever claim or dock this session: release the popout
         // binding and hand output back to the window that still displays it.
-        if let Some(session) = state.lock_sessions().get(&session_id) {
-            if session.popout_window.get().as_deref() == Some(label.as_str()) {
-                session.popout_window.set(None);
-                if let Some(channel) = previous_sink {
-                    session.sink.set(channel);
-                }
+        if let Some(session) = state.lock_sessions().get(&session_id)
+            && session.popout_window.get().as_deref() == Some(label.as_str())
+        {
+            session.popout_window.set(None);
+            if let Some(channel) = previous_sink {
+                session.sink.set(channel);
             }
         }
         return Err(e.to_string().into());

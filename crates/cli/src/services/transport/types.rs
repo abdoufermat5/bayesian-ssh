@@ -255,7 +255,7 @@ pub trait SftpSession: Send + Sync {
 #[async_trait]
 pub trait SshTransport: Send + Sync {
     async fn open_shell(&self, conn: &Connection, io: PtyIo)
-        -> Result<ShellHandle, TransportError>;
+    -> Result<ShellHandle, TransportError>;
 
     async fn exec(&self, conn: &Connection, command: &str) -> Result<ExecOutput, TransportError>;
 
@@ -286,7 +286,7 @@ pub trait SshTransport: Send + Sync {
                     return Ok(LimitedOutput {
                         timed_out: true,
                         ..LimitedOutput::default()
-                    })
+                    });
                 }
             },
             None => run.await?,

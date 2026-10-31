@@ -11,7 +11,7 @@
 
 use super::crypto;
 use bssh_teams_proto::api::{AuditEvent, AuditRecord};
-use bssh_teams_proto::layout::{audit_event_hash, AUDIT_GENESIS};
+use bssh_teams_proto::layout::{AUDIT_GENESIS, audit_event_hash};
 use bssh_teams_proto::wire::PublicKey32;
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -282,7 +282,7 @@ impl<'a> ChainVerifier<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::teams::crypto::{sign_audit_event, DeviceKeys};
+    use crate::services::teams::crypto::{DeviceKeys, sign_audit_event};
     use bssh_teams_proto::api::{AuditEvent, AuditKind};
     use bssh_teams_proto::wire::Fixed;
     use chrono::{TimeZone, Utc};
@@ -445,9 +445,11 @@ mod tests {
         sign_audit_event(&mut twin.event, &a.keys);
         log.insert(2, twin);
         let (_, report) = run(team, &log, &authors(&[&a]));
-        assert!(report
-            .problems
-            .contains(&ChainProblem::BadGenesis { device_id: a.id }));
+        assert!(
+            report
+                .problems
+                .contains(&ChainProblem::BadGenesis { device_id: a.id })
+        );
         assert!(report.problems.contains(&ChainProblem::Duplicate {
             device_id: a.id,
             seq: 1
@@ -494,10 +496,12 @@ mod tests {
             .count();
         log[..n].reverse();
         let (_, report) = run(team, &log, &authors(&[&a, &b]));
-        assert!(report
-            .problems
-            .iter()
-            .any(|p| matches!(p, ChainProblem::OutOfOrder { .. })));
+        assert!(
+            report
+                .problems
+                .iter()
+                .any(|p| matches!(p, ChainProblem::OutOfOrder { .. }))
+        );
         assert!(!report.is_clean());
     }
 
@@ -514,9 +518,11 @@ mod tests {
         let again = log[0].clone();
         log.push(again);
         let (_, report) = run(team, &log, &authors(&[&a, &b]));
-        assert!(report
-            .problems
-            .iter()
-            .any(|p| matches!(p, ChainProblem::OutOfOrder { .. })));
+        assert!(
+            report
+                .problems
+                .iter()
+                .any(|p| matches!(p, ChainProblem::OutOfOrder { .. }))
+        );
     }
 }

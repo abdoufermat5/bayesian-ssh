@@ -15,17 +15,17 @@ use super::types::{
 };
 use crate::config::AppConfig;
 use crate::database::Database;
+use crate::services::teams::TeamsStore;
 use crate::services::teams::agent::AgentRuntime;
 use crate::services::teams::codec::VaultCodec;
 use crate::services::teams::relay::{Peer, RelayEndpoint, RelayRequestPayload, Verdict};
 use crate::services::teams::session::{self, kind_from_str, kind_str, team_of_connection};
 use crate::services::teams::store::AuditAppend;
-use crate::services::teams::TeamsStore;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use bssh_teams_proto::api::{AuditActor, AuditKind, MemberKind};
 use chrono::{DateTime, Utc};
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{OptionalExtension, params};
 use std::collections::HashSet;
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
@@ -229,11 +229,11 @@ pub fn forward_event(config: &AppConfig, event: &AiEvent) -> Result<()> {
             Some(h) => db.connection(h)?,
             None => None,
         };
-        if let Some(conn) = conn {
-            if let Some((t, e)) = team_of_connection(&db, &conn)? {
-                team = Some(t);
-                entry_id = Some(e);
-            }
+        if let Some(conn) = conn
+            && let Some((t, e)) = team_of_connection(&db, &conn)?
+        {
+            team = Some(t);
+            entry_id = Some(e);
         }
     }
     if team.is_none() {
@@ -403,8 +403,8 @@ mod tests {
     use crate::services::ai::types::{Decision, ToolCall, ToolName};
     use crate::services::teams::codec::CryptoCodec;
     use crate::services::teams::crypto::{self, DeviceKeys, TeamKey};
-    use crate::services::teams::relay::fake::{approval, cast};
     use crate::services::teams::relay::ApprovalAnswer;
+    use crate::services::teams::relay::fake::{approval, cast};
     use crate::services::teams::store::TeamLocal;
     use std::collections::HashMap;
     use std::sync::Arc;

@@ -3,9 +3,9 @@
 use super::budget::parse_duration;
 use super::candidates::path_candidates;
 use super::commands::matches_deny_fallback;
-use super::deny_paths::{deny_path_hit, path_matches_any, PathHit};
+use super::deny_paths::{PathHit, deny_path_hit, path_matches_any};
 use super::grants::{grant_matches, needs_host};
-use super::scope::{ignored_tag_note, in_scope, TagTrust};
+use super::scope::{TagTrust, ignored_tag_note, in_scope};
 use super::tier::tier_for;
 use crate::services::ai::store::{AiStore, CounterKind};
 use crate::services::ai::types::{
@@ -59,16 +59,15 @@ impl DefaultPolicyEngine {
                 });
             }
         }
-        if let Some(ttl) = parse_duration(&b.run_ttl) {
-            if let Ok(Some(rec)) = self.store.run(run) {
-                if let Ok(start) = chrono::DateTime::parse_from_rfc3339(&rec.started) {
-                    let age = chrono::Utc::now().signed_duration_since(start);
-                    if age.to_std().map(|a| a > ttl).unwrap_or(false) {
-                        return Some(Decision::Deny {
-                            reason: format!("budget.run_ttl: the run is older than {}", b.run_ttl),
-                        });
-                    }
-                }
+        if let Some(ttl) = parse_duration(&b.run_ttl)
+            && let Ok(Some(rec)) = self.store.run(run)
+            && let Ok(start) = chrono::DateTime::parse_from_rfc3339(&rec.started)
+        {
+            let age = chrono::Utc::now().signed_duration_since(start);
+            if age.to_std().map(|a| a > ttl).unwrap_or(false) {
+                return Some(Decision::Deny {
+                    reason: format!("budget.run_ttl: the run is older than {}", b.run_ttl),
+                });
             }
         }
         None
@@ -120,10 +119,10 @@ impl DefaultPolicyEngine {
         // 4. deny_paths: the tool's path, then every path the command names as written
         // (arguments, input and output redirections, `--opt=`/attached-option values,
         // `~`/`$HOME` paths and arguments relative to a literal `cd`)
-        if let Some(p) = &call.path {
-            if let Some(pat) = path_matches_any(&policy.deny_paths, p) {
-                return deny(format!("deny_paths: '{p}' matches '{pat}'"));
-            }
+        if let Some(p) = &call.path
+            && let Some(pat) = path_matches_any(&policy.deny_paths, p)
+        {
+            return deny(format!("deny_paths: '{p}' matches '{pat}'"));
         }
         let (candidates, runtime_path) = path_candidates(analysis);
         let mut unsure =
@@ -188,7 +187,7 @@ impl DefaultPolicyEngine {
             match &call.path {
                 Some(p) if path_matches_any(&policy.write_paths, p).is_some() => {}
                 Some(p) => {
-                    return deny(format!("write_paths: '{p}' is outside the writable paths"))
+                    return deny(format!("write_paths: '{p}' is outside the writable paths"));
                 }
                 None => return deny("write_paths: edit_file without a path".into()),
             }
@@ -211,12 +210,12 @@ impl DefaultPolicyEngine {
             ToolName::ListHosts | ToolName::HostInfo | ToolName::Status => {
                 return Decision::Allow {
                     reason: "read: metadata tools are always allowed in scope".into(),
-                }
+                };
             }
             ToolName::Observe | ToolName::SearchLogs => {
                 return Decision::Allow {
                     reason: "read: observe tools run read-only commands".into(),
-                }
+                };
             }
             ToolName::ReadFile => {
                 return match &call.path {
@@ -227,7 +226,7 @@ impl DefaultPolicyEngine {
                     }
                     Some(p) => ask(format!("read_paths: '{p}' is outside the readable paths")),
                     None => deny("target: read_file without a path".into()),
-                }
+                };
             }
             ToolName::RunReadonly | ToolName::RunMany => {
                 // A jail stops writes, but deny paths are only enforced when it runs as the
@@ -261,7 +260,7 @@ impl DefaultPolicyEngine {
                 return Decision::Ask {
                     tier: policy.approval.default,
                     reason: "request_access: wider scope always needs a human".into(),
-                }
+                };
             }
             _ => {}
         }

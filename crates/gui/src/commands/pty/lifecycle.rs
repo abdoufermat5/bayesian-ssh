@@ -4,8 +4,8 @@ use crate::commands::CommandError;
 use crate::commands::{PtySession, PtyState};
 use bayesian_ssh::config::AppConfig;
 use bayesian_ssh::database::Database;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter, Manager, State};
 use uuid::Uuid;
 
@@ -29,18 +29,18 @@ pub(super) fn finalize_db_session(
         return;
     };
 
-    if let Ok(config) = AppConfig::load(None) {
-        if let Ok(db) = Database::new(&config) {
-            if let Some(ref text) = recorded_text {
-                let _ = db.index_session_text(session_id, text);
-            }
-            let _ = db.mark_session_terminated(&session_id.to_string(), exit_code);
-            if config.recording.retention_days > 0 {
-                if let Ok(paths) = db.prune_recordings(config.recording.retention_days) {
-                    for p in paths {
-                        let _ = std::fs::remove_file(&p);
-                    }
-                }
+    if let Ok(config) = AppConfig::load(None)
+        && let Ok(db) = Database::new(&config)
+    {
+        if let Some(ref text) = recorded_text {
+            let _ = db.index_session_text(session_id, text);
+        }
+        let _ = db.mark_session_terminated(&session_id.to_string(), exit_code);
+        if config.recording.retention_days > 0
+            && let Ok(paths) = db.prune_recordings(config.recording.retention_days)
+        {
+            for p in paths {
+                let _ = std::fs::remove_file(&p);
             }
         }
     }
@@ -99,12 +99,11 @@ pub fn close_pty(
         // the next 250 ms poll.
         session.sink.clear();
 
-        if close_window.unwrap_or(true) {
-            if let Some(label) = session.popout_window.get() {
-                if let Some(window) = app.get_webview_window(&label) {
-                    let _ = window.close();
-                }
-            }
+        if close_window.unwrap_or(true)
+            && let Some(label) = session.popout_window.get()
+            && let Some(window) = app.get_webview_window(&label)
+        {
+            let _ = window.close();
         }
 
         let _ = session.child.kill();

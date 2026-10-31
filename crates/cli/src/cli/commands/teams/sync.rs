@@ -1,12 +1,12 @@
 //! `bssh teams sync`: pulling and pushing a team, and the report every other
 //! command prints after a sync.
 
-use super::passphrase::{passphrase, Passphrase};
+use super::passphrase::{Passphrase, passphrase};
 use crate::config::AppConfig;
+use crate::services::teams::TeamsStore;
 use crate::services::teams::session::{self, Session, TeamSync};
 use crate::services::teams::sync::AUDIT_QUOTA_MESSAGE;
-use crate::services::teams::TeamsStore;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 /// Syncs one team, or every team on this machine, and prints each report.
 ///
@@ -100,7 +100,9 @@ pub(super) fn print_sync(name: &str, sync: &TeamSync) {
         );
     }
     if r.rotation_required {
-        println!("   ⚠️  a member was removed: an admin must sync to rotate the team key; your edits stay queued.");
+        println!(
+            "   ⚠️  a member was removed: an admin must sync to rotate the team key; your edits stay queued."
+        );
     }
     if r.audit_quota_exceeded {
         println!("   ⚠️  {}", AUDIT_QUOTA_MESSAGE);

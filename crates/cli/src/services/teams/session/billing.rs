@@ -2,7 +2,7 @@
 
 use super::handle::Session;
 use crate::services::teams::client::TeamsError;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use bssh_teams_proto::api::{BillingInfo, BillingInterval, CheckoutRequest, ErrorCode, OrgInfo};
 use uuid::Uuid;
 

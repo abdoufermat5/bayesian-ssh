@@ -19,4 +19,4 @@ mod sync;
 pub use run::execute;
 
 pub(crate) use billing::{open_in_browser, print_billing};
-pub(crate) use passphrase::{passphrase, Passphrase};
+pub(crate) use passphrase::{Passphrase, passphrase};

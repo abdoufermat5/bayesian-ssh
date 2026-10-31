@@ -1,11 +1,11 @@
 //! `bssh teams init` and `bssh teams whoami`: this machine's account, device
 //! and keys.
 
-use super::passphrase::{passphrase, Passphrase};
+use super::passphrase::{Passphrase, passphrase};
 use crate::config::AppConfig;
-use crate::services::teams::session::{self, Session};
 use crate::services::teams::TeamsStore;
-use anyhow::{anyhow, bail, Result};
+use crate::services::teams::session::{self, Session};
+use anyhow::{Result, anyhow, bail};
 use std::io::{self, IsTerminal, Write};
 
 /// The arguments of `bssh teams init`.

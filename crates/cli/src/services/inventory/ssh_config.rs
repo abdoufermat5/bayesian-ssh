@@ -1,4 +1,4 @@
-use super::{config_str, expand_tilde, InventoryProvider};
+use super::{InventoryProvider, config_str, expand_tilde};
 use crate::models::{DiscoveredHost, Source};
 use anyhow::{Context, Result};
 use std::path::PathBuf;

@@ -1,8 +1,9 @@
 //! `bssh ai policy test`: evaluate a file of commands against a policy.
 
 use super::table::render_test_table;
-use super::test_file::{count_mismatches, parse_test_file, TestLine, TestOutcome};
+use super::test_file::{TestLine, TestOutcome, count_mismatches, parse_test_file};
 use crate::config::AppConfig;
+use crate::services::SshService;
 use crate::services::ai::analyzer::ShellAnalyzer;
 use crate::services::ai::policy::{self, DefaultPolicyEngine};
 use crate::services::ai::store::AiStore;
@@ -10,8 +11,7 @@ use crate::services::ai::types::{
     Analysis, Analyzer, Decision, Enforcement, HostFacts, PolicyEngine, ToolCall, ToolName,
 };
 use crate::services::ai::ui::Style;
-use crate::services::SshService;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::path::Path;
 use std::sync::Arc;
 

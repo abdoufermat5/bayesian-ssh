@@ -1,7 +1,7 @@
 use crate::cli::utils::confirm;
 use crate::config::AppConfig;
 use crate::database::Database;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::info;
@@ -22,10 +22,10 @@ pub async fn execute(file: String, force: bool, config: AppConfig) -> Result<()>
 
     let db_path = &config.database_path;
 
-    if let (Ok(a), Ok(b)) = (restore_path.canonicalize(), db_path.canonicalize()) {
-        if a == b {
-            bail!("Refusing to restore the active database onto itself");
-        }
+    if let (Ok(a), Ok(b)) = (restore_path.canonicalize(), db_path.canonicalize())
+        && a == b
+    {
+        bail!("Refusing to restore the active database onto itself");
     }
 
     if !force {

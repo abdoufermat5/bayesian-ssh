@@ -9,11 +9,11 @@ use super::read::{observe_tool, read_file, search_logs};
 use super::run_many::run_many;
 use super::run_state::{request_access, status, wait_approval};
 use crate::services::ai::mcp::context::{
-    failed, with_call_slot, CallPhase, CallSlot, RunContext, ToolError, ToolResult,
+    CallPhase, CallSlot, RunContext, ToolError, ToolResult, failed, with_call_slot,
 };
 use crate::services::ai::plan;
 use crate::services::ai::types::ToolName;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;

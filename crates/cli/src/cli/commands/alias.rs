@@ -4,7 +4,7 @@ use crate::cli::utils::resolve_connection;
 use crate::config::AppConfig;
 use crate::database::Database;
 use crate::services::SshService;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 /// Execute the alias command
 pub async fn execute(action: AliasAction, config: AppConfig) -> Result<()> {

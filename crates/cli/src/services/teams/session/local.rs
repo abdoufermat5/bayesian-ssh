@@ -6,7 +6,7 @@ use crate::database::Database;
 use crate::models::{Connection, DiscoveredHost, Source, SourceKind};
 use crate::services::inventory::sync as inventory;
 use crate::services::teams::VaultView;
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use bssh_teams_proto::api::AuditKind;
 use bssh_teams_proto::wire::{Fixed, PublicKey32};
 use chrono::Utc;
@@ -196,14 +196,16 @@ pub(crate) fn materialize_into(
         .find(|(id, _)| *id == team_id)
         .ok_or_else(|| anyhow!("team {team_id} has no local source"))?;
 
-    if let Some(name) = &view.team_name {
-        if source.name != *name && source.name.starts_with("team-") && db.source(name)?.is_none() {
-            db.conn.execute(
-                "UPDATE sources SET name = ?1 WHERE id = ?2",
-                params![name, source.id.to_string()],
-            )?;
-            source.name = name.clone();
-        }
+    if let Some(name) = &view.team_name
+        && source.name != *name
+        && source.name.starts_with("team-")
+        && db.source(name)?.is_none()
+    {
+        db.conn.execute(
+            "UPDATE sources SET name = ?1 WHERE id = ?2",
+            params![name, source.id.to_string()],
+        )?;
+        source.name = name.clone();
     }
 
     let discovered: Vec<DiscoveredHost> = view

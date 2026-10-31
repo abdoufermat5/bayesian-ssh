@@ -5,11 +5,11 @@
 
 use std::sync::Arc;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
+use russh::ChannelMsg;
 use russh::client::{self, Handle};
 use russh::keys::{PrivateKeyWithHashAlg, PublicKey, PublicKeyBase64, PublicKeyOrCertificate};
-use russh::ChannelMsg;
 use tracing::{debug, info, warn};
 
 use crate::config::{AppConfig, HostKeyPolicy};
@@ -325,8 +325,8 @@ impl RusshTransport {
         user: &str,
         rsa_hash: Option<russh::keys::HashAlg>,
     ) -> (bool, usize) {
-        use russh::keys::agent::client::AgentClient;
         use russh::keys::agent::AgentIdentity;
+        use russh::keys::agent::client::AgentClient;
 
         if !self.config.auth.use_agent {
             return (false, 0);
@@ -938,11 +938,10 @@ impl SshTransport for RusshTransport {
                 } => {
                     if let Ok((c, r)) = size() {
                         let _ = channel.window_change(c as u32, r as u32, 0, 0).await;
-                        if let Some(ref rec) = recorder {
-                            if let Ok(mut g) = rec.lock() {
+                        if let Some(ref rec) = recorder
+                            && let Ok(mut g) = rec.lock() {
                                 g.resize(c, r);
                             }
-                        }
                     }
                 }
                 msg = channel.wait() => {
@@ -954,11 +953,10 @@ impl SshTransport for RusshTransport {
                             if let Some(ref rec) = recorder {
                                 dec_buf.clear();
                                 carry.decode_into(data, &mut dec_buf);
-                                if !dec_buf.is_empty() {
-                                    if let Ok(mut g) = rec.lock() {
+                                if !dec_buf.is_empty()
+                                    && let Ok(mut g) = rec.lock() {
                                         g.output(&dec_buf);
                                     }
-                                }
                             }
                         }
                         Some(ChannelMsg::ExitStatus { exit_status }) => {
@@ -976,10 +974,10 @@ impl SshTransport for RusshTransport {
         if let Some(ref rec) = recorder {
             dec_buf.clear();
             carry.finish_into(&mut dec_buf);
-            if !dec_buf.is_empty() {
-                if let Ok(mut g) = rec.lock() {
-                    g.output(&dec_buf);
-                }
+            if !dec_buf.is_empty()
+                && let Ok(mut g) = rec.lock()
+            {
+                g.output(&dec_buf);
             }
         }
 
@@ -1004,7 +1002,7 @@ async fn proxy_tcp_channel(
 
 #[cfg(test)]
 mod tests {
-    use super::{host_key_verdict, HostKeyVerdict};
+    use super::{HostKeyVerdict, host_key_verdict};
     use crate::config::HostKeyPolicy;
     use crate::services::known_hosts::CheckResult;
 

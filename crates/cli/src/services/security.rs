@@ -40,65 +40,63 @@ pub fn scan_ssh_keys() -> Result<Vec<SshKeyInfo>, String> {
 
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.is_file() {
-            if let Some(ext) = path.extension() {
-                if ext == "pub" {
-                    let priv_path = path.with_extension("");
-                    let filename = path
-                        .file_stem()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .to_string();
+        if path.is_file()
+            && let Some(ext) = path.extension()
+            && ext == "pub"
+        {
+            let priv_path = path.with_extension("");
+            let filename = path
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
 
-                    let key_content = fs::read_to_string(&path).unwrap_or_default();
-                    let parts: Vec<&str> = key_content.split_whitespace().collect();
-                    let key_type = parts.first().copied().unwrap_or("unknown").to_string();
-                    let comment = parts.get(2).copied().unwrap_or("").to_string();
+            let key_content = fs::read_to_string(&path).unwrap_or_default();
+            let parts: Vec<&str> = key_content.split_whitespace().collect();
+            let key_type = parts.first().copied().unwrap_or("unknown").to_string();
+            let comment = parts.get(2).copied().unwrap_or("").to_string();
 
-                    let fingerprint = if parts.len() >= 2 {
-                        if let Ok(raw) = base64::Engine::decode(
-                            &base64::engine::general_purpose::STANDARD,
-                            parts[1],
-                        ) {
-                            fingerprint_sha256(&raw)
-                        } else {
-                            "INVALID_BASE64".to_string()
-                        }
-                    } else {
-                        "UNKNOWN".to_string()
-                    };
-
-                    let (priv_key_str, priv_perm, is_secure) = if priv_path.exists() {
-                        // Like OpenSSH, any mode without group/other access
-                        // is acceptable (0600, 0400).
-                        let (perm_str, secure) = match fs::metadata(&priv_path) {
-                            Ok(meta) => {
-                                let mode = meta.permissions().mode() & 0o777;
-                                if mode & 0o077 == 0 {
-                                    (format!("{mode:04o} (SECURE)"), true)
-                                } else {
-                                    (format!("{mode:04o} (INSECURE)"), false)
-                                }
-                            }
-                            Err(_) => ("UNKNOWN".to_string(), false),
-                        };
-                        (Some(priv_path.display().to_string()), perm_str, secure)
-                    } else {
-                        (None, "PUBLIC_ONLY".to_string(), true)
-                    };
-
-                    keys.push(SshKeyInfo {
-                        name: filename,
-                        key_type,
-                        fingerprint,
-                        comment,
-                        public_key_path: path.display().to_string(),
-                        private_key_path: priv_key_str,
-                        private_key_permission: priv_perm,
-                        is_secure,
-                    });
+            let fingerprint = if parts.len() >= 2 {
+                if let Ok(raw) =
+                    base64::Engine::decode(&base64::engine::general_purpose::STANDARD, parts[1])
+                {
+                    fingerprint_sha256(&raw)
+                } else {
+                    "INVALID_BASE64".to_string()
                 }
-            }
+            } else {
+                "UNKNOWN".to_string()
+            };
+
+            let (priv_key_str, priv_perm, is_secure) = if priv_path.exists() {
+                // Like OpenSSH, any mode without group/other access
+                // is acceptable (0600, 0400).
+                let (perm_str, secure) = match fs::metadata(&priv_path) {
+                    Ok(meta) => {
+                        let mode = meta.permissions().mode() & 0o777;
+                        if mode & 0o077 == 0 {
+                            (format!("{mode:04o} (SECURE)"), true)
+                        } else {
+                            (format!("{mode:04o} (INSECURE)"), false)
+                        }
+                    }
+                    Err(_) => ("UNKNOWN".to_string(), false),
+                };
+                (Some(priv_path.display().to_string()), perm_str, secure)
+            } else {
+                (None, "PUBLIC_ONLY".to_string(), true)
+            };
+
+            keys.push(SshKeyInfo {
+                name: filename,
+                key_type,
+                fingerprint,
+                comment,
+                public_key_path: path.display().to_string(),
+                private_key_path: priv_key_str,
+                private_key_permission: priv_perm,
+                is_secure,
+            });
         }
     }
 
@@ -174,33 +172,33 @@ pub fn build_audit_report(config: &AppConfig, connections: &[Connection]) -> Aud
         }
     }
 
-    if let Some(ssh_dir) = dirs::home_dir().map(|h| h.join(".ssh")) {
-        if ssh_dir.exists() {
-            if let Ok(entries) = fs::read_dir(&ssh_dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    // Only actual private keys: `known_hosts`, `config`,
-                    // `authorized_keys` etc. are legitimately world-readable.
-                    if path.is_file() && looks_like_private_key(&path) {
-                        if let Ok(meta) = fs::metadata(&path) {
-                            let mode = meta.permissions().mode() & 0o777;
-                            if mode & 0o077 != 0 {
-                                findings.push(AuditFindingDto {
-                                    severity: "warning".into(),
-                                    title: format!(
-                                        "Insecure Private Key Permissions: {}",
-                                        path.file_name().unwrap_or_default().to_string_lossy()
-                                    ),
-                                    description: format!(
-                                        "Key file {} mode is {:04o} (expected 0600).",
-                                        path.display(),
-                                        mode
-                                    ),
-                                    remediation: format!("Run 'chmod 600 {}'", path.display()),
-                                });
-                            }
-                        }
-                    }
+    if let Some(ssh_dir) = dirs::home_dir().map(|h| h.join(".ssh"))
+        && ssh_dir.exists()
+        && let Ok(entries) = fs::read_dir(&ssh_dir)
+    {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            // Only actual private keys: `known_hosts`, `config`,
+            // `authorized_keys` etc. are legitimately world-readable.
+            if path.is_file()
+                && looks_like_private_key(&path)
+                && let Ok(meta) = fs::metadata(&path)
+            {
+                let mode = meta.permissions().mode() & 0o777;
+                if mode & 0o077 != 0 {
+                    findings.push(AuditFindingDto {
+                        severity: "warning".into(),
+                        title: format!(
+                            "Insecure Private Key Permissions: {}",
+                            path.file_name().unwrap_or_default().to_string_lossy()
+                        ),
+                        description: format!(
+                            "Key file {} mode is {:04o} (expected 0600).",
+                            path.display(),
+                            mode
+                        ),
+                        remediation: format!("Run 'chmod 600 {}'", path.display()),
+                    });
                 }
             }
         }
@@ -214,10 +212,10 @@ pub fn build_audit_report(config: &AppConfig, connections: &[Connection]) -> Aud
         if conn.key_path.is_none() && !conn.use_kerberos {
             password_only += 1;
         }
-        if let Some(ref last_used) = conn.last_used {
-            if (now - *last_used).num_days() > 90 {
-                stale += 1;
-            }
+        if let Some(ref last_used) = conn.last_used
+            && (now - *last_used).num_days() > 90
+        {
+            stale += 1;
         }
     }
 

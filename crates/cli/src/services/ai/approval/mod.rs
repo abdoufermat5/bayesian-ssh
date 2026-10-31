@@ -14,8 +14,8 @@
 mod broker;
 mod control;
 
-pub use broker::{desktop_notify, Elicitor, LocalBroker, RunInfo};
-pub use control::{serve_control, ResumeFn};
+pub use broker::{Elicitor, LocalBroker, RunInfo, desktop_notify};
+pub use control::{ResumeFn, serve_control};
 
 #[cfg(test)]
 pub(crate) mod tests;

@@ -13,7 +13,7 @@ use tracing::warn;
 use super::apply::exec_ok;
 use super::input::{apply_unified_diff, check_patch};
 use super::store::{
-    backups_dir, persist_record, write_private, ChangeRecord, EditBackup, PlanEntry, PlanState,
+    ChangeRecord, EditBackup, PlanEntry, PlanState, backups_dir, persist_record, write_private,
 };
 
 /// Largest file `edit_file` will fetch and rewrite.

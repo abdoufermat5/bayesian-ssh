@@ -13,16 +13,16 @@ const PREV_SESSION_LOOKBACK_MINUTES: i64 = 30;
 /// enabled and the paths are valid UTF-8.
 pub fn capture(db: &Database, cfg: &AppConfig) -> SessionContext {
     let mut ctx = capture_without_cwd(db);
-    if cfg.prediction.capture_cwd {
-        if let Ok(cwd_path) = std::env::current_dir() {
-            if let Some(cwd_str) = cwd_path.to_str() {
-                ctx.cwd = Some(cwd_str.to_owned());
-            }
-            if let Some(git_root) = find_git_root(&cwd_path) {
-                if let Some(root_str) = git_root.to_str() {
-                    ctx.git_root = Some(root_str.to_owned());
-                }
-            }
+    if cfg.prediction.capture_cwd
+        && let Ok(cwd_path) = std::env::current_dir()
+    {
+        if let Some(cwd_str) = cwd_path.to_str() {
+            ctx.cwd = Some(cwd_str.to_owned());
+        }
+        if let Some(git_root) = find_git_root(&cwd_path)
+            && let Some(root_str) = git_root.to_str()
+        {
+            ctx.git_root = Some(root_str.to_owned());
         }
     }
     ctx
@@ -62,10 +62,10 @@ pub fn abbreviate_home(path: &str) -> String {
             if path == home {
                 return "~".to_string();
             }
-            if let Some(rest) = path.strip_prefix(home) {
-                if rest.starts_with('/') {
-                    return format!("~{rest}");
-                }
+            if let Some(rest) = path.strip_prefix(home)
+                && rest.starts_with('/')
+            {
+                return format!("~{rest}");
             }
         }
     }

@@ -6,11 +6,11 @@
 //!
 //! Spec format (same as OpenSSH -L):  [bind_addr:]bind_port:remote_host:remote_port
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 
 use crate::config::AppConfig;
-use crate::services::transport::{execute_with_fallback, pick_kind, TransportKind};
 use crate::services::SshService;
+use crate::services::transport::{TransportKind, execute_with_fallback, pick_kind};
 
 pub async fn execute(target: String, local: String, config: AppConfig) -> Result<()> {
     let (bind_host, bind_port, remote_host, remote_port) =

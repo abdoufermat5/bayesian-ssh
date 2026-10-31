@@ -6,7 +6,7 @@
 //! This is the existing behavior extracted behind the `SshTransport` trait.
 
 use crate::models::Connection;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tokio::io::{AsyncRead, AsyncReadExt};
 
@@ -76,15 +76,15 @@ pub(super) fn classify_ssh_failure(
     if *marker == "Permission denied" {
         // The bastion hop prints `user@bastion: Permission denied (...)`; name that hop,
         // otherwise the agent reads it as the target refusing a key that works on it.
-        if let Some(conn) = conn {
-            if let Some(bastion) = &conn.bastion {
-                let bu = conn.bastion_user.as_deref().unwrap_or(&conn.user);
-                if line.starts_with(&format!("{bu}@")) {
-                    return Some(TransportError::permanent(anyhow::anyhow!(
-                        "the bastion {bastion} refused the login ({line}); \
+        if let Some(conn) = conn
+            && let Some(bastion) = &conn.bastion
+        {
+            let bu = conn.bastion_user.as_deref().unwrap_or(&conn.user);
+            if line.starts_with(&format!("{bu}@")) {
+                return Some(TransportError::permanent(anyhow::anyhow!(
+                    "the bastion {bastion} refused the login ({line}); \
                          use a key or ssh-agent that works on the bastion"
-                    )));
-                }
+                )));
             }
         }
         return Some(TransportError::permanent(anyhow::anyhow!(
@@ -113,8 +113,9 @@ pub(crate) async fn run_argv_limited(
     program: &str,
     args: &[String],
     opts: &ExecOptions,
+    agent: Option<&Path>,
 ) -> Result<LimitedOutput, TransportError> {
-    let mut child = prepare_ssh_command(program)
+    let mut child = prepare_ssh_command(program, agent)
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

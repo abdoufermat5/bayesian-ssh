@@ -1,6 +1,6 @@
-use super::{config_str, run_command, InventoryProvider};
+use super::{InventoryProvider, config_str, run_command};
 use crate::models::{DiscoveredHost, Source};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use serde_json::Value;
 use tracing::warn;
 
@@ -105,14 +105,13 @@ fn parse_instances(
             .unwrap_or_default();
         tags.sort();
         tags.push("gcp".to_string());
-        if let Some(zone) = instance.get("zone").and_then(|zone| zone.as_str()) {
-            if let Some(segment) = zone
+        if let Some(zone) = instance.get("zone").and_then(|zone| zone.as_str())
+            && let Some(segment) = zone
                 .rsplit('/')
                 .next()
                 .filter(|segment| !segment.is_empty())
-            {
-                tags.push(segment.to_string());
-            }
+        {
+            tags.push(segment.to_string());
         }
 
         hosts.push(DiscoveredHost {

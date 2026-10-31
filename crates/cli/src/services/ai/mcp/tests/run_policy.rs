@@ -2,7 +2,7 @@
 
 use super::support::{call, hosts, std_kit};
 use crate::services::ai::mcp::context::ToolError;
-use crate::services::ai::mcp::testkit::{allow_all, ask_writes, kit, policy, FakeEngine};
+use crate::services::ai::mcp::testkit::{FakeEngine, allow_all, ask_writes, kit, policy};
 use crate::services::ai::mcp::tools;
 use crate::services::ai::types::{
     AiEvent, ApprovalOutcome, ApprovalSubject, Decision, Profile, Tier,
@@ -168,22 +168,26 @@ async fn human_decisions_and_expiry_do_not_trip_the_breaker() {
             by: "alice".into(),
             reason: Some("no".into()),
         });
-        assert!(call(
-            &k,
-            "run",
-            json!({ "host": "web-1", "command": "touch /tmp/a" })
-        )
-        .await
-        .is_err());
+        assert!(
+            call(
+                &k,
+                "run",
+                json!({ "host": "web-1", "command": "touch /tmp/a" })
+            )
+            .await
+            .is_err()
+        );
     }
     k.broker.push(ApprovalOutcome::Expired);
-    assert!(call(
-        &k,
-        "run",
-        json!({ "host": "web-1", "command": "touch /tmp/b" })
-    )
-    .await
-    .is_err());
+    assert!(
+        call(
+            &k,
+            "run",
+            json!({ "host": "web-1", "command": "touch /tmp/b" })
+        )
+        .await
+        .is_err()
+    );
     assert!(!k.ctx.is_paused());
     assert!(call(&k, "status", json!({})).await.is_ok());
 }
@@ -250,10 +254,12 @@ async fn pending_then_wait_approval_executes_once_even_concurrently() {
     assert_eq!(v["status"], "pending");
     assert_eq!(v["tool"], "run");
     let id = v["request_id"].as_str().unwrap().to_string();
-    assert!(v["approve_with"]
-        .as_str()
-        .unwrap()
-        .contains("bssh ai watch"));
+    assert!(
+        v["approve_with"]
+            .as_str()
+            .unwrap()
+            .contains("bssh ai watch")
+    );
     assert_eq!(k.broker.count(), 1);
     assert!(!k.exec.commands().iter().any(|c| c == "touch /tmp/a"));
 
@@ -359,11 +365,12 @@ async fn run_ttl_ends_the_run() {
         matches!(&e, ToolError::Denied(m) if m.contains("expired")),
         "{e}"
     );
-    assert!(k
-        .audit
-        .events()
-        .iter()
-        .any(|e| matches!(e, AiEvent::RunEnded { .. })));
+    assert!(
+        k.audit
+            .events()
+            .iter()
+            .any(|e| matches!(e, AiEvent::RunEnded { .. }))
+    );
 }
 
 #[tokio::test]
@@ -386,9 +393,11 @@ async fn request_access_widens_scope_after_approval() {
         reason: None,
     });
     assert!(call(&k, "request_access", args.clone()).await.is_err());
-    assert!(call(&k, "host_info", json!({ "host": "vault-1" }))
-        .await
-        .is_err());
+    assert!(
+        call(&k, "host_info", json!({ "host": "vault-1" }))
+            .await
+            .is_err()
+    );
 
     let v = call(&k, "request_access", args).await.unwrap();
     assert_eq!(v["status"], "granted");
@@ -399,20 +408,24 @@ async fn request_access_widens_scope_after_approval() {
     assert_eq!(v["count"], 3);
     let s = call(&k, "status", json!({})).await.unwrap();
     assert_eq!(s["access_grants"].as_array().unwrap().len(), 1);
-    assert!(call(
-        &k,
-        "request_access",
-        json!({ "scope": {}, "reason": "x", "duration": "1h" })
-    )
-    .await
-    .is_err());
-    assert!(call(
-        &k,
-        "request_access",
-        json!({ "scope": { "tags": ["a"] }, "reason": "x", "duration": "99h" })
-    )
-    .await
-    .is_err());
+    assert!(
+        call(
+            &k,
+            "request_access",
+            json!({ "scope": {}, "reason": "x", "duration": "1h" })
+        )
+        .await
+        .is_err()
+    );
+    assert!(
+        call(
+            &k,
+            "request_access",
+            json!({ "scope": { "tags": ["a"] }, "reason": "x", "duration": "99h" })
+        )
+        .await
+        .is_err()
+    );
 }
 
 #[tokio::test]

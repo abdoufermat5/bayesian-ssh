@@ -2,7 +2,7 @@
 
 use crate::config::AppConfig;
 use crate::services::ai::types::ExecResult;
-use crate::services::recording::{recordings_dir, Recorder};
+use crate::services::recording::{Recorder, recordings_dir};
 use std::path::PathBuf;
 
 fn safe_part(s: &str) -> String {
@@ -66,10 +66,10 @@ fn prune_ai_casts(config: &AppConfig) {
         if !(name.starts_with("ai-") && name.ends_with(".cast")) {
             continue;
         }
-        if let Ok(m) = e.metadata().and_then(|m| m.modified()) {
-            if m < cutoff {
-                let _ = std::fs::remove_file(e.path());
-            }
+        if let Ok(m) = e.metadata().and_then(|m| m.modified())
+            && m < cutoff
+        {
+            let _ = std::fs::remove_file(e.path());
         }
     }
 }

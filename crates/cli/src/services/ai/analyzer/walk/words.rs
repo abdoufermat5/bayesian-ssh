@@ -18,10 +18,10 @@ pub(super) fn chdir_option(args: &[Arg]) -> Option<String> {
                 .filter(|v| !v.is_empty())
                 .map(String::from)
         };
-        if let Some(v) = value {
-            if v.starts_with('/') {
-                return Some(v);
-            }
+        if let Some(v) = value
+            && v.starts_with('/')
+        {
+            return Some(v);
         }
         i += 1;
     }

@@ -1,5 +1,5 @@
 use crate::database::search::RankContext;
-use crate::database::{escape_like, Database};
+use crate::database::{Database, escape_like};
 use crate::models::Connection;
 use anyhow::Result;
 use rusqlite::params;
@@ -69,10 +69,10 @@ impl Database {
         };
 
         if is_tag_query {
-            if let Some(tag) = Connection::normalize_tag(&normalized_query) {
-                if let Ok(mut tag_matches) = self.search_in_tags(&tag, limit) {
-                    all_matches.append(&mut tag_matches);
-                }
+            if let Some(tag) = Connection::normalize_tag(&normalized_query)
+                && let Ok(mut tag_matches) = self.search_in_tags(&tag, limit)
+            {
+                all_matches.append(&mut tag_matches);
             }
         } else {
             if let Ok(mut name_matches) =

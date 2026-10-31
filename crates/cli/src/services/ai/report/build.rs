@@ -1,7 +1,7 @@
 //! Builds a run report from audit entries and the change records on disk.
 
 use crate::config::AppConfig;
-use crate::services::ai::audit::{read_entries, AuditEntry};
+use crate::services::ai::audit::{AuditEntry, read_entries};
 use crate::services::ai::plan::{ChangeRecord, PlanState, StepRecord};
 use crate::services::ai::types::{
     AiEvent, ApprovalOutcome, ChangePlan, Decision, Redaction, Step, StepAction,
@@ -334,13 +334,13 @@ fn enrich_changes_from_disk(
                 c.approved_channel = app.channel.clone();
                 c.approved_at = Some(app.ts.clone());
             }
-        } else if c.approved_at.is_none() {
-            if let Some(app) = approvals.iter().find(|a| a.outcome == "approved") {
-                if c.approved_channel.is_none() {
-                    c.approved_channel = app.channel.clone();
-                }
-                c.approved_at = Some(app.ts.clone());
+        } else if c.approved_at.is_none()
+            && let Some(app) = approvals.iter().find(|a| a.outcome == "approved")
+        {
+            if c.approved_channel.is_none() {
+                c.approved_channel = app.channel.clone();
             }
+            c.approved_at = Some(app.ts.clone());
         }
     }
 }

@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use tracing::info;
 use uuid::Uuid;
@@ -13,8 +13,8 @@ use crate::cli::utils::{format_bytes, format_elapsed, resolve_connection};
 use crate::config::AppConfig;
 use crate::models::Connection;
 use crate::services::upload::{
-    local_basename, local_stats, resolve_remote_path, upload_to_hosts, HostUploadResult,
-    UploadEvent, UploadEventFn, UploadRequest,
+    HostUploadResult, UploadEvent, UploadEventFn, UploadRequest, local_basename, local_stats,
+    resolve_remote_path, upload_to_hosts,
 };
 use crate::services::{SshService, TransferService};
 
@@ -493,7 +493,7 @@ fn progress_bar(style: BarStyle) -> ProgressBar {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_upload_args, split_targets, validate_upload_flags, HostSelector, UploadOptions,
+        HostSelector, UploadOptions, parse_upload_args, split_targets, validate_upload_flags,
     };
     use std::path::PathBuf;
 

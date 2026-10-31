@@ -2,7 +2,7 @@
 
 use crate::config::AppConfig;
 use crate::database::Database;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -176,7 +176,9 @@ pub async fn execute_copy(config: AppConfig, target: String, key: Option<String>
         } else if default_rsa.exists() {
             default_rsa
         } else {
-            return Err(anyhow!("No public key found to copy. Generate one with 'bssh key generate --name id_ed25519'"));
+            return Err(anyhow!(
+                "No public key found to copy. Generate one with 'bssh key generate --name id_ed25519'"
+            ));
         }
     };
 
@@ -204,6 +206,9 @@ pub async fn execute_copy(config: AppConfig, target: String, key: Option<String>
     );
 
     let mut cmd = Command::new("ssh");
+    if let Some(sock) = &config.auth.agent_socket {
+        cmd.env(crate::services::auth::SSH_AUTH_SOCK, sock);
+    }
     cmd.arg("-p").arg(conn.port.to_string());
     if let Some(bastion) = &conn.bastion {
         let bu = conn.bastion_user.as_deref().unwrap_or(&conn.user);

@@ -13,11 +13,7 @@ enum Confirmation {
 
 impl From<bool> for Confirmation {
     fn from(force: bool) -> Self {
-        if force {
-            Self::Skip
-        } else {
-            Self::Ask
-        }
+        if force { Self::Skip } else { Self::Ask }
     }
 }
 

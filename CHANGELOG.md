@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **`auth.agent_socket` now applies to every ssh-family command bssh runs.** It used to reach only the built-in SSH client; system `ssh`, `scp`, the Files panel listing, terminal sessions, `bssh ping` and `bssh key copy` now get it as `SSH_AUTH_SOCK` too. Unset, they inherit the environment as before.
+- **Rust edition 2024.** The workspace moved to the 2024 edition; no behavior change.
+
+### Fixed
+- **The desktop app no longer rewrites its own environment while running.** Starting an agent, adding a key or changing the agent socket in Settings used to set `SSH_AUTH_SOCK` in the process environment while other threads could be reading it. The socket now lives in the app and is passed to each connection and `ssh-add` explicitly; `SSH_AGENT_PID` is no longer exported.
+
 ## [2.15.0] - 2026-10-31
 
 ### Added

@@ -1,6 +1,6 @@
 //! Active grants and which tools need a host.
 
-use super::glob::{glob_match, normalize_path, GlobMode};
+use super::glob::{GlobMode, glob_match, normalize_path};
 use crate::services::ai::types::{Grant, ToolCall, ToolName};
 
 pub(super) fn needs_host(tool: ToolName) -> bool {
@@ -23,10 +23,10 @@ pub(super) fn grant_matches(g: &Grant, call: &ToolCall, host: &str) -> bool {
     if g.tool != call.tool || !glob_match(&g.hosts, host, GlobMode::Text) {
         return false;
     }
-    if let Some(run) = &g.run_id {
-        if *run != call.run_id {
-            return false;
-        }
+    if let Some(run) = &g.run_id
+        && *run != call.run_id
+    {
+        return false;
     }
     match &g.target {
         None => true,

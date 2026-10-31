@@ -55,15 +55,15 @@ pub fn validation_warnings_in(raw: Option<&str>, config: &AppConfig, name: &str)
     }
     // Only a policy written by hand can have an empty scope: the built-in default covers
     // every host.
-    if config.ai.policies.contains_key(name) {
-        if let Ok(p) = resolve(config, name) {
-            if p.scope.tags.is_empty() && p.scope.hosts.is_empty() {
-                out.push(format!(
-                    "policy '{name}' has an empty scope, so it reaches no host: add scope.tags, \
+    if config.ai.policies.contains_key(name)
+        && let Ok(p) = resolve(config, name)
+        && p.scope.tags.is_empty()
+        && p.scope.hosts.is_empty()
+    {
+        out.push(format!(
+            "policy '{name}' has an empty scope, so it reaches no host: add scope.tags, \
                      scope.hosts or \"*\" for every host"
-                ));
-            }
-        }
+        ));
     }
     out
 }

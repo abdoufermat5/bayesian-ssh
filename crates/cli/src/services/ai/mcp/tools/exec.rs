@@ -2,7 +2,7 @@
 
 use super::convert::{reds, to_value};
 use super::inputs::{RunArgs, ServiceArgs};
-use super::outputs::{ExecOut, ServiceOut, NOTICE};
+use super::outputs::{ExecOut, NOTICE, ServiceOut};
 use crate::models::Connection;
 use crate::services::ai::mcp::context::{Executed, RunContext, ToolError, ToolResult};
 use crate::services::ai::mcp::util::valid_unit;

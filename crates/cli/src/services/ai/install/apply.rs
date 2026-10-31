@@ -4,7 +4,7 @@ use crate::services::ai::types::Profile;
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
-use super::client::{claude_settings_path, config_path, Client};
+use super::client::{Client, claude_settings_path, config_path};
 use super::guard::guard_script;
 use super::merge::{json_entry, merge_codex, merge_guard_settings, merge_json_mcp};
 

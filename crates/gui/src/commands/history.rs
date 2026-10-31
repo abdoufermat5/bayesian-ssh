@@ -1,5 +1,5 @@
-use super::open_db_and_config;
 use super::CommandError;
+use super::open_db_and_config;
 use bayesian_ssh::models::{ConnectionStats, SessionHistoryEntry, SessionTextHit};
 
 #[tauri::command(async)]

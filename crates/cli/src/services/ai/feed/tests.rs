@@ -309,9 +309,11 @@ fn denied_approval_and_expiry() {
         run_id: RUN.into(),
         outcome: ApprovalOutcome::Expired,
     };
-    assert!(line(&e, &mut c, at(1, 2, 4))
-        .unwrap()
-        .contains("request expired"));
+    assert!(
+        line(&e, &mut c, at(1, 2, 4))
+            .unwrap()
+            .contains("request expired")
+    );
 }
 
 #[test]

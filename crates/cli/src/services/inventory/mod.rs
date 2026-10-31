@@ -1,5 +1,5 @@
 use crate::models::{DiscoveredHost, Source, SourceKind};
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::io::Read;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -109,10 +109,10 @@ pub(crate) fn run_command(bin: &str, args: &[String], hint: &str) -> Result<Stri
 
 /// Expand a leading `~/` in a configured path.
 pub(crate) fn expand_tilde(path: &str) -> PathBuf {
-    if let Some(rest) = path.strip_prefix("~/") {
-        if let Some(home) = dirs::home_dir() {
-            return home.join(rest);
-        }
+    if let Some(rest) = path.strip_prefix("~/")
+        && let Some(home) = dirs::home_dir()
+    {
+        return home.join(rest);
     }
     PathBuf::from(path)
 }

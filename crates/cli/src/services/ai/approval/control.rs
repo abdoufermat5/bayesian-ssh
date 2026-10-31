@@ -1,6 +1,6 @@
 //! The control socket a run serves to `bssh ai watch` and the desktop app.
 
-use crate::services::ai::ipc::{ClientMsg, ServerMsg, IPC_VERSION};
+use crate::services::ai::ipc::{ClientMsg, IPC_VERSION, ServerMsg};
 use crate::services::ai::types::AiEvent;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -199,10 +199,10 @@ async fn handle_conn(
             },
             _ = done.changed() => break,
         };
-        if let Some(r) = reply {
-            if send_msg(&mut wr, &r).await.is_err() {
-                break;
-            }
+        if let Some(r) = reply
+            && send_msg(&mut wr, &r).await.is_err()
+        {
+            break;
         }
     }
 }

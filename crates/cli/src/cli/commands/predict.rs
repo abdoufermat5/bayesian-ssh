@@ -1,5 +1,5 @@
-use crate::cli::utils::fuzzy_select_connection;
 use crate::cli::Cli;
+use crate::cli::utils::fuzzy_select_connection;
 use crate::config::AppConfig;
 use crate::database::{Database, RankContext};
 use crate::services::{ConnectOverrides, SshService};

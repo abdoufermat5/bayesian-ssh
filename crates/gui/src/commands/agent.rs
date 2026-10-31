@@ -8,27 +8,23 @@ fn expand_path(path: &str) -> PathBuf {
         if let Some(home) = dirs::home_dir() {
             return home.join(stripped);
         }
-    } else if path == "~" {
-        if let Some(home) = dirs::home_dir() {
-            return home;
-        }
+    } else if path == "~"
+        && let Some(home) = dirs::home_dir()
+    {
+        return home;
     }
     PathBuf::from(path)
 }
 
 fn resolve_active_socket() -> Option<String> {
-    if let Ok(sock) = std::env::var("SSH_AUTH_SOCK") {
-        if bayesian_ssh::services::agent::is_valid_socket(&sock) {
-            return Some(sock);
-        }
-        std::env::remove_var("SSH_AUTH_SOCK");
+    if let Some(sock) = crate::agent_socket::current()
+        && bayesian_ssh::services::agent::is_valid_socket(&sock)
+    {
+        return Some(sock);
     }
-    if let Some(discovered) = bayesian_ssh::services::agent::find_ssh_agent_socket() {
-        std::env::set_var("SSH_AUTH_SOCK", &discovered);
-        Some(discovered)
-    } else {
-        None
-    }
+    let discovered = bayesian_ssh::services::agent::find_ssh_agent_socket();
+    crate::agent_socket::set(discovered.clone());
+    discovered
 }
 
 #[tauri::command(async)]
@@ -44,13 +40,13 @@ pub fn get_agent_status() -> Result<AgentStatus, CommandError> {
             .arg("-l")
             .output();
 
-        if let Ok(out) = output {
-            if out.status.success() {
-                let stdout = String::from_utf8_lossy(&out.stdout);
-                for line in stdout.lines() {
-                    if !line.trim().is_empty() {
-                        keys.push(line.to_string());
-                    }
+        if let Ok(out) = output
+            && out.status.success()
+        {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            for line in stdout.lines() {
+                if !line.trim().is_empty() {
+                    keys.push(line.to_string());
                 }
             }
         }
@@ -70,14 +66,14 @@ pub fn start_agent() -> Result<AgentStatus, CommandError> {
             .env("SSH_AUTH_SOCK", &sock)
             .arg("-l")
             .output();
-        if let Ok(out) = test_cmd {
-            if out.status.code() == Some(0) || out.status.code() == Some(1) {
-                return get_agent_status();
-            }
+        if let Ok(out) = test_cmd
+            && (out.status.code() == Some(0) || out.status.code() == Some(1))
+        {
+            return get_agent_status();
         }
     }
 
-    std::env::remove_var("SSH_AUTH_SOCK");
+    crate::agent_socket::set(None);
 
     let output = Command::new("ssh-agent")
         .arg("-s")
@@ -93,19 +89,12 @@ pub fn start_agent() -> Result<AgentStatus, CommandError> {
 
     for line in stdout.lines() {
         // e.g. SSH_AUTH_SOCK=/tmp/ssh-XXXXXX/agent.XXXX; export SSH_AUTH_SOCK;
-        if line.starts_with("SSH_AUTH_SOCK=") {
-            if let Some(end) = line.find(';') {
-                let val = &line["SSH_AUTH_SOCK=".len()..end];
-                socket_path = Some(val.to_string());
-                std::env::set_var("SSH_AUTH_SOCK", val);
-            }
-        }
-        // e.g. SSH_AGENT_PID=XXXXX; export SSH_AGENT_PID;
-        if line.starts_with("SSH_AGENT_PID=") {
-            if let Some(end) = line.find(';') {
-                let val = &line["SSH_AGENT_PID=".len()..end];
-                std::env::set_var("SSH_AGENT_PID", val);
-            }
+        if line.starts_with("SSH_AUTH_SOCK=")
+            && let Some(end) = line.find(';')
+        {
+            let val = &line["SSH_AUTH_SOCK=".len()..end];
+            socket_path = Some(val.to_string());
+            crate::agent_socket::set(Some(val.to_string()));
         }
     }
 
@@ -164,28 +153,25 @@ pub fn add_key_to_agent(key_path: String) -> Result<String, CommandError> {
             || err_msg.contains("No such file")
             || err_msg.contains("refused")
         {
-            std::env::remove_var("SSH_AUTH_SOCK");
-            if let Ok(new_status) = start_agent() {
-                if let Some(new_sock) = new_status.socket_path {
-                    if let Ok(new_output) = Command::new("ssh-add")
-                        .env("SSH_AUTH_SOCK", &new_sock)
-                        .arg(&resolved_key)
-                        .output()
-                    {
-                        if new_output.status.success() {
-                            let out_str = String::from_utf8_lossy(&new_output.stdout)
-                                .trim()
-                                .to_string();
-                            if out_str.is_empty() {
-                                return Ok(format!(
-                                    "Successfully added key {} (started new ssh-agent)",
-                                    resolved_key.display()
-                                ));
-                            } else {
-                                return Ok(out_str);
-                            }
-                        }
-                    }
+            crate::agent_socket::set(None);
+            if let Ok(new_status) = start_agent()
+                && let Some(new_sock) = new_status.socket_path
+                && let Ok(new_output) = Command::new("ssh-add")
+                    .env("SSH_AUTH_SOCK", &new_sock)
+                    .arg(&resolved_key)
+                    .output()
+                && new_output.status.success()
+            {
+                let out_str = String::from_utf8_lossy(&new_output.stdout)
+                    .trim()
+                    .to_string();
+                if out_str.is_empty() {
+                    return Ok(format!(
+                        "Successfully added key {} (started new ssh-agent)",
+                        resolved_key.display()
+                    ));
+                } else {
+                    return Ok(out_str);
                 }
             }
         }
@@ -216,9 +202,10 @@ mod tests {
     fn test_add_key_nonexistent_file() {
         let res = add_key_to_agent("/path/to/definitely_nonexistent_key_12345".to_string());
         assert!(res.is_err());
-        assert!(res
-            .unwrap_err()
-            .to_string()
-            .contains("Key file does not exist"));
+        assert!(
+            res.unwrap_err()
+                .to_string()
+                .contains("Key file does not exist")
+        );
     }
 }

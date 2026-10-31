@@ -182,7 +182,9 @@ pub fn interactive_selection_with_search(
                         );
                     }
                 } else {
-                    println!("❌ Invalid input. Please enter a number, 's' to search again, or 'q' to quit.");
+                    println!(
+                        "❌ Invalid input. Please enter a number, 's' to search again, or 'q' to quit."
+                    );
                 }
             }
         }
@@ -217,7 +219,9 @@ pub async fn fuzzy_select_connection(
         match matches.len() {
             0 => {
                 println!("❌ No connections found matching '{}'", current_query);
-                println!("\n💡 Tip: Use 'bssh list' to see all connections or 'bssh add' to create a new one.");
+                println!(
+                    "\n💡 Tip: Use 'bssh list' to see all connections or 'bssh add' to create a new one."
+                );
 
                 // Show recent connections as fallback
                 let recent = ssh_service.recent_connections(5).await?;

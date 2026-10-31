@@ -10,8 +10,9 @@
 use crate::config::AppConfig;
 use crate::database::Database;
 use crate::models::Connection;
+use crate::services::auth::SSH_AUTH_SOCK;
 use crate::services::transport::subprocess_impl::{
-    jump_proxy_command, ssh_strict_host_key_value, HopOptions,
+    HopOptions, jump_proxy_command, ssh_strict_host_key_value,
 };
 use serde::{Deserialize, Serialize};
 use std::process::{Command, Output};
@@ -153,7 +154,11 @@ fn strip_ansi(line: &str) -> std::borrow::Cow<'_, str> {
 /// the SSH connection, wait for the initial banner/prompt to settle (drain
 /// phase), then send our ls command wrapped between unique markers so we
 /// can reliably extract the output.
-fn run_interactive_ls(argv: &[String], path: &str) -> Result<Output, String> {
+fn run_interactive_ls(
+    argv: &[String],
+    path: &str,
+    agent: Option<&std::path::Path>,
+) -> Result<Output, String> {
     use std::io::{Read, Write};
     use std::process::Stdio;
     use std::sync::mpsc;
@@ -171,7 +176,11 @@ fn run_interactive_ls(argv: &[String], path: &str) -> Result<Output, String> {
         "stty cols 300 rows 50 2>/dev/null\necho '{marker_start}'\n{ls_cmd}\necho '{marker_end}'\nexit\n"
     );
 
-    let mut child = std::process::Command::new(cmd_name)
+    let mut command = std::process::Command::new(cmd_name);
+    if let Some(sock) = agent {
+        command.env(SSH_AUTH_SOCK, sock);
+    }
+    let mut child = command
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -345,10 +354,10 @@ fn parse_sftp_output(output: &Output, path: &str) -> Result<Vec<RemoteFileEntry>
         let mut name = parts[name_parts_start..].join(" ");
         // `ls -l` renders symlinks as `name -> target`; keep only the name so
         // the derived path points at the link itself.
-        if permissions.starts_with('l') {
-            if let Some((link, _target)) = name.split_once(" -> ") {
-                name = link.to_string();
-            }
+        if permissions.starts_with('l')
+            && let Some((link, _target)) = name.split_once(" -> ")
+        {
+            name = link.to_string();
         }
         if name == "." || name == ".." {
             continue;
@@ -386,12 +395,15 @@ fn parse_sftp_output(output: &Output, path: &str) -> Result<Vec<RemoteFileEntry>
 /// Thin DB glue shared with the desktop GUI command; behavior (return shape,
 /// entry fields, error strings) is identical to the previous GUI-local
 /// implementation.
+///
+/// `config` is the caller's: its `auth.agent_socket`, when set, is the ssh-agent
+/// the listing's `ssh` uses.
 pub fn list_remote_directory(
+    config: &AppConfig,
     connection_name: &str,
     remote_path: &str,
 ) -> Result<Vec<RemoteFileEntry>, String> {
-    let config = AppConfig::load(None).map_err(|e| e.to_string())?;
-    let db = Database::new(&config).map_err(|e| e.to_string())?;
+    let db = Database::new(config).map_err(|e| e.to_string())?;
     let conn = db
         .connection(connection_name)
         .map_err(|e| format!("Database error: {e}"))?
@@ -411,12 +423,16 @@ pub fn list_remote_directory(
     let (argv, is_interactive) =
         build_ls_argv(&conn, &path, &config.transport.strict_host_key_checking);
 
+    let agent = config.auth.agent_socket.as_deref();
     let output = if is_interactive {
-        run_interactive_ls(&argv, &path)?
+        run_interactive_ls(&argv, &path, agent)?
     } else {
         let (cmd_name, args) = argv.split_first().ok_or("empty argv")?;
-        Command::new(cmd_name)
-            .args(args)
+        let mut cmd = Command::new(cmd_name);
+        if let Some(sock) = agent {
+            cmd.env(SSH_AUTH_SOCK, sock);
+        }
+        cmd.args(args)
             .output()
             .map_err(|e| format!("SSH command failed: {e}"))?
     };

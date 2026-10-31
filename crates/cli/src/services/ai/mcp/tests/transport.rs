@@ -3,8 +3,8 @@
 use super::support::std_kit;
 use crate::services::ai::mcp::server::build_server;
 use crate::services::ai::types::AiEvent;
-use rmcp::model::CallToolRequestParams;
 use rmcp::ServiceExt;
+use rmcp::model::CallToolRequestParams;
 use serde_json::json;
 
 #[tokio::test]
@@ -26,16 +26,18 @@ async fn mcp_round_trip_over_a_duplex_pipe() {
         Some("bssh-ai")
     );
     assert!(info.instructions.as_deref().unwrap().contains("untrusted_"));
-    assert!(info
-        .instructions
-        .as_deref()
-        .unwrap()
-        .contains("policy 'default' with the observe profile"));
-    assert!(k
-        .audit
-        .events()
-        .iter()
-        .any(|e| matches!(e, AiEvent::RunStarted { client, .. } if !client.is_empty())));
+    assert!(
+        info.instructions
+            .as_deref()
+            .unwrap()
+            .contains("policy 'default' with the observe profile")
+    );
+    assert!(
+        k.audit
+            .events()
+            .iter()
+            .any(|e| matches!(e, AiEvent::RunStarted { client, .. } if !client.is_empty()))
+    );
 
     let tools = client.list_all_tools().await.unwrap();
     // The observe profile hides the change tools.
@@ -51,9 +53,11 @@ async fn mcp_round_trip_over_a_duplex_pipe() {
     ] {
         assert!(!names.contains(&hidden), "{hidden} is hidden from observe");
     }
-    assert!(tools
-        .iter()
-        .all(|t| t.output_schema.is_some() && t.annotations.is_some()));
+    assert!(
+        tools
+            .iter()
+            .all(|t| t.output_schema.is_some() && t.annotations.is_some())
+    );
 
     let r = client
         .call_tool(CallToolRequestParams::new("list_hosts"))

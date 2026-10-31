@@ -2,7 +2,7 @@
 
 use crate::services::ai::analyzer::rules::Arg;
 
-use super::opts::{parse_opts, Spec};
+use super::opts::{Spec, parse_opts};
 use super::state::{Ctx, Walker};
 
 impl Walker {
@@ -42,7 +42,7 @@ impl Walker {
                             rest,
                             ctx,
                             format!("xargs: unknown option --{name}"),
-                        )
+                        );
                     }
                 }
                 continue;
@@ -77,7 +77,7 @@ impl Walker {
                             rest,
                             ctx,
                             format!("xargs: unknown option -{ch}"),
-                        )
+                        );
                     }
                 }
             }
@@ -161,7 +161,7 @@ impl Walker {
                             rest,
                             ctx,
                             format!("{prog}: unknown option --{other}"),
-                        )
+                        );
                     }
                 }
             } else if (t.starts_with('-') || t.starts_with('+')) && t.len() > 1 {
@@ -181,7 +181,7 @@ impl Walker {
                                 rest,
                                 ctx,
                                 format!("{prog}: unknown option {t}"),
-                            )
+                            );
                         }
                     }
                 }

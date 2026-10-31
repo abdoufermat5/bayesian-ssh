@@ -5,7 +5,7 @@ use crate::services::ai::ui::{self, Glyph, Style, Tone};
 use chrono::{DateTime, Utc};
 
 use super::context::{CallInfo, FeedContext};
-use super::words::{call_text, count, is_read, kind_word, oneline, CLOCK_W, HOST_W, KIND_W};
+use super::words::{CLOCK_W, HOST_W, KIND_W, call_text, count, is_read, kind_word, oneline};
 
 /// One line before it is laid out.
 #[derive(Debug, Clone, PartialEq, Eq)]

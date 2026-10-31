@@ -7,10 +7,10 @@ pub fn pick_key_file(window: tauri::WebviewWindow) -> Result<Option<String>, Com
         .set_title("Select SSH Private Key")
         .set_parent(&window);
 
-    if let Some(ref path) = ssh_dir {
-        if path.exists() {
-            dialog = dialog.set_directory(path);
-        }
+    if let Some(ref path) = ssh_dir
+        && path.exists()
+    {
+        dialog = dialog.set_directory(path);
     }
 
     let _ = window.minimize();
@@ -30,10 +30,10 @@ pub fn pick_ssh_config_file(window: tauri::WebviewWindow) -> Result<Option<Strin
         .add_filter("SSH Config", &["config", "conf"])
         .set_parent(&window);
 
-    if let Some(ref path) = ssh_dir {
-        if path.exists() {
-            dialog = dialog.set_directory(path);
-        }
+    if let Some(ref path) = ssh_dir
+        && path.exists()
+    {
+        dialog = dialog.set_directory(path);
     }
 
     let _ = window.minimize();

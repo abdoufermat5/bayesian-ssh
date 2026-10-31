@@ -1,4 +1,4 @@
-use super::broker::{short_subject, truncate, MAX_GRANT_HOURS};
+use super::broker::{MAX_GRANT_HOURS, short_subject, truncate};
 use super::*;
 use crate::services::ai::store::AiStore;
 use crate::services::ai::types::{
@@ -284,8 +284,8 @@ async fn grants_only_cover_a_single_call_with_a_host() {
     let b2 = b.clone();
     let h = tokio::spawn(async move { b2.request(request("q1", Tier::OutOfBand)).await });
     wait_pending(&b, 1).await;
-    assert!(b
-        .decide(
+    assert!(
+        b.decide(
             "q1",
             ApprovalOutcome::Approved {
                 by: "alice".into(),
@@ -293,7 +293,8 @@ async fn grants_only_cover_a_single_call_with_a_host() {
                 grant: Some(a_grant()),
             },
         )
-        .is_err());
+        .is_err()
+    );
     assert_eq!(b.pending_requests().len(), 1);
     b.decide("q1", approve("alice")).unwrap();
     h.await.unwrap().unwrap();
@@ -305,8 +306,8 @@ async fn grants_only_cover_a_single_call_with_a_host() {
     wait_pending(&b, 1).await;
     let mut g = a_grant();
     g.tool = ToolName::Run;
-    assert!(b
-        .decide(
+    assert!(
+        b.decide(
             "q1",
             ApprovalOutcome::Approved {
                 by: "alice".into(),
@@ -314,7 +315,8 @@ async fn grants_only_cover_a_single_call_with_a_host() {
                 grant: Some(g),
             },
         )
-        .is_err());
+        .is_err()
+    );
     b.decide("q1", approve("alice")).unwrap();
     h.await.unwrap().unwrap();
 }

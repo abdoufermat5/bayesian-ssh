@@ -1,16 +1,16 @@
 use super::audit::AuditQuery;
 use super::billing::{explain, org_message};
 use super::handle::Session;
-use super::identity::{init_interactive, load_identity, EmailCodePrompt, InitParams};
+use super::identity::{EmailCodePrompt, InitParams, init_interactive, load_identity};
 use super::local::{link_to_team_source, materialize_into};
-use super::removal::{plan_removal, ApprovedDevices};
+use super::removal::{ApprovedDevices, plan_removal};
 use crate::config::AppConfig;
 use crate::database::Database;
 use crate::models::{Connection, Source, SourceKind};
+use crate::services::teams::VaultView;
 use crate::services::teams::client::TeamsError;
 use crate::services::teams::crypto::{self, DeviceKeys};
 use crate::services::teams::store::{TeamLocal, TeamsStore};
-use crate::services::teams::VaultView;
 use anyhow::Result;
 use bssh_teams_proto::api::{
     AuditKind, ConnectionRecord, DeviceInfo, EmailCodeResponse, ErrorCode, Member, MemberKind,
@@ -568,7 +568,7 @@ async fn an_empty_line_mails_a_new_code() {
 // ── Audit verification and device revocation ────────────────────────────
 
 use bssh_teams_proto::api::{AuditEvent, AuditRecord};
-use bssh_teams_proto::layout::{audit_event_hash, AUDIT_GENESIS};
+use bssh_teams_proto::layout::{AUDIT_GENESIS, audit_event_hash};
 
 const MY_DEVICE: u128 = 6;
 
@@ -792,10 +792,12 @@ async fn revoking_this_device_removes_the_local_identity() {
     // This machine's own device: revoked, then forgotten here.
     assert!(s.revoke_device(Uuid::from_u128(MY_DEVICE)).await.unwrap());
     assert!(load_identity(store.database()).unwrap().is_none());
-    assert!(store
-        .sealed_device_keys(Uuid::from_u128(MY_DEVICE))
-        .unwrap()
-        .is_none());
+    assert!(
+        store
+            .sealed_device_keys(Uuid::from_u128(MY_DEVICE))
+            .unwrap()
+            .is_none()
+    );
     let seen = seen.lock().unwrap();
     assert!(
         seen[2].starts_with(&format!("DELETE /v1/devices/{other} ")),

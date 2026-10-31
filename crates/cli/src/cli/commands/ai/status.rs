@@ -6,7 +6,7 @@
 use crate::cli::parser_ai::AiArgsStatus;
 use crate::config::AppConfig;
 use crate::services::ai::ai_dir;
-use crate::services::ai::control_client::{connect_all, RunHello};
+use crate::services::ai::control_client::{RunHello, connect_all};
 use crate::services::ai::feed::event_run_id;
 use crate::services::ai::store::{AiStore, RunRecord};
 use crate::services::ai::types::{AiEvent, ApprovalRequest, Grant};
@@ -58,21 +58,20 @@ pub async fn execute(args: AiArgsStatus, config: AppConfig) -> Result<()> {
                 }
                 AiEvent::Call { call, .. } => {
                     calls += 1;
-                    if let Some(h) = &call.host {
-                        if !hosts.contains(h) {
-                            hosts.push(h.clone());
-                        }
+                    if let Some(h) = &call.host
+                        && !hosts.contains(h)
+                    {
+                        hosts.push(h.clone());
                     }
                 }
                 _ => {}
             }
         }
-        if on_behalf_of.is_none() {
-            if let Some(s) = &store {
-                if let Ok(Some(r)) = s.run(run_id) {
-                    on_behalf_of = Some(r.on_behalf_of);
-                }
-            }
+        if on_behalf_of.is_none()
+            && let Some(s) = &store
+            && let Ok(Some(r)) = s.run(run_id)
+        {
+            on_behalf_of = Some(r.on_behalf_of);
         }
         // Hosts it has touched; before its first call, the hosts in its scope.
         if hosts.is_empty() {

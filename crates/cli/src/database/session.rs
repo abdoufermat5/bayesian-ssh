@@ -1,4 +1,4 @@
-use crate::database::{escape_like, Database};
+use crate::database::{Database, escape_like};
 use crate::models::{Session, SessionStatusKind, SessionTextHit};
 use anyhow::Result;
 use rusqlite::params;

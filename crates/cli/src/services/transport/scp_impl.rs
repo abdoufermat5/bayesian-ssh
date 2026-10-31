@@ -17,6 +17,7 @@ use tokio::process::Command as TokioCommand;
 use tracing::{debug, info};
 
 use crate::models::Connection;
+use crate::services::auth::SSH_AUTH_SOCK;
 
 /// Template of the interactive-bastion SCP wrapper. `create_bastion_wrapper`
 /// substitutes the bastion, its port and the agent flag for each connection.
@@ -133,29 +134,32 @@ fn create_bastion_wrapper(conn: &Connection) -> Result<PathBuf> {
 
 /// Upload `local` to `remote_path` on the target behind the bastion.
 ///
-/// `recursive` enables `-r` for directory trees.
+/// `recursive` enables `-r` for directory trees; `agent` is the configured
+/// ssh-agent socket (`auth.agent_socket`), passed to scp when set.
 pub async fn scp_upload(
     conn: &Connection,
     local: &Path,
     remote_path: &str,
     recursive: bool,
+    agent: Option<&Path>,
 ) -> Result<()> {
     let mut argv = build_scp_argv(conn, local, remote_path, recursive, Direction::Upload)?;
     // The caller owns the terminal (progress bars): silence scp's own meter
     // and capture its diagnostics instead of letting them scribble over it.
     quiet_scp_argv(&mut argv);
-    run_scp(&argv, true).await
+    run_scp(&argv, true, agent).await
 }
 
-/// Download `remote_path` from the target to `local`.
+/// Download `remote_path` from the target to `local`; `agent` as in [`scp_upload`].
 pub async fn scp_download(
     conn: &Connection,
     remote_path: &str,
     local: &Path,
     recursive: bool,
+    agent: Option<&Path>,
 ) -> Result<()> {
     let argv = build_scp_argv(conn, local, remote_path, recursive, Direction::Download)?;
-    run_scp(&argv, false).await
+    run_scp(&argv, false, agent).await
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -269,13 +273,20 @@ fn quiet_scp_argv(argv: &mut Vec<String>) {
 
 /// Run scp. When `capture` is set, stdout is discarded and stderr is captured
 /// into the returned error instead of being written to the terminal.
-async fn run_scp(argv: &[String], capture: bool) -> Result<()> {
+async fn run_scp(argv: &[String], capture: bool, agent: Option<&Path>) -> Result<()> {
     let (cmd_name, args) = argv.split_first().expect("argv non-empty");
+    let command = || {
+        let mut cmd = TokioCommand::new(cmd_name);
+        if let Some(sock) = agent {
+            cmd.env(SSH_AUTH_SOCK, sock);
+        }
+        cmd
+    };
 
     info!("running: {} {}", cmd_name, args.join(" "));
 
     if capture {
-        let output = TokioCommand::new(cmd_name)
+        let output = command()
             .args(args)
             .stdin(Stdio::inherit())
             .stdout(Stdio::null())
@@ -297,7 +308,7 @@ async fn run_scp(argv: &[String], capture: bool) -> Result<()> {
         });
     }
 
-    let status = TokioCommand::new(cmd_name)
+    let status = command()
         .args(args)
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
@@ -351,10 +362,11 @@ mod tests {
         assert!(argv.contains(&"-O".to_string()));
         assert!(argv.contains(&"-P".to_string()));
         assert!(argv.contains(&"22".to_string()));
-        assert!(argv
-            .last()
-            .unwrap()
-            .contains("alice@target.example:/remote/file.txt"));
+        assert!(
+            argv.last()
+                .unwrap()
+                .contains("alice@target.example:/remote/file.txt")
+        );
     }
 
     #[test]

@@ -1,7 +1,7 @@
 //! Detached-output replay buffer helpers.
 
 use super::output::PtyChunk;
-use crate::commands::{PtySession, MAX_DETACHED_BUFFER_BYTES, REPLAY_TRIM_SLACK_BYTES};
+use crate::commands::{MAX_DETACHED_BUFFER_BYTES, PtySession, REPLAY_TRIM_SLACK_BYTES};
 use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
 

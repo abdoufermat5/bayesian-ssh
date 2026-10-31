@@ -44,11 +44,7 @@ pre{background:var(--soft);border:1px solid var(--border);padding:8px;white-spac
 
 /// Short columns (times, tools, hosts) stay on one line; long ones wrap.
 fn nowrap(c: &Col) -> &'static str {
-    if c.is_long() {
-        ""
-    } else {
-        " class=\"nw\""
-    }
+    if c.is_long() { "" } else { " class=\"nw\"" }
 }
 
 pub(super) fn to_html(doc: &Doc) -> String {

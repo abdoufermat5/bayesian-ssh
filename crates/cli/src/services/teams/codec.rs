@@ -2,7 +2,7 @@
 //! tested without real cryptography.
 
 use super::crypto::{self, DeviceKeys, TeamKey};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use bssh_teams_proto::api::{AuditDetail, AuditEvent, EncryptedEntry, VaultPayload, WrappedKey};
 use bssh_teams_proto::wire::PublicKey32;
 use std::collections::{BTreeMap, HashMap};
@@ -160,21 +160,21 @@ pub fn check_incoming_keys(
             }
             continue;
         }
-        if let Some(newest) = newest_stored {
-            if k.key_version < newest {
-                return Err(KeyCheckError::StaleVersion {
-                    version: k.key_version,
-                    newest_stored: newest,
-                });
-            }
+        if let Some(newest) = newest_stored
+            && k.key_version < newest
+        {
+            return Err(KeyCheckError::StaleVersion {
+                version: k.key_version,
+                newest_stored: newest,
+            });
         }
-        if let Some(current) = current_version {
-            if k.key_version > current {
-                return Err(KeyCheckError::AheadOfServer {
-                    version: k.key_version,
-                    current,
-                });
-            }
+        if let Some(current) = current_version
+            && k.key_version > current
+        {
+            return Err(KeyCheckError::AheadOfServer {
+                version: k.key_version,
+                current,
+            });
         }
         fresh.push(k.clone());
     }
@@ -381,14 +381,16 @@ mod tests {
         .expect("member unwraps a key signed by the pinned admin");
 
         // A wrap replayed for another team or device is refused before unwrapping.
-        assert!(unwrap_all(
-            Uuid::new_v4(),
-            member_id,
-            std::slice::from_ref(&wrapped),
-            &member,
-            &trust_root
-        )
-        .is_err());
+        assert!(
+            unwrap_all(
+                Uuid::new_v4(),
+                member_id,
+                std::slice::from_ref(&wrapped),
+                &member,
+                &trust_root
+            )
+            .is_err()
+        );
         assert!(unwrap_all(team, Uuid::new_v4(), &[wrapped], &member, &trust_root).is_err());
 
         let member_codec = CryptoCodec::new(

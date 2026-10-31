@@ -11,7 +11,7 @@ pub mod socks5;
 pub mod subprocess_impl;
 pub mod types;
 
-pub use dispatcher::{execute_with_fallback, pick_kind, TransportKind};
+pub use dispatcher::{TransportKind, execute_with_fallback, pick_kind};
 pub use russh_impl::RusshTransport;
 pub use sftp_impl::RusshSftpSession;
 pub use subprocess_impl::SubprocessTransport;

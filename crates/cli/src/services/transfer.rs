@@ -17,7 +17,7 @@ use tracing::{debug, info, warn};
 use crate::config::AppConfig;
 use crate::models::Connection;
 use crate::services::transport::scp_impl;
-use crate::services::transport::{pick_kind, TransportKind};
+use crate::services::transport::{TransportKind, pick_kind};
 
 const CHUNK_SIZE: usize = 256 * 1024; // 256 KiB
 const CHANNEL_CAP: usize = 16; // outstanding chunks in flight
@@ -565,7 +565,14 @@ impl TransferService {
             connection.host,
             remote_path,
         );
-        scp_impl::scp_upload(connection, local_path, remote_path, recursive).await
+        scp_impl::scp_upload(
+            connection,
+            local_path,
+            remote_path,
+            recursive,
+            self.config.auth.agent_socket.as_deref(),
+        )
+        .await
     }
 
     /// Download via SCP (bastion-aware).
@@ -582,7 +589,14 @@ impl TransferService {
             remote_path,
             local_path.display(),
         );
-        scp_impl::scp_download(connection, remote_path, local_path, recursive).await
+        scp_impl::scp_download(
+            connection,
+            remote_path,
+            local_path,
+            recursive,
+            self.config.auth.agent_socket.as_deref(),
+        )
+        .await
     }
 
     /// Returns `true` when SFTP is available for this connection, `false`
@@ -677,7 +691,7 @@ async fn open_no_follow_create(path: &Path) -> Result<tokio::fs::File> {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => {
-            return Err(anyhow::Error::from(e).context(format!("remove stale {}", path.display())))
+            return Err(anyhow::Error::from(e).context(format!("remove stale {}", path.display())));
         }
     }
     tokio::fs::OpenOptions::new()

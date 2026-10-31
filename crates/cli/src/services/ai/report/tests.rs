@@ -332,7 +332,9 @@ fn render_runs_plain_and_color() {
     let start1 = ui::day_clock("2026-10-24T17:23:00Z", now);
     let end1 = ui::clock_hm("2026-10-24T17:25:00Z");
     let start2 = ui::day_clock("2026-10-24T17:50:00Z", now);
-    let exp1 = format!("dddbee19   opencode 2.1.2   {start1}      38        1         1   ended {end1}, client left");
+    let exp1 = format!(
+        "dddbee19   opencode 2.1.2   {start1}      38        1         1   ended {end1}, client left"
+    );
     assert!(
         lines[1].contains(&exp1),
         "\nACTUAL:   {:?}\nEXPECTED: {:?}",

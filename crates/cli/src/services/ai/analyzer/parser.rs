@@ -3,7 +3,7 @@
 //! functions, `[[ ]]`, `(( ))`, redirections and here-docs.
 
 use super::ast::{Assign, GroupKind, Node, Redir, RedirKind, SimpleCmd, Word};
-use super::lexer::{lex, Heredoc, Op, Tok, Token, MAX_DEPTH};
+use super::lexer::{Heredoc, MAX_DEPTH, Op, Tok, Token, lex};
 
 /// Nesting limit for compound commands (guards the recursion).
 const MAX_NEST: usize = 48;

@@ -1,6 +1,6 @@
 use super::*;
 use crate::services::ai::types::Profile;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 
 fn opts<'a>(
@@ -58,9 +58,11 @@ fn claude_code_merges_without_clobbering_and_is_idempotent() {
         .filter(|e| e.file_name().to_string_lossy().contains("bssh-bak"))
         .collect();
     assert_eq!(baks.len(), 1);
-    assert!(std::fs::read_to_string(baks[0].path())
-        .unwrap()
-        .contains("numStartups"));
+    assert!(
+        std::fs::read_to_string(baks[0].path())
+            .unwrap()
+            .contains("numStartups")
+    );
     // Second run: no change, no new backup.
     let r2 = run_install(&o).unwrap();
     assert!(r2.contains("nothing to change"), "{r2}");

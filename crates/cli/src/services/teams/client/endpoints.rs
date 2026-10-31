@@ -1,8 +1,8 @@
 //! One method per `/v1` endpoint.
 
 use super::audit::audit_query_pairs;
-use super::error::{org_route, ClientResult};
-use super::http::{TeamsClient, MAX_POLL_WAIT_SECS};
+use super::error::{ClientResult, org_route};
+use super::http::{MAX_POLL_WAIT_SECS, TeamsClient};
 use bssh_teams_proto::api::{
     AcceptInviteRequest, AddOwnerRequest, AgentInfo, AuditListQuery, AuditRecord, BillingInfo,
     BillingRedirect, ChallengeRequest, ChallengeResponse, CheckoutRequest, CreateAccountRequest,

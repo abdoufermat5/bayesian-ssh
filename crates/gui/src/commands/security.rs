@@ -214,11 +214,11 @@ pub fn export_connections_payload(
         };
 
         let mut env_connections = Vec::new();
-        if let Ok(db) = Database::new(&env_cfg) {
-            if let Ok(conns) = db.list_connections(tag.as_deref(), false) {
-                total_connections_count += conns.len();
-                env_connections = conns;
-            }
+        if let Ok(db) = Database::new(&env_cfg)
+            && let Ok(conns) = db.list_connections(tag.as_deref(), false)
+        {
+            total_connections_count += conns.len();
+            env_connections = conns;
         }
 
         backup_environments.push(BackupEnvironmentData {

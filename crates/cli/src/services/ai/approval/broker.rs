@@ -194,10 +194,10 @@ impl LocalBroker {
 
     /// Persist the outcome and store the grant of an approval (already checked by `decide`).
     fn finish(&self, request_id: &str, outcome: ApprovalOutcome) -> ApprovalOutcome {
-        if let ApprovalOutcome::Approved { grant: Some(g), .. } = &outcome {
-            if let Err(e) = self.store.add_grant(g) {
-                tracing::warn!("could not store grant: {e}");
-            }
+        if let ApprovalOutcome::Approved { grant: Some(g), .. } = &outcome
+            && let Err(e) = self.store.add_grant(g)
+        {
+            tracing::warn!("could not store grant: {e}");
         }
         if let Err(e) = self.store.record_outcome(request_id, &outcome) {
             tracing::warn!("could not record approval outcome: {e}");
@@ -343,13 +343,13 @@ impl ApprovalBroker for LocalBroker {
                             by: "user".into(),
                             channel: "confirmed-in-client".into(),
                             grant: None,
-                        })
+                        });
                     }
                     Ok(Ok(Some(false))) => {
                         return Ok(ApprovalOutcome::Denied {
                             by: "user".into(),
                             reason: None,
-                        })
+                        });
                     }
                     Ok(Ok(None)) => tracing::debug!("client can't elicit; asking out of band"),
                     Ok(Err(e)) => tracing::warn!("elicitation failed ({e}); asking out of band"),

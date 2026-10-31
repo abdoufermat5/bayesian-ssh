@@ -1,5 +1,5 @@
-use super::open_db_and_config;
 use super::CommandError;
+use super::open_db_and_config;
 use bayesian_ssh::config::AppConfig;
 use bayesian_ssh::database::Database;
 use bayesian_ssh::models::Connection;
@@ -74,8 +74,8 @@ pub fn import_ssh_config(file: Option<String>) -> Result<usize, CommandError> {
         }
 
         if let Some(host) = line.strip_prefix("Host ") {
-            if let Some(prev) = current_host.take() {
-                if flush_host(
+            if let Some(prev) = current_host.take()
+                && flush_host(
                     prev,
                     current_hostname.take(),
                     current_user.take(),
@@ -83,9 +83,9 @@ pub fn import_ssh_config(file: Option<String>) -> Result<usize, CommandError> {
                     current_identity_file.take(),
                     &db,
                     &config,
-                )? {
-                    imported_count += 1;
-                }
+                )?
+            {
+                imported_count += 1;
             }
             current_host = Some(host.trim().to_string());
             current_hostname = None;
@@ -105,8 +105,8 @@ pub fn import_ssh_config(file: Option<String>) -> Result<usize, CommandError> {
         }
     }
 
-    if let Some(host) = current_host {
-        if flush_host(
+    if let Some(host) = current_host
+        && flush_host(
             host,
             current_hostname,
             current_user,
@@ -114,9 +114,9 @@ pub fn import_ssh_config(file: Option<String>) -> Result<usize, CommandError> {
             current_identity_file,
             &db,
             &config,
-        )? {
-            imported_count += 1;
-        }
+        )?
+    {
+        imported_count += 1;
     }
 
     Ok(imported_count)

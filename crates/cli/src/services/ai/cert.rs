@@ -15,7 +15,7 @@
 
 use crate::config::AppConfig;
 use crate::services::crypto;
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use rand::RngCore;
 use russh::keys::ssh_key::certificate::{Builder, CertType};
 use russh::keys::ssh_key::private::Ed25519Keypair;
@@ -146,10 +146,14 @@ pub fn key_body(openssh_line: &str) -> Option<&str> {
 }
 
 fn load_ca(config: &AppConfig) -> Result<PrivateKey> {
+    load_ca_with(config, std::env::var(CA_PASSPHRASE_ENV).ok())
+}
+
+/// [`load_ca`] with the [`CA_PASSPHRASE_ENV`] value passed in.
+fn load_ca_with(config: &AppConfig, passphrase: Option<String>) -> Result<PrivateKey> {
     let sealed = sealed_path(config);
     let key = if sealed.is_file() {
-        let pass = std::env::var(CA_PASSPHRASE_ENV)
-            .ok()
+        let pass = passphrase
             .filter(|p| !p.is_empty())
             .map(Zeroizing::new)
             .ok_or_else(|| {
@@ -592,18 +596,23 @@ mod tests {
         let sealed = std::fs::read(sealed_path(&config)).unwrap();
         assert!(!String::from_utf8_lossy(&sealed).contains("OPENSSH PRIVATE KEY"));
 
-        // `load_ca` reads the process environment; this is the only test that sets it.
-        std::env::remove_var(CA_PASSPHRASE_ENV);
-        let err = issue(&config, "id", Duration::from_secs(60), None).unwrap_err();
+        // The passphrase comes from the environment in `load_ca`; pass it directly
+        // here so the test never mutates the process environment.
+        let err = load_ca_with(&config, None).unwrap_err();
         assert!(err.to_string().contains(CA_PASSPHRASE_ENV), "{err}");
+        assert!(load_ca_with(&config, Some(String::new())).is_err());
+        assert!(load_ca_with(&config, Some("wrong passphrase".into())).is_err());
 
-        std::env::set_var(CA_PASSPHRASE_ENV, "wrong passphrase");
-        assert!(issue(&config, "id", Duration::from_secs(60), None).is_err());
-
-        std::env::set_var(CA_PASSPHRASE_ENV, "correct horse battery");
-        let issued = issue(&config, "id", Duration::from_secs(60), None);
-        std::env::remove_var(CA_PASSPHRASE_ENV);
-        let issued = issued.expect("issue with the right passphrase");
+        let ca_key = load_ca_with(&config, Some("correct horse battery".into()))
+            .expect("open the CA with the right passphrase");
+        let issued = issue_with_ca(
+            &ca_key,
+            "id",
+            Duration::from_secs(60),
+            None,
+            SystemTime::now(),
+        )
+        .expect("issue with the right passphrase");
         let ca = PublicKey::from_openssh(&pub_line).unwrap();
         verify_issued(
             &issued,
@@ -629,10 +638,10 @@ mod tests {
 #[cfg(test)]
 mod wire_tests {
     use super::*;
-    use russh::keys::ssh_key::private::Ed25519Keypair;
     use russh::keys::PublicKeyOrCertificate;
+    use russh::keys::ssh_key::private::Ed25519Keypair;
     use russh::server::{self, Auth, Msg, Server as _, Session};
-    use russh::{client, Channel, ChannelId};
+    use russh::{Channel, ChannelId, client};
     use std::sync::Arc;
     use tokio::net::TcpListener;
 

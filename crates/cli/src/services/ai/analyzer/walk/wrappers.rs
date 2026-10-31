@@ -3,7 +3,7 @@
 use crate::services::ai::analyzer::rules::{Arg, Class};
 use crate::services::ai::types::RiskTag;
 
-use super::opts::{is_assignment, parse_opts, Spec};
+use super::opts::{Spec, is_assignment, parse_opts};
 use super::state::{Ctx, Walker};
 
 impl Walker {
@@ -225,11 +225,11 @@ impl Walker {
             );
             return self.emit(text, rest, ctx, class);
         }
-        if prog == "flock" {
-            if let Some(cmd) = opts.value(&["-c", "--command"]) {
-                let cmd = cmd.to_string();
-                return self.script(&cmd, &ctx.wrapped("flock"));
-            }
+        if prog == "flock"
+            && let Some(cmd) = opts.value(&["-c", "--command"])
+        {
+            let cmd = cmd.to_string();
+            return self.script(&cmd, &ctx.wrapped("flock"));
         }
         let idx = opts.rest + positionals;
         let inner = rest.get(idx..).unwrap_or(&[]);

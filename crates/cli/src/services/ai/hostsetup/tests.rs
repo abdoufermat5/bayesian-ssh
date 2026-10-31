@@ -6,7 +6,7 @@ use crate::services::ai::jail::shell_quote;
 use crate::services::ai::types::{
     Enforcement, ExecLimits, ExecMode, ExecResult, Executor, JailKind, Policy, Profile,
 };
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use async_trait::async_trait;
 use std::path::Path;
 use std::process::Command;
@@ -328,11 +328,12 @@ fn trust_rolls_back_when_sshd_rejects_the_config() {
     assert!(err.contains("restoring the previous"), "{err}");
     assert_eq!(b.read("sshd_config"), original);
     assert!(!b.tmp.path().join("ssh/bssh_ai_ca.pub").exists());
-    assert!(!b
-        .tmp
-        .path()
-        .join("ssh/sshd_config.d/50-bssh-ai.conf")
-        .exists());
+    assert!(
+        !b.tmp
+            .path()
+            .join("ssh/sshd_config.d/50-bssh-ai.conf")
+            .exists()
+    );
     assert!(
         !b.tmp.path().join("systemctl.log").exists(),
         "no reload after a failed check"
@@ -495,7 +496,9 @@ impl Executor for Host {
             Ok(ok("bssh-ok\n"))
         } else if command.contains("getent passwd") {
             if self.agent {
-                Ok(ok("bssh-agent:x:998:998::/var/lib/bssh-agent:/bin/sh\nbssh-agent systemd-journal adm\n"))
+                Ok(ok(
+                    "bssh-agent:x:998:998::/var/lib/bssh-agent:/bin/sh\nbssh-agent systemd-journal adm\n",
+                ))
             } else {
                 Ok(fail(2))
             }
@@ -579,11 +582,12 @@ async fn untrusted_ca_means_no_certificate_enforcement() {
 async fn unreachable_host_is_reported_not_raised() {
     let r = check_host(&conn(), &Host::default(), Some(&ca_line())).await;
     assert!(!r.reachable);
-    assert!(r
-        .error
-        .as_deref()
-        .unwrap_or_default()
-        .contains("connection refused"));
+    assert!(
+        r.error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("connection refused")
+    );
 }
 
 #[test]

@@ -1,6 +1,6 @@
 //! Approval requests: in-client elicitation first, then the broker.
 
-use super::call_slot::{current_call_slot, CallSlot};
+use super::call_slot::{CallSlot, current_call_slot};
 use super::error::ToolError;
 use super::run_context::PendingInfo;
 use super::run_context::RunContext;
@@ -12,8 +12,8 @@ use crate::services::ai::types::{
     Tier, ToolCall,
 };
 use anyhow::Result;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 use tracing::{debug, warn};
 
@@ -142,36 +142,36 @@ impl RunContext {
         deadline: Instant,
     ) -> anyhow::Result<ApprovalOutcome> {
         if req.tier == Tier::InClient {
-            if let Some(e) = &self.deps.elicitor {
-                if e.can_elicit() {
-                    let left = deadline.saturating_duration_since(Instant::now());
-                    // A person who is not answering in their client should not hold the
-                    // tool call open for the whole window: hand it to the usual approvers.
-                    let attempt = if self.async_approvals() {
-                        left.min(IN_CLIENT_ATTEMPT)
-                    } else {
-                        left
-                    };
-                    match tokio::time::timeout(attempt, e.confirm(&req)).await {
-                        Ok(Ok(Some(true))) => {
-                            return Ok(ApprovalOutcome::Approved {
-                                by: "user".into(),
-                                channel: "confirmed-in-client".into(),
-                                grant: None,
-                            })
-                        }
-                        Ok(Ok(Some(false))) => {
-                            return Ok(ApprovalOutcome::Denied {
-                                by: "user".into(),
-                                reason: None,
-                            })
-                        }
-                        Ok(Ok(None)) => debug!("client can't elicit; asking out of band"),
-                        Ok(Err(e)) => {
-                            warn!("elicitation failed ({e}); asking out of band")
-                        }
-                        Err(_) => debug!("client did not answer; asking out of band"),
+            if let Some(e) = &self.deps.elicitor
+                && e.can_elicit()
+            {
+                let left = deadline.saturating_duration_since(Instant::now());
+                // A person who is not answering in their client should not hold the
+                // tool call open for the whole window: hand it to the usual approvers.
+                let attempt = if self.async_approvals() {
+                    left.min(IN_CLIENT_ATTEMPT)
+                } else {
+                    left
+                };
+                match tokio::time::timeout(attempt, e.confirm(&req)).await {
+                    Ok(Ok(Some(true))) => {
+                        return Ok(ApprovalOutcome::Approved {
+                            by: "user".into(),
+                            channel: "confirmed-in-client".into(),
+                            grant: None,
+                        });
                     }
+                    Ok(Ok(Some(false))) => {
+                        return Ok(ApprovalOutcome::Denied {
+                            by: "user".into(),
+                            reason: None,
+                        });
+                    }
+                    Ok(Ok(None)) => debug!("client can't elicit; asking out of band"),
+                    Ok(Err(e)) => {
+                        warn!("elicitation failed ({e}); asking out of band")
+                    }
+                    Err(_) => debug!("client did not answer; asking out of band"),
                 }
             }
             req.tier = Tier::OutOfBand;

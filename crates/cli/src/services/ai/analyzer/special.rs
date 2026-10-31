@@ -768,19 +768,20 @@ fn curl(prog: &str, args: &[Arg]) -> Class {
             match name {
                 "config" => return Class::unknown(prog, "curl --config can hold any option"),
                 "request" => {
-                    if let Some(m) = take(&mut i) {
-                        if !matches!(m.to_ascii_uppercase().as_str(), "GET" | "HEAD" | "OPTIONS") {
-                            add(&mut tags, RiskTag::ExfilRisk);
-                            rule = "curl (sends data)";
-                        }
+                    if let Some(m) = take(&mut i)
+                        && !matches!(m.to_ascii_uppercase().as_str(), "GET" | "HEAD" | "OPTIONS")
+                    {
+                        add(&mut tags, RiskTag::ExfilRisk);
+                        rule = "curl (sends data)";
                     }
                 }
                 "output" | "dump-header" | "cookie-jar" | "trace" | "trace-ascii" | "stderr"
                 | "libcurl" => {
-                    if let Some(v) = take(&mut i) {
-                        if v != "-" && v != "/dev/null" {
-                            add(&mut tags, RiskTag::Write);
-                        }
+                    if let Some(v) = take(&mut i)
+                        && v != "-"
+                        && v != "/dev/null"
+                    {
+                        add(&mut tags, RiskTag::Write);
                     }
                 }
                 "remote-name" | "remote-name-all" | "remote-header-name" | "create-dirs" => {
@@ -823,14 +824,14 @@ fn curl(prog: &str, args: &[Arg]) -> Class {
                         break;
                     }
                     'X' => {
-                        if let Some(m) = value {
-                            if !matches!(
+                        if let Some(m) = value
+                            && !matches!(
                                 m.to_ascii_uppercase().as_str(),
                                 "GET" | "HEAD" | "OPTIONS"
-                            ) {
-                                add(&mut tags, RiskTag::ExfilRisk);
-                                rule = "curl (sends data)";
-                            }
+                            )
+                        {
+                            add(&mut tags, RiskTag::ExfilRisk);
+                            rule = "curl (sends data)";
                         }
                         break;
                     }

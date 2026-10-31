@@ -2,8 +2,9 @@
 
 use crate::cli::parser_ai::AiArgsExplain;
 use crate::config::AppConfig;
+use crate::services::SshService;
 use crate::services::ai::analyzer::ShellAnalyzer;
-use crate::services::ai::effects::{effects, Verb};
+use crate::services::ai::effects::{Verb, effects};
 use crate::services::ai::policy::{self, DefaultPolicyEngine};
 use crate::services::ai::store::AiStore;
 use crate::services::ai::types::{
@@ -11,7 +12,6 @@ use crate::services::ai::types::{
     Tier, ToolCall, ToolName,
 };
 use crate::services::ai::ui::{self, Glyph, Style, Tone, Verdict};
-use crate::services::SshService;
 use anyhow::Result;
 use std::sync::Arc;
 

@@ -8,10 +8,10 @@
 //! the desktop app (grants, history).
 
 use super::types::{ApprovalOutcome, ApprovalRequest, Grant, ToolName};
-use crate::config::{enforce_secure_dir, enforce_secure_file, AppConfig};
+use crate::config::{AppConfig, enforce_secure_dir, enforce_secure_file};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
@@ -631,12 +631,13 @@ mod tests {
         assert!(!s.revoke_grant("g1").unwrap());
         assert!(!s.revoke_grant("missing").unwrap());
         assert_eq!(s.active_grants(Some("r1")).unwrap().len(), 1);
-        assert!(s
-            .add_grant(&Grant {
+        assert!(
+            s.add_grant(&Grant {
                 grant_id: String::new(),
                 ..grant("x", None, 1)
             })
-            .is_err());
+            .is_err()
+        );
     }
 
     #[test]

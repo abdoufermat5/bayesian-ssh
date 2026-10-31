@@ -1,9 +1,9 @@
 use super::decisions::reason;
 use crate::services::ai::analyzer::ShellAnalyzer;
 use crate::services::ai::policy::candidates::path_candidates;
-use crate::services::ai::policy::deny_paths::{deny_path_hit, Candidate, Expansion, PathHit};
-use crate::services::ai::policy::glob::{glob_match, normalize_path, GlobMode};
-use crate::services::ai::policy::{builtin_profile, parse_duration, DefaultPolicyEngine};
+use crate::services::ai::policy::deny_paths::{Candidate, Expansion, PathHit, deny_path_hit};
+use crate::services::ai::policy::glob::{GlobMode, glob_match, normalize_path};
+use crate::services::ai::policy::{DefaultPolicyEngine, builtin_profile, parse_duration};
 use crate::services::ai::store::AiStore;
 use crate::services::ai::types::{
     Analysis, Analyzer, Decision, Enforcement, Grant, HostFacts, Policy, PolicyEngine, Profile,

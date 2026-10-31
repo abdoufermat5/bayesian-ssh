@@ -3,9 +3,9 @@
 use super::convert::{exit_text, reds, to_value};
 use super::exec::exec_out;
 use super::inputs::{ObserveArgs, ReadFileArgs, SearchLogsArgs};
-use super::outputs::{FileOut, ObserveOut, NOTICE};
+use super::outputs::{FileOut, NOTICE, ObserveOut};
 use crate::models::Connection;
-use crate::services::ai::mcp::context::{merge_redactions, RunContext, ToolError, ToolResult};
+use crate::services::ai::mcp::context::{RunContext, ToolError, ToolResult, merge_redactions};
 use crate::services::ai::mcp::util::{normalize_path, sh_quote, valid_since, valid_unit};
 use crate::services::ai::observe;
 use crate::services::ai::types::{ExecLimits, ExecMode, ToolName};
@@ -199,10 +199,10 @@ pub(super) async fn read_file(ctx: &Arc<RunContext>, a: ReadFileArgs) -> ToolRes
 /// Build the shell line for `search_logs`. Everything agent-supplied is validated or quoted.
 pub fn log_command(a: &SearchLogsArgs, lines: u32) -> Result<String, ToolError> {
     let pattern = a.pattern.as_deref().filter(|p| !p.is_empty());
-    if let Some(p) = pattern {
-        if p.len() > 512 || p.contains('\0') {
-            return Err(ToolError::Invalid("pattern too long".into()));
-        }
+    if let Some(p) = pattern
+        && (p.len() > 512 || p.contains('\0'))
+    {
+        return Err(ToolError::Invalid("pattern too long".into()));
     }
     if a.source.starts_with('/') {
         if a.since.is_some() {
@@ -255,10 +255,10 @@ pub(super) async fn search_logs(ctx: &Arc<RunContext>, a: SearchLogsArgs) -> Too
         path.clone(),
         json!({ "host": a.host, "source": a.source, "pattern": a.pattern, "since": a.since, "lines": lines }),
     );
-    if let Some(p) = path.as_deref().and_then(|p| normalize_path(p).ok()) {
-        if let Some(why) = ctx.path_denied(&p) {
-            return Err(ctx.deny_call(&call, &format!("{p}: {why}")));
-        }
+    if let Some(p) = path.as_deref().and_then(|p| normalize_path(p).ok())
+        && let Some(why) = ctx.path_denied(&p)
+    {
+        return Err(ctx.deny_call(&call, &format!("{p}: {why}")));
     }
     let conn = ctx.resolve_host(&a.host).await?;
     let facts = ctx.facts(&conn).await;

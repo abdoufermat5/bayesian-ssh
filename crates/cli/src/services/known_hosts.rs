@@ -3,7 +3,7 @@
 //! Supports both plain (`hostname key-type base64-key`) and hashed
 //! (`|1|base64-salt|base64-hash`) entries as written by OpenSSH.
 
-use base64::{engine::general_purpose::STANDARD as B64, Engine};
+use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use hmac::{Hmac, Mac};
 use sha1::Digest;
 use sha2::Sha256;
@@ -18,7 +18,9 @@ type HmacSha1 = Hmac<sha1::Sha1>;
 pub enum KnownHostsError {
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
-    #[error("host key mismatch for {host}: remote key has fingerprint {remote_fp}, stored is {stored_fp}")]
+    #[error(
+        "host key mismatch for {host}: remote key has fingerprint {remote_fp}, stored is {stored_fp}"
+    )]
     KeyMismatch {
         host: String,
         remote_fp: String,

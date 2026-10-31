@@ -51,9 +51,11 @@ fn an_explicit_policy_with_an_empty_scope_warns_but_the_builtin_default_does_not
     assert!(w[0].contains("\"*\""), "names the wildcard: {w:?}");
 
     // `default` is explicit here, so it is checked like any other policy.
-    assert!(validation_warnings_in(None, &config, "default")
-        .iter()
-        .any(|m| m.contains("empty scope")));
+    assert!(
+        validation_warnings_in(None, &config, "default")
+            .iter()
+            .any(|m| m.contains("empty scope"))
+    );
     // With no explicit default, the built-in observe policy covers every host.
     let builtin = config_with(r#"{"policies":{}}"#);
     assert!(validation_warnings_in(None, &builtin, "default").is_empty());

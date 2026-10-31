@@ -38,10 +38,12 @@ impl Word {
     /// Reserved-word candidate: one unquoted literal part.
     pub fn reserved(&self) -> Option<&str> {
         match self.parts.as_slice() {
-            [Part::Lit {
-                text,
-                quoted: false,
-            }] => Some(text.as_str()),
+            [
+                Part::Lit {
+                    text,
+                    quoted: false,
+                },
+            ] => Some(text.as_str()),
             _ => None,
         }
     }

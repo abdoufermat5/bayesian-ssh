@@ -1,12 +1,12 @@
 //! `bssh teams device`: revoking a device for good.
 
-use super::passphrase::{passphrase, Passphrase};
+use super::passphrase::{Passphrase, passphrase};
 use crate::cli::parser::TeamsDeviceCommands;
 use crate::cli::utils::confirm;
 use crate::config::AppConfig;
-use crate::services::teams::session::{self, Session};
 use crate::services::teams::TeamsStore;
-use anyhow::{anyhow, Result};
+use crate::services::teams::session::{self, Session};
+use anyhow::{Result, anyhow};
 
 /// Revokes the device named on the command line, confirming first.
 ///

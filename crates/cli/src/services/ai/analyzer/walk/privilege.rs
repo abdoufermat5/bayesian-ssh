@@ -3,7 +3,7 @@
 use crate::services::ai::analyzer::rules::{Arg, Class};
 use crate::services::ai::types::RiskTag;
 
-use super::opts::{is_assignment, parse_opts, Spec};
+use super::opts::{Spec, is_assignment, parse_opts};
 use super::state::{Ctx, Walker};
 
 impl Walker {

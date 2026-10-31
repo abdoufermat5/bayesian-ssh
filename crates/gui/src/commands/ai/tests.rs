@@ -1,9 +1,9 @@
-use super::hub::{build_grant, AiHub, RunHello, MAX_CLOSED_RUNS, MAX_GRANT_MINUTES};
-use super::sink::{notification_body, HubSink};
+use super::hub::{AiHub, MAX_CLOSED_RUNS, MAX_GRANT_MINUTES, RunHello, build_grant};
+use super::sink::{HubSink, notification_body};
 use super::socket::Discovery;
 use super::types::{RunSummary, StoredEvent};
-use bayesian_ssh::services::ai::ipc::ServerMsg;
 use bayesian_ssh::services::ai::ipc::IPC_VERSION;
+use bayesian_ssh::services::ai::ipc::ServerMsg;
 use bayesian_ssh::services::ai::types::{
     AiEvent, ApprovalOutcome, ApprovalRequest, ApprovalSubject, Decision, RiskTag, ToolName,
 };
@@ -15,8 +15,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixListener;
-use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc::unbounded_channel;
 
 #[derive(Default)]
 struct Recorder {

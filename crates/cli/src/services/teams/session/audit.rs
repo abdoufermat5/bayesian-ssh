@@ -2,9 +2,9 @@
 
 use super::handle::Session;
 use crate::services::teams::audit::{
-    check_event, ChainProblem, ChainSummary, ChainVerifier, EventCheck,
+    ChainProblem, ChainSummary, ChainVerifier, EventCheck, check_event,
 };
-use crate::services::teams::client::{walk_audit_pages, AuditWalk};
+use crate::services::teams::client::{AuditWalk, walk_audit_pages};
 use crate::services::teams::read_vault;
 use anyhow::Result;
 use bssh_teams_proto::api::{AuditKind, AuditListQuery, AuditOrder};

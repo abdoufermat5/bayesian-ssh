@@ -8,10 +8,10 @@ use crate::cli::parser_ai::AiArgsSetup;
 use crate::cli::utils::{confirm, resolve_connection};
 use crate::config::AppConfig;
 use crate::models::Connection;
+use crate::services::SshService;
 use crate::services::ai::exec::AiExecutor;
 use crate::services::ai::hostsetup;
-use crate::services::SshService;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 /// Targets of a host command: one connection by name, or every connection with a tag.
 ///

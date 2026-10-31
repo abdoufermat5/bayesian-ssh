@@ -1,7 +1,7 @@
 use crate::database::Database;
 use crate::models::Connection;
-use anyhow::{anyhow, Result};
-use rusqlite::{params, OptionalExtension};
+use anyhow::{Result, anyhow};
+use rusqlite::{OptionalExtension, params};
 use tracing::info;
 
 impl Database {

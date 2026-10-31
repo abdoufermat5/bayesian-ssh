@@ -6,13 +6,13 @@ use crate::services::ai::types::{
     Analysis, ApprovalSubject, ChangePlan, Decision, HostFacts, Step, StepAction, Tier, ToolCall,
     ToolName,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::input::{
-    action_verb, build_plan, plan_hosts, step_command, step_host, step_kind, step_tool,
-    ProposeInput,
+    ProposeInput, action_verb, build_plan, plan_hosts, step_command, step_host, step_kind,
+    step_tool,
 };
 use super::store::{ChangeRecord, PlanEntry, PlanState};
 
@@ -65,10 +65,10 @@ pub async fn propose(ctx: &Arc<RunContext>, input: ProposeInput) -> ToolResult {
     // Hosts in scope, once each.
     let mut conns: HashMap<String, crate::models::Connection> = HashMap::new();
     for s in plan.steps.iter().chain(&plan.verify).chain(&plan.rollback) {
-        if let Some(h) = &s.host {
-            if !conns.contains_key(h) {
-                conns.insert(h.clone(), ctx.resolve_host(h).await?);
-            }
+        if let Some(h) = &s.host
+            && !conns.contains_key(h)
+        {
+            conns.insert(h.clone(), ctx.resolve_host(h).await?);
         }
     }
     let user_of = |s: &Step| -> String {
@@ -87,10 +87,10 @@ pub async fn propose(ctx: &Arc<RunContext>, input: ProposeInput) -> ToolResult {
         json!({ "change_id": plan.change_id, "title": plan.title, "plan_hash": plan.hash() }),
     );
     for s in plan.steps.iter().chain(&plan.rollback) {
-        if let StepAction::EditFile { path, .. } = &s.action {
-            if let Some(why) = ctx.path_denied(path) {
-                return Err(ctx.deny_call(&propose_call, &format!("{}: {path}: {why}", s.id)));
-            }
+        if let StepAction::EditFile { path, .. } = &s.action
+            && let Some(why) = ctx.path_denied(path)
+        {
+            return Err(ctx.deny_call(&propose_call, &format!("{}: {path}: {why}", s.id)));
         }
     }
 

@@ -14,7 +14,7 @@ use tracing::warn;
 use super::edit::{do_edit, restore_edit};
 use super::input::{action_verb, plan_hosts, service_command, step_host, step_kind};
 use super::propose::tool_call_for_step;
-use super::store::{backups_dir, persist_record, PlanState, StepRecord};
+use super::store::{PlanState, StepRecord, backups_dir, persist_record};
 
 /// Output kept per step in results and records.
 const STEP_OUTPUT_CHARS: usize = 2000;
@@ -282,7 +282,7 @@ pub async fn apply(ctx: &Arc<RunContext>, change_id: &str) -> ToolResult {
         s => {
             return Err(ToolError::Invalid(format!(
                 "change is already {s:?}; propose a new change for further edits"
-            )))
+            )));
         }
     }
     let plan = entry.plan.clone();

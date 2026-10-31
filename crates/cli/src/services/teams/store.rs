@@ -2,15 +2,15 @@
 //! v8). Only ciphertext and wrapped keys are stored: team keys are never
 //! written unwrapped, and vault entries are decrypted on read.
 
-use super::codec::{check_incoming_keys, VaultCodec};
+use super::codec::{VaultCodec, check_incoming_keys};
 use crate::config::AppConfig;
 use crate::database::Database;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use bssh_teams_proto::api::{AuditActor, AuditEvent, AuditKind, EncryptedEntry, WrappedKey};
-use bssh_teams_proto::layout::{audit_event_hash, AUDIT_GENESIS};
+use bssh_teams_proto::layout::{AUDIT_GENESIS, audit_event_hash};
 use bssh_teams_proto::wire::{Fixed, PublicKey32};
 use chrono::{DateTime, SubsecRound, Utc};
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{OptionalExtension, params};
 use uuid::Uuid;
 
 /// Tables added by schema v8. Run once by `Database::migrate_v8_teams_tables`.
@@ -717,9 +717,11 @@ mod tests {
         // A stale snapshot does not remove a newer edit.
         let stale = serde_json::to_string(&entry(id, 0, 0, 1)).unwrap();
         assert!(!store.remove_outbox_exact(team, id, &stale).unwrap());
-        assert!(store
-            .remove_outbox_exact(team, id, &rows[0].sealed_json)
-            .unwrap());
+        assert!(
+            store
+                .remove_outbox_exact(team, id, &rows[0].sealed_json)
+                .unwrap()
+        );
         assert!(store.outbox(team).unwrap().is_empty());
     }
 

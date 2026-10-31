@@ -278,7 +278,7 @@ pub fn verify(config: &AppConfig) -> Result<VerifyReport> {
                 ok: false,
                 first_bad: None,
                 error: Some(format!("{e:#}")),
-            })
+            });
         }
     };
     let total = raw.len() as u64;

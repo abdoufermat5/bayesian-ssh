@@ -9,7 +9,7 @@ use crate::services::ai::mcp::util::parse_duration;
 use crate::services::ai::types::{
     AiEvent, ApprovalSubject, Decision, HostFacts, Scope, Tier, ToolName,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::warn;
