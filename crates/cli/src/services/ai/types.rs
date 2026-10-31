@@ -454,7 +454,10 @@ pub struct Grant {
     pub expires_at: String,
 }
 
-#[expect(clippy::double_must_use, reason = "pending refactor")]
+#[expect(
+    clippy::double_must_use,
+    reason = "`#[async_trait]` expands the async method into a must_use boxed future that also carries its own must_use; the duplicate comes from the macro"
+)]
 #[async_trait]
 pub trait ApprovalBroker: Send + Sync {
     /// Blocks until approved, denied or expired.
@@ -512,7 +515,10 @@ impl ExecMode {
     }
 }
 
-#[expect(clippy::double_must_use, reason = "pending refactor")]
+#[expect(
+    clippy::double_must_use,
+    reason = "`#[async_trait]` expands the async method into a must_use boxed future that also carries its own must_use; the duplicate comes from the macro"
+)]
 #[async_trait]
 pub trait Executor: Send + Sync {
     async fn exec(

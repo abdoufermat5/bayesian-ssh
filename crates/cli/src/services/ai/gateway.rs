@@ -305,11 +305,22 @@ pub struct ServeOptions {
 /// How often the gateway re-syncs the vault, re-checks the policy and the agent's membership.
 const WATCH_INTERVAL: Duration = Duration::from_secs(60);
 
-pub fn check_listen(listen: &str, allow_remote: bool) -> Result<SocketAddr> {
+/// Which addresses the gateway may listen on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Bind {
+    LoopbackOnly,
+    AnyAddress,
+}
+
+/// Parse `--listen` and refuse a non-loopback address unless `bind` allows it.
+///
+/// # Errors
+/// The address does not parse, or is not loopback while `bind` is [`Bind::LoopbackOnly`].
+pub fn check_listen(listen: &str, bind: Bind) -> Result<SocketAddr> {
     let addr: SocketAddr = listen
         .parse()
         .with_context(|| format!("invalid --listen '{listen}' (expected ip:port)"))?;
-    if !addr.ip().is_loopback() && !allow_remote {
+    if !addr.ip().is_loopback() && bind == Bind::LoopbackOnly {
         bail!(
             "refusing to listen on {addr}: the gateway speaks plain HTTP. Keep it on localhost \
              and put a reverse proxy with TLS in front (nginx, caddy), or pass --allow-remote \
@@ -348,7 +359,14 @@ fn untrusted_scope_tags_warning(
 
 /// Run the gateway until Ctrl-C.
 pub async fn serve(config: AppConfig, opts: ServeOptions, backend: &dyn McpBackend) -> Result<()> {
-    let addr = check_listen(&opts.listen, opts.allow_remote)?;
+    let addr = check_listen(
+        &opts.listen,
+        if opts.allow_remote {
+            Bind::AnyAddress
+        } else {
+            Bind::LoopbackOnly
+        },
+    )?;
     let cred = crate::services::teams::agent::find_credential(&config, &opts.agent)?;
     let runtime = Arc::new(AgentRuntime::new(cred)?);
     runtime
@@ -589,11 +607,11 @@ mod tests {
 
     #[test]
     fn listen_address_policy() {
-        assert!(check_listen("127.0.0.1:8765", false).is_ok());
-        assert!(check_listen("[::1]:8765", false).is_ok());
-        assert!(check_listen("0.0.0.0:8765", false).is_err());
-        assert!(check_listen("10.0.0.5:8765", true).is_ok());
-        assert!(check_listen("nope", false).is_err());
+        assert!(check_listen("127.0.0.1:8765", Bind::LoopbackOnly).is_ok());
+        assert!(check_listen("[::1]:8765", Bind::LoopbackOnly).is_ok());
+        assert!(check_listen("0.0.0.0:8765", Bind::LoopbackOnly).is_err());
+        assert!(check_listen("10.0.0.5:8765", Bind::AnyAddress).is_ok());
+        assert!(check_listen("nope", Bind::LoopbackOnly).is_err());
     }
 
     async fn start(state: Arc<GatewayState>, backend: &dyn McpBackend) -> String {
