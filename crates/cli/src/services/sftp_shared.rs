@@ -12,7 +12,9 @@
 use crate::config::AppConfig;
 use crate::database::Database;
 use crate::models::Connection;
-use crate::services::transport::subprocess_impl::{jump_proxy_command, ssh_strict_host_key_value};
+use crate::services::transport::subprocess_impl::{
+    jump_proxy_command, ssh_strict_host_key_value, HopOptions,
+};
 use serde::{Deserialize, Serialize};
 use std::process::{Command, Output};
 
@@ -78,7 +80,7 @@ fn build_ls_argv(conn: &Connection, path: &str, shkc: &str) -> (Vec<String>, boo
             argv.push("-o".into());
             argv.push(format!(
                 "ProxyCommand={}",
-                jump_proxy_command(conn, "", shkc)
+                jump_proxy_command(conn, "", shkc, &HopOptions::default())
             ));
             argv.push("-p".into());
             argv.push(conn.port.to_string());

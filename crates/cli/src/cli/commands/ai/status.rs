@@ -103,7 +103,8 @@ fn event_run_id(e: &AiEvent) -> &str {
         | AiEvent::Approval { run_id, .. }
         | AiEvent::Result { run_id, .. }
         | AiEvent::Change { run_id, .. }
-        | AiEvent::CircuitBreaker { run_id, .. }
+        | AiEvent::Paused { run_id, .. }
+        | AiEvent::Resumed { run_id, .. }
         | AiEvent::RunEnded { run_id, .. } => run_id,
         AiEvent::Call { call, .. } => &call.run_id,
     }

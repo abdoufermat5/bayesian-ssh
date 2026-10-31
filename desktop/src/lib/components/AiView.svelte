@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Bot, OctagonX } from "lucide-svelte";
+  import { Bot, OctagonX, Play } from "lucide-svelte";
   import type { AiRun } from "$lib/types";
   import {
     getAiEvents,
@@ -8,6 +8,7 @@
     getAiRuns,
     openApproval,
     pendingApprovals,
+    resumeAiRun,
     revokeAiGrant,
     stopAiRun,
   } from "$lib/stores/ai.svelte";
@@ -33,6 +34,7 @@
   let selectedId = $state<string | null>(null);
   let now = $state(Date.now());
   let stopping = $state(false);
+  let resuming = $state(false);
 
   const runs = $derived(getAiRuns());
   const selected = $derived<AiRun | null>(getAiRun(selectedId) ?? runs[0] ?? null);
@@ -50,6 +52,7 @@
   function status(run: AiRun): { label: string; live: boolean; title: string } {
     if (run.ended !== null) return { label: "Ended", live: false, title: run.ended };
     if (!run.connected) return { label: "Disconnected", live: false, title: "The run's process closed its socket" };
+    if (run.paused) return { label: "Paused", live: false, title: run.pause_reason ?? "Paused by the circuit breaker" };
     return { label: "Active", live: true, title: "Connected" };
   }
 
@@ -62,6 +65,18 @@
       notify(`Could not stop the run: ${err}`, "error");
     } finally {
       stopping = false;
+    }
+  }
+
+  async function resume(run: AiRun) {
+    resuming = true;
+    try {
+      await resumeAiRun(run.run_id);
+      notify("Resume sent. The run can make tool calls again.", "success");
+    } catch (err) {
+      notify(`Could not resume the run: ${err}`, "error");
+    } finally {
+      resuming = false;
     }
   }
 
@@ -102,7 +117,11 @@
       <div class="empty-state h-full">
         <div class="empty-state-icon"><Bot size={18} /></div>
         <div class="empty-state-title">No agent is connected</div>
-        <p class="empty-state-desc">Runs appear here while an agent works through <span class="mono">bssh ai mcp</span>.</p>
+        <p class="empty-state-desc">
+          Set one up with <span class="mono">bssh ai install claude-code</span> (or codex, cursor,
+          vscode, claude-desktop, omp), then restart it. Runs appear here while it works through
+          bssh.
+        </p>
       </div>
     {:else}
       <div class="grid items-start gap-4 lg:grid-cols-[minmax(260px,340px)_minmax(0,1fr)]">
@@ -146,16 +165,30 @@
                   <h2 class="panel-title truncate" title={selected.client}>{selected.client || "Unknown agent"}</h2>
                   <span class="badge {st.live ? 'badge-accent' : 'badge-neutral'}" title={st.title}>{st.label}</span>
                 </div>
-                <button
-                  type="button"
-                  class="btn btn-danger"
-                  disabled={!live || stopping}
-                  title={live ? "End this run now" : "The run is no longer connected"}
-                  onclick={() => stop(selected)}
-                >
-                  <OctagonX size={14} />
-                  Stop run
-                </button>
+                <div class="flex items-center gap-2">
+                  {#if selected.paused}
+                    <button
+                      type="button"
+                      class="btn btn-primary"
+                      disabled={stopping || resuming}
+                      title={selected.pause_reason ?? "Resume this paused run"}
+                      onclick={() => resume(selected)}
+                    >
+                      <Play size={14} />
+                      Resume
+                    </button>
+                  {/if}
+                  <button
+                    type="button"
+                    class="btn btn-danger"
+                    disabled={!live || stopping}
+                    title={live ? "End this run now" : "The run is no longer connected"}
+                    onclick={() => stop(selected)}
+                  >
+                    <OctagonX size={14} />
+                    Stop run
+                  </button>
+                </div>
               </div>
               <dl class="panel-body m-0 grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-4">
                 <div>

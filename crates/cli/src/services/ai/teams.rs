@@ -174,9 +174,10 @@ CREATE TABLE IF NOT EXISTS ai_audit_runs (
 /// Which audit kind an event is filed under.
 pub fn kind_of(event: &AiEvent) -> AuditKind {
     match event {
-        AiEvent::RunStarted { .. } | AiEvent::CircuitBreaker { .. } | AiEvent::RunEnded { .. } => {
-            AuditKind::AiRun
-        }
+        AiEvent::RunStarted { .. }
+        | AiEvent::Paused { .. }
+        | AiEvent::Resumed { .. }
+        | AiEvent::RunEnded { .. } => AuditKind::AiRun,
         AiEvent::Call { .. } | AiEvent::Result { .. } => AuditKind::AiCall,
         AiEvent::Approval { .. } => AuditKind::AiApproval,
         AiEvent::Change { .. } => AuditKind::AiChange,
@@ -189,7 +190,8 @@ fn run_id_of(event: &AiEvent) -> &str {
         | AiEvent::Approval { run_id, .. }
         | AiEvent::Result { run_id, .. }
         | AiEvent::Change { run_id, .. }
-        | AiEvent::CircuitBreaker { run_id, .. }
+        | AiEvent::Paused { run_id, .. }
+        | AiEvent::Resumed { run_id, .. }
         | AiEvent::RunEnded { run_id, .. } => run_id,
         AiEvent::Call { call, .. } => &call.run_id,
     }
@@ -359,8 +361,8 @@ pub(crate) fn flush_pending(
 pub fn describe(req: &ApprovalRequest) -> String {
     match &req.subject {
         ApprovalSubject::Call { call, .. } => format!(
-            "{:?} on {}: {}",
-            call.tool,
+            "{} on {}: {}",
+            crate::services::ai::mcp::tools::name_str(call.tool),
             call.host.as_deref().unwrap_or("-"),
             call.command
                 .as_deref()
@@ -380,7 +382,14 @@ pub fn describe(req: &ApprovalRequest) -> String {
             reason,
             duration,
         } => {
-            format!("access for {duration} to {:?}: {reason}", scope.tags)
+            let mut parts = Vec::new();
+            if !scope.tags.is_empty() {
+                parts.push(format!("tags {}", scope.tags.join(", ")));
+            }
+            if !scope.hosts.is_empty() {
+                parts.push(format!("hosts {}", scope.hosts.join(", ")));
+            }
+            format!("access for {duration} to {}: {reason}", parts.join(" · "))
         }
     }
 }

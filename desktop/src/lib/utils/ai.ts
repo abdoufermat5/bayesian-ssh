@@ -220,8 +220,11 @@ export function buildTimeline(events: AiStoredEvent[]): TimelineEntry[] {
           undoPoint: event.undo_point,
         });
         break;
-      case "circuit_breaker":
+      case "paused":
         entries.push({ kind: "note", key, at, tone: "warning", text: `Run paused: ${event.reason}` });
+        break;
+      case "resumed":
+        entries.push({ kind: "note", key, at, tone: "info", text: `Run resumed by ${event.by}` });
         break;
       case "run_ended":
         entries.push({ kind: "note", key, at, tone: "info", text: `Run ended: ${event.reason}` });

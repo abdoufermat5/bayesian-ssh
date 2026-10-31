@@ -33,104 +33,166 @@ const SAYS_LINES: usize = 3;
 
 pub async fn execute(args: AiArgsApprove, config: AppConfig) -> Result<()> {
     let dir = ai_dir(&config);
-    let mut clients = connect_all(&dir, "bssh-cli").await;
-    if clients.is_empty() {
-        println!("No active AI runs. Start an agent with `bssh ai mcp` first.");
-        return Ok(());
-    }
-
-    // (client index, request)
-    let mut all: Vec<(usize, ApprovalRequest)> = Vec::new();
-    for (i, c) in clients.iter_mut().enumerate() {
-        match c.pending().await {
-            Ok(reqs) => all.extend(reqs.into_iter().map(|r| (i, r))),
-            Err(e) => eprintln!("run {}: {e}", c.hello.run_id),
-        }
-    }
-    if all.is_empty() {
-        println!("No pending approvals.");
-        return Ok(());
-    }
-    approval_gate(&args, interactive())?;
-
     let style = Style::terminal();
-    if args.list {
-        for line in summary_lines(&style, &clients, &all, Utc::now(), ui::width()) {
-            println!("{line}");
-        }
-        return Ok(());
-    }
+    // `--follow` answers one request after another. `--list` and `--deny` stay one shot: a
+    // scripted run must never decide twice.
+    let follow = args.follow && !args.list && !args.deny;
+    let mut announced = false;
+    // The "no agent" line is printed once, not once per polling round.
+    let mut told_empty = false;
+    // `--follow` answers the named request first, then whatever else comes in.
+    let mut want = args.request_id.clone();
 
-    let idx = match &args.request_id {
-        Some(id) => find_request(&all, id)?,
-        None if all.len() == 1 => 0,
-        None if !interactive() => {
-            bail!("give the request id: several requests are pending and picking one needs a terminal")
+    loop {
+        let mut clients = connect_all(&dir, "bssh-cli").await;
+        if !announced {
+            println!("{}", env_header(&style, &config.environment, clients.len()));
+            announced = true;
         }
-        None => pick(&style, &clients, &all)?,
-    };
-    let (ci, req) = all[idx].clone();
-    let hello = clients[ci].hello.clone();
-    let can_grant = build_grant(&req, 1).is_some();
+        if clients.is_empty() {
+            if !told_empty {
+                println!("{}", no_agent_message(&config));
+                told_empty = true;
+            }
+            if follow {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                continue;
+            }
+            return Ok(());
+        }
+        told_empty = false;
 
-    let who = format!("{}@cli", whoami::username());
-    let mut full = false;
-    let choice = if args.deny {
-        println!("{}", render_card(&style, &hello, &req, Utc::now(), full));
-        Choice::Deny
-    } else {
-        'ask: loop {
+        // (client index, request)
+        let mut all: Vec<(usize, ApprovalRequest)> = Vec::new();
+        for (i, c) in clients.iter_mut().enumerate() {
+            match c.pending().await {
+                Ok(reqs) => all.extend(reqs.into_iter().map(|r| (i, r))),
+                Err(e) => eprintln!("run {}: {e}", c.hello.run_id),
+            }
+        }
+        if all.is_empty() {
+            if follow {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                continue;
+            }
+            println!("No pending approvals.");
+            return Ok(());
+        }
+        approval_gate(&args, interactive())?;
+
+        if args.list {
+            for line in summary_lines(&style, &clients, &all, Utc::now(), ui::width()) {
+                println!("{line}");
+            }
+            return Ok(());
+        }
+
+        let idx = match &want {
+            Some(id) => find_request(&all, id)?,
+            None if all.len() == 1 => 0,
+            None if !interactive() => {
+                bail!(
+                    "give the request id: several requests are pending and picking one needs a \
+                     terminal"
+                )
+            }
+            None => pick(&style, &clients, &all)?,
+        };
+        let (ci, req) = all[idx].clone();
+        let hello = clients[ci].hello.clone();
+        let can_grant = build_grant(&req, 1).is_some();
+
+        let who = format!("{}@cli", whoami::username());
+        let mut full = false;
+        let choice = if args.deny {
             println!("{}", render_card(&style, &hello, &req, Utc::now(), full));
-            loop {
-                match read_choice(can_grant)? {
-                    Choice::Full => {
-                        full = true;
-                        continue 'ask;
-                    }
-                    Choice::Other => continue,
-                    c => break 'ask c,
-                }
-            }
-        }
-    };
-
-    if choice == Choice::Skip {
-        println!("Left pending.");
-        return Ok(());
-    }
-    let approve = matches!(choice, Choice::Approve | Choice::Grant);
-
-    let outcome = if approve {
-        let minutes = if choice == Choice::Grant {
-            Some(QUICK_GRANT_MINUTES)
+            Choice::Deny
         } else {
-            args.grant
-        };
-        let grant = match minutes {
-            Some(mins) => {
-                let g = build_grant(&req, mins);
-                if g.is_none() {
-                    println!("Note: grants only apply to single calls; approving without one.");
+            'ask: loop {
+                println!("{}", render_card(&style, &hello, &req, Utc::now(), full));
+                loop {
+                    match read_choice(can_grant)? {
+                        Choice::Full => {
+                            full = true;
+                            continue 'ask;
+                        }
+                        Choice::Other => continue,
+                        c => break 'ask c,
+                    }
                 }
-                g
             }
-            None => None,
         };
-        ApprovalOutcome::Approved {
-            by: who.clone(),
-            channel: "cli".into(),
-            grant,
+
+        if choice == Choice::Skip {
+            println!("Left pending.");
+            if follow {
+                want = None;
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                continue;
+            }
+            return Ok(());
         }
-    } else {
-        ApprovalOutcome::Denied {
-            by: who.clone(),
-            reason: args.reason.clone(),
+        let approve = matches!(choice, Choice::Approve | Choice::Grant);
+
+        let outcome = if approve {
+            let minutes = if choice == Choice::Grant {
+                Some(QUICK_GRANT_MINUTES)
+            } else {
+                args.grant
+            };
+            let grant = match minutes {
+                Some(mins) => {
+                    let g = build_grant(&req, mins);
+                    if g.is_none() {
+                        println!("Note: grants only apply to single calls; approving without one.");
+                    }
+                    g
+                }
+                None => None,
+            };
+            ApprovalOutcome::Approved {
+                by: who.clone(),
+                channel: "cli".into(),
+                grant,
+            }
+        } else {
+            ApprovalOutcome::Denied {
+                by: who.clone(),
+                reason: args.reason.clone(),
+            }
+        };
+        let granted = matches!(&outcome, ApprovalOutcome::Approved { grant: Some(_), .. });
+        clients[ci].decide(&req.request_id, outcome).await?;
+        println!("{}", result_line(&style, &req, approve, &who, granted));
+        if !follow {
+            return Ok(());
         }
+        want = None;
+    }
+}
+
+/// One header line naming the environment, so it is clear which runs are listed.
+fn env_header(style: &Style, environment: &str, runs: usize) -> String {
+    let runs = match runs {
+        0 => "no run connected".to_string(),
+        1 => "1 run connected".to_string(),
+        n => format!("{n} runs connected"),
     };
-    let granted = matches!(&outcome, ApprovalOutcome::Approved { grant: Some(_), .. });
-    clients[ci].decide(&req.request_id, outcome).await?;
-    println!("{}", result_line(&style, &req, approve, &who, granted));
-    Ok(())
+    style.paint(Tone::Dim, &format!("environment '{environment}' · {runs}"))
+}
+
+/// What to say when no agent's control socket answers.
+fn no_agent_message(config: &AppConfig) -> String {
+    if cfg!(not(unix)) {
+        return "Out-of-band approval needs Unix sockets and is not supported on Windows. \
+                Answer approval requests in your agent's client."
+            .to_string();
+    }
+    format!(
+        "No agent is connected in environment '{}'. Start your agent (set up with `bssh ai \
+         install`).",
+        config.environment
+    )
 }
 
 /// What the person sees after deciding.
@@ -157,12 +219,13 @@ fn result_line(
     }
     let mut line = match &r.subject {
         ApprovalSubject::Plan { plan_hash, .. } => format!(
-            "Approved plan {} for {}. It runs now; bssh ai watch follows it.",
+            "Approved plan {} for {}. It runs now; `bssh ai approve --follow` answers the next \
+             request.",
             ui::short_id(plan_hash),
             r.client
         ),
         ApprovalSubject::Call { .. } => format!(
-            "Approved for {}. It runs now; bssh ai watch follows it.",
+            "Approved for {}. It runs now; `bssh ai approve --follow` answers the next request.",
             r.client
         ),
         ApprovalSubject::Access { duration, .. } => format!(
@@ -1641,7 +1704,8 @@ mod tests {
         let plan = demo_plan_request();
         assert_eq!(
             result_line(&s, &plan, true, "ana@cli", false),
-            "✓ Approved plan 486c2f5a for opencode 2.1.2. It runs now; bssh ai watch follows it."
+            "✓ Approved plan 486c2f5a for opencode 2.1.2. It runs now; `bssh ai approve --follow` \
+             answers the next request."
         );
         assert_eq!(
             result_line(&s, &plan, false, "ana@cli", false),
@@ -1660,6 +1724,7 @@ mod tests {
             reason: None,
             list: false,
             grant: None,
+            follow: false,
         }
     }
 

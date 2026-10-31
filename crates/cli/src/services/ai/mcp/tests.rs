@@ -45,6 +45,8 @@ async fn list_hosts_shows_only_in_scope_hosts() {
         .map(|h| h["name"].as_str().unwrap())
         .collect();
     assert_eq!(names, ["web-1", "web-2"]);
+    assert_eq!(v["hosts"][0]["via_bastion"], false);
+    assert!(v["hosts"][0]["bastion"].is_null());
     let v = call(&k, "list_hosts", json!({ "query": "WEB-2" }))
         .await
         .unwrap();
@@ -78,6 +80,9 @@ async fn out_of_scope_and_unknown_hosts_look_the_same() {
 async fn host_info_reports_enforcement_and_caches_the_probe() {
     let k = std_kit();
     k.exec.on("uname", "Linux 6.1.0\nup 3 days\n", 0);
+    // The jail trials and the agent-user check run in one script; a zero exit keeps the
+    // probe cacheable.
+    k.exec.on("id -u bssh-agent", "", 0);
     let v = call(&k, "host_info", json!({ "host": "web-1" }))
         .await
         .unwrap();
@@ -85,6 +90,7 @@ async fn host_info_reports_enforcement_and_caches_the_probe() {
     assert_eq!(v["enforcement"]["certificates"], false);
     assert_eq!(v["untrusted_system"]["kernel"], "Linux 6.1.0");
     assert_eq!(v["via_bastion"], false);
+    assert!(v["probe_error"].is_null());
     call(&k, "host_info", json!({ "host": "web-1" }))
         .await
         .unwrap();
@@ -92,7 +98,7 @@ async fn host_info_reports_enforcement_and_caches_the_probe() {
         .exec
         .raw()
         .iter()
-        .filter(|(c, _)| c == "id -u bssh-agent")
+        .filter(|(c, _)| c.contains("id -u bssh-agent"))
         .count();
     assert_eq!(probes, 1, "enforcement is probed once per run");
 }
@@ -133,7 +139,7 @@ async fn observe_unparsable_output_is_an_error_not_a_guess() {
     let e = call(&k, "observe", json!({ "host": "web-1", "what": "memory" }))
         .await
         .unwrap_err();
-    assert!(matches!(e, ToolError::Failed(_)));
+    assert!(matches!(e, ToolError::FailedAfterRun(_)), "{e}");
 }
 
 #[tokio::test]
@@ -339,6 +345,7 @@ fn read_mode_uses_the_agent_principal_when_the_ca_is_trusted() {
             certificates,
             agent_user: certificates,
         },
+        probe_error: None,
     };
     assert_eq!(
         RunContext::read_mode(&facts(JailKind::None, true)),
@@ -401,6 +408,11 @@ async fn run_readonly_refuses_writes_without_a_jail_and_redacts() {
     assert_eq!(v["untrusted_output"], "welcome «redacted:vault-secret»");
     assert_eq!(v["redactions"][0]["count"], 1);
 
+    // Not provably read-only on a host with no jail: a human approves the exact call.
+    k.broker.push(ApprovalOutcome::Denied {
+        by: "alice".into(),
+        reason: Some("no".into()),
+    });
     let e = call(
         &k,
         "run_readonly",
@@ -410,6 +422,24 @@ async fn run_readonly_refuses_writes_without_a_jail_and_redacts() {
     .unwrap_err();
     assert!(matches!(e, ToolError::Denied(_)), "{e}");
     assert!(!k.exec.commands().iter().any(|c| c.contains("rm -rf")));
+    assert_eq!(k.broker.count(), 1);
+    let asked = k.broker.requests.lock().unwrap()[0].clone();
+    assert!(matches!(
+        &asked.subject,
+        ApprovalSubject::Call { call, .. }
+            if call.host.as_deref() == Some("web-1")
+                && call.command.as_deref() == Some("rm -rf /tmp/x")
+    ));
+
+    // Approved, it runs.
+    call(
+        &k,
+        "run_readonly",
+        json!({ "host": "web-1", "command": "rm -rf /tmp/x" }),
+    )
+    .await
+    .unwrap();
+    assert!(k.exec.commands().iter().any(|c| c == "rm -rf /tmp/x"));
 }
 
 #[tokio::test]
@@ -491,12 +521,38 @@ async fn run_many_fans_out_by_tag() {
     )
     .await
     .is_err());
-    // A non-read-only command is refused per host, not run.
+    // A non-read-only command asks once for every host; a denial runs nothing.
+    k.broker.push(ApprovalOutcome::Denied {
+        by: "alice".into(),
+        reason: Some("not now".into()),
+    });
+    let e = call(&k, "run_many", json!({ "tag": "web", "command": "reboot" }))
+        .await
+        .unwrap_err();
+    assert!(matches!(e, ToolError::Denied(_)), "{e}");
+    assert!(!k.exec.commands().iter().any(|c| c == "reboot"));
+    assert_eq!(k.broker.count(), 1, "one request for the whole call");
+    let asked = k.broker.requests.lock().unwrap()[0].clone();
+    let hosts: Vec<&str> = match &asked.subject {
+        ApprovalSubject::Call { call, .. } => call.args["hosts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect(),
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(hosts, ["web-1", "web-2"]);
+
+    // Approved once, it runs on both hosts.
     let v = call(&k, "run_many", json!({ "tag": "web", "command": "reboot" }))
         .await
         .unwrap();
-    assert_eq!(v["results"][0]["ok"], false);
-    assert!(!k.exec.commands().iter().any(|c| c == "reboot"));
+    assert_eq!(v["results"][0]["ok"], true);
+    assert_eq!(
+        k.exec.commands().iter().filter(|c| *c == "reboot").count(),
+        2
+    );
 }
 
 #[tokio::test]
@@ -618,7 +674,7 @@ async fn run_asks_and_honours_the_answer() {
         .await
         .unwrap_err();
     assert!(
-        matches!(&e, ToolError::Denied(m) if m.contains("alice")),
+        matches!(&e, ToolError::Denied(m) if m.contains("alice") && m.contains("no")),
         "{e}"
     );
     assert!(!k.exec.commands().iter().any(|c| c == "reboot"));
@@ -673,41 +729,244 @@ async fn change_budget_is_enforced() {
 }
 
 #[tokio::test]
-async fn call_rate_limit_and_circuit_breaker() {
+async fn denial_burst_pauses_the_run_and_resume_clears_it() {
     let mut p = policy();
-    p.budgets.calls_per_min = 2;
     p.budgets.max_denials_per_min = 3;
-    let k = kit(p, allow_all(), hosts());
-    call(&k, "status", json!({})).await.unwrap();
-    call(&k, "status", json!({})).await.unwrap();
-    // Over budget: denied, counted; the third denial trips the breaker and stops the run.
+    let k = kit(
+        p,
+        FakeEngine(Box::new(|_| Decision::Deny {
+            reason: "policy says no".into(),
+        })),
+        hosts(),
+    );
     for _ in 0..3 {
         assert!(matches!(
-            call(&k, "status", json!({})).await,
+            call(&k, "list_hosts", json!({})).await,
             Err(ToolError::Denied(_))
         ));
     }
-    assert!(k.ctx.is_stopped());
-    let e = call(&k, "status", json!({})).await.unwrap_err();
-    assert!(matches!(e, ToolError::Denied(m) if m.contains("circuit breaker")));
+    assert!(k.ctx.is_paused());
+    assert!(!k.ctx.is_stopped());
+    // Status still explains the pause.
+    let e = call(
+        &k,
+        "run_readonly",
+        json!({ "host": "web-1", "command": "uptime" }),
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        matches!(&e, ToolError::Denied(m) if m.contains("paused by the circuit breaker")),
+        "{e}"
+    );
     let ev = k.audit.events();
-    assert!(ev
-        .iter()
-        .any(|e| matches!(e, AiEvent::CircuitBreaker { .. })));
-    assert!(ev
-        .iter()
-        .any(|e| matches!(e, AiEvent::RunEnded { reason, .. } if reason == "circuit breaker")));
+    assert!(ev.iter().any(|e| matches!(e, AiEvent::Paused { .. })));
+    k.ctx.resume("tester").unwrap();
+    assert!(!k.ctx.is_paused());
+    let ev = k.audit.events();
+    assert!(ev.iter().any(|e| matches!(e, AiEvent::Resumed { .. })));
 }
 
 #[tokio::test]
-async fn probing_out_of_scope_hosts_trips_the_breaker() {
+async fn unknown_hosts_do_not_trip_the_breaker() {
     let mut p = policy();
     p.budgets.max_denials_per_min = 3;
     let k = kit(p, allow_all(), hosts());
-    for _ in 0..3 {
+    for _ in 0..5 {
         let _ = call(&k, "host_info", json!({ "host": "vault-1" })).await;
+        let _ = call(&k, "host_info", json!({ "host": "nope" })).await;
     }
-    assert!(k.ctx.is_stopped());
+    assert!(!k.ctx.is_paused());
+    assert!(call(&k, "status", json!({})).await.is_ok());
+}
+
+#[tokio::test]
+async fn human_decisions_and_expiry_do_not_trip_the_breaker() {
+    let mut p = policy();
+    p.budgets.max_denials_per_min = 2;
+    let k = kit(p, ask_writes(), hosts());
+    for _ in 0..3 {
+        k.broker.push(ApprovalOutcome::Denied {
+            by: "alice".into(),
+            reason: Some("no".into()),
+        });
+        assert!(call(
+            &k,
+            "run",
+            json!({ "host": "web-1", "command": "touch /tmp/a" })
+        )
+        .await
+        .is_err());
+    }
+    k.broker.push(ApprovalOutcome::Expired);
+    assert!(call(
+        &k,
+        "run",
+        json!({ "host": "web-1", "command": "touch /tmp/b" })
+    )
+    .await
+    .is_err());
+    assert!(!k.ctx.is_paused());
+    assert!(call(&k, "status", json!({})).await.is_ok());
+}
+
+#[tokio::test]
+async fn call_budget_denials_do_not_trip_the_breaker() {
+    let mut p = policy();
+    p.budgets.calls_per_min = 1;
+    p.budgets.max_denials_per_min = 2;
+    let k = kit(p, allow_all(), hosts());
+    call(&k, "list_hosts", json!({})).await.unwrap();
+    for _ in 0..3 {
+        let e = call(&k, "list_hosts", json!({})).await.unwrap_err();
+        assert!(matches!(e, ToolError::Denied(m) if m.contains("budget")));
+    }
+    assert!(!k.ctx.is_paused());
+}
+
+#[tokio::test]
+async fn change_budget_is_checked_before_asking() {
+    let mut p = policy();
+    p.budgets.changes_per_run = 1;
+    let k = kit(p, ask_writes(), hosts());
+    k.ctx.enable_async_approvals();
+    k.broker.set_hold(true);
+    let v = call(
+        &k,
+        "run",
+        json!({ "host": "web-1", "command": "touch /tmp/a" }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(v["status"], "pending");
+    assert_eq!(k.broker.count(), 1);
+
+    // The budget is gone, so the second call never reaches a human.
+    let e = call(
+        &k,
+        "run",
+        json!({ "host": "web-1", "command": "touch /tmp/b" }),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(e, ToolError::Denied(m) if m.contains("change budget exhausted")));
+    assert_eq!(
+        k.broker.count(),
+        1,
+        "no approval for a call that cannot run"
+    );
+}
+
+#[tokio::test]
+async fn pending_then_wait_approval_executes_once_even_concurrently() {
+    let k = kit(policy(), ask_writes(), hosts());
+    k.ctx.enable_async_approvals();
+    k.broker.set_hold(true);
+    let v = call(
+        &k,
+        "run",
+        json!({ "host": "web-1", "command": "touch /tmp/a" }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(v["status"], "pending");
+    assert_eq!(v["tool"], "run");
+    let id = v["request_id"].as_str().unwrap().to_string();
+    assert!(v["approve_with"]
+        .as_str()
+        .unwrap()
+        .contains("bssh ai watch"));
+    assert_eq!(k.broker.count(), 1);
+    assert!(!k.exec.commands().iter().any(|c| c == "touch /tmp/a"));
+
+    let mut waits = Vec::new();
+    for _ in 0..2 {
+        let ctx = k.ctx.clone();
+        let id = id.clone();
+        waits.push(tokio::spawn(async move {
+            tools::call(&ctx, "wait_approval", json!({ "request_id": id })).await
+        }));
+    }
+    k.broker.push(ApprovalOutcome::Approved {
+        by: "alice".into(),
+        channel: "test".into(),
+        grant: None,
+    });
+    let mut results = Vec::new();
+    for h in waits {
+        results.push(h.await.unwrap().unwrap());
+    }
+    assert_eq!(results[0], results[1]);
+    assert_eq!(results[0]["status"], "done");
+    assert_eq!(results[0]["tool"], "run");
+    assert_eq!(results[0]["result"]["exit_code"], 0);
+    assert_eq!(
+        k.exec
+            .commands()
+            .iter()
+            .filter(|c| *c == "touch /tmp/a")
+            .count(),
+        1,
+        "the approved action runs exactly once"
+    );
+
+    // The result is kept until the run ends.
+    let again = call(&k, "wait_approval", json!({ "request_id": id }))
+        .await
+        .unwrap();
+    assert_eq!(again, results[0]);
+    assert_eq!(
+        k.exec
+            .commands()
+            .iter()
+            .filter(|c| *c == "touch /tmp/a")
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn wait_approval_rejects_an_unknown_request() {
+    let k = std_kit();
+    let e = call(&k, "wait_approval", json!({ "request_id": "nope" }))
+        .await
+        .unwrap_err();
+    assert!(matches!(e, ToolError::Invalid(_)), "{e}");
+}
+
+#[test]
+fn observe_profile_advertises_no_change_tools() {
+    use super::server::tools_for;
+
+    let all = tools::definitions();
+    let names: Vec<String> = tools_for(&Profile::Observe, &all)
+        .iter()
+        .map(|t| t.name.to_string())
+        .collect();
+    for hidden in [
+        "propose_change",
+        "apply_change",
+        "edit_file",
+        "service",
+        "run",
+        "undo",
+    ] {
+        assert!(!names.iter().any(|n| n == hidden), "{hidden} advertised");
+    }
+    for kept in [
+        "read_file",
+        "run_readonly",
+        "request_access",
+        "wait_approval",
+    ] {
+        assert!(names.iter().any(|n| n == kept), "{kept} missing");
+    }
+
+    let names: Vec<String> = tools_for(&Profile::Operate, &all)
+        .iter()
+        .map(|t| t.name.to_string())
+        .collect();
+    assert!(names.iter().any(|n| n == "run"));
 }
 
 #[tokio::test]
@@ -717,8 +976,11 @@ async fn run_ttl_ends_the_run() {
     let k = kit(p, allow_all(), hosts());
     call(&k, "status", json!({})).await.unwrap();
     tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
-    let e = call(&k, "status", json!({})).await.unwrap_err();
-    assert!(matches!(e, ToolError::Denied(m) if m.contains("expired")));
+    let e = call(&k, "list_hosts", json!({})).await.unwrap_err();
+    assert!(
+        matches!(&e, ToolError::Denied(m) if m.contains("expired")),
+        "{e}"
+    );
     assert!(k
         .audit
         .events()
@@ -1220,6 +1482,11 @@ async fn mcp_round_trip_over_a_duplex_pipe() {
         Some("bssh-ai")
     );
     assert!(info.instructions.as_deref().unwrap().contains("untrusted_"));
+    assert!(info
+        .instructions
+        .as_deref()
+        .unwrap()
+        .contains("policy 'default' with the observe profile"));
     assert!(k
         .audit
         .events()
@@ -1227,7 +1494,19 @@ async fn mcp_round_trip_over_a_duplex_pipe() {
         .any(|e| matches!(e, AiEvent::RunStarted { client, .. } if !client.is_empty())));
 
     let tools = client.list_all_tools().await.unwrap();
-    assert_eq!(tools.len(), 15);
+    // The observe profile hides the change tools.
+    assert_eq!(tools.len(), 10);
+    let names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
+    for hidden in [
+        "propose_change",
+        "apply_change",
+        "edit_file",
+        "service",
+        "run",
+        "undo",
+    ] {
+        assert!(!names.contains(&hidden), "{hidden} is hidden from observe");
+    }
     assert!(tools
         .iter()
         .all(|t| t.output_schema.is_some() && t.annotations.is_some()));
@@ -1394,7 +1673,7 @@ fn readable_tool_results_have_no_json_and_preserve_structured() {
         "host": "web-1",
         "what": "memory",
         "untrusted_data": {
-            "mem": {
+            "memory": {
                 "total_bytes": 17179869184u64,
                 "used_bytes": 8589934592u64,
                 "available_bytes": 8589934592u64,
@@ -1412,9 +1691,9 @@ fn readable_tool_results_have_no_json_and_preserve_structured() {
     // 5. list_hosts
     let hosts_val = json!({
         "hosts": [
-            {"name": "web-1", "host": "10.0.0.1", "user": "root", "port": 22, "tags": ["prod", "web"], "aliases": []},
-            {"name": "db-1", "host": "10.0.0.2", "user": "postgres", "port": 22, "tags": ["prod", "db"], "aliases": []},
-            {"name": "bastion", "host": "10.0.0.254", "user": "jump", "port": 22, "tags": [], "aliases": []}
+            {"name": "web-1", "host": "10.0.0.1", "user": "root", "port": 22, "tags": ["prod", "web"], "aliases": [], "via_bastion": false, "bastion": null},
+            {"name": "db-1", "host": "10.0.0.2", "user": "postgres", "port": 22, "tags": ["prod", "db"], "aliases": [], "via_bastion": true, "bastion": "jump-1"},
+            {"name": "bastion", "host": "10.0.0.254", "user": "jump", "port": 22, "tags": [], "aliases": [], "via_bastion": false, "bastion": null}
         ],
         "count": 3
     });
@@ -1424,7 +1703,7 @@ fn readable_tool_results_have_no_json_and_preserve_structured() {
     assert!(!t.contains("{\""));
     let lines: Vec<&str> = t.lines().collect();
     assert_eq!(lines[0], "web-1 · prod, web");
-    assert_eq!(lines[1], "db-1 · prod, db");
+    assert_eq!(lines[1], "db-1 · prod, db · via bastion jump-1");
     assert_eq!(lines[2], "bastion");
 
     // 6. host_info
@@ -1446,6 +1725,7 @@ fn readable_tool_results_have_no_json_and_preserve_structured() {
             "uptime": "up 3 days",
         },
         "remote_error": null,
+        "probe_error": "ssh: connect timed out",
         "notice": "notice",
     });
     let r = to_result("host_info", Ok(info_val.clone()));
@@ -1455,6 +1735,10 @@ fn readable_tool_results_have_no_json_and_preserve_structured() {
     assert!(t.contains("web-1 · root@10.0.0.1:22 · jail: landlock · prod, web"));
     assert!(t.contains("│ kernel: Linux 6.1.0"));
     assert!(t.contains("│ uptime: up 3 days"));
+    assert!(t.contains(
+        "probe error: ssh: connect timed out (the host was treated as having no jail or \
+         certificates for this call)"
+    ));
 
     // 7. status
     let status_val = json!({
@@ -1477,7 +1761,7 @@ fn readable_tool_results_have_no_json_and_preserve_structured() {
             {"change_id": "696de2f2-aaaa-bbbb-cccc-ddddeeeeffff", "state": "approved", "title": "Free 228 MB"}
         ],
         "stopped": false,
-        "circuit_breaker_tripped": false,
+        "paused": false,
     });
     let r = to_result("status", Ok(status_val.clone()));
     assert_eq!(r.structured_content, Some(status_val));
@@ -1727,9 +2011,7 @@ fn denial_and_errors_name_next_step_and_nothing_ran() {
     let t = &r.content[0].as_text().unwrap().text;
     assert!(!t.contains("{\""));
     assert!(t.contains("Denied by bssh: touch writes, and run_readonly only reads. Nothing ran."));
-    assert!(
-        t.contains("To change something, describe it with propose_change; a person approves it.")
-    );
+    assert!(t.contains("Tell the user what you tried."));
 
     // Denied budget
     let err = ToolError::Denied("call budget exceeded (60 calls per minute)".into());
@@ -1747,9 +2029,7 @@ fn denial_and_errors_name_next_step_and_nothing_ran() {
     let t = &r.content[0].as_text().unwrap().text;
     assert!(!t.contains("{\""));
     assert!(t.contains("Invalid request: unknown host 'nope' (use list_hosts to see the hosts you can reach). Nothing ran."));
-    assert!(t.contains(
-        "Use list_hosts to see the hosts in your scope, or use request_access to ask for access."
-    ));
+    assert!(t.contains("Use list_hosts to see the hosts you can reach."));
 
     // Failed host connect
     let err = ToolError::Failed("connection to web-1 timed out".into());
@@ -1760,6 +2040,112 @@ fn denial_and_errors_name_next_step_and_nothing_ran() {
     assert!(t.contains(
         "The operation timed out. Check host connectivity or retry with narrower scope."
     ));
+}
+
+#[test]
+fn denial_hints_route_by_cause() {
+    use super::server::render_tool_error;
+
+    // Observe profile: never suggest propose_change or request_access.
+    let text = render_tool_error(
+        "service",
+        &ToolError::Denied("profile.observe: the observe profile cannot change anything".into()),
+    );
+    let hint = text.rsplit('\n').next().unwrap();
+    assert!(hint.contains("read-only (observe profile)"), "{hint}");
+    assert!(hint.contains("bssh ai policy list"), "{hint}");
+    assert!(!hint.contains("propose_change"), "{hint}");
+    assert!(!hint.contains("request_access"), "{hint}");
+
+    // A paused run is not a stopped one: the user resumes it, no restart.
+    let text = render_tool_error(
+        "run",
+        &ToolError::Denied(
+            "paused by the circuit breaker after 5 denials in a minute; the user can resume it \
+             with `bssh ai resume 12345678` or in the desktop app"
+                .into(),
+        ),
+    );
+    let hint = text.rsplit('\n').next().unwrap();
+    assert!(hint.contains("paused"), "{hint}");
+    assert!(hint.contains("bssh ai resume"), "{hint}");
+    assert!(hint.contains("Do not retry"), "{hint}");
+
+    // Unknown host points at list_hosts only.
+    let text = render_tool_error("host_info", &ToolError::Invalid("unknown host 'x'".into()));
+    let hint = text.rsplit('\n').next().unwrap();
+    assert_eq!(hint, "Use list_hosts to see the hosts you can reach.");
+
+    // A read the host cannot enforce is about reads, not changes.
+    let text = render_tool_error(
+        "run_readonly",
+        &ToolError::Denied(
+            "analyzer: not provably read-only, and the host has no read-only jail to stop writes"
+                .into(),
+        ),
+    );
+    let hint = text.rsplit('\n').next().unwrap();
+    assert!(hint.contains("read-only jail or approval"), "{hint}");
+    assert!(!hint.contains("propose_change"), "{hint}");
+    assert!(!hint.contains("change something"), "{hint}");
+
+    // Expired approval names the wait and where to approve.
+    let text = render_tool_error(
+        "run",
+        &ToolError::Denied("approval request expired: nobody approved within 300 s".into()),
+    );
+    assert!(text.contains("Nobody approved within 300 s."), "{text}");
+    assert!(text.contains("`bssh ai watch`"), "{text}");
+
+    // An explicitly stopped run is final.
+    let text = render_tool_error(
+        "run",
+        &ToolError::Denied(
+            "this run was stopped; ask the user to start a new agent session".into(),
+        ),
+    );
+    let hint = text.rsplit('\n').next().unwrap();
+    assert!(hint.contains("start a new agent session"), "{hint}");
+
+    // A failed parse after the command ran must not claim nothing ran.
+    let text = render_tool_error(
+        "observe",
+        &ToolError::FailedAfterRun(
+            "could not read disk output from web-1 (exit 1): bad output".into(),
+        ),
+    );
+    assert!(!text.contains("Nothing ran"), "{text}");
+    assert!(text.contains("Failed after running:"), "{text}");
+    assert!(text.contains("The command ran"), "{text}");
+}
+
+#[test]
+fn server_instructions_name_policy_profile_and_approval_route() {
+    use rmcp::ServerHandler;
+
+    let k = std_kit();
+    let text = super::server::build_server(k.ctx.clone())
+        .get_info()
+        .instructions
+        .expect("instructions");
+    assert!(text.contains("policy 'default'"), "{text}");
+    assert!(text.contains("observe profile"), "{text}");
+    assert!(text.contains("propose_change, apply_change"), "{text}");
+    assert!(text.contains("bssh ai watch"), "{text}");
+    assert!(text.contains("desktop app"), "{text}");
+
+    let mut p = policy();
+    p.profile = Profile::Operate;
+    let k = kit(p, allow_all(), hosts());
+    let text = super::server::build_server(k.ctx.clone())
+        .get_info()
+        .instructions
+        .expect("instructions");
+    assert!(
+        text.contains("policy 'default' with the operate profile"),
+        "{text}"
+    );
+    assert!(!text.contains("It is read-only"), "{text}");
 }
 
 #[test]

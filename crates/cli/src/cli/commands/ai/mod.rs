@@ -13,6 +13,7 @@ pub mod log;
 pub mod mcp;
 pub mod policy;
 pub mod replay;
+pub mod resume;
 pub mod serve;
 pub mod setup;
 pub mod status;
@@ -27,6 +28,7 @@ pub async fn execute(command: AiCommands, config: AppConfig) -> Result<()> {
         AiCommands::Policy(a) => policy::execute(a, config).await,
         AiCommands::Approve(a) => approve::execute(a, config).await,
         AiCommands::Stop(a) => stop::execute(a, config).await,
+        AiCommands::Resume(a) => resume::execute(a, config).await,
         AiCommands::Status(a) => status::execute(a, config).await,
         AiCommands::Log(a) => log::execute(a, config).await,
         AiCommands::Replay(a) => replay::execute(a, config).await,

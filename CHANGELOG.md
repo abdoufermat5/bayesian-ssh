@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`bssh ai install` tells you what to do next.** After writing the MCP entry it prints the client to restart, what the policy allows (the built-in default is observe: read-only), where to approve (`bssh ai watch` in another terminal, or the desktop app), and `bssh ai doctor` for the hosts. The entry is pinned with `--env <environment>`, so `bssh env use` no longer silently changes which hosts and policy an agent gets; for Codex it also writes `tool_timeout_sec` = `ai.approval_timeout_secs` + 30, since Codex's 60 s default dropped tool calls before an approval could arrive.
+- **`bssh ai approve --follow`** answers one request after another until Ctrl-C, so one terminal can cover a whole session. `bssh ai approve` and `bssh ai watch` now name the environment they read, and with no agent connected `approve` says so instead of pointing at `bssh ai mcp`, which is not a command to run by hand.
+- **`bssh ai resume <run>`** clears a circuit-breaker pause: a paused run is not a stopped one, `status` keeps working, and the desktop app has a Resume button too.
+- **A tool call that needs approval no longer blocks.** It returns `{status: "pending", request_id, …}` and the new `wait_approval` tool collects the result; the approved action runs exactly once.
+- **`bssh ai doctor` reports each host's route**: direct, jump host, Kerberos bastion, or `ssh_config ProxyJump`. For a Kerberos bastion it states the limits (commands run as your user through the bastion; certificates and the `bssh-agent` user are not available; file reads and edits go over the command channel) and, for any Kerberos host, runs `klist -s` and tells you to run `kinit` when there is no ticket.
+- **Policy mistakes are reported, not silently dropped.** `bssh ai policy show`, `bssh ai doctor` and `bssh ai mcp` (on stderr) warn about unknown policy, scope and approval fields (`in-client` instead of `in_client`), an explicit policy with an empty scope that reaches no host, and tags on hosts from an inventory source missing from `ai.trusted_tag_sources`.
+- **AI exec now works through interactive (Kerberos) bastions**: commands run over a PTY with `BatchMode`, a `klist` ticket precheck, and fail fast on password/OTP prompts instead of hanging.
+- **Jump-hop ssh gets `BatchMode`/`ConnectTimeout` in agent runs**; certificate (`bssh-agent`) logins keep the original bastion user and key and are refused on interactive bastions with an actionable message.
+- **`read_file`/`edit_file` work through bastions** (exec-based reads/writes), and enforcement probes are retried instead of cached as "none".
+- **Agent execs reuse one SSH connection per run** (`ControlMaster`, 60 s), so bastion handshakes aren't paid per call.
+- **`bssh ai policy set`** writes a policy into the active environment's `config.json`: `--profile observe|operate|oncall`, `--tag`/`--host` or `--all-hosts` for the scope, keeping the fields it does not name. It refuses an empty scope, prints the resulting policy and asks you to restart the agent. `bssh ai install` now points at it (`bssh ai policy set default --profile operate --all-hosts`) as the way to let an agent change hosts.
+- **`bssh ai watch` is in the CLI reference**, and a new "Bastions and jump hosts" page covers jump hosts, OVH-style Kerberos bastions and `~/.ssh/config` `ProxyJump`, while the policy docs now document the `"*"` scope and `ai.trusted_tag_sources`.
+
+### Changed
+- **MCP server instructions name the active policy and profile**, say when change tools are disabled (observe), and state where a human approves (desktop app or `bssh ai watch`). Tool errors route to specific next steps (observe profile, no-jail reads, unknown host, expired approval, circuit breaker) and no longer print Rust Debug output. Calls waiting for approval send MCP progress notifications every 10 s when the client supplies a progress token, and `list_hosts` shows `via_bastion` and the bastion name.
+- **Policy denial reasons use plain names** (`landlock`, `run_readonly`, `service`) instead of Rust enum debug output.
+- **The circuit breaker pauses a run instead of ending it.** Calls return a paused error that names `bssh ai resume <run-id-prefix>` (or the desktop app's Resume button); `status` always works. It counts policy denials of the agent's own actions only: human denials, expired approvals, unknown-host and argument errors, observe-profile refusals and per-host `run_many` failures no longer count, and `run_many` is one call and one approval for the whole host list.
+- **Commands on a host with no jail ask for approval instead of being denied** when they are not provably read-only, and `run_many` asks once, listing every host.
+- **The observe profile hides the change tools** (`propose_change`, `apply_change`, `edit_file`, `service`, `run`, `undo`) from `list_tools` instead of offering calls that are always refused. The in-client prompt and the out-of-band approval now share one `approval_timeout_secs` deadline.
+- **The desktop app's AI empty state gives the next step** (`bssh ai install <client>`, then restart it), and the read-only policy notice names the exact `config.json` and `bssh ai policy show`.
+
+### Fixed
+- **Kerberos agent logins on a direct host no longer delegate the TGT** (`GSSAPIDelegateCredentials=no`). Through an interactive (Kerberos) bastion they do, and they honour `forward_agent`, because the bastion's hop to the target needs those credentials — without them every AI call died with `Permission denied (gssapi-with-mic)` / `(publickey)`.
+- **`TERM=dumb` (common in agent/CI shells) no longer breaks Kerberos bastions.** Those bastions answered with a misleading "add -t" and closed; bssh now forces `TERM=xterm-256color` for ssh children when TERM is missing or dumb, and treats a missing command marker as an error instead of returning the bastion banner as success.
+- **`observe memory` shows the `Mem:` line again.** The renderer read a key the parser never emitted, so agents only ever saw swap; a host without swap no longer shows "0 B / 0 B" either.
+- **Commands through a Kerberos bastion no longer return its login banner as `stderr`.** Once the command ran, ssh's own output is dropped; it is still used to explain a failed login.
+- **Command output behind a Kerberos bastion is exactly the command's output.** The command is now sent as one compound line, so the shell's prompt, its line-editor echo (coloured prompts included) and zsh's end-of-line `%` can no longer leak into results; output without a final newline is kept. Before, `read_file` failed with "got 0 of N bytes" or "could not resolve the path", and `uptime` or `failed_units` came back mixed with prompt lines.
+- **`bssh ai doctor` no longer reports `FAIL no user bssh-agent` behind a Kerberos bastion**, where that user and CA trust are never used; it says `skip` instead.
+- **Hosts with `ProxyJump`/`ProxyCommand` only in `~/.ssh/config`** are routed to the system `ssh` instead of the built-in client, which timed out on them.
+
 ## [2.14.0] - 2026-10-29
 
 ### Fixed

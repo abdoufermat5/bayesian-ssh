@@ -520,6 +520,50 @@ impl RusshTransport {
             timed_out,
         })
     }
+
+    /// Connect, authenticate and open the SFTP subsystem.
+    ///
+    /// `non_interactive` never prompts for a password (the caller has no user at the
+    /// keyboard), and `connect_timeout` bounds connect + authentication as a whole.
+    async fn open_sftp_after(
+        &self,
+        conn: &Connection,
+        non_interactive: bool,
+        connect_timeout: Option<Duration>,
+    ) -> Result<Box<dyn SftpSession>, TransportError> {
+        use crate::services::transport::sftp_impl::RusshSftpSession;
+
+        let mut handle = self
+            .connect_with(conn, non_interactive, connect_timeout)
+            .await?;
+        let auth = self.authenticate_with(&mut handle, conn, non_interactive);
+        match connect_timeout {
+            Some(t) if non_interactive => tokio::time::timeout(t, auth).await.map_err(|_| {
+                TransportError::Permanent(anyhow!(
+                    "authentication to {} timed out after {}s",
+                    conn.host,
+                    t.as_secs()
+                ))
+            })??,
+            _ => auth.await?,
+        };
+
+        let channel = handle
+            .channel_open_session()
+            .await
+            .map_err(|e| TransportError::Permanent(anyhow!("channel open: {e}")))?;
+
+        channel
+            .request_subsystem(true, "sftp")
+            .await
+            .map_err(|e| TransportError::Permanent(anyhow!("sftp subsystem: {e}")))?;
+
+        let sftp = russh_sftp::client::SftpSession::new(channel.into_stream())
+            .await
+            .map_err(|e| TransportError::Permanent(anyhow!("sftp init: {e}")))?;
+
+        Ok(Box::new(RusshSftpSession::new(sftp)))
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -648,32 +692,18 @@ impl SshTransport for RusshTransport {
     }
 
     async fn open_sftp(&self, conn: &Connection) -> Result<Box<dyn SftpSession>, TransportError> {
-        use crate::services::transport::sftp_impl::RusshSftpSession;
+        self.open_sftp_after(conn, false, None).await
+    }
 
-        let mut handle = self.connect(conn).await?;
-        self.authenticate(&mut handle, conn).await.and_then(|ok| {
-            if ok {
-                Ok(())
-            } else {
-                Err(TransportError::Permanent(anyhow!("Authentication failed")))
-            }
-        })?;
-
-        let channel = handle
-            .channel_open_session()
+    /// [`SshTransport::open_sftp_limited`]: no password prompt (an MCP server has no TTY
+    /// the user can answer), and the connect/authentication phase is bounded.
+    async fn open_sftp_limited(
+        &self,
+        conn: &Connection,
+        opts: &ExecOptions,
+    ) -> Result<Box<dyn SftpSession>, TransportError> {
+        self.open_sftp_after(conn, opts.non_interactive, opts.connect_timeout)
             .await
-            .map_err(|e| TransportError::Permanent(anyhow!("channel open: {e}")))?;
-
-        channel
-            .request_subsystem(true, "sftp")
-            .await
-            .map_err(|e| TransportError::Permanent(anyhow!("sftp subsystem: {e}")))?;
-
-        let sftp = russh_sftp::client::SftpSession::new(channel.into_stream())
-            .await
-            .map_err(|e| TransportError::Permanent(anyhow!("sftp init: {e}")))?;
-
-        Ok(Box::new(RusshSftpSession::new(sftp)))
     }
 
     fn name(&self) -> &'static str {

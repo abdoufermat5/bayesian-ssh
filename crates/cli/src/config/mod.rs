@@ -397,6 +397,16 @@ impl AppConfig {
         }
     }
 
+    /// The `config.json` this environment loads and saves.
+    pub fn config_file(&self) -> PathBuf {
+        dirs::config_dir()
+            .unwrap_or_else(|| PathBuf::from("~/.config"))
+            .join("bayesian-ssh")
+            .join("environments")
+            .join(&self.environment)
+            .join("config.json")
+    }
+
     pub fn save(&self) -> Result<()> {
         Self::validate_env_name(&self.environment)?;
         let config_dir = dirs::config_dir()

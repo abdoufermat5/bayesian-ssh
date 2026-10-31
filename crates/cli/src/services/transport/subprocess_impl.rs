@@ -47,6 +47,22 @@ fn proxy_quote(value: &str) -> String {
     shell_quote(value).replace('%', "%%")
 }
 
+/// Agent and CI shells often export `TERM=dumb`. Some Kerberos bastions then
+/// refuse the session with a misleading "add -t" message even when `-tt` was
+/// sent. Give `ssh` a real terminal type whenever ours is missing or dumb.
+fn prepare_ssh_command(program: &str) -> TokioCommand {
+    let mut cmd = TokioCommand::new(program);
+    let bad_term = match std::env::var_os("TERM") {
+        None => true,
+        Some(t) if t.is_empty() => true,
+        Some(t) => t.eq_ignore_ascii_case("dumb"),
+    };
+    if bad_term {
+        cmd.env("TERM", "xterm-256color");
+    }
+    cmd
+}
+
 /// Map the config policy (`strict` | `accept-new` | `off`, plus the OpenSSH
 /// `yes`/`no` aliases) onto a value the OpenSSH client accepts. `strict` is
 /// not an OpenSSH keyword — passing it verbatim makes `ssh` abort with
@@ -59,14 +75,27 @@ pub(crate) fn ssh_strict_host_key_value(policy: &str) -> &'static str {
     }
 }
 
+/// Extra `ssh` switches for the jump-host hop (`ProxyCommand`).
+#[derive(Debug, Default, Clone, Copy)]
+pub(crate) struct HopOptions {
+    /// Never prompt on the hop: a broken bastion login fails instead of waiting for input.
+    pub non_interactive: bool,
+    pub connect_timeout_secs: Option<u64>,
+}
+
 /// Build the `ProxyCommand=` value for a classic jump host.
 ///
-/// `leading_opts` are inserted right after `ssh` (e.g. TTY flags). Every
-/// connection field is quoted, the bastion destination follows `--` so a
-/// value starting with `-` cannot become an option, and the target is only
-/// passed as `%h` when it is shell-inert: OpenSSH < 9.6 substitutes `%h`
-/// into the shell command unquoted.
-pub(crate) fn jump_proxy_command(conn: &Connection, leading_opts: &str, shkc: &str) -> String {
+/// `leading_opts` are inserted right after `ssh` (e.g. TTY flags). `hop`
+/// carries the non-interactive switches. Every connection field is quoted, the
+/// bastion destination follows `--` so a value starting with `-` cannot become
+/// an option, and the target is only passed as `%h` when it is shell-inert:
+/// OpenSSH < 9.6 substitutes `%h` into the shell command unquoted.
+pub(crate) fn jump_proxy_command(
+    conn: &Connection,
+    leading_opts: &str,
+    shkc: &str,
+    hop: &HopOptions,
+) -> String {
     let bu = conn.bastion_user.as_deref().unwrap_or(&conn.user);
     let bastion = conn.bastion.as_deref().unwrap_or_default();
     let key_flag = conn
@@ -74,6 +103,13 @@ pub(crate) fn jump_proxy_command(conn: &Connection, leading_opts: &str, shkc: &s
         .as_deref()
         .map(|k| format!(" -i {}", proxy_quote(k)))
         .unwrap_or_default();
+    let mut hop_flags = String::new();
+    if hop.non_interactive {
+        hop_flags.push_str(" -o BatchMode=yes");
+    }
+    if let Some(secs) = hop.connect_timeout_secs {
+        hop_flags.push_str(&format!(" -o ConnectTimeout={secs}"));
+    }
     let target = if shell_quote(&conn.host) == conn.host {
         "%h:%p".to_string()
     } else if conn.host.contains(':') {
@@ -82,11 +118,19 @@ pub(crate) fn jump_proxy_command(conn: &Connection, leading_opts: &str, shkc: &s
         proxy_quote(&format!("{}:{}", conn.host, conn.port))
     };
     format!(
-        "ssh{leading_opts}{key_flag} -o StrictHostKeyChecking={} -W {target} -- {}@{}",
+        "ssh{leading_opts}{hop_flags}{key_flag} -o StrictHostKeyChecking={} -W {target} -- {}@{}",
         ssh_strict_host_key_value(shkc),
         proxy_quote(bu),
         proxy_quote(bastion)
     )
+}
+
+/// Switches for a shell-style (PTY) connection driven by an agent run.
+#[derive(Debug, Default, Clone, Copy)]
+pub(crate) struct ShellExtras {
+    /// Never prompt on any hop; no agent or port forwarding.
+    pub non_interactive: bool,
+    pub connect_timeout_secs: Option<u64>,
 }
 
 /// Extra `ssh` switches for [`SshTransport::exec_limited`].
@@ -97,6 +141,8 @@ pub(crate) struct ArgvExtras {
     pub connect_timeout_secs: Option<u64>,
     /// Private key and certificate files to authenticate with (and nothing else).
     pub cert: Option<(PathBuf, PathBuf)>,
+    /// Directory for `ControlMaster` sockets (run-scoped SSH connection sharing).
+    pub control_dir: Option<PathBuf>,
 }
 
 /// Stderr fragments that mean `ssh` itself failed (exit 255), not the remote command.
@@ -113,28 +159,66 @@ const SSH_FAILURE_MARKERS: &[&str] = &[
     "Connection reset by",
     "kex_exchange_identification",
     "ssh_exchange_identification",
+    "administratively prohibited",
 ];
 
 /// In batch mode, turn an `ssh` failure (exit 255 with a known message) into an error that
 /// says what to do, instead of a result an agent might take for the command's own output.
-fn classify_ssh_failure(out: &LimitedOutput) -> Option<TransportError> {
+///
+/// `conn` names the route, so a refused login is attributed to the hop that refused it
+/// (the bastion or the target) and a Kerberos host gets the ticket hint.
+fn classify_ssh_failure(out: &LimitedOutput, conn: Option<&Connection>) -> Option<TransportError> {
     if out.timed_out || out.exit_code != Some(255) {
         return None;
     }
     let stderr = String::from_utf8_lossy(&out.stderr);
+    if stderr.contains("administratively prohibited") {
+        let (bastion, name) = match conn {
+            Some(c) => (
+                c.bastion.as_deref().unwrap_or("the bastion").to_string(),
+                c.name.clone(),
+            ),
+            None => ("the bastion".to_string(), "this host".to_string()),
+        };
+        return Some(TransportError::permanent(anyhow::anyhow!(
+            "{bastion} forbids TCP forwarding, which a jump host needs; \
+             if {name} is behind an interactive (Kerberos) bastion, say so in bssh \
+             (bssh edit {name} --kerberos true)"
+        )));
+    }
     let marker = SSH_FAILURE_MARKERS.iter().find(|m| stderr.contains(**m))?;
     let line = stderr
         .lines()
-        .find(|l| l.contains(marker))
+        .find(|l| l.contains(*marker))
         .unwrap_or_default()
         .trim();
-    if *marker == "Permission denied" {
-        Some(TransportError::permanent(anyhow::anyhow!(
-            "needs interactive auth; use a key or ssh-agent ({line})"
-        )))
-    } else {
-        Some(TransportError::permanent(anyhow::anyhow!("ssh: {line}")))
+
+    // A Kerberos rejection is about the ticket, not about keys: say which one to fix.
+    if conn.is_some_and(|c| c.use_kerberos) && stderr.to_ascii_lowercase().contains("gssapi") {
+        return Some(TransportError::permanent(anyhow::anyhow!(
+            "Kerberos login failed ({line}); check for a ticket with `klist` and get one with `kinit`"
+        )));
     }
+
+    if *marker == "Permission denied" {
+        // The bastion hop prints `user@bastion: Permission denied (...)`; name that hop,
+        // otherwise the agent reads it as the target refusing a key that works on it.
+        if let Some(conn) = conn {
+            if let Some(bastion) = &conn.bastion {
+                let bu = conn.bastion_user.as_deref().unwrap_or(&conn.user);
+                if line.starts_with(&format!("{bu}@")) {
+                    return Some(TransportError::permanent(anyhow::anyhow!(
+                        "the bastion {bastion} refused the login ({line}); \
+                         use a key or ssh-agent that works on the bastion"
+                    )));
+                }
+            }
+        }
+        return Some(TransportError::permanent(anyhow::anyhow!(
+            "needs interactive auth; use a key or ssh-agent ({line})"
+        )));
+    }
+    Some(TransportError::permanent(anyhow::anyhow!("ssh: {line}")))
 }
 
 /// Read a pipe to EOF, keeping what `buf` allows and dropping the rest.
@@ -157,7 +241,7 @@ pub(crate) async fn run_argv_limited(
     args: &[String],
     opts: &ExecOptions,
 ) -> Result<LimitedOutput, TransportError> {
-    let mut child = TokioCommand::new(program)
+    let mut child = prepare_ssh_command(program)
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -271,7 +355,15 @@ impl SubprocessTransport {
             argv.push(format!("ConnectTimeout={secs}"));
         }
         if conn.use_kerberos {
-            argv.push("-K".into());
+            if extras.non_interactive {
+                // A ticket may prove who we are; it must not be forwarded to the host.
+                argv.push("-o".into());
+                argv.push("GSSAPIAuthentication=yes".into());
+                argv.push("-o".into());
+                argv.push("GSSAPIDelegateCredentials=no".into());
+            } else {
+                argv.push("-K".into());
+            }
         }
         if let Some((key, cert)) = &extras.cert {
             // Only the per-command certificate: no other identity may be offered.
@@ -285,6 +377,18 @@ impl SubprocessTransport {
             argv.push("-i".into());
             argv.push(key.clone());
         }
+        // One ssh connection per run: a bastion handshake is paid once, not per call.
+        // Not with a certificate: every certified call is a different identity.
+        if extras.non_interactive && extras.cert.is_none() {
+            if let Some(dir) = &extras.control_dir {
+                argv.push("-o".into());
+                argv.push("ControlMaster=auto".into());
+                argv.push("-o".into());
+                argv.push(format!("ControlPath={}", dir.join("%C").to_string_lossy()));
+                argv.push("-o".into());
+                argv.push("ControlPersist=60".into());
+            }
+        }
         argv.push("-o".into());
         argv.push(format!(
             "StrictHostKeyChecking={}",
@@ -292,10 +396,14 @@ impl SubprocessTransport {
         ));
 
         if conn.bastion.is_some() {
+            let hop = HopOptions {
+                non_interactive: extras.non_interactive,
+                connect_timeout_secs: extras.connect_timeout_secs,
+            };
             argv.push("-o".into());
             argv.push(format!(
                 "ProxyCommand={}",
-                jump_proxy_command(conn, " -T", shkc)
+                jump_proxy_command(conn, " -T", shkc, &hop)
             ));
         }
         argv.push("-p".into());
@@ -329,19 +437,66 @@ impl SubprocessTransport {
         policy: HostKeyPolicy,
         enforce_target_shkc: bool,
     ) -> Vec<String> {
+        Self::build_shell_argv_ext(conn, policy, enforce_target_shkc, &ShellExtras::default())
+    }
+
+    /// Shell-style argv with agent switches: `extras.non_interactive` keeps the PTY
+    /// (an interactive bastion needs one) but never prompts on any hop, never forwards
+    /// the agent, and does not delegate the Kerberos ticket.
+    fn build_shell_argv_ext(
+        conn: &Connection,
+        policy: HostKeyPolicy,
+        enforce_target_shkc: bool,
+        extras: &ShellExtras,
+    ) -> Vec<String> {
         let mut argv: Vec<String> = vec!["ssh".into()];
         // Force remote TTY allocation even when stdin is not a terminal (e.g. GUI background process)
         argv.push("-tt".into());
         argv.push("-o".into());
         argv.push("RequestTTY=force".into());
-        // `-A` hands the local agent to the remote host: only when this
-        // connection opted in. `-K` (Kerberos TGT delegation) follows
-        // `use_kerberos` on its own.
-        if conn.forward_agent {
+        // Kerberos + bastion is an interactive bastion: it SSHs to the target as
+        // the user, so the agent hop must carry the same credentials a human
+        // session uses (`-A` when opted in, TGT delegation for GSSAPI targets).
+        let interactive_bastion = conn.use_kerberos && conn.bastion.is_some();
+        if extras.non_interactive {
+            if interactive_bastion && conn.forward_agent {
+                argv.push("-A".into());
+            } else {
+                // Direct/jump-host agent runs must not hand the user's agent to the host.
+                argv.push("-a".into());
+                argv.push("-o".into());
+                argv.push("ClearAllForwardings=yes".into());
+            }
+            argv.push("-x".into());
+            // Fail instead of waiting for a password/OTP prompt.
+            argv.push("-o".into());
+            argv.push("BatchMode=yes".into());
+            if let Some(secs) = extras.connect_timeout_secs {
+                argv.push("-o".into());
+                argv.push(format!("ConnectTimeout={secs}"));
+            }
+        } else if conn.forward_agent {
+            // `-A` hands the local agent to the remote host: only when this
+            // connection opted in. `-K` (Kerberos TGT delegation) follows
+            // `use_kerberos` on its own.
             argv.push("-A".into());
         }
         if conn.use_kerberos {
-            argv.push("-K".into());
+            if extras.non_interactive {
+                argv.push("-o".into());
+                argv.push("GSSAPIAuthentication=yes".into());
+                argv.push("-o".into());
+                // Through an interactive bastion the *target* authenticates with
+                // the delegated TGT; without it the bastion gets "Permission denied
+                // (gssapi-with-mic)". Direct Kerberos logins must not delegate.
+                if interactive_bastion {
+                    argv.push("GSSAPIDelegateCredentials=yes".into());
+                } else {
+                    argv.push("GSSAPIDelegateCredentials=no".into());
+                }
+            } else {
+                argv.push("-K".into());
+            }
         }
         if let Some(key) = &conn.key_path {
             argv.push("-i".into());
@@ -369,10 +524,14 @@ impl SubprocessTransport {
                 argv.push(format!("{}@{}", conn.user, conn.host));
             } else {
                 // ProxyCommand with forced TTY allocation on the bastion connection
+                let hop = HopOptions {
+                    non_interactive: extras.non_interactive,
+                    connect_timeout_secs: extras.connect_timeout_secs,
+                };
                 argv.push("-o".into());
                 argv.push(format!(
                     "ProxyCommand={}",
-                    jump_proxy_command(conn, " -tt -o RequestTTY=force", policy.as_str())
+                    jump_proxy_command(conn, " -tt -o RequestTTY=force", policy.as_str(), &hop)
                 ));
                 argv.push("-p".into());
                 argv.push(conn.port.to_string());
@@ -438,10 +597,24 @@ impl SubprocessTransport {
     /// 2. **Payload** — send markers + command.
     /// 3. **Extract** — read remaining output, extract lines between markers,
     ///    and strip echoed control commands via suffix matching.
+    ///
+    /// With `extras.non_interactive` the child carries `BatchMode` and a connect
+    /// timeout, and an authentication prompt in the drain phase kills it instead of
+    /// waiting for a human that is not there.
     pub async fn run_interactive_exec(
         &self,
         conn: &Connection,
         command: &str,
+    ) -> Result<ExecOutput, TransportError> {
+        self.run_interactive_exec_ext(conn, command, &ShellExtras::default())
+            .await
+    }
+
+    async fn run_interactive_exec_ext(
+        &self,
+        conn: &Connection,
+        command: &str,
+        extras: &ShellExtras,
     ) -> Result<ExecOutput, TransportError> {
         use std::time::Duration;
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -451,7 +624,7 @@ impl SubprocessTransport {
         let marker_end = format!("{marker}_END");
 
         let mut argv =
-            Self::build_shell_argv_with_shkc(conn, self.config.transport.host_key_policy(), true);
+            Self::build_shell_argv_ext(conn, self.config.transport.host_key_policy(), true, extras);
         if let Some(pos) = argv.iter().position(|a| a == "-t" || a == "-tt") {
             argv[pos] = "-tt".into();
         }
@@ -459,11 +632,13 @@ impl SubprocessTransport {
             .split_first()
             .ok_or_else(|| TransportError::permanent(anyhow::anyhow!("empty argv")))?;
 
-        let mut child = TokioCommand::new(cmd_name)
+        let mut child = prepare_ssh_command(cmd_name)
             .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
+            // The overall timeout drops this future: the ssh child must die with it.
+            .kill_on_drop(true)
             .spawn()
             .map_err(|e| TransportError::permanent(anyhow::Error::from(e)))?;
 
@@ -485,24 +660,59 @@ impl SubprocessTransport {
                 )));
             }
         };
-        // With -tt stderr is merged into stdout via the PTY.
-        let _stderr = child.stderr.take();
+        // With -tt the remote command's stderr is merged into stdout via the PTY.
+        // ssh's *own* errors stay on its stderr pipe; keep them, but only for batch
+        // mode (the failure classifier needs them) and without letting them grow.
+        let stderr_task = if extras.non_interactive {
+            child.stderr.take().map(|mut pipe| {
+                tokio::spawn(async move {
+                    let mut buf: Vec<u8> = Vec::new();
+                    let mut chunk = [0u8; 2048];
+                    loop {
+                        match pipe.read(&mut chunk).await {
+                            Ok(0) | Err(_) => break,
+                            Ok(n) => {
+                                let room = 8192usize.saturating_sub(buf.len());
+                                buf.extend_from_slice(&chunk[..n.min(room)]);
+                            }
+                        }
+                    }
+                    buf
+                })
+            })
+        } else {
+            let _stderr = child.stderr.take();
+            None
+        };
 
         // ── Phase 1: drain initial noise (banner, MOTD, prompt) ──
+        // In batch mode this is also where a bastion login prompt would appear.
+        let mut head: Vec<u8> = Vec::new();
         loop {
             let mut chunk = [0u8; 4096];
             match tokio::time::timeout(Duration::from_secs(1), stdout.read(&mut chunk)).await {
-                Ok(Ok(n)) if n > 0 => { /* discard */ }
+                Ok(Ok(n)) if n > 0 => {
+                    if extras.non_interactive && head.len() < 16 * 1024 {
+                        let room = 16 * 1024 - head.len();
+                        head.extend_from_slice(&chunk[..n.min(room)]);
+                        if let Some(prompt) = auth_prompt_kind(&String::from_utf8_lossy(&head)) {
+                            let _ = child.kill().await;
+                            return Err(prompt_error(conn, prompt));
+                        }
+                    }
+                }
                 _ => break,
             }
         }
 
         // ── Phase 2: send markers + command ──
-        // Widen the PTY so `ls` and other column-aware tools don't
-        // wrap/pad to the default 80-col width.
-        let payload = format!(
-            "stty cols 200 rows 50 2>/dev/null\necho '{marker_start}'\n{command}\n_bssh_rc=$?\necho '{marker_end}'\nexit $_bssh_rc\n"
-        );
+        // One compound command: the shell reads (and its line editor echoes and
+        // redraws) the whole thing before running any of it, so only the
+        // command's own output can land between the markers, whatever the prompt
+        // looks like. Each marker is split in the source (`'X''_START'`) so the
+        // echoed command line never contains it. The PTY is widened so
+        // column-aware tools don't wrap at 80.
+        let payload = interactive_payload(&marker, command);
         let _ = stdin.write_all(payload.as_bytes()).await;
         drop(stdin);
 
@@ -517,49 +727,57 @@ impl SubprocessTransport {
             .wait()
             .await
             .map_err(|e| TransportError::permanent(anyhow::Error::from(e)))?;
+        let ssh_stderr = match stderr_task {
+            Some(task) => task.await.unwrap_or_default(),
+            None => Vec::new(),
+        };
 
-        // Build the set of suffixes that correspond to echoed control
-        // commands.  The PTY echoes them with a prompt prefix we can't
-        // predict, but the line always contains our known payload text.
-        let echo_start_cmd = format!("echo '{marker_start}'");
-        let echo_end_cmd = format!("echo '{marker_end}'");
-        let echo_suffixes: Vec<&str> = vec![
-            command,                 // the real command echoed
-            "_bssh_rc=$?",           // exit-code capture
-            "exit $_bssh_rc",        // exit command
-            "stty cols",             // PTY resize command
-            echo_start_cmd.as_str(), // echo of START marker
-            echo_end_cmd.as_str(),   // echo of END marker
-        ];
-
+        let head_txt = String::from_utf8_lossy(&head);
         let raw = String::from_utf8_lossy(&raw_bytes);
-        let mut capture = false;
-        let mut clean_lines: Vec<&str> = Vec::new();
+        let (clean_lines, saw_start, saw_end) =
+            extract_between_markers(&raw, &marker_start, &marker_end);
 
-        for line in raw.lines() {
-            let trimmed = line.trim();
-            if trimmed == marker_start || trimmed.ends_with(&marker_start) {
-                capture = true;
-                continue;
+        if extras.non_interactive && !saw_start {
+            let combined = format!("{head_txt}\n{raw}\n{}", String::from_utf8_lossy(&ssh_stderr));
+            if needs_tty(combined.as_bytes(), b"")
+                || combined.contains("Veuillez ajouter l'option -t")
+            {
+                return Err(TransportError::permanent(anyhow::anyhow!(
+                    "the bastion refused the session (asked for -t even though a PTY was \
+                     requested). If this agent runs with TERM=dumb, that is usually why; \
+                     bssh overrides it for ssh, so retry — or run `bssh connect {}` once \
+                     to confirm the bastion still accepts you",
+                    conn.name
+                )));
             }
-            if trimmed == marker_end || trimmed.ends_with(&marker_end) {
-                capture = false;
-                continue;
-            }
-            if capture {
-                // Skip lines that are the PTY echoing our control commands.
-                // Echo lines from the bastion shell always carry a prompt
-                // indicator (`% ` for zsh, `$ ` for bash, `# ` for root).
-                let has_prompt =
-                    trimmed.contains("% ") || trimmed.contains("$ ") || trimmed.contains("# ");
-                let is_echo = has_prompt && echo_suffixes.iter().any(|s| trimmed.contains(s));
-                if !is_echo {
-                    clean_lines.push(line.trim_end_matches('\r'));
+            if combined.contains("Permission denied") {
+                let fake = LimitedOutput {
+                    stdout: Vec::new(),
+                    stderr: combined.into_bytes(),
+                    exit_code: Some(255),
+                    truncated: false,
+                    timed_out: false,
+                };
+                if let Some(err) = classify_ssh_failure(&fake, Some(conn)) {
+                    return Err(err);
                 }
             }
+            return Err(TransportError::permanent(anyhow::anyhow!(
+                "no shell on {} through the bastion (command markers never appeared). \
+                 Check the Kerberos ticket (`klist` / `kinit`) and that agent forwarding \
+                 is enabled on the connection when the target needs your key",
+                conn.name
+            )));
         }
 
-        let stdout_bytes = if clean_lines.is_empty() {
+        let stdout_bytes = if saw_start {
+            let mut joined = clean_lines.join("\n");
+            if saw_end || !clean_lines.is_empty() {
+                joined.push('\n');
+            }
+            joined.into_bytes()
+        } else if clean_lines.is_empty() {
+            // Human / plain path: keep prior behaviour when markers are missing.
             raw_bytes
         } else {
             let mut joined = clean_lines.join("\n");
@@ -569,10 +787,63 @@ impl SubprocessTransport {
 
         Ok(ExecOutput {
             stdout: stdout_bytes,
-            stderr: Vec::new(),
+            // The remote command's stderr is in stdout (PTY). What remains here is
+            // ssh's own diagnostics, kept only to classify a failure: once the markers
+            // came back the session worked, and it is just the bastion's login banner.
+            stderr: if saw_start { Vec::new() } else { ssh_stderr },
             exit_code: status.code().unwrap_or(-1),
         })
     }
+}
+
+/// The text sent to an interactive bastion's shell: one compound command whose
+/// markers are split in the source, so the echoed line can never contain them.
+/// `{ … \n}` lets `command` span lines (heredocs) and end in a comment.
+fn interactive_payload(marker: &str, command: &str) -> String {
+    format!(
+        "stty cols 200 rows 50 2>/dev/null; stty -echo 2>/dev/null; \
+         echo '{marker}''_START'; {{ {command}\n}}; _bssh_rc=$?; \
+         echo '{marker}''_END'; exit $_bssh_rc\n"
+    )
+}
+
+/// The command's output lines between the PTY markers, and whether each marker showed up.
+///
+/// Everything before START (banner, MOTD, the echoed command) and after END is dropped.
+/// Output that does not end in a newline puts the END marker on its last line
+/// (`dataBSSH_…_END`): the text before the marker is output and is kept.
+fn extract_between_markers<'a>(
+    raw: &'a str,
+    marker_start: &str,
+    marker_end: &str,
+) -> (Vec<&'a str>, bool, bool) {
+    let mut capture = false;
+    let mut saw_start = false;
+    let mut saw_end = false;
+    let mut clean_lines: Vec<&'a str> = Vec::new();
+    for line in raw.lines() {
+        let line = line.trim_end_matches('\r');
+        if !saw_start {
+            if line.trim_end().ends_with(marker_start) {
+                capture = true;
+                saw_start = true;
+            }
+            continue;
+        }
+        if !capture {
+            break;
+        }
+        if let Some(before) = line.trim_end().strip_suffix(marker_end) {
+            if !before.is_empty() {
+                clean_lines.push(before);
+            }
+            capture = false;
+            saw_end = true;
+            continue;
+        }
+        clean_lines.push(line);
+    }
+    (clean_lines, saw_start, saw_end)
 }
 
 /// Did `ssh` report that the server needs a pseudo-terminal? (Same check as plain `exec`.)
@@ -581,6 +852,117 @@ fn needs_tty(stdout: &[u8], stderr: &[u8]) -> bool {
         let s = String::from_utf8_lossy(bytes);
         s.contains("option -t") || s.contains("l'option -t") || s.contains("pseudo-terminal")
     })
+}
+
+/// What the bastion is waiting for, when an authentication prompt shows up on the PTY.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AuthPrompt {
+    Password,
+    OneTimeCode,
+}
+
+impl AuthPrompt {
+    /// The words used in the agent-facing error.
+    pub(crate) fn describe(self) -> &'static str {
+        match self {
+            AuthPrompt::Password => "a password",
+            AuthPrompt::OneTimeCode => "a one-time code",
+        }
+    }
+}
+
+/// Case-insensitive prompt detection for text that arrived over the bastion's PTY.
+///
+/// An agent cannot answer any of these, and waiting would only burn the tool timeout,
+/// so the caller kills `ssh` as soon as this matches.
+pub(crate) fn auth_prompt_kind(text: &str) -> Option<AuthPrompt> {
+    let lower = text.to_ascii_lowercase();
+    // Check the one-time variants first: "Password or passcode:" is a code prompt.
+    const ONE_TIME: &[&str] = &[
+        "passcode",
+        "verification code",
+        "otp",
+        "one-time",
+        "mfa",
+        "2fa",
+        "enter pin",
+    ];
+    if ONE_TIME.iter().any(|needle| lower.contains(needle)) {
+        return Some(AuthPrompt::OneTimeCode);
+    }
+    if lower.contains("password:") {
+        return Some(AuthPrompt::Password);
+    }
+    None
+}
+
+/// A certificate makes the *target* login bssh-agent; the bastion still authenticates as
+/// the user, and its command syntax cannot start an agent session.
+fn cert_through_kerberos_bastion(conn: &Connection) -> TransportError {
+    TransportError::permanent(anyhow::anyhow!(
+        "{} is behind a Kerberos bastion, which logs in as you; \
+         certificate (bssh-agent) logins cannot pass through it. \
+         Commands on this host run as your user",
+        conn.name
+    ))
+}
+
+/// The error for a bastion that answered with a prompt instead of a shell.
+fn prompt_error(conn: &Connection, prompt: AuthPrompt) -> TransportError {
+    let bastion = conn.bastion.as_deref().unwrap_or(&conn.host);
+    TransportError::permanent(anyhow::anyhow!(
+        "the bastion {bastion} asks for {}; agents cannot answer prompts. \
+         Use a key, ssh-agent or a Kerberos ticket for the bastion",
+        prompt.describe()
+    ))
+}
+
+/// Fail before `ssh` starts when this host authenticates with Kerberos and has no ticket:
+/// `ssh` would otherwise report a key/agent error that hides the real cause.
+async fn require_kerberos_ticket(conn: &Connection) -> Result<(), TransportError> {
+    let status = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        TokioCommand::new("klist")
+            .arg("-s")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status(),
+    )
+    .await;
+    match status {
+        Ok(Ok(s)) if s.success() => Ok(()),
+        // No ticket, or `klist` is unusable: either way ssh cannot get one either.
+        Ok(Ok(_)) | Err(_) => {
+            let where_ = if conn.bastion.is_some() {
+                "for the bastion".to_string()
+            } else {
+                format!("for {}", conn.host)
+            };
+            Err(TransportError::permanent(anyhow::anyhow!(
+                "no valid Kerberos ticket {where_}; run kinit (or bssh connect {} once) and retry",
+                conn.name
+            )))
+        }
+        // `klist` is not installed: let ssh decide, it reports its own gssapi failure.
+        Ok(Err(_)) => Ok(()),
+    }
+}
+
+/// Create the run's `ControlPath` directory (0700) before the first `ssh` uses it.
+fn prepare_control_dir(dir: &std::path::Path) -> Result<(), TransportError> {
+    if dir.is_dir() {
+        return Ok(());
+    }
+    std::fs::create_dir_all(dir)
+        .map_err(|e| TransportError::permanent(anyhow::anyhow!("{}: {e}", dir.display())))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
+            .map_err(|e| TransportError::permanent(anyhow::anyhow!("{}: {e}", dir.display())))?;
+    }
+    Ok(())
 }
 
 impl SubprocessTransport {
@@ -592,7 +974,11 @@ impl SubprocessTransport {
         command: &str,
         opts: &ExecOptions,
     ) -> Result<LimitedOutput, TransportError> {
-        let run = self.run_interactive_exec(conn, command);
+        let extras = ShellExtras {
+            non_interactive: opts.non_interactive,
+            connect_timeout_secs: opts.connect_timeout.map(|t| t.as_secs().max(1)),
+        };
+        let run = self.run_interactive_exec_ext(conn, command, &extras);
         let out = match opts.timeout {
             Some(t) => match tokio::time::timeout(t, run).await {
                 Ok(res) => res?,
@@ -605,7 +991,13 @@ impl SubprocessTransport {
             },
             None => run.await?,
         };
-        Ok(LimitedOutput::from_output(out, opts.max_output_bytes))
+        let limited = LimitedOutput::from_output(out, opts.max_output_bytes);
+        if opts.non_interactive {
+            if let Some(err) = classify_ssh_failure(&limited, Some(conn)) {
+                return Err(err);
+            }
+        }
+        Ok(limited)
     }
 }
 
@@ -639,7 +1031,7 @@ impl SshTransport for SubprocessTransport {
             .split_first()
             .ok_or_else(|| TransportError::permanent(anyhow::anyhow!("empty argv")))?;
 
-        let output = TokioCommand::new(cmd_name)
+        let output = prepare_ssh_command(cmd_name)
             .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -680,12 +1072,15 @@ impl SshTransport for SubprocessTransport {
             let out = self.exec(conn, command).await?;
             return Ok(LimitedOutput::from_output(out, None));
         }
+        if interactive_bastion && opts.cert_auth.is_some() {
+            return Err(cert_through_kerberos_bastion(conn));
+        }
+        if opts.non_interactive && opts.cert_auth.is_none() && conn.use_kerberos {
+            require_kerberos_ticket(conn).await?;
+        }
         if interactive_bastion {
-            if opts.non_interactive || opts.cert_auth.is_some() {
-                return Err(TransportError::permanent(anyhow::anyhow!(
-                    "interactive bastions need a terminal; not usable without prompts"
-                )));
-            }
+            // With Kerberos but no certificate: PTY scraping works for an agent too,
+            // now that the hop is BatchMode and a login prompt fails fast.
             return self.limited_interactive(conn, command, opts).await;
         }
 
@@ -694,12 +1089,18 @@ impl SshTransport for SubprocessTransport {
             Some(cert) => Some(write_cert_files(cert).map_err(TransportError::permanent)?),
             None => None,
         };
+        if opts.non_interactive && cert_files.is_none() {
+            if let Some(dir) = &opts.control_dir {
+                prepare_control_dir(dir)?;
+            }
+        }
         let extras = ArgvExtras {
             non_interactive: opts.non_interactive,
             connect_timeout_secs: opts.connect_timeout.map(|t| t.as_secs().max(1)),
             cert: cert_files
                 .as_ref()
                 .map(|(_, key, cert)| (key.clone(), cert.clone())),
+            control_dir: opts.control_dir.clone(),
         };
         let argv = Self::build_exec_argv_with(
             conn,
@@ -714,7 +1115,7 @@ impl SshTransport for SubprocessTransport {
         drop(cert_files);
 
         if opts.non_interactive {
-            if let Some(err) = classify_ssh_failure(&out) {
+            if let Some(err) = classify_ssh_failure(&out, Some(conn)) {
                 return Err(err);
             }
         } else if !out.timed_out && needs_tty(&out.stdout, &out.stderr) {
@@ -750,7 +1151,7 @@ impl SshTransport for SubprocessTransport {
             .split_first()
             .ok_or_else(|| TransportError::Permanent(anyhow::anyhow!("empty argv")))?;
 
-        let mut child = TokioCommand::new(cmd_name)
+        let mut child = prepare_ssh_command(cmd_name)
             .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -787,7 +1188,7 @@ impl SshTransport for SubprocessTransport {
             .split_first()
             .ok_or_else(|| TransportError::Permanent(anyhow::anyhow!("empty argv")))?;
 
-        let mut child = TokioCommand::new(cmd_name)
+        let mut child = prepare_ssh_command(cmd_name)
             .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -820,7 +1221,7 @@ impl SshTransport for SubprocessTransport {
             .ok_or_else(|| TransportError::permanent(anyhow::anyhow!("empty argv")))?;
 
         let Some(recorder) = recorder else {
-            let mut child = TokioCommand::new(cmd_name)
+            let mut child = prepare_ssh_command(cmd_name)
                 .args(args)
                 .stdin(Stdio::inherit())
                 .stdout(Stdio::inherit())
@@ -1246,8 +1647,84 @@ mod tests {
     fn proxy_command_escapes_percent() {
         let mut conn = c(false, Some("b.example"), Some("/keys/100%key"));
         conn.bastion_user = Some("ops".into());
-        let proxy = jump_proxy_command(&conn, "", "accept-new");
+        let proxy = jump_proxy_command(&conn, "", "accept-new", &HopOptions::default());
         assert!(proxy.contains("-i /keys/100%%key"));
+    }
+
+    #[test]
+    fn hop_argv_is_batch_and_bounded_when_non_interactive() {
+        let conn = c(false, Some("b.example"), Some("/keys/id_ed25519"));
+        let hop = HopOptions {
+            non_interactive: true,
+            connect_timeout_secs: Some(9),
+        };
+        let proxy = jump_proxy_command(&conn, " -T", "accept-new", &hop);
+        assert!(proxy.contains("-o BatchMode=yes"), "{proxy}");
+        assert!(proxy.contains("-o ConnectTimeout=9"), "{proxy}");
+        // The hop logs in as the connection's own user with its own key.
+        assert!(proxy.contains("-i /keys/id_ed25519"), "{proxy}");
+        assert!(proxy.ends_with("-- alice@b.example"), "{proxy}");
+
+        // Interactive CLI hops keep prompting: no batch switches.
+        let cli = jump_proxy_command(&conn, "", "accept-new", &HopOptions::default());
+        assert!(!cli.contains("BatchMode"), "{cli}");
+        assert!(!cli.contains("ConnectTimeout"), "{cli}");
+    }
+
+    #[test]
+    fn cert_hops_keep_the_original_bastion_identity() {
+        // `exec.rs::agent_connection` swaps the target login to bssh-agent and keeps the
+        // original bastion user (and the original key for the hop only).
+        let mut conn = c(
+            false,
+            Some("b.example"),
+            Some("/home/alice/.ssh/id_ed25519"),
+        );
+        conn.bastion_user = Some("ops".into());
+        conn.user = "bssh-agent".into();
+        let hop = HopOptions {
+            non_interactive: true,
+            connect_timeout_secs: Some(5),
+        };
+        let proxy = jump_proxy_command(&conn, " -T", "accept-new", &hop);
+        assert!(proxy.ends_with("-- ops@b.example"), "{proxy}");
+
+        // Without an explicit bastion user the raw helper falls back to `conn.user`;
+        // exec.rs sets `bastion_user` before it calls this, which the exec test pins.
+        conn.bastion_user = None;
+        conn.user = "bssh-agent".into();
+        let proxy = jump_proxy_command(&conn, " -T", "accept-new", &hop);
+        assert!(proxy.ends_with("-- bssh-agent@b.example"), "{proxy}");
+    }
+
+    #[test]
+    fn cert_exec_argv_keeps_the_hop_key_and_offers_only_the_certificate() {
+        let mut conn = c(
+            false,
+            Some("b.example"),
+            Some("/home/alice/.ssh/id_ed25519"),
+        );
+        conn.bastion_user = Some("alice".into());
+        let extras = ArgvExtras {
+            cert: Some((PathBuf::from("/t/id"), PathBuf::from("/t/id-cert.pub"))),
+            ..batch_extras()
+        };
+        let argv = SubprocessTransport::build_exec_argv_with(&conn, "id", "accept-new", &extras);
+        let proxy = argv
+            .iter()
+            .find(|a| a.starts_with("ProxyCommand="))
+            .expect("ProxyCommand");
+        assert!(proxy.contains("-i /home/alice/.ssh/id_ed25519"), "{proxy}");
+        assert!(proxy.contains("BatchMode=yes"), "{proxy}");
+        assert!(proxy.ends_with("-- alice@b.example"), "{proxy}");
+        // The target still authenticates with the certificate only.
+        let target_keys: Vec<&String> = argv
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| *a == "-i")
+            .map(|(i, _)| &argv[i + 1])
+            .collect();
+        assert_eq!(target_keys, vec!["/t/id"]);
     }
 
     fn batch_extras() -> ArgvExtras {
@@ -1255,6 +1732,7 @@ mod tests {
             non_interactive: true,
             connect_timeout_secs: Some(7),
             cert: None,
+            control_dir: None,
         }
     }
 
@@ -1321,10 +1799,13 @@ mod tests {
 
     #[test]
     fn permission_denied_becomes_an_actionable_error() {
-        let err = classify_ssh_failure(&out(
-            Some(255),
-            "alice@host: Permission denied (publickey,password).\n",
-        ))
+        let err = classify_ssh_failure(
+            &out(
+                Some(255),
+                "alice@host: Permission denied (publickey,password).\n",
+            ),
+            None,
+        )
         .expect("ssh failure")
         .to_string();
         assert!(
@@ -1335,11 +1816,82 @@ mod tests {
     }
 
     #[test]
+    fn a_refused_bastion_login_names_the_bastion() {
+        let mut conn = c(false, Some("bastion.corp"), None);
+        conn.bastion_user = Some("alice".into());
+        let err = classify_ssh_failure(
+            &out(
+                Some(255),
+                "alice@bastion.corp: Permission denied (publickey).\n",
+            ),
+            Some(&conn),
+        )
+        .expect("ssh failure")
+        .to_string();
+        assert!(
+            err.contains("the bastion bastion.corp refused the login"),
+            "{err}"
+        );
+        assert!(err.contains("alice@bastion.corp"), "{err}");
+        assert!(!err.contains("needs interactive auth"), "{err}");
+
+        // The target itself refusing a key keeps the key/agent advice.
+        let err = classify_ssh_failure(
+            &out(
+                Some(255),
+                "deploy@target.example: Permission denied (publickey).\n",
+            ),
+            Some(&conn),
+        )
+        .expect("ssh failure")
+        .to_string();
+        assert!(err.contains("needs interactive auth"), "{err}");
+    }
+
+    #[test]
+    fn a_bastion_that_forbids_forwarding_suggests_an_interactive_bastion() {
+        let mut conn = c(false, Some("bastion.corp"), None);
+        conn.name = "web-1".into();
+        let err = classify_ssh_failure(
+            &out(
+                Some(255),
+                "channel 0: open failed: administratively prohibited: open failed\n\
+                 Connection closed by UNKNOWN port 65535\n",
+            ),
+            Some(&conn),
+        )
+        .expect("ssh failure")
+        .to_string();
+        assert!(err.contains("forbids TCP forwarding"), "{err}");
+        assert!(err.contains("bssh edit web-1 --kerberos true"), "{err}");
+    }
+
+    #[test]
+    fn a_gssapi_rejection_points_at_the_ticket() {
+        let mut conn = c(true, Some("bastion.corp"), None);
+        conn.bastion_user = Some("alice".into());
+        let err = classify_ssh_failure(
+            &out(
+                Some(255),
+                "alice@bastion.corp: Permission denied (gssapi-with-mic,publickey).\n",
+            ),
+            Some(&conn),
+        )
+        .expect("ssh failure")
+        .to_string();
+        assert!(err.contains("Kerberos login failed"), "{err}");
+        assert!(err.contains("klist") && err.contains("kinit"), "{err}");
+    }
+
+    #[test]
     fn other_ssh_failures_keep_their_message() {
-        let err = classify_ssh_failure(&out(
-            Some(255),
-            "ssh: connect to host h port 22: Connection refused\n",
-        ))
+        let err = classify_ssh_failure(
+            &out(
+                Some(255),
+                "ssh: connect to host h port 22: Connection refused\n",
+            ),
+            None,
+        )
         .expect("ssh failure")
         .to_string();
         assert!(err.contains("Connection refused"), "{err}");
@@ -1348,9 +1900,197 @@ mod tests {
     #[test]
     fn remote_failures_are_results_not_errors() {
         // The remote command's own exit codes are data, even 255 without an ssh message.
-        assert!(classify_ssh_failure(&out(Some(1), "Permission denied\n")).is_none());
-        assert!(classify_ssh_failure(&out(Some(255), "boom\n")).is_none());
-        assert!(classify_ssh_failure(&out(Some(0), "")).is_none());
+        assert!(classify_ssh_failure(&out(Some(1), "Permission denied\n"), None).is_none());
+        assert!(classify_ssh_failure(&out(Some(255), "boom\n"), None).is_none());
+        assert!(classify_ssh_failure(&out(Some(0), ""), None).is_none());
+    }
+
+    #[test]
+    fn auth_prompts_are_detected_case_insensitively() {
+        assert_eq!(
+            auth_prompt_kind("alice@bastion's Password: "),
+            Some(AuthPrompt::Password)
+        );
+        assert_eq!(
+            auth_prompt_kind("PASSCODE (or press Ctrl-C):"),
+            Some(AuthPrompt::OneTimeCode)
+        );
+        assert_eq!(
+            auth_prompt_kind("Enter verification code: "),
+            Some(AuthPrompt::OneTimeCode)
+        );
+        assert_eq!(
+            auth_prompt_kind("YubiKey OTP: "),
+            Some(AuthPrompt::OneTimeCode)
+        );
+        assert_eq!(
+            auth_prompt_kind("One-time password: "),
+            Some(AuthPrompt::OneTimeCode)
+        );
+        assert_eq!(
+            auth_prompt_kind("MFA required"),
+            Some(AuthPrompt::OneTimeCode)
+        );
+        assert_eq!(
+            auth_prompt_kind("2FA token:"),
+            Some(AuthPrompt::OneTimeCode)
+        );
+        assert_eq!(
+            auth_prompt_kind("Enter PIN for Yubikey:"),
+            Some(AuthPrompt::OneTimeCode)
+        );
+        // A banner or MOTD is not a prompt.
+        assert_eq!(
+            auth_prompt_kind("Welcome to bastion corp. Use of this system is logged.\n$ "),
+            None
+        );
+    }
+
+    #[test]
+    fn the_prompt_error_names_the_bastion_and_the_way_out() {
+        let err = prompt_error(
+            &c(true, Some("bastion.corp"), None),
+            AuthPrompt::OneTimeCode,
+        )
+        .to_string();
+        assert!(
+            err.contains("the bastion bastion.corp asks for a one-time code"),
+            "{err}"
+        );
+        assert!(err.contains("agents cannot answer prompts"), "{err}");
+        assert!(err.contains("key, ssh-agent or a Kerberos ticket"), "{err}");
+    }
+
+    #[test]
+    fn a_certificate_through_a_kerberos_bastion_explains_why_it_cannot_pass() {
+        let mut conn = c(true, Some("bastion.corp"), None);
+        conn.name = "web-1".into();
+        let err = cert_through_kerberos_bastion(&conn).to_string();
+        assert!(err.contains("web-1 is behind a Kerberos bastion"), "{err}");
+        assert!(
+            err.contains("certificate (bssh-agent) logins cannot pass"),
+            "{err}"
+        );
+        assert!(err.contains("run as your user"), "{err}");
+    }
+
+    #[test]
+    fn shell_argv_for_an_agent_on_an_interactive_bastion_carries_target_credentials() {
+        // Without forward_agent: BatchMode, no -A, but TGT delegation so the
+        // bastion can GSSAPI-auth to the target.
+        let conn = c(true, Some("bastion.corp"), None);
+        let extras = ShellExtras {
+            non_interactive: true,
+            connect_timeout_secs: Some(12),
+        };
+        let argv = SubprocessTransport::build_shell_argv_ext(
+            &conn,
+            HostKeyPolicy::AcceptNew,
+            true,
+            &extras,
+        );
+        let has = |s: &str| argv.iter().any(|a| a == s);
+        assert!(has("BatchMode=yes"), "{argv:?}");
+        assert!(has("ConnectTimeout=12"), "{argv:?}");
+        assert!(has("GSSAPIAuthentication=yes"), "{argv:?}");
+        assert!(has("GSSAPIDelegateCredentials=yes"), "{argv:?}");
+        assert!(!has("-K"), "flag form: {argv:?}");
+        assert!(!has("-A"), "forward_agent is off: {argv:?}");
+        assert!(has("ClearAllForwardings=yes"), "{argv:?}");
+        let dd = argv.iter().position(|a| a == "--").expect("--");
+        assert_eq!(argv[dd + 1], "alice@bastion.corp");
+        assert_eq!(argv[dd + 2], "alice@target.example");
+
+        // With forward_agent: -A is required when the target wants the user's key.
+        let mut fwd = conn;
+        fwd.forward_agent = true;
+        let argv = SubprocessTransport::build_shell_argv_ext(
+            &fwd,
+            HostKeyPolicy::AcceptNew,
+            true,
+            &extras,
+        );
+        assert!(argv.iter().any(|a| a == "-A"), "{argv:?}");
+        assert!(
+            !argv.iter().any(|a| a == "ClearAllForwardings=yes"),
+            "{argv:?}"
+        );
+        assert!(argv.iter().any(|a| a == "GSSAPIDelegateCredentials=yes"));
+    }
+
+    #[test]
+    fn direct_kerberos_exec_argv_does_not_delegate() {
+        let conn = c(true, None, None);
+        let argv =
+            SubprocessTransport::build_exec_argv_with(&conn, "id", "accept-new", &batch_extras());
+        assert!(!argv.contains(&"-K".to_string()), "{argv:?}");
+        assert!(argv.contains(&"GSSAPIAuthentication=yes".to_string()));
+        assert!(argv.contains(&"GSSAPIDelegateCredentials=no".to_string()));
+        // Interactive CLI exec keeps `-K` (a human may be watching).
+        let cli = SubprocessTransport::build_exec_argv(&conn, "id", "accept-new");
+        assert!(cli.contains(&"-K".to_string()), "{cli:?}");
+    }
+
+    #[test]
+    fn control_master_is_only_for_batch_calls_without_a_certificate() {
+        let conn = c(false, Some("b.example"), None);
+        let dir = PathBuf::from("/run/bssh/ssh");
+        let extras = ArgvExtras {
+            control_dir: Some(dir.clone()),
+            ..batch_extras()
+        };
+        let argv = SubprocessTransport::build_exec_argv_with(&conn, "id", "accept-new", &extras);
+        assert!(argv.contains(&"ControlMaster=auto".to_string()), "{argv:?}");
+        assert!(argv.contains(&"ControlPath=/run/bssh/ssh/%C".to_string()));
+        assert!(argv.contains(&"ControlPersist=60".to_string()));
+
+        // Certificates are one identity per command: sharing would reuse the wrong one.
+        let cert = ArgvExtras {
+            cert: Some((PathBuf::from("/t/id"), PathBuf::from("/t/id-cert.pub"))),
+            ..batch_extras()
+        };
+        let argv = SubprocessTransport::build_exec_argv_with(&conn, "id", "accept-new", &cert);
+        assert!(
+            !argv.iter().any(|a| a.starts_with("ControlMaster")),
+            "{argv:?}"
+        );
+
+        // A plain CLI exec never shares connections behind the user's back.
+        let cli = SubprocessTransport::build_exec_argv(&conn, "id", "accept-new");
+        assert!(
+            !cli.iter().any(|a| a.starts_with("ControlMaster")),
+            "{cli:?}"
+        );
+    }
+
+    #[test]
+    fn the_echoed_payload_never_contains_a_marker() {
+        let p = interactive_payload("BSSH_00ff", "uptime");
+        assert!(!p.contains("BSSH_00ff_START"), "{p}");
+        assert!(!p.contains("BSSH_00ff_END"), "{p}");
+        // One logical command, terminated once: the shell reads it all before running it.
+        assert_eq!(p.matches('\n').count(), 2, "{p}");
+        assert!(p.contains("{ uptime\n}"), "{p}");
+    }
+
+    #[test]
+    fn only_output_between_the_markers_is_kept() {
+        // Shaped like qupload01v: zsh with a coloured prompt, PROMPT_SP, and the line
+        // editor echoing the whole payload before it runs.
+        let raw = "banner\r\n\x1b[1m%\x1b[0m   \r \r\r<16:29>[cs-x:~]\x1b[0m$ u\x08uptime; echo 'M''_END'\r\r\n\
+                   M_START\r\n 16:29:20 up 26 days\r\nM_END\r\n\x1b[1m%\x1b[0m  <16:29>[cs-x:~]$ \r\n";
+        let (lines, start, end) = extract_between_markers(raw, "M_START", "M_END");
+        assert!(start && end);
+        assert_eq!(lines, vec![" 16:29:20 up 26 days"]);
+
+        // Output with no final newline shares its line with the END marker.
+        let raw = "M_START\r\nline one\r\naGk=M_END\r\n";
+        let (lines, _, _) = extract_between_markers(raw, "M_START", "M_END");
+        assert_eq!(lines, vec!["line one", "aGk="]);
+
+        // No START marker: nothing is output (the caller turns this into an error).
+        let (lines, start, _) = extract_between_markers("banner\r\nbye\r\n", "M_START", "M_END");
+        assert!(!start && lines.is_empty());
     }
 
     #[test]

@@ -180,6 +180,7 @@ pub fn run() {
             commands::ai::ai_run_events,
             commands::ai::ai_decide,
             commands::ai::ai_stop,
+            commands::ai::ai_resume,
             commands::ai::ai_revoke_grant,
             commands::ai::ai_settings
         ])

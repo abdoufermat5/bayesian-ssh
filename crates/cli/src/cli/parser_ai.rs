@@ -8,12 +8,14 @@ pub enum AiCommands {
     Mcp(AiArgsMcp),
     /// Show how a command is parsed, tagged and decided
     Explain(AiArgsExplain),
-    /// List, show or test agent policies
+    /// List, show, set or test agent policies
     Policy(AiArgsPolicy),
     /// Approve or deny a pending agent request
     Approve(AiArgsApprove),
     /// Stop a running agent session
     Stop(AiArgsStop),
+    /// Resume a run paused by the circuit breaker
+    Resume(AiArgsResume),
     /// Show running agent sessions, pending approvals and grants
     Status(AiArgsStatus),
     /// Show what agents did: calls, decisions, approvals, changes
@@ -73,6 +75,23 @@ pub enum AiPolicyCommands {
         #[arg(default_value = "default")]
         name: String,
     },
+    /// Write a policy into this environment's config.json
+    Set {
+        /// Policy name, e.g. `default`
+        name: String,
+        /// observe, operate or oncall (kept from the existing policy when omitted)
+        #[arg(long)]
+        profile: Option<String>,
+        /// Hosts carrying this tag are in scope (repeatable); replaces the stored tags
+        #[arg(long = "tag", value_name = "TAG")]
+        tag: Vec<String>,
+        /// Connection name in scope, globs allowed (repeatable); replaces the stored hosts
+        #[arg(long = "host", value_name = "HOST")]
+        host: Vec<String>,
+        /// Every host: scope.tags becomes ["*"]
+        #[arg(long)]
+        all_hosts: bool,
+    },
     /// Run every command in FILE (one per line, `# expect: allow|ask|deny` optional) against a policy
     Test {
         file: String,
@@ -98,6 +117,9 @@ pub struct AiArgsApprove {
     /// Also grant the same kind of call for this many minutes
     #[arg(long, value_name = "MINUTES")]
     pub grant: Option<u32>,
+    /// Keep answering requests as they arrive until Ctrl-C
+    #[arg(long)]
+    pub follow: bool,
 }
 
 #[derive(Args, Debug)]
@@ -106,6 +128,12 @@ pub struct AiArgsStop {
     pub run: Option<String>,
     #[arg(long)]
     pub all: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct AiArgsResume {
+    /// Run id (omit when only one run is active)
+    pub run: Option<String>,
 }
 
 #[derive(Args, Debug)]

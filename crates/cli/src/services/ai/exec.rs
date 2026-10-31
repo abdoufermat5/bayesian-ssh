@@ -28,6 +28,31 @@ pub struct AiExecutor {
     read_paths: Vec<String>,
     /// Paths the read-only jail must mask (`Policy::deny_paths`).
     deny_paths: Vec<String>,
+    /// Name of this executor's `ControlMaster` directory. One MCP run (or CLI command)
+    /// pays for the bastion handshake once instead of once per call.
+    control_id: String,
+}
+
+/// Does a `ControlPath` of `<dir>/<40 hex characters>` fit in a Unix socket address?
+#[cfg(unix)]
+fn control_path_fits(dir: &std::path::Path) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+    // `/` + `%C` (40 hex characters).
+    const SOCKET_ROOM: usize = 41;
+    // The smallest `sun_path` we may meet (macOS 104; Linux and the BSDs are larger).
+    const LIMIT: usize = 100;
+    dir.as_os_str().as_bytes().len() + SOCKET_ROOM <= LIMIT
+}
+
+impl Drop for AiExecutor {
+    fn drop(&mut self) {
+        // Best effort: the master outlives us for `ControlPersist`, but its sockets are
+        // unreachable once the private directory is gone.
+        #[cfg(unix)]
+        if let Some(dir) = self.control_dir() {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
 }
 
 impl AiExecutor {
@@ -36,7 +61,28 @@ impl AiExecutor {
             config: config.clone(),
             read_paths: Vec::new(),
             deny_paths: Vec::new(),
+            control_id: uuid::Uuid::new_v4().simple().to_string()[..8].to_string(),
         }
+    }
+
+    /// Private directory for this executor's SSH control sockets (created on first use).
+    ///
+    /// `ControlPath` is `<dir>/<40-character %C>`, and a Unix socket address is short
+    /// (104 bytes on macOS, 108 on Linux). The `ai` dir is preferred, but a normal config
+    /// path plus 41 bytes does not fit, so fall back to a short private directory under
+    /// `/tmp`. `None` means connection sharing is skipped rather than broken.
+    #[cfg(unix)]
+    fn control_dir(&self) -> Option<std::path::PathBuf> {
+        let name = format!("bssh-ai-{}-{}", std::process::id(), self.control_id);
+        let mut candidates = vec![crate::services::ai::ai_dir(&self.config)
+            .join("ssh")
+            .join(&self.control_id)];
+        let tmp = std::path::Path::new("/tmp");
+        if tmp.is_dir() {
+            candidates.push(tmp.join(&name));
+        }
+        candidates.push(std::env::temp_dir().join(&name));
+        candidates.into_iter().find(|p| control_path_fits(p))
     }
 
     /// Paths a jailed command may read; passed to `jail::wrap_with`.
@@ -84,7 +130,19 @@ impl AiExecutor {
         // Only the certificate may authenticate, as the agent principal.
         let mut agent_conn = conn.clone();
         agent_conn.user = cert::AGENT_PRINCIPAL.to_string();
-        agent_conn.key_path = None;
+        if conn.bastion.is_some() {
+            // The bastion hop still logs in as the user: the certificate authorises the
+            // login *on the target*, not on a bastion that has no bssh-agent account.
+            agent_conn.bastion_user = Some(
+                conn.bastion_user
+                    .clone()
+                    .unwrap_or_else(|| conn.user.clone()),
+            );
+            // `key_path` stays for the ProxyCommand hop only. `build_exec_argv_with`
+            // ignores it once `cert_auth` is set, so the target offers no key.
+        } else {
+            agent_conn.key_path = None;
+        }
         Ok(agent_conn)
     }
 
@@ -102,8 +160,9 @@ impl AiExecutor {
             connect_timeout: Some(CONNECT_TIMEOUT.min(limits.timeout.max(Duration::from_secs(1)))),
             non_interactive: true,
             cert_auth: None,
+            control_dir: None,
         };
-        match mode {
+        let prepared: anyhow::Result<(Connection, String, ExecOptions)> = match mode {
             ExecMode::Plain => Ok((conn.clone(), command.to_string(), opts)),
             ExecMode::Jailed(kind) => {
                 let wrapped = jail::wrap_with(*kind, &self.jail_spec(), command)?;
@@ -120,7 +179,17 @@ impl AiExecutor {
                 let agent = self.agent_connection(conn, command, &mut opts, "certified exec")?;
                 Ok((agent, command.to_string(), opts))
             }
+        };
+        #[cfg_attr(not(unix), allow(unused_mut))]
+        let (conn, command, mut opts) = prepared?;
+        #[cfg(unix)]
+        if opts.cert_auth.is_none() {
+            // One ssh connection per run. A certificate is a different identity per
+            // command, so certified calls do not share a connection. Windows `ssh` has
+            // no connection multiplexing, so it never gets these options.
+            opts.control_dir = self.control_dir();
         }
+        Ok((conn, command, opts))
     }
 }
 
@@ -240,6 +309,63 @@ mod tests {
         };
         let (_, _, opts) = exec.prepare(&conn(), "x", &ExecMode::Plain, &l).unwrap();
         assert_eq!(opts.connect_timeout, Some(CONNECT_TIMEOUT));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn every_call_of_a_run_shares_one_control_directory() {
+        let config = AppConfig::default();
+        let exec = AiExecutor::new(&config);
+        let (_, _, first) = exec
+            .prepare(&conn(), "a", &ExecMode::Plain, &limits())
+            .unwrap();
+        let (_, _, second) = exec
+            .prepare(&conn(), "b", &ExecMode::Plain, &limits())
+            .unwrap();
+        let dir = first.control_dir.expect("control dir");
+        assert_eq!(
+            Some(dir.clone()),
+            second.control_dir,
+            "one directory per run"
+        );
+        // Either the environment's ai dir, or the short temp fallback a deep config
+        // path forces (a `%C` socket address is 40 bytes of a 108-byte limit).
+        let under_ai = crate::services::ai::ai_dir(&config).join("ssh");
+        assert!(
+            dir.starts_with(&under_ai) || dir.starts_with(std::env::temp_dir()),
+            "{dir:?}"
+        );
+        // `ControlPath` is this directory plus `/` and the 40-character hash.
+        assert!(dir.as_os_str().len() + 41 <= 100, "{dir:?} is too long");
+    }
+
+    #[test]
+    fn certified_through_a_bastion_keeps_the_users_hop_login() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = AppConfig {
+            database_path: tmp.path().join("bssh.db"),
+            ..AppConfig::default()
+        };
+        cert::init_ca(&config, None).expect("ca");
+        let exec = AiExecutor::new(&config);
+        let mut bastioned = conn();
+        bastioned.bastion = Some("bastion.example".into());
+        let (agent, cmd, opts) = exec
+            .prepare(&bastioned, "id", &ExecMode::Certified, &limits())
+            .unwrap();
+        assert_eq!(cmd, "id");
+        assert_eq!(agent.user, cert::AGENT_PRINCIPAL);
+        assert_eq!(
+            agent.bastion_user.as_deref(),
+            Some("alice"),
+            "the hop must log in as the user, not as bssh-agent"
+        );
+        assert_eq!(
+            agent.key_path.as_deref(),
+            Some("/home/alice/.ssh/id_ed25519"),
+            "the original key is needed for the hop (the target uses the certificate)"
+        );
+        assert!(opts.control_dir.is_none(), "a certificate is per-command");
     }
 
     #[test]

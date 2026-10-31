@@ -214,7 +214,8 @@ fn event_run_id(e: &AiEvent) -> &str {
         | AiEvent::Approval { run_id, .. }
         | AiEvent::Result { run_id, .. }
         | AiEvent::Change { run_id, .. }
-        | AiEvent::CircuitBreaker { run_id, .. }
+        | AiEvent::Paused { run_id, .. }
+        | AiEvent::Resumed { run_id, .. }
         | AiEvent::RunEnded { run_id, .. } => run_id,
         AiEvent::Call { call, .. } => &call.run_id,
     }
@@ -387,7 +388,8 @@ pub fn build_report(entries: &[AuditEntry], run_id: &str) -> RunReport {
                 checks_ok: None,
                 undone: false,
             }),
-            AiEvent::CircuitBreaker { reason, .. } => r.circuit_breaker.push(reason.clone()),
+            AiEvent::Paused { reason, .. } => r.circuit_breaker.push(reason.clone()),
+            AiEvent::Resumed { .. } => {}
             AiEvent::RunEnded { reason, .. } => {
                 r.ended = Some(e.ts.clone());
                 r.end_reason = Some(reason.clone());
@@ -1009,7 +1011,7 @@ mod tests {
                 applied: true,
                 undo_point: Some("undo-1".into()),
             },
-            AiEvent::CircuitBreaker {
+            AiEvent::Paused {
                 run_id: "run-1".into(),
                 reason: "5 denials".into(),
             },

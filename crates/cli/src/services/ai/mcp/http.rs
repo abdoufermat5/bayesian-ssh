@@ -95,7 +95,9 @@ impl GatewayRuns {
             // Nobody sits at an unattended agent's client: approvals go out of band.
             elicitor: None,
         };
-        RunContext::new(gw.config.clone(), gw.policy_name.clone(), policy, deps)
+        let ctx = RunContext::new(gw.config.clone(), gw.policy_name.clone(), policy, deps);
+        ctx.enable_async_approvals();
+        ctx
     }
 }
 

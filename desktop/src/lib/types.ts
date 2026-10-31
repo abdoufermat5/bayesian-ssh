@@ -607,7 +607,8 @@ export type AiEvent =
       applied: boolean;
       undo_point: string | null;
     }
-  | { event: "circuit_breaker"; run_id: string; reason: string }
+  | { event: "paused"; run_id: string; reason: string }
+  | { event: "resumed"; run_id: string; by: string }
   | { event: "run_ended"; run_id: string; reason: string };
 
 /** One event of a run as the desktop received it (`ai_run_events`, `ai://event`). */
@@ -635,6 +636,10 @@ export interface AiRun {
   connected: boolean;
   /** Reason from the run's `run_ended` event. */
   ended: string | null;
+  /** The circuit breaker paused the run; Resume clears it. */
+  paused: boolean;
+  /** Why it paused, shown next to the Resume button. */
+  pause_reason?: string | null;
 }
 
 export interface AiBudgets {
@@ -669,4 +674,6 @@ export interface AiSettingsView {
   approval_timeout_secs: number;
   /** Inventory sources whose tags may widen scope or allow in-client approval. */
   trusted_tag_sources: string[];
+  /** The `config.json` these policies were read from. */
+  config_path: string;
 }

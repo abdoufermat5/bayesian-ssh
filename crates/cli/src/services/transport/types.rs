@@ -49,6 +49,10 @@ pub struct ExecOptions {
     pub non_interactive: bool,
     /// Authenticate with this certificate instead of keys, agent and password.
     pub cert_auth: Option<CertAuth>,
+    /// Share one `ssh` connection per run: this private directory holds the
+    /// `ControlPath` sockets. Only used for non-interactive calls without a
+    /// certificate (a certificate is a different identity per command).
+    pub control_dir: Option<PathBuf>,
 }
 
 impl ExecOptions {
@@ -286,6 +290,21 @@ pub trait SshTransport: Send + Sync {
     }
 
     async fn open_sftp(&self, conn: &Connection) -> Result<Box<dyn SftpSession>, TransportError>;
+
+    /// Open an SFTP session under [`ExecOptions`]: bounded connect/authentication and,
+    /// with `non_interactive`, no password prompt on the caller's TTY.
+    ///
+    /// The default refuses: a transport that only implements `open_sftp` would prompt.
+    async fn open_sftp_limited(
+        &self,
+        _conn: &Connection,
+        _opts: &ExecOptions,
+    ) -> Result<Box<dyn SftpSession>, TransportError> {
+        Err(TransportError::permanent(anyhow::anyhow!(
+            "{} transport does not support non-interactive SFTP",
+            self.name()
+        )))
+    }
 
     /// Open a local TCP port forward: connections to `bind_host:bind_port` are
     /// tunnelled through SSH to `remote_host:remote_port`.

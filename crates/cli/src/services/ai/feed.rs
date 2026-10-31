@@ -44,6 +44,7 @@ pub fn kind_word(tool: ToolName) -> &'static str {
         ToolName::ApplyChange => "apply",
         ToolName::Undo => "undo",
         ToolName::RequestAccess => "access",
+        ToolName::WaitApproval => "approval",
     }
 }
 
@@ -319,7 +320,8 @@ pub fn event_run_id(ev: &AiEvent) -> &str {
         | AiEvent::Approval { run_id, .. }
         | AiEvent::Result { run_id, .. }
         | AiEvent::Change { run_id, .. }
-        | AiEvent::CircuitBreaker { run_id, .. }
+        | AiEvent::Paused { run_id, .. }
+        | AiEvent::Resumed { run_id, .. }
         | AiEvent::RunEnded { run_id, .. } => run_id,
         AiEvent::Call { call, .. } => &call.run_id,
     }
@@ -509,10 +511,15 @@ pub fn event_feed(ev: &AiEvent, ctx: &mut FeedContext, now: DateTime<Utc>) -> Op
                 )
             }
         }
-        AiEvent::CircuitBreaker { reason, .. } => Some(
+        AiEvent::Paused { reason, .. } => Some(
             FeedLine::new(&time, Glyph::Bad, "")
                 .text(format!("agent paused: {}", oneline(reason)))
                 .meta(Tone::Bad, "circuit breaker"),
+        ),
+        AiEvent::Resumed { by, .. } => Some(
+            FeedLine::new(&time, Glyph::Ok, "")
+                .text(format!("agent resumed by {by}"))
+                .meta(Tone::Ok, "circuit breaker"),
         ),
         AiEvent::RunEnded { run_id, reason } => {
             let stats = ctx.runs.get(run_id).cloned().unwrap_or_default();

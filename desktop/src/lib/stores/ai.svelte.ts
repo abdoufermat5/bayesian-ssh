@@ -168,6 +168,10 @@ export async function stopAiRun(runId: string) {
   await invoke("ai_stop", { runId });
 }
 
+export async function resumeAiRun(runId: string) {
+  await invoke("ai_resume", { runId });
+}
+
 export async function revokeAiGrant(runId: string, grantId: string) {
   await invoke("ai_revoke_grant", { runId, grantId });
 }

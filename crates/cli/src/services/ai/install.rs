@@ -14,6 +14,7 @@
 //! - omp (oh-my-pi): `~/.omp/agent/mcp.json`, `mcpServers` with `type`. omp ignores other
 //!   clients' user configs (`~/.claude.json`, …) unless opted in, so it needs its own entry.
 
+use crate::services::ai::types::Profile;
 use anyhow::{anyhow, bail, Context, Result};
 use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
@@ -173,22 +174,24 @@ fn has_entry(client: Client, text: &str) -> bool {
 
 // ---------------------------------------------------------------- merging
 
-fn mcp_args(policy: &str) -> Vec<String> {
+fn mcp_args(policy: &str, environment: &str) -> Vec<String> {
     vec![
         "ai".into(),
         "mcp".into(),
         "--policy".into(),
         policy.to_string(),
+        "--env".into(),
+        environment.to_string(),
     ]
 }
 
-fn json_entry(client: Client, bin: &Path, policy: &str) -> Value {
+fn json_entry(client: Client, bin: &Path, policy: &str, environment: &str) -> Value {
     let mut o = Map::new();
     if matches!(client, Client::ClaudeCode | Client::Vscode | Client::Omp) {
         o.insert("type".into(), json!("stdio"));
     }
     o.insert("command".into(), json!(bin.to_string_lossy()));
-    o.insert("args".into(), json!(mcp_args(policy)));
+    o.insert("args".into(), json!(mcp_args(policy, environment)));
     Value::Object(o)
 }
 
@@ -252,14 +255,21 @@ pub fn merge_json_mcp(
 }
 
 /// New text of `~/.codex/config.toml`, or None when nothing changes. Keeps comments and order.
-pub fn merge_codex(before: Option<&str>, entry: Option<(&Path, &str)>) -> Result<Option<String>> {
+///
+/// `entry` carries the binary, the policy, the environment and the approval timeout. Codex
+/// gives up on a tool call after `tool_timeout_sec` (60 s by default), which is shorter than
+/// an approval can wait, so the entry asks for the approval window plus 30 s.
+pub fn merge_codex(
+    before: Option<&str>,
+    entry: Option<(&Path, &str, &str, u64)>,
+) -> Result<Option<String>> {
     let mut doc: toml_edit::DocumentMut = before
         .unwrap_or("")
         .parse()
         .context("~/.codex/config.toml is not valid TOML; not touching it")?;
     let old = doc.to_string();
     match entry {
-        Some((bin, policy)) => {
+        Some((bin, policy, environment, approval_timeout_secs)) => {
             let servers = doc
                 .entry("mcp_servers")
                 .or_insert_with(|| {
@@ -272,10 +282,12 @@ pub fn merge_codex(before: Option<&str>, entry: Option<(&Path, &str)>) -> Result
             let mut t = toml_edit::Table::new();
             t["command"] = toml_edit::value(bin.to_string_lossy().to_string());
             let mut args = toml_edit::Array::new();
-            for a in mcp_args(policy) {
+            for a in mcp_args(policy, environment) {
                 args.push(a);
             }
             t["args"] = toml_edit::value(args);
+            t["tool_timeout_sec"] =
+                toml_edit::value(approval_timeout_secs.saturating_add(30) as i64);
             servers.insert(SERVER_NAME, toml_edit::Item::Table(t));
         }
         None => {
@@ -436,6 +448,7 @@ printf '%s\n' "$cmd" | tr ';|&()`' '\n\n\n\n\n\n' | while IFS= read -r seg; do
   if [ "$found" = 1 ]; then
     first=
     second=
+    third=
     while [ $# -gt 0 ]; do
       w=$1
       shift
@@ -449,6 +462,8 @@ printf '%s\n' "$cmd" | tr ';|&()`' '\n\n\n\n\n\n' | while IFS= read -r seg; do
         first=$w
       elif [ -z "$second" ]; then
         second=$w
+      elif [ -z "$third" ]; then
+        third=$w
       fi
     done
     ok=1
@@ -457,7 +472,9 @@ printf '%s\n' "$cmd" | tr ';|&()`' '\n\n\n\n\n\n' | while IFS= read -r seg; do
       help|completions|list|show|why|history|stats|doctor|ping|groups|export) ;;
       ai)
         case "$second" in
-          ''|help|explain|watch|log|status|doctor|policy) ;;
+          ''|help|explain|watch|log|status|doctor) ;;
+          # `policy set` edits the policy that decides what the agent may do.
+          policy) case "$third" in ''|help|list|show|test) ;; *) ok=0 ;; esac ;;
           *) ok=0 ;;
         esac ;;
       key) case "$second" in ''|help|list) ;; *) ok=0 ;; esac ;;
@@ -586,6 +603,12 @@ fn read_opt(path: &Path) -> Result<Option<String>> {
 pub struct InstallOptions<'a> {
     pub client: Client,
     pub policy: &'a str,
+    /// The policy's profile, for the summary printed after installing.
+    pub profile: Profile,
+    /// Environment written into the agent's entry, so it cannot follow an active-env switch.
+    pub environment: &'a str,
+    /// `ai.approval_timeout_secs`; Codex's tool timeout is derived from it.
+    pub approval_timeout_secs: u64,
     pub guard: bool,
     pub dry_run: bool,
     pub uninstall: bool,
@@ -609,10 +632,16 @@ pub fn run_install(o: &InstallOptions) -> Result<String> {
     let path = config_path(o.client, o.home);
     let before = read_opt(&path)?;
     let new = if o.client == Client::Codex {
-        let entry = (!o.uninstall).then_some((o.bssh_bin, o.policy));
+        let entry = (!o.uninstall).then_some((
+            o.bssh_bin,
+            o.policy,
+            o.environment,
+            o.approval_timeout_secs,
+        ));
         merge_codex(before.as_deref(), entry)?
     } else {
-        let entry = (!o.uninstall).then(|| json_entry(o.client, o.bssh_bin, o.policy));
+        let entry =
+            (!o.uninstall).then(|| json_entry(o.client, o.bssh_bin, o.policy, o.environment));
         merge_json_mcp(o.client, &path, before.as_deref(), entry)?
     };
     match new {
@@ -710,7 +739,43 @@ pub fn run_install(o: &InstallOptions) -> Result<String> {
     if !o.uninstall && changes.is_empty() && !write_script {
         note("bssh is already configured.".to_string());
     }
+    if !o.uninstall {
+        out.push_str(&next_steps(o));
+    }
     Ok(out)
+}
+
+/// What to do after writing the config: restart the client, where approvals happen, what the
+/// policy allows.
+fn next_steps(o: &InstallOptions) -> String {
+    let allows = match o.profile {
+        Profile::Observe => "observe: the agent can look at hosts but cannot change anything",
+        Profile::Operate => "operate: reads run freely, every change waits for your approval",
+        Profile::Oncall => {
+            "oncall: reads run freely, changes wait for approval (usually a remote approver)"
+        }
+    };
+    let mut out = format!(
+        "\nNext:\n  \
+         1. Restart {client} so it starts the new bssh server.\n  \
+         2. Approve what the agent asks to run: `bssh ai watch` in another terminal, or the \
+         desktop app (`bssh desktop`).\n  \
+         3. Check the hosts you want it to use with `bssh ai doctor`.\n\n\
+         Policy '{policy}' in environment '{env}' is {allows}.\n",
+        client = o.client.name(),
+        policy = o.policy,
+        env = o.environment,
+    );
+    if o.profile == Profile::Observe {
+        out.push_str(&format!(
+            "\nTo let it change hosts, run `bssh ai policy set {policy} --profile operate \
+             --all-hosts` (or `--tag <TAG>` / `--host <NAME>` for a narrower scope), then \
+             restart {client}.\n",
+            policy = o.policy,
+            client = o.client.name(),
+        ));
+    }
+    out
 }
 
 #[cfg(test)]
@@ -727,6 +792,9 @@ mod tests {
         InstallOptions {
             client,
             policy: "default",
+            profile: Profile::Observe,
+            environment: "default",
+            approval_timeout_secs: 300,
             guard: false,
             dry_run: false,
             uninstall: false,
@@ -758,7 +826,10 @@ mod tests {
         let e = &v["mcpServers"]["bssh"];
         assert_eq!(e["type"], "stdio");
         assert_eq!(e["command"], "/usr/local/bin/bssh");
-        assert_eq!(e["args"], json!(["ai", "mcp", "--policy", "default"]));
+        assert_eq!(
+            e["args"],
+            json!(["ai", "mcp", "--policy", "default", "--env", "default"])
+        );
         // Backup holds the original.
         let baks: Vec<_> = std::fs::read_dir(h.path())
             .unwrap()
@@ -852,7 +923,13 @@ mod tests {
         );
         assert_eq!(
             d["mcp_servers"]["bssh"]["args"].as_array().unwrap().len(),
-            4
+            6
+        );
+        // Codex gives up on a tool call after `tool_timeout_sec`; an approval may wait
+        // longer than its 60 s default.
+        assert_eq!(
+            d["mcp_servers"]["bssh"]["tool_timeout_sec"].as_integer(),
+            Some(330)
         );
         assert!(run_install(&o).unwrap().contains("nothing to change"));
         let mut u = opts(Client::Codex, h.path(), &ai, &bin, &[]);
@@ -860,6 +937,68 @@ mod tests {
         run_install(&u).unwrap();
         let t = std::fs::read_to_string(&p).unwrap();
         assert!(!t.contains("bssh") && t.contains("[mcp_servers.other]"));
+    }
+
+    #[test]
+    fn the_entry_is_pinned_to_the_environment_and_install_says_what_next() {
+        let h = tempfile::tempdir().unwrap();
+        let ai = h.path().join("ai");
+        let bin = PathBuf::from("/b/bssh");
+        let mut o = opts(Client::ClaudeDesktop, h.path(), &ai, &bin, &[]);
+        o.environment = "prod";
+        o.policy = "prod-observe";
+        o.profile = Profile::Observe;
+        let r = run_install(&o).unwrap();
+        let v: Value = serde_json::from_str(
+            &std::fs::read_to_string(config_path(Client::ClaudeDesktop, h.path())).unwrap(),
+        )
+        .unwrap();
+        // Switching the active environment must not change what the agent reaches.
+        assert_eq!(
+            v["mcpServers"]["bssh"]["args"],
+            json!(["ai", "mcp", "--policy", "prod-observe", "--env", "prod"])
+        );
+        assert!(r.contains("Restart claude-desktop"), "{r}");
+        assert!(r.contains("`bssh ai watch` in another terminal"), "{r}");
+        assert!(r.contains("`bssh ai doctor`"), "{r}");
+        assert!(
+            r.contains("Policy 'prod-observe' in environment 'prod' is observe: the agent can look at hosts but cannot change anything"),
+            "{r}"
+        );
+        assert!(
+            r.contains("`bssh ai policy set prod-observe --profile operate --all-hosts`"),
+            "{r}"
+        );
+        // The next steps are about installing; uninstalling prints none.
+        let mut u = opts(Client::ClaudeDesktop, h.path(), &ai, &bin, &[]);
+        u.uninstall = true;
+        let r = run_install(&u).unwrap();
+        assert!(!r.contains("Next:"), "{r}");
+    }
+
+    #[test]
+    fn codex_tool_timeout_follows_the_approval_timeout() {
+        let h = tempfile::tempdir().unwrap();
+        let ai = h.path().join("ai");
+        let bin = PathBuf::from("/b/bssh");
+        let mut o = opts(Client::Codex, h.path(), &ai, &bin, &[]);
+        o.approval_timeout_secs = 600;
+        run_install(&o).unwrap();
+        let t = std::fs::read_to_string(config_path(Client::Codex, h.path())).unwrap();
+        let d: toml::Table = t.parse().unwrap();
+        assert_eq!(
+            d["mcp_servers"]["bssh"]["tool_timeout_sec"].as_integer(),
+            Some(630)
+        );
+        // A shorter approval window still leaves room for the call itself.
+        o.approval_timeout_secs = 0;
+        run_install(&o).unwrap();
+        let t = std::fs::read_to_string(config_path(Client::Codex, h.path())).unwrap();
+        let d: toml::Table = t.parse().unwrap();
+        assert_eq!(
+            d["mcp_servers"]["bssh"]["tool_timeout_sec"].as_integer(),
+            Some(30)
+        );
     }
 
     #[test]
@@ -1041,6 +1180,9 @@ mod tests {
                 "echo a | bssh ai approve",
                 "bssh ai grant",
                 "bssh ai policy list && bssh ai approve",
+                // Widening the policy that governs the agent is the human's call.
+                "bssh ai policy set default --profile operate --all-hosts",
+                "bssh ai policy set default --profile operate --tag prod",
                 "bssh ai stop --all",
                 "bssh ai install claude-code",
                 "bssh ai token alice",
@@ -1073,6 +1215,8 @@ mod tests {
                 "bssh ai watch",
                 "bssh ai status --json",
                 "bssh ai policy show default",
+                "bssh ai policy list",
+                "bssh ai policy test checks.txt",
                 "bssh key list",
                 "bssh env list",
                 "bssh --help",

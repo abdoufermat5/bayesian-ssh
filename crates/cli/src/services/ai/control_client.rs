@@ -248,6 +248,11 @@ mod unix_impl {
             .await
         }
 
+        pub async fn resume(&mut self, by: &str) -> Result<()> {
+            self.expect_ok(&ClientMsg::Resume { by: by.to_string() })
+                .await
+        }
+
         pub async fn stop(&mut self, reason: &str) -> Result<()> {
             self.expect_ok(&ClientMsg::Stop {
                 reason: reason.to_string(),
@@ -335,6 +340,7 @@ mod tests {
             b.clone(),
             events.clone(),
             stop_rx,
+            Arc::new(|_: &str| Ok(())),
         ));
         for _ in 0..200 {
             if sock.exists() {

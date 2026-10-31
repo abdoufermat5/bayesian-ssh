@@ -175,9 +175,12 @@ impl FileAccess for FakeFiles {
 }
 
 /// Broker that answers from a queue (default: approved by "tester") and remembers requests.
+/// With `hold`, it waits for an outcome instead, like a human deciding later.
 pub struct FakeBroker {
     pub requests: Mutex<Vec<ApprovalRequest>>,
     outcomes: Mutex<VecDeque<ApprovalOutcome>>,
+    hold: std::sync::atomic::AtomicBool,
+    notify: tokio::sync::Notify,
 }
 
 impl FakeBroker {
@@ -185,11 +188,20 @@ impl FakeBroker {
         Arc::new(Self {
             requests: Mutex::new(Vec::new()),
             outcomes: Mutex::new(VecDeque::new()),
+            hold: std::sync::atomic::AtomicBool::new(false),
+            notify: tokio::sync::Notify::new(),
         })
+    }
+
+    /// Only answer `request` once an outcome is pushed (for `pending`/`wait_approval`).
+    pub fn set_hold(&self, hold: bool) {
+        self.hold.store(hold, std::sync::atomic::Ordering::SeqCst);
     }
 
     pub fn push(&self, o: ApprovalOutcome) {
         self.outcomes.lock().unwrap().push_back(o);
+        // `notify_one` keeps a permit if nobody waits yet, unlike `notify_waiters`.
+        self.notify.notify_one();
     }
 
     pub fn count(&self) -> usize {
@@ -201,6 +213,19 @@ impl FakeBroker {
 impl ApprovalBroker for FakeBroker {
     async fn request(&self, req: ApprovalRequest) -> Result<ApprovalOutcome> {
         self.requests.lock().unwrap().push(req);
+        if self.hold.load(std::sync::atomic::Ordering::SeqCst) {
+            loop {
+                if let Some(o) = self.outcomes.lock().unwrap().pop_front() {
+                    return Ok(o);
+                }
+                // Register before re-checking, so a push cannot be lost.
+                let notified = self.notify.notified();
+                if let Some(o) = self.outcomes.lock().unwrap().pop_front() {
+                    return Ok(o);
+                }
+                notified.await;
+            }
+        }
         Ok(self
             .outcomes
             .lock()

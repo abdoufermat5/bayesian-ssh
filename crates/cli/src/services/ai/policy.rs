@@ -182,6 +182,92 @@ fn union(mut base: Vec<String>, extra: &[String]) -> Vec<String> {
     base
 }
 
+// ---------------------------------------------------------------- validation
+
+/// Fields serde reads from [`Policy`]; anything else in the file is ignored.
+const POLICY_FIELDS: &[&str] = &[
+    "profile",
+    "scope",
+    "approval",
+    "read_paths",
+    "deny_paths",
+    "write_paths",
+    "deny",
+    "budgets",
+    "redact",
+];
+/// Fields serde reads from [`Scope`].
+const SCOPE_FIELDS: &[&str] = &["tags", "hosts"];
+/// Fields serde reads from [`super::types::ApprovalRules`].
+const APPROVAL_FIELDS: &[&str] = &["default", "in_client", "two_person", "two_person_hosts"];
+
+/// Problems in `name` as written in the environment's `config.json` that serde would
+/// silently drop: unknown fields (a typo like `scopes` or `in-client`) and a policy with an
+/// empty scope, which reaches no host at all.
+///
+/// [`Policy`] does not use `deny_unknown_fields` because that turns a typo into a config
+/// that will not load at all; these warnings are shown by `bssh ai policy show`,
+/// `bssh ai doctor` and at `bssh ai mcp` startup instead.
+pub fn validation_warnings(config: &AppConfig, name: &str) -> Vec<String> {
+    let raw = std::fs::read_to_string(config.config_file()).ok();
+    validation_warnings_in(raw.as_deref(), config, name)
+}
+
+/// [`validation_warnings`] with the config file's text passed in (tests).
+pub fn validation_warnings_in(raw: Option<&str>, config: &AppConfig, name: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let written = raw
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(t).ok())
+        .and_then(|v| {
+            v.get("ai")
+                .and_then(|ai| ai.get("policies"))
+                .and_then(|p| p.get(name))
+                .cloned()
+        });
+    if let Some(p) = &written {
+        let root = format!("ai.policies.{name}");
+        unknown_fields(name, p, POLICY_FIELDS, &root, &mut out);
+        for (field, known) in [("scope", SCOPE_FIELDS), ("approval", APPROVAL_FIELDS)] {
+            if let Some(inner) = p.get(field) {
+                unknown_fields(name, inner, known, &format!("{root}.{field}"), &mut out);
+            }
+        }
+    }
+    // Only a policy written by hand can have an empty scope: the built-in default covers
+    // every host.
+    if config.ai.policies.contains_key(name) {
+        if let Ok(p) = resolve(config, name) {
+            if p.scope.tags.is_empty() && p.scope.hosts.is_empty() {
+                out.push(format!(
+                    "policy '{name}' has an empty scope, so it reaches no host: add scope.tags, \
+                     scope.hosts or \"*\" for every host"
+                ));
+            }
+        }
+    }
+    out
+}
+
+fn unknown_fields(
+    policy: &str,
+    value: &serde_json::Value,
+    known: &[&str],
+    path: &str,
+    out: &mut Vec<String>,
+) {
+    let Some(map) = value.as_object() else {
+        return;
+    };
+    for key in map.keys() {
+        if !known.contains(&key.as_str()) {
+            out.push(format!(
+                "policy '{policy}': unknown field '{key}' in {path}; it is ignored (known: {})",
+                known.join(", ")
+            ));
+        }
+    }
+}
+
 // ---------------------------------------------------------------- scope
 
 /// Is this connection visible to the agent at all?
@@ -224,6 +310,7 @@ pub fn connection_facts(
         tags_trusted: tags_trusted(trusted_sources, conn, source_name),
         tag_source: source_name.map(str::to_string),
         enforcement,
+        ..HostFacts::default()
     }
 }
 
@@ -845,6 +932,21 @@ fn tier_for(
     policy.approval.default
 }
 
+/// The tier a forced ask should use (or any ask): the same rules the engine applies.
+pub fn tier_for_call(
+    policy: &Policy,
+    call: &ToolCall,
+    analysis: Option<&Analysis>,
+    host: &HostFacts,
+) -> Tier {
+    let host_name = if host.name.is_empty() {
+        call.host.clone().unwrap_or_default()
+    } else {
+        host.name.clone()
+    };
+    tier_for(policy, call, analysis, host, &host_name)
+}
+
 fn needs_host(tool: ToolName) -> bool {
     !matches!(
         tool,
@@ -854,6 +956,10 @@ fn needs_host(tool: ToolName) -> bool {
             | ToolName::ProposeChange
             | ToolName::ApplyChange
             | ToolName::Undo
+            // `run_many` names its hosts in the arguments; the aggregate facts carry their
+            // tags. `wait_approval` never reaches the engine with a host.
+            | ToolName::RunMany
+            | ToolName::WaitApproval
     )
 }
 
@@ -892,7 +998,7 @@ pub const PROBE_WINDOW: Duration = Duration::from_secs(300);
 /// Circuit breaker (design section 8): `Some(reason)` when the run should pause.
 /// Trips on too many denials in a minute (`budgets.max_denials_per_min`, 0 = off) or on
 /// repeated probing of out-of-scope hosts. The MCP run context calls this after each decision, emits
-/// `AiEvent::CircuitBreaker` and stops the run.
+/// `AiEvent::Paused`; the run is paused, not stopped.
 pub fn circuit_breaker(store: &AiStore, run_id: &str, budgets: &Budgets) -> Option<String> {
     let minute = Duration::from_secs(60);
     if budgets.max_denials_per_min > 0 {
@@ -1136,9 +1242,9 @@ impl DefaultPolicyEngine {
                 if host.enforcement.jail != JailKind::None && host.enforcement.certificates {
                     return Decision::Allow {
                         reason: format!(
-                            "jail: the host enforces a {:?} read-only jail and it runs as the \
+                            "jail: the host enforces a {} read-only jail and it runs as the \
                              low-privilege agent principal",
-                            host.enforcement.jail
+                            host.enforcement.jail.as_str()
                         ),
                     };
                 }
@@ -1168,8 +1274,8 @@ impl DefaultPolicyEngine {
 
         // 9. writes
         ask(format!(
-            "write: {:?} changes the host and needs approval",
-            call.tool
+            "write: {} changes the host and needs approval",
+            super::mcp::tools::name_str(call.tool)
         ))
     }
 }
@@ -1241,6 +1347,7 @@ mod tests {
                 jail,
                 ..Default::default()
             },
+            ..HostFacts::default()
         }
     }
 
@@ -3058,5 +3165,83 @@ mod tests {
                 );
             }
         }
+    }
+
+    // ------------------------------------------------------------ validation warnings
+
+    /// A config with one `default` policy written exactly as `json` says.
+    fn config_with(json: &str) -> AppConfig {
+        let mut config = AppConfig::default_for_env("test");
+        config.ai = serde_json::from_str(json).unwrap();
+        config
+    }
+
+    #[test]
+    fn unknown_policy_fields_are_reported_not_ignored() {
+        let raw = r#"{"ai":{"policies":{"default":{
+            "profile":"operate",
+            "scope":{"tags":["prod"],"host":{"web-1":true}},
+            "approval":{"in-client":["prod"]},
+            "read_path":["/var/log/**"]
+        }}}}"#;
+        let config = config_with(
+            r#"{"policies":{"default":{"profile":"operate","scope":{"tags":["prod"]}}}}"#,
+        );
+        let w = validation_warnings_in(Some(raw), &config, "default");
+        assert!(
+            w.iter()
+                .any(|m| m.contains("'host'") && m.contains("scope")),
+            "{w:?}"
+        );
+        assert!(
+            w.iter()
+                .any(|m| m.contains("'in-client'") && m.contains("approval")),
+            "{w:?}"
+        );
+        assert!(
+            w.iter()
+                .any(|m| m.contains("'read_path'") && m.contains("known:")),
+            "{w:?}"
+        );
+        // No empty-scope warning: scope.tags has an entry.
+        assert!(!w.iter().any(|m| m.contains("empty scope")), "{w:?}");
+    }
+
+    #[test]
+    fn an_explicit_policy_with_an_empty_scope_warns_but_the_builtin_default_does_not() {
+        let config = config_with(
+            r#"{"policies":{"locked":{"profile":"operate"},"default":{"profile":"observe"}}}"#,
+        );
+        let w = validation_warnings_in(None, &config, "locked");
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("policy 'locked' has an empty scope"), "{w:?}");
+        assert!(w[0].contains("\"*\""), "names the wildcard: {w:?}");
+
+        // `default` is explicit here, so it is checked like any other policy.
+        assert!(validation_warnings_in(None, &config, "default")
+            .iter()
+            .any(|m| m.contains("empty scope")));
+        // With no explicit default, the built-in observe policy covers every host.
+        let builtin = config_with(r#"{"policies":{}}"#);
+        assert!(validation_warnings_in(None, &builtin, "default").is_empty());
+    }
+
+    #[test]
+    fn a_clean_policy_has_no_warnings() {
+        let raw = r#"{"ai":{"policies":{"prod":{
+            "profile":"operate",
+            "scope":{"tags":["prod"],"hosts":["web-*"]},
+            "approval":{"default":"out-of-band","in_client":["staging"],"two_person":["prod"]},
+            "read_paths":["/srv/**"],
+            "deny":["reboot"],
+            "budgets":{"calls_per_min":10,"changes_per_run":2,"run_ttl":"1h","max_denials_per_min":3},
+            "redact":{"vault_secrets":true,"patterns":"off"}
+        }}}}"#;
+        let config =
+            config_with(r#"{"policies":{"prod":{"profile":"operate","scope":{"tags":["prod"]}}}}"#);
+        assert_eq!(
+            validation_warnings_in(Some(raw), &config, "prod"),
+            Vec::<String>::new()
+        );
     }
 }

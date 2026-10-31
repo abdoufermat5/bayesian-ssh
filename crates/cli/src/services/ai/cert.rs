@@ -294,10 +294,13 @@ pub fn verify_issued(
         bail!("not a user certificate");
     }
     if cert.key_id() != issued.key_id || !cert.key_id().starts_with("bssh:ai:") {
-        bail!("unexpected key id {:?}", cert.key_id());
+        bail!("unexpected key id {}", cert.key_id());
     }
     if cert.valid_principals() != [AGENT_PRINCIPAL.to_string()] {
-        bail!("unexpected principals {:?}", cert.valid_principals());
+        bail!(
+            "unexpected principals {} (expected {AGENT_PRINCIPAL})",
+            cert.valid_principals().join(", ")
+        );
     }
     let expected_opts = 1 + usize::from(source_address.is_some());
     let opts = cert.critical_options();
@@ -331,14 +334,14 @@ fn validate_source_address(list: &str) -> Result<()> {
         };
         let addr: std::net::IpAddr = ip
             .parse()
-            .map_err(|_| anyhow!("source-address entry {item:?} is not an IP or CIDR"))?;
+            .map_err(|_| anyhow!("source-address entry '{item}' is not an IP or CIDR"))?;
         if let Some(p) = prefix {
             let max = if addr.is_ipv4() { 32 } else { 128 };
             let n: u8 = p
                 .parse()
-                .map_err(|_| anyhow!("source-address entry {item:?} has a bad prefix"))?;
+                .map_err(|_| anyhow!("source-address entry '{item}' has a bad prefix"))?;
             if n > max {
-                bail!("source-address entry {item:?} has a bad prefix");
+                bail!("source-address entry '{item}' has a bad prefix");
             }
         }
     }

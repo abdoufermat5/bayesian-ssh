@@ -271,6 +271,75 @@ pub async fn probe(conn: &Connection, exec: &dyn Executor) -> anyhow::Result<Jai
     Ok(JailKind::None)
 }
 
+const AGENT_YES: &str = "bssh-agent-uid:yes";
+const AGENT_NO: &str = "bssh-agent-uid:no";
+
+fn kind_tag(kind: JailKind) -> &'static str {
+    match kind {
+        JailKind::Landlock => "landlock",
+        JailKind::Bubblewrap => "bubblewrap",
+        JailKind::None => "none",
+    }
+}
+
+/// Trial command tagged with the jail kind, for the combined probe below.
+fn tagged_trial(kind: JailKind) -> String {
+    let tag = kind_tag(kind);
+    format!(
+        "f=/var/tmp/.bssh-jail-probe-$$; echo bssh-jail-{tag}-ok; \
+         if (: > \"$f\") 2>/dev/null; then rm -f \"$f\"; echo bssh-jail-{tag}-writable; \
+         else echo bssh-jail-{tag}-readonly; fi"
+    )
+}
+
+/// Did `kind`'s tagged trial run and prove the jail read-only?
+fn tagged_trial_works(stdout: &str, kind: JailKind) -> bool {
+    let tag = kind_tag(kind);
+    stdout.contains(&format!("bssh-jail-{tag}-ok"))
+        && stdout.contains(&format!("bssh-jail-{tag}-readonly"))
+        && !stdout.contains(&format!("bssh-jail-{tag}-writable"))
+}
+
+/// [`probe`] plus the `bssh-agent` check in one remote script.
+///
+/// Through a bastion every extra exec pays for another login; first contact needs the
+/// jail kind and the agent user together, so ask once. A jail counts under the same rule
+/// as [`probe`]; the agent user exists when `id -u bssh-agent` succeeds.
+pub async fn probe_with_agent(
+    conn: &Connection,
+    exec: &dyn Executor,
+) -> anyhow::Result<(JailKind, bool)> {
+    let limits = ExecLimits {
+        // Two jail trials plus one `id`: the same total the separate probes got.
+        timeout: Duration::from_secs(50),
+        max_output_bytes: 8192,
+    };
+    let mut script = String::new();
+    for kind in [JailKind::Landlock, JailKind::Bubblewrap] {
+        script.push_str(&wrap(kind, &[], &tagged_trial(kind))?);
+        script.push_str("; ");
+    }
+    script.push_str(&format!(
+        "if id -u bssh-agent >/dev/null 2>&1; then echo {AGENT_YES}; else echo {AGENT_NO}; fi"
+    ));
+    let res = exec.exec(conn, &script, ExecMode::Plain, limits).await?;
+    if res.timed_out {
+        anyhow::bail!("enforcement probe timed out");
+    }
+    if res.truncated {
+        // The agent marker is at the end; a cut-off answer must not be cached as "no agent".
+        anyhow::bail!("enforcement probe output was cut off");
+    }
+    let jail = if tagged_trial_works(&res.stdout, JailKind::Landlock) {
+        JailKind::Landlock
+    } else if tagged_trial_works(&res.stdout, JailKind::Bubblewrap) {
+        JailKind::Bubblewrap
+    } else {
+        JailKind::None
+    };
+    Ok((jail, res.stdout.contains(AGENT_YES)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -355,6 +424,21 @@ mod tests {
         .iter()
         .map(|s| s.to_string())
         .collect()
+    }
+
+    #[test]
+    fn tagged_probe_markers_identify_the_jail() {
+        use JailKind::{Bubblewrap, Landlock};
+        let landlock = "bssh-jail-landlock-ok\nbssh-jail-landlock-readonly\n";
+        let bubblewrap = "bssh-jail-bubblewrap-ok\nbssh-jail-bubblewrap-readonly\n";
+        assert!(tagged_trial_works(landlock, Landlock));
+        assert!(!tagged_trial_works(landlock, Bubblewrap));
+        assert!(tagged_trial_works(bubblewrap, Bubblewrap));
+        // A jail that let the trial write is not a jail.
+        let writable = "bssh-jail-landlock-ok\nbssh-jail-landlock-writable\n";
+        assert!(!tagged_trial_works(writable, Landlock));
+        // The trial never ran (no util-linux support): no marker.
+        assert!(!tagged_trial_works("", Landlock));
     }
 
     #[test]

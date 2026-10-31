@@ -1088,7 +1088,7 @@ pub async fn do_edit(
         .files
         .write(conn, path, patched.as_bytes(), orig.mode)
         .await
-        .map_err(|e| ToolError::Failed(format!("{}: write {path}: {e:#}", conn.name)))?;
+        .map_err(|e| ToolError::FailedAfterRun(format!("{}: write {path}: {e:#}", conn.name)))?;
     let new_sha = sha256_hex(patched.as_bytes());
     // Read back to confirm what the host holds.
     let back = ctx
@@ -1096,9 +1096,9 @@ pub async fn do_edit(
         .files
         .read(conn, path, 0, MAX_EDIT_BYTES)
         .await
-        .map_err(|e| ToolError::Failed(format!("{}: verify {path}: {e:#}", conn.name)))?;
+        .map_err(|e| ToolError::FailedAfterRun(format!("{}: verify {path}: {e:#}", conn.name)))?;
     if sha256_hex(&back.data) != new_sha {
-        return Err(ToolError::Failed(format!(
+        return Err(ToolError::FailedAfterRun(format!(
             "{path} on {} does not match the patched content after writing; use undo",
             conn.name
         )));
@@ -1134,7 +1134,9 @@ pub async fn restore_edit(
         .files
         .write(conn, &b.path, &data, b.mode)
         .await
-        .map_err(|e| ToolError::Failed(format!("{}: restore {}: {e:#}", conn.name, b.path)))?;
+        .map_err(|e| {
+            ToolError::FailedAfterRun(format!("{}: restore {}: {e:#}", conn.name, b.path))
+        })?;
     Ok(())
 }
 
@@ -1155,8 +1157,9 @@ pub async fn edit_file(ctx: &Arc<RunContext>, host: &str, path: &str, patch: &st
     }
     let conn = ctx.resolve_host(host).await?;
     let facts = ctx.facts(&conn).await;
-    ctx.authorize(&call, None, &facts).await?;
+    // Before asking: a human must never approve work the budget then refuses.
     ctx.consume_change()?;
+    ctx.authorize(&call, None, &facts).await?;
 
     let step = Step {
         id: "step-1".into(),
@@ -1313,6 +1316,8 @@ pub async fn undo(ctx: &Arc<RunContext>, change_id: &str) -> ToolResult {
             step_command(s, &user).map(|c| ctx.deps.analyzer.analyze(&c))
         })
         .collect();
+    // Before asking: a human must never approve work the budget then refuses.
+    ctx.consume_change()?;
     match ctx.decide_only(&call, None, &facts0)? {
         Decision::Allow { .. } => {}
         Decision::Deny { reason } => {
@@ -1329,7 +1334,6 @@ pub async fn undo(ctx: &Arc<RunContext>, change_id: &str) -> ToolResult {
                 .await?;
         }
     }
-    ctx.consume_change()?;
 
     let mut undone: Vec<String> = Vec::new();
     let mut records: Vec<StepRecord> = Vec::new();

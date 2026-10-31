@@ -80,7 +80,7 @@
               <span class="setting-title">No policy defined</span>
               <span class="setting-meta">
                 Agents run with the built-in observe profile until you add one under
-                <span class="mono">ai.policies</span> in this profile's config.json.
+                <span class="mono">ai.policies</span> in <span class="mono">{view.config_path}</span>.
               </span>
             </div>
           </div>
@@ -205,7 +205,9 @@
     {/each}
 
     <p class="-mt-3 type-meta">
-      Read-only. Policies live in this profile's config.json under <span class="mono">ai.policies</span>.
+      Read-only. Policies live in <span class="mono">{view.config_path}</span> under
+      <span class="mono">ai.policies</span>; print one with
+      <span class="mono">bssh ai policy show &lt;name&gt;</span>.
     </p>
   {/if}
 </div>

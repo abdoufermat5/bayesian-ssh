@@ -34,6 +34,11 @@ pub enum ClientMsg {
     RevokeGrant {
         grant_id: String,
     },
+    /// Clear a circuit-breaker pause. Fails when the run was stopped (stop is final).
+    Resume {
+        /// Who resumed it, for the audit trail.
+        by: String,
+    },
     Stop {
         reason: String,
     },

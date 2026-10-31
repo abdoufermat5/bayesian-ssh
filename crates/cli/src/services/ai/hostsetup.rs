@@ -23,6 +23,19 @@ use std::time::Duration;
 pub const AGENT_USER: &str = "bssh-agent";
 /// The agent user's home: a system account, outside `/home` (often `noexec`).
 pub const AGENT_HOME: &str = "/var/lib/bssh-agent";
+
+/// First `max` chars of `s`, with an ellipsis when truncated. Used so a bastion
+/// MOTD never becomes the whole doctor error line.
+fn truncate_chars(s: &str, max: usize) -> String {
+    let count = s.chars().count();
+    if count <= max {
+        s.to_string()
+    } else {
+        let mut out: String = s.chars().take(max.saturating_sub(1)).collect();
+        out.push('…');
+        out
+    }
+}
 /// Backups for `edit_file`, relative to the agent user's home.
 pub const BACKUP_DIR: &str = "backups";
 /// Where the CA public key lands on a host that had no `TrustedUserCAKeys` yet.
@@ -362,10 +375,23 @@ pub async fn check_host(
     match run_plain(conn, exec, "echo bssh-ok").await {
         Ok(r) if r.exit_code == Some(0) && r.stdout.contains("bssh-ok") => report.reachable = true,
         Ok(r) => {
+            // Prefer stderr; fall back to a short stdout snippet so a bastion
+            // banner dumped on the PTY does not become a multi-page error.
+            let detail = {
+                let err = r.stderr.trim();
+                if !err.is_empty() {
+                    truncate_chars(err, 160)
+                } else {
+                    truncate_chars(r.stdout.trim(), 160)
+                }
+            };
             report.error = Some(format!(
-                "test command failed (exit {:?}): {}",
-                r.exit_code,
-                r.stderr.trim()
+                "test command failed ({}): {}",
+                match r.exit_code {
+                    Some(code) => format!("exit {code}"),
+                    None => "no exit status".into(),
+                },
+                detail
             ));
             return report;
         }

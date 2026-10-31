@@ -583,11 +583,19 @@ mod unix_impl {
             replayed: HashSet::new(),
             ended: HashSet::new(),
         };
-        if !args.json && list_sockets(&dir).is_empty() {
+        if !args.json {
             w.print(&[
-                "No agent is running yet. Start one with `bssh ai mcp`; it shows up here.".into(),
+                format!("environment '{}'", config.environment),
                 String::new(),
             ]);
+            if list_sockets(&dir).is_empty() {
+                w.print(&[
+                    "No agent is running yet. Start your agent (set up with `bssh ai install \
+                     <client>`); it shows up here."
+                        .into(),
+                    String::new(),
+                ]);
+            }
         }
 
         let mut known: HashSet<PathBuf> = HashSet::new();
@@ -685,6 +693,7 @@ mod unix_impl {
                 b.clone(),
                 events.clone(),
                 stop_rx,
+                Arc::new(|_: &str| Ok(())),
             ));
             for _ in 0..200 {
                 if sock.exists() {

@@ -30,6 +30,7 @@ use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
+use std::future::Future;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -45,6 +46,9 @@ pub enum ToolError {
     Invalid(String),
     /// Something broke (host unreachable, parse failure...).
     Failed(String),
+    /// Something broke after the call had already run on the host (a parse failure, a
+    /// partial change). The agent is told the command ran, not "Nothing ran.".
+    FailedAfterRun(String),
 }
 
 impl std::fmt::Display for ToolError {
@@ -53,6 +57,7 @@ impl std::fmt::Display for ToolError {
             ToolError::Denied(m) => write!(f, "denied: {m}"),
             ToolError::Invalid(m) => write!(f, "invalid request: {m}"),
             ToolError::Failed(m) => write!(f, "failed: {m}"),
+            ToolError::FailedAfterRun(m) => write!(f, "failed after running: {m}"),
         }
     }
 }
@@ -66,6 +71,122 @@ impl From<anyhow::Error> for ToolError {
 }
 
 pub type ToolResult = Result<Value, ToolError>;
+
+/// What a tool call that is kept alive for an approval looks like from the outside.
+#[derive(Debug, Clone)]
+pub enum CallPhase {
+    /// Still running in the foreground: no approval was needed yet.
+    Running,
+    /// The call is waiting for a human; `wait_approval` collects the result.
+    Pending {
+        request_id: String,
+        expires_in_secs: u64,
+        /// When the approval window closes.
+        expires_at: Instant,
+    },
+    /// Finished (approved and executed, denied, or failed). Kept until the run ends.
+    Done(ToolResult),
+}
+
+/// One in-flight tool call, shared by the agent's `wait_approval` and the task that runs it.
+///
+/// The handler runs exactly once, in a spawned task; approval only pauses it. That is what
+/// makes repeated or concurrent `wait_approval` calls safe: they all observe the same result.
+pub struct CallSlot {
+    tool: String,
+    tx: watch::Sender<CallPhase>,
+}
+
+impl CallSlot {
+    pub(crate) fn new(tool: &str) -> Arc<Self> {
+        let (tx, _) = watch::channel(CallPhase::Running);
+        Arc::new(Self {
+            tool: tool.to_string(),
+            tx,
+        })
+    }
+
+    pub fn tool(&self) -> &str {
+        &self.tool
+    }
+
+    fn phase(&self) -> CallPhase {
+        self.tx.borrow().clone()
+    }
+
+    pub(crate) fn subscribe(&self) -> watch::Receiver<CallPhase> {
+        self.tx.subscribe()
+    }
+
+    pub(crate) fn phase_now(&self) -> CallPhase {
+        self.phase()
+    }
+
+    /// Mark the call pending unless it already is (or finished).
+    fn mark_pending(&self, request_id: &str, expires_in_secs: u64) {
+        self.tx.send_if_modified(|p| {
+            if matches!(p, CallPhase::Running) {
+                *p = CallPhase::Pending {
+                    request_id: request_id.to_string(),
+                    expires_in_secs,
+                    expires_at: Instant::now() + Duration::from_secs(expires_in_secs),
+                };
+                true
+            } else {
+                false
+            }
+        });
+    }
+
+    pub(crate) fn finish(&self, result: ToolResult) {
+        self.tx.send_replace(CallPhase::Done(result));
+    }
+
+    /// Wait for the call to finish, or for the deadline to pass.
+    pub async fn wait_done(&self, until: Instant) -> Option<ToolResult> {
+        let mut rx = self.tx.subscribe();
+        loop {
+            let phase = rx.borrow().clone();
+            match phase {
+                CallPhase::Done(r) => return Some(r),
+                _ => {
+                    let left = until.saturating_duration_since(Instant::now());
+                    if left.is_zero() {
+                        return None;
+                    }
+                    if tokio::time::timeout(left, rx.changed()).await.is_err() {
+                        return None;
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn pending(&self) -> Option<(String, u64, Instant)> {
+        match self.phase() {
+            CallPhase::Pending {
+                request_id,
+                expires_in_secs,
+                expires_at,
+            } => Some((request_id, expires_in_secs, expires_at)),
+            _ => None,
+        }
+    }
+}
+
+tokio::task_local! {
+    /// The slot of the tool call being served, so an approval can mark it pending.
+    static CALL_SLOT: Arc<CallSlot>;
+}
+
+/// Serve `fut` as the handler of `slot`'s call.
+pub(crate) async fn with_call_slot<F: Future>(slot: Arc<CallSlot>, fut: F) -> F::Output {
+    CALL_SLOT.scope(slot, fut).await
+}
+
+pub(crate) fn current_call_slot() -> Option<Arc<CallSlot>> {
+    CALL_SLOT.try_with(|s| s.clone()).ok()
+}
 
 /// Where the inventory comes from (the bssh database). A trait so tests use a fixed list.
 #[allow(clippy::double_must_use)]
@@ -154,7 +275,16 @@ pub struct RunContext {
     events: broadcast::Sender<AiEvent>,
     stop_tx: watch::Sender<bool>,
     stopped: AtomicBool,
-    breaker: AtomicBool,
+    /// Paused by the circuit breaker. Different from `stopped`: a person can resume it.
+    paused: AtomicBool,
+    /// Why it paused, for `status` and the agent-facing error.
+    pause_reason: Mutex<Option<String>>,
+    /// Asynchronous approvals: a call that asks returns `pending` instead of blocking,
+    /// and `wait_approval` collects the result. On for real MCP transports; off in tests
+    /// that drive the broker synchronously.
+    async_approvals: AtomicBool,
+    /// Results of calls waiting for approval, by request id, kept until the run ends.
+    approval_slots: Mutex<HashMap<String, Arc<CallSlot>>>,
     started: Instant,
     deadline: Instant,
     client: Mutex<String>,
@@ -219,7 +349,10 @@ impl RunContext {
             events,
             stop_tx,
             stopped: AtomicBool::new(false),
-            breaker: AtomicBool::new(false),
+            paused: AtomicBool::new(false),
+            pause_reason: Mutex::new(None),
+            async_approvals: AtomicBool::new(false),
+            approval_slots: Mutex::new(HashMap::new()),
             started: now,
             deadline: now + ttl,
             client: Mutex::new("unknown".into()),
@@ -278,6 +411,7 @@ impl RunContext {
             elicitor: Some(elicitor),
         };
         let ctx = Self::with_run_id(run_id, config, policy_name.to_string(), policy, deps);
+        ctx.enable_async_approvals();
         let mut info = info;
         info.hosts = ctx
             .visible_hosts()
@@ -302,8 +436,11 @@ impl RunContext {
         let ctx = self.clone();
         let events = self.events.clone();
         let stop_rx = self.stop_tx.subscribe();
+        let resume_ctx = self.clone();
+        let resume: crate::services::ai::approval::ResumeFn =
+            Arc::new(move |by: &str| resume_ctx.resume(by));
         tokio::spawn(async move {
-            match serve_control(socket, info, broker, events, stop_rx).await {
+            match serve_control(socket, info, broker, events, stop_rx, resume).await {
                 // A client sent Stop.
                 Ok(Some(reason)) => {
                     if !ctx.is_stopped() {
@@ -400,18 +537,117 @@ impl RunContext {
     /// Run still allowed to make calls?
     pub fn check_alive(&self) -> Result<(), ToolError> {
         if self.is_stopped() {
-            let why = if self.breaker.load(Ordering::SeqCst) {
-                "circuit breaker tripped"
-            } else {
-                "stopped"
-            };
-            return Err(ToolError::Denied(format!("this run is {why}")));
+            return Err(ToolError::Denied(
+                "this run was stopped; ask the user to start a new agent session".into(),
+            ));
+        }
+        if self.is_paused() {
+            let reason = self
+                .pause_reason
+                .lock()
+                .ok()
+                .and_then(|r| r.clone())
+                .unwrap_or_else(|| "too many denials in a minute".into());
+            return Err(ToolError::Denied(format!(
+                "{reason}; the user can resume it with `bssh ai resume {}` or in the desktop app",
+                self.short_run_id()
+            )));
         }
         if Instant::now() >= self.deadline {
             self.stop("run TTL reached");
-            return Err(ToolError::Denied("this run has expired (TTL)".into()));
+            return Err(ToolError::Denied(
+                "this run has expired (TTL) and stopped; ask the user to restart the agent".into(),
+            ));
         }
         Ok(())
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.paused.load(Ordering::SeqCst)
+    }
+
+    /// First 8 characters of the run id, as `bssh ai status` shows it.
+    pub fn short_run_id(&self) -> &str {
+        self.run_id.get(..8).unwrap_or(&self.run_id)
+    }
+
+    /// Pause the run after the circuit breaker tripped. Calls are refused (except `status`
+    /// and `wait_approval`) until [`resume`](Self::resume); the run is not stopped.
+    fn pause(&self, reason: String) {
+        if self.paused.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        if let Ok(mut r) = self.pause_reason.lock() {
+            *r = Some(reason.clone());
+        }
+        let ev = AiEvent::Paused {
+            run_id: self.run_id.clone(),
+            reason,
+        };
+        if let Err(e) = self.emit(&ev) {
+            warn!("audit Paused: {e:#}");
+        }
+    }
+
+    /// Clear a circuit-breaker pause and the denial window. `Err` when the run was stopped
+    /// (stop is final) or was not paused.
+    pub fn resume(&self, by: &str) -> Result<(), String> {
+        if self.is_stopped() {
+            return Err(
+                "the run is stopped and cannot be resumed; start a new agent session".into(),
+            );
+        }
+        if !self.paused.swap(false, Ordering::SeqCst) {
+            return Err("the run is not paused".into());
+        }
+        if let Ok(mut r) = self.pause_reason.lock() {
+            *r = None;
+        }
+        // A resume starts a fresh window: the denials that tripped it don't count again.
+        if let Ok(mut d) = self.denials.lock() {
+            d.clear();
+        }
+        let ev = AiEvent::Resumed {
+            run_id: self.run_id.clone(),
+            by: by.to_string(),
+        };
+        if let Err(e) = self.emit(&ev) {
+            warn!("audit Resumed: {e:#}");
+        }
+        Ok(())
+    }
+
+    /// Turn on asynchronous approvals: a call that needs a human returns `pending` and
+    /// `wait_approval` collects the result. Real MCP transports use this; tests can drive
+    /// the broker synchronously.
+    pub fn enable_async_approvals(&self) {
+        self.async_approvals.store(true, Ordering::SeqCst);
+    }
+
+    pub fn async_approvals(&self) -> bool {
+        self.async_approvals.load(Ordering::SeqCst)
+    }
+
+    /// The call waiting on `request_id`, for `wait_approval`.
+    pub fn pending_slot(&self, request_id: &str) -> Option<Arc<CallSlot>> {
+        self.approval_slots
+            .lock()
+            .ok()
+            .and_then(|m| m.get(request_id).cloned())
+    }
+
+    /// Register a call as waiting for a human and tell its slot.
+    fn mark_pending(&self, request_id: &str, expires_in_secs: u64) {
+        if !self.async_approvals() {
+            return;
+        }
+        let Some(slot) = current_call_slot() else {
+            return;
+        };
+        slot.mark_pending(request_id, expires_in_secs);
+        if let Ok(mut m) = self.approval_slots.lock() {
+            m.insert(request_id.to_string(), slot);
+        }
     }
 
     /// `calls_per_min` sliding window.
@@ -434,7 +670,6 @@ impl RunContext {
             }
         };
         if over {
-            self.note_denial("call budget exceeded");
             return Err(ToolError::Denied(format!(
                 "call budget exceeded ({limit} calls per minute); wait and retry"
             )));
@@ -442,8 +677,13 @@ impl RunContext {
         Ok(())
     }
 
-    /// Count a denial; a burst trips the circuit breaker and pauses the run.
+    /// Count a denial by the policy engine of an agent-initiated action. A burst pauses the
+    /// run. Human decisions, expired approvals, argument mistakes, budget limits and the
+    /// observe-profile refusal do not count.
     pub fn note_denial(&self, reason: &str) {
+        if !counts_for_breaker(reason) {
+            return;
+        }
         let max = self.policy.budgets.max_denials_per_min as usize;
         let now = Instant::now();
         let tripped = {
@@ -460,15 +700,10 @@ impl RunContext {
             max > 0 && d.len() >= max
         };
         debug!("denial: {reason}");
-        if tripped && !self.breaker.swap(true, Ordering::SeqCst) {
-            let ev = AiEvent::CircuitBreaker {
-                run_id: self.run_id.clone(),
-                reason: format!("{max} denials within a minute (last: {reason})"),
-            };
-            if let Err(e) = self.emit(&ev) {
-                warn!("audit CircuitBreaker: {e:#}");
-            }
-            self.stop("circuit breaker");
+        if tripped {
+            self.pause(format!(
+                "paused by the circuit breaker after {max} denials in a minute"
+            ));
         }
     }
 
@@ -509,8 +744,8 @@ impl RunContext {
         Ok(all.into_iter().filter(|c| self.in_scope(c)).collect())
     }
 
-    /// Host by name or alias, only when in scope. Unknown and out-of-scope look the same
-    /// to the agent; probing counts toward the circuit breaker.
+    /// Host by name or alias, only when in scope. Unknown and out-of-scope look the same to
+    /// the agent; argument mistakes and probes never trip the circuit breaker.
     pub async fn resolve_host(&self, name: &str) -> Result<Connection, ToolError> {
         let all = self.deps.hosts.list().await?;
         let found = all
@@ -518,12 +753,9 @@ impl RunContext {
             .find(|c| c.name == name || c.aliases.iter().any(|a| a == name));
         match found {
             Some(c) if self.in_scope(&c) => Ok(c),
-            _ => {
-                self.note_denial("unknown or out-of-scope host");
-                Err(ToolError::Invalid(format!(
-                    "unknown host '{name}' (use list_hosts to see the hosts you can reach)"
-                )))
-            }
+            _ => Err(ToolError::Invalid(format!(
+                "unknown host '{name}' (use list_hosts to see the hosts you can reach)"
+            ))),
         }
     }
 
@@ -538,37 +770,43 @@ impl RunContext {
     }
 
     /// Enforcement facts for a host, probed once per run.
+    ///
+    /// A probe that failed is *not* cached: caching "no jail, no certificates" would
+    /// downgrade the host for the rest of the run after one network hiccup. The error is
+    /// reported in [`HostFacts::probe_error`] and the next call tries again.
     pub async fn facts(&self, conn: &Connection) -> HostFacts {
         let cached = self.facts.lock().await.get(&conn.name).cloned();
-        let enforcement = match cached {
-            Some(e) => e,
+        let (enforcement, probe_error) = match cached {
+            Some(e) => (e, None),
             None => {
-                let jail_kind = jail::probe(conn, self.deps.executor.as_ref())
-                    .await
-                    .unwrap_or(JailKind::None);
-                let agent_user = self
-                    .deps
-                    .executor
-                    .exec(
-                        conn,
-                        "id -u bssh-agent",
-                        ExecMode::Plain,
-                        ExecLimits {
-                            timeout: Duration::from_secs(15),
-                            max_output_bytes: 1024,
-                        },
-                    )
-                    .await
-                    .map(|r| r.exit_code == Some(0))
-                    .unwrap_or(false);
+                let mut errors: Vec<String> = Vec::new();
+                let interactive_bastion = conn.use_kerberos && conn.bastion.is_some();
+                // One connection for the jail trials and the agent check: through a
+                // bastion each exec is another login.
+                let (jail_kind, agent_user) =
+                    match jail::probe_with_agent(conn, self.deps.executor.as_ref()).await {
+                        Ok(found) => found,
+                        Err(e) => {
+                            errors.push(format!("probe: {e:#}"));
+                            (JailKind::None, false)
+                        }
+                    };
+                // A certificate makes the target login bssh-agent, which cannot pass
+                // through a bastion that logs in as the user: never promise it there.
                 let e = Enforcement {
                     jail: jail_kind,
-                    certificates: crate::services::ai::cert::ca_available(&self.config)
+                    certificates: !interactive_bastion
+                        && crate::services::ai::cert::ca_available(&self.config)
                         && agent_user,
                     agent_user,
                 };
-                self.facts.lock().await.insert(conn.name.clone(), e.clone());
-                e
+                let error = if errors.is_empty() {
+                    self.facts.lock().await.insert(conn.name.clone(), e.clone());
+                    None
+                } else {
+                    Some(errors.join("; "))
+                };
+                (e, error)
             }
         };
         let source = self.source_name(conn);
@@ -582,6 +820,7 @@ impl RunContext {
             ),
             tag_source: source,
             enforcement,
+            probe_error,
         }
     }
 
@@ -677,7 +916,6 @@ impl RunContext {
         if let Err(e) = self.emit(&ev) {
             warn!("audit Call: {e:#}");
         }
-        self.note_denial(reason);
         ToolError::Denied(reason.to_string())
     }
 
@@ -709,6 +947,11 @@ impl RunContext {
     }
 
     /// `request_approval`, with the policy's reason shown to the approver.
+    ///
+    /// One deadline covers both routes. When the client can elicit and the tier allows it,
+    /// the human is asked in-client (briefly, in asynchronous mode); otherwise the request
+    /// goes out of band. In asynchronous mode the tool call returns `pending` while this
+    /// keeps waiting, and the approved action still runs exactly once.
     pub async fn request_approval_because(
         &self,
         tier: Tier,
@@ -718,7 +961,8 @@ impl RunContext {
     ) -> Result<String, ToolError> {
         let request_id = uuid::Uuid::new_v4().to_string();
         let timeout = Duration::from_secs(self.config.ai.approval_timeout_secs.max(1));
-        let req = ApprovalRequest {
+        let deadline = Instant::now() + timeout;
+        let mut req = ApprovalRequest {
             request_id: request_id.clone(),
             run_id: self.run_id.clone(),
             client: self.client(),
@@ -738,7 +982,7 @@ impl RunContext {
                 },
             );
         }
-        let outcome = self.deps.broker.request(req).await;
+        let outcome = self.obtain_approval(&mut req, deadline).await;
         if let Ok(mut p) = self.pending.lock() {
             p.remove(&request_id);
         }
@@ -752,17 +996,102 @@ impl RunContext {
         }
         match outcome {
             ApprovalOutcome::Approved { by, .. } => Ok(by),
-            ApprovalOutcome::Denied { by, reason } => {
-                let why = format!(
-                    "denied by {by}{}",
-                    reason.map(|r| format!(": {r}")).unwrap_or_default()
-                );
-                self.note_denial(&why);
-                Err(ToolError::Denied(why))
-            }
+            // A person said no: never counted by the circuit breaker.
+            ApprovalOutcome::Denied { by, reason } => Err(ToolError::Denied(format!(
+                "denied by {by}{}",
+                reason.map(|r| format!(": {r}")).unwrap_or_default()
+            ))),
+            // Expiry says nothing about the agent's behaviour: not counted either.
             ApprovalOutcome::Expired => {
-                self.note_denial("approval expired");
-                Err(ToolError::Denied("approval request expired".into()))
+                let secs = timeout.as_secs();
+                Err(ToolError::Denied(format!(
+                    "approval request expired: nobody approved within {secs} s"
+                )))
+            }
+        }
+    }
+
+    /// In-client attempt (when the client can elicit), then the broker.
+    async fn obtain_approval(
+        &self,
+        req: &mut ApprovalRequest,
+        deadline: Instant,
+    ) -> anyhow::Result<ApprovalOutcome> {
+        if req.tier == Tier::InClient {
+            if let Some(e) = &self.deps.elicitor {
+                if e.can_elicit() {
+                    let left = deadline.saturating_duration_since(Instant::now());
+                    // A person who is not answering in their client should not hold the
+                    // tool call open for the whole window: hand it to the usual approvers.
+                    let attempt = if self.async_approvals() {
+                        left.min(IN_CLIENT_ATTEMPT)
+                    } else {
+                        left
+                    };
+                    match tokio::time::timeout(attempt, e.confirm(req)).await {
+                        Ok(Ok(Some(true))) => {
+                            return Ok(ApprovalOutcome::Approved {
+                                by: "user".into(),
+                                channel: "confirmed-in-client".into(),
+                                grant: None,
+                            })
+                        }
+                        Ok(Ok(Some(false))) => {
+                            return Ok(ApprovalOutcome::Denied {
+                                by: "user".into(),
+                                reason: None,
+                            })
+                        }
+                        Ok(Ok(None)) => debug!("client can't elicit; asking out of band"),
+                        Ok(Err(e)) => {
+                            warn!("elicitation failed ({e}); asking out of band")
+                        }
+                        Err(_) => debug!("client did not answer; asking out of band"),
+                    }
+                }
+            }
+            req.tier = Tier::OutOfBand;
+        }
+        let left = deadline.saturating_duration_since(Instant::now()).as_secs();
+        self.mark_pending(&req.request_id, left);
+        self.wait_for_approval(req.clone(), deadline).await
+    }
+
+    /// Wait for the broker, sending MCP progress notifications when the client asked for them
+    /// and can be reached (stdio server with an elicitation peer).
+    async fn wait_for_approval(
+        &self,
+        req: ApprovalRequest,
+        deadline: Instant,
+    ) -> anyhow::Result<ApprovalOutcome> {
+        let progress = self
+            .deps
+            .elicitor
+            .clone()
+            .zip(super::server::current_progress_token());
+        let request = self.deps.broker.request(req);
+        let Some((elicitor, token)) = progress else {
+            return request.await;
+        };
+        let mut request = std::pin::pin!(request);
+        let mut tick = tokio::time::interval(Duration::from_secs(10));
+        // The first tick is immediate; the first message should not be.
+        tick.tick().await;
+        let mut ticks = 0.0f64;
+        loop {
+            tokio::select! {
+                outcome = &mut request => return outcome,
+                _ = tick.tick() => {
+                    ticks += 1.0;
+                    let left = deadline.saturating_duration_since(Instant::now()).as_secs();
+                    let msg = format!(
+                        "waiting for approval in the bssh desktop app or `bssh ai watch` \
+                         ({left} s left)"
+                    );
+                    if let Err(e) = elicitor.progress(token.clone(), ticks, msg).await {
+                        debug!("progress notification failed: {e}");
+                    }
+                }
             }
         }
     }
@@ -774,24 +1103,44 @@ impl RunContext {
         analysis: Option<&Analysis>,
         facts: &HostFacts,
     ) -> Result<(), ToolError> {
-        match self.decide_only(call, analysis, facts)? {
-            Decision::Allow { .. } => Ok(()),
+        self.authorize_or_ask(call, analysis, facts, None).await
+    }
+
+    /// Like [`authorize`](Self::authorize), but `force_ask` makes a policy `Allow` ask a human
+    /// anyway. Used where execution without enforcement is never silent: an unjailed,
+    /// not-provably-read-only command.
+    pub async fn authorize_or_ask(
+        &self,
+        call: &ToolCall,
+        analysis: Option<&Analysis>,
+        facts: &HostFacts,
+        force_ask: Option<&str>,
+    ) -> Result<(), ToolError> {
+        let (tier, reason) = match self.decide_only(call, analysis, facts)? {
+            Decision::Allow { .. } if force_ask.is_none() => return Ok(()),
+            Decision::Allow { .. } => (
+                policy::tier_for_call(&self.policy, call, analysis, facts),
+                force_ask.unwrap_or_default().to_string(),
+            ),
             Decision::Deny { reason } => {
                 self.note_denial(&reason);
-                Err(ToolError::Denied(reason))
+                return Err(ToolError::Denied(reason));
             }
-            Decision::Ask { tier, reason } => {
-                let subject = ApprovalSubject::Call {
-                    call: call.clone(),
-                    analysis: analysis.cloned(),
-                };
-                let summary = format!("{:?} {}", call.tool, call.command.as_deref().unwrap_or(""));
-                debug!("approval needed ({tier:?}): {reason}");
-                self.request_approval_because(tier, subject, summary.trim(), &reason)
-                    .await?;
-                Ok(())
-            }
-        }
+            Decision::Ask { tier, reason } => (tier, reason),
+        };
+        let subject = ApprovalSubject::Call {
+            call: call.clone(),
+            analysis: analysis.cloned(),
+        };
+        let summary = format!(
+            "{} {}",
+            super::tools::name_str(call.tool),
+            call.command.as_deref().unwrap_or("")
+        );
+        debug!("approval needed ({tier:?}): {reason}");
+        self.request_approval_because(tier, subject, summary.trim(), &reason)
+            .await?;
+        Ok(())
     }
 
     /// Execute, redact, audit `Result`, record output.
@@ -931,13 +1280,30 @@ impl RunContext {
             "pending_approvals": pending,
             "access_grants": grants,
             "stopped": self.is_stopped(),
-            "circuit_breaker_tripped": self.breaker.load(Ordering::SeqCst),
+            "paused": self.is_paused(),
+            "pause_reason": self.pause_reason.lock().ok().and_then(|r| r.clone()),
         })
     }
 }
 
 fn poisoned() -> ToolError {
     ToolError::Failed("internal lock poisoned".into())
+}
+
+/// How long an in-client (T1) prompt may stay open before the request goes out of band.
+const IN_CLIENT_ATTEMPT: Duration = Duration::from_secs(15);
+
+/// Does this policy-engine denial say something about the agent's behaviour?
+///
+/// Human decisions and approvals never reach here; this also filters the refusals that are
+/// not the agent probing or attacking: the observe profile, budget limits and malformed
+/// calls (bad arguments are reported as `Invalid`, not through the engine).
+fn counts_for_breaker(reason: &str) -> bool {
+    !(reason.starts_with("profile.")
+        || reason.starts_with("budget.")
+        || reason.starts_with("target:")
+        || reason.starts_with("denied by")
+        || reason.contains("approval request expired"))
 }
 
 fn redact_leaves(r: &dyn Redactor, v: &mut Value, all: &mut Vec<Redaction>) {

@@ -229,6 +229,10 @@ pub struct HostFacts {
     #[serde(default)]
     pub tag_source: Option<String>,
     pub enforcement: Enforcement,
+    /// Why enforcement could not be probed, when that happened. The host is treated as
+    /// having no jail and no certificates for this call, and probed again next call.
+    #[serde(default)]
+    pub probe_error: Option<String>,
 }
 
 /// How strongly a host is enforced (design 7).
@@ -248,6 +252,17 @@ pub enum JailKind {
     Bubblewrap,
     #[default]
     None,
+}
+
+impl JailKind {
+    /// Name used in messages: `landlock`, `bubblewrap` or `none`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            JailKind::Landlock => "landlock",
+            JailKind::Bubblewrap => "bubblewrap",
+            JailKind::None => "none",
+        }
+    }
 }
 
 // ---------------------------------------------------------------- tool calls
@@ -271,6 +286,8 @@ pub enum ToolName {
     Undo,
     Status,
     RequestAccess,
+    /// Collect the result of a call that returned `{status: "pending"}`.
+    WaitApproval,
 }
 
 impl ToolName {
@@ -549,9 +566,15 @@ pub enum AiEvent {
         applied: bool,
         undo_point: Option<String>,
     },
-    CircuitBreaker {
+    /// The circuit breaker paused the run; tool calls are refused until it is resumed.
+    Paused {
         run_id: String,
         reason: String,
+    },
+    /// A person (or the desktop app) cleared a circuit-breaker pause.
+    Resumed {
+        run_id: String,
+        by: String,
     },
     RunEnded {
         run_id: String,

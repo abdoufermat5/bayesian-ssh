@@ -67,6 +67,10 @@ pub struct RunSummary {
     pub connected: bool,
     /// Set by the run's `RunEnded` event.
     pub ended: Option<String>,
+    /// The circuit breaker paused the run; the user can resume it.
+    pub paused: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pause_reason: Option<String>,
 }
 
 #[derive(Serialize, Clone)]
@@ -95,6 +99,8 @@ pub struct AiSettingsView {
     pub record_output: bool,
     pub approval_timeout_secs: u64,
     pub trusted_tag_sources: Vec<String>,
+    /// The `config.json` these policies were read from, so the page can name it.
+    pub config_path: String,
 }
 
 // ---------------------------------------------------------------- sink
@@ -192,6 +198,8 @@ struct RunState {
     calls: u32,
     denied: u32,
     ended: Option<String>,
+    paused: bool,
+    pause_reason: Option<String>,
     /// Ordering for pruning closed runs.
     touched: u64,
 }
@@ -210,6 +218,8 @@ impl RunState {
             grants: self.grants.clone(),
             connected: self.conn.is_some(),
             ended: self.ended.clone(),
+            paused: self.paused,
+            pause_reason: self.pause_reason.clone(),
         }
     }
 }
@@ -310,6 +320,8 @@ impl AiHub {
                     calls: 0,
                     denied: 0,
                     ended: None,
+                    paused: false,
+                    pause_reason: None,
                     touched: tick,
                 });
             run.client = hello.client;
@@ -390,6 +402,14 @@ impl AiHub {
                         }
                         AiEvent::Approval { request_id, .. } => {
                             run.pending.retain(|r| &r.request_id != request_id);
+                        }
+                        AiEvent::Paused { reason, .. } => {
+                            run.paused = true;
+                            run.pause_reason = Some(reason.clone());
+                        }
+                        AiEvent::Resumed { .. } => {
+                            run.paused = false;
+                            run.pause_reason = None;
                         }
                         AiEvent::RunEnded { reason, .. } => {
                             run.ended = Some(reason.clone());
@@ -484,6 +504,12 @@ impl AiHub {
         // in case that event got lost.
         let _ = tx.send(ClientMsg::ListPending);
         Ok(())
+    }
+
+    pub fn resume(&self, run_id: &str) -> Result<(), String> {
+        self.sender(run_id)?
+            .send(ClientMsg::Resume { by: local_user() })
+            .map_err(|_| "The run is not connected any more.".to_string())
     }
 
     pub fn stop(&self, run_id: &str) -> Result<(), String> {
@@ -840,6 +866,11 @@ pub fn ai_stop(hub: State<'_, Arc<AiHub>>, run_id: String) -> Result<(), String>
 }
 
 #[tauri::command]
+pub fn ai_resume(hub: State<'_, Arc<AiHub>>, run_id: String) -> Result<(), String> {
+    hub.resume(&run_id)
+}
+
+#[tauri::command]
 pub fn ai_revoke_grant(
     hub: State<'_, Arc<AiHub>>,
     run_id: String,
@@ -852,11 +883,13 @@ pub fn ai_revoke_grant(
 #[tauri::command(async)]
 pub fn ai_settings() -> Result<AiSettingsView, String> {
     let config = AppConfig::load(None).map_err(|e| e.to_string())?;
+    let config_path = config.config_file().display().to_string();
     Ok(AiSettingsView {
         policies: config.ai.policies,
         record_output: config.ai.record_output,
         approval_timeout_secs: config.ai.approval_timeout_secs,
         trusted_tag_sources: config.ai.trusted_tag_sources,
+        config_path,
     })
 }
 

@@ -29,6 +29,12 @@ use tokio::sync::{broadcast, oneshot};
 #[async_trait]
 pub trait Elicitor: Send + Sync {
     async fn confirm(&self, req: &ApprovalRequest) -> anyhow::Result<Option<bool>>;
+
+    /// Whether `confirm` can reach a human right now. The MCP client only becomes
+    /// reachable after `initialize`.
+    fn can_elicit(&self) -> bool {
+        true
+    }
 }
 
 /// Static facts about the run, sent in `ServerMsg::Hello`.
@@ -232,7 +238,27 @@ impl LocalBroker {
         outcome
     }
 
-    async fn out_of_band(&self, req: ApprovalRequest) -> anyhow::Result<ApprovalOutcome> {
+    /// Time left for a request: the configured timeout, narrowed by its own `expires_at`.
+    ///
+    /// The out-of-band request and any in-client attempt share this one budget, so a client
+    /// that cannot elicit does not add a second timeout on top of the first.
+    fn wait_budget(&self, req: &ApprovalRequest) -> Duration {
+        let cap = Duration::from_secs(self.timeout_secs);
+        let until = chrono::DateTime::parse_from_rfc3339(&req.expires_at)
+            .ok()
+            .and_then(|t| {
+                (t.with_timezone(&chrono::Utc) - chrono::Utc::now())
+                    .to_std()
+                    .ok()
+            });
+        until.map_or(cap, |d| d.min(cap))
+    }
+
+    async fn out_of_band(
+        &self,
+        req: ApprovalRequest,
+        wait: Duration,
+    ) -> anyhow::Result<ApprovalOutcome> {
         let id = req.request_id.clone();
         self.store.insert_request(&req)?;
         let (tx, mut rx) = oneshot::channel();
@@ -260,7 +286,7 @@ impl LocalBroker {
             );
         }
 
-        match tokio::time::timeout(Duration::from_secs(self.timeout_secs), &mut rx).await {
+        match tokio::time::timeout(wait, &mut rx).await {
             Ok(Ok(outcome)) => Ok(outcome),
             Ok(Err(_)) => Ok(self.expire(&id)),
             Err(_) => {
@@ -290,9 +316,9 @@ fn checked_grant(req: &ApprovalRequest, run: &RunInfo, mut g: Grant) -> anyhow::
     };
     if g.tool != call.tool {
         anyhow::bail!(
-            "grant for {:?} does not match the request's {:?}",
-            g.tool,
-            call.tool
+            "grant for {} does not match the request's {}",
+            tool_name(g.tool),
+            tool_name(call.tool)
         );
     }
     let Some(host) = call.host.clone() else {
@@ -316,9 +342,11 @@ fn checked_grant(req: &ApprovalRequest, run: &RunInfo, mut g: Grant) -> anyhow::
 #[async_trait]
 impl ApprovalBroker for LocalBroker {
     async fn request(&self, mut req: ApprovalRequest) -> anyhow::Result<ApprovalOutcome> {
+        let budget = self.wait_budget(&req);
+        let started = std::time::Instant::now();
         if req.tier == Tier::InClient {
             if let Some(e) = &self.elicitor {
-                let wait = Duration::from_secs(self.timeout_secs);
+                let wait = budget;
                 match tokio::time::timeout(wait, e.confirm(&req)).await {
                     Ok(Ok(Some(true))) => {
                         return Ok(ApprovalOutcome::Approved {
@@ -340,8 +368,14 @@ impl ApprovalBroker for LocalBroker {
             }
             req.tier = Tier::OutOfBand;
         }
-        self.out_of_band(req).await
+        let left = budget.saturating_sub(started.elapsed());
+        self.out_of_band(req, left).await
     }
+}
+
+/// Wire name of a tool (`run_readonly`, `service`, ...), as the agent sees it.
+fn tool_name(t: crate::services::ai::types::ToolName) -> &'static str {
+    crate::services::ai::mcp::tools::name_str(t)
 }
 
 /// One line for notifications.
@@ -351,7 +385,7 @@ fn short_subject(req: &ApprovalRequest) -> String {
         Call { call, .. } => match (&call.command, &call.path) {
             (Some(c), _) => format!("run `{}`", truncate(c, 80)),
             (None, Some(p)) => format!("change {}", truncate(p, 80)),
-            _ => format!("use {:?}", call.tool),
+            _ => format!("use {}", tool_name(call.tool)),
         },
         Plan { plan, .. } => format!("apply the change '{}'", truncate(&plan.title, 80)),
         Access { reason, .. } => format!("widen its access: {}", truncate(reason, 80)),
@@ -420,6 +454,10 @@ pub fn desktop_notify(title: &str, body: &str) {
 
 // ---------------------------------------------------------------- control socket
 
+/// Clears a circuit-breaker pause from the control socket. `Err` is the reason it can't
+/// (the run is stopped, or it is not paused).
+pub type ResumeFn = Arc<dyn Fn(&str) -> Result<(), String> + Send + Sync>;
+
 /// Serve `<ai_dir>/runs/<run_id>.sock` (protocol in `ipc.rs`) until `stop` fires or a client
 /// sends `Stop`.
 ///
@@ -432,6 +470,7 @@ pub async fn serve_control(
     broker: Arc<LocalBroker>,
     events: broadcast::Sender<AiEvent>,
     mut stop: tokio::sync::watch::Receiver<bool>,
+    resume: ResumeFn,
 ) -> anyhow::Result<Option<String>> {
     use anyhow::Context;
     use std::os::unix::fs::PermissionsExt;
@@ -465,6 +504,7 @@ pub async fn serve_control(
                             events.subscribe(),
                             client_stop_tx.clone(),
                             done_rx.clone(),
+                            resume.clone(),
                         ));
                     }
                     Err(e) => tracing::warn!("control socket accept failed: {e}"),
@@ -495,8 +535,9 @@ pub async fn serve_control(
     broker: Arc<LocalBroker>,
     events: broadcast::Sender<AiEvent>,
     stop: tokio::sync::watch::Receiver<bool>,
+    resume: ResumeFn,
 ) -> anyhow::Result<Option<String>> {
-    let _ = (socket, run, broker, events, stop);
+    let _ = (socket, run, broker, events, stop, resume);
     anyhow::bail!("the AI control socket needs a Unix platform")
 }
 
@@ -519,6 +560,7 @@ async fn handle_conn(
     mut events: broadcast::Receiver<AiEvent>,
     client_stop: Arc<tokio::sync::watch::Sender<Option<String>>>,
     mut done: tokio::sync::watch::Receiver<bool>,
+    resume: ResumeFn,
 ) {
     use tokio::io::{AsyncBufReadExt, BufReader};
 
@@ -584,7 +626,7 @@ async fn handle_conn(
                     continue;
                 }
                 match serde_json::from_str::<ClientMsg>(&line) {
-                    Ok(msg) => handle_msg(msg, &broker, &client_stop, &mut subscribed),
+                    Ok(msg) => handle_msg(msg, &broker, &client_stop, &resume, &mut subscribed),
                     Err(e) => Some(ServerMsg::Error { message: format!("bad message: {e}") }),
                 }
             }
@@ -615,6 +657,7 @@ fn handle_msg(
     msg: ClientMsg,
     broker: &LocalBroker,
     client_stop: &tokio::sync::watch::Sender<Option<String>>,
+    resume: &ResumeFn,
     subscribed: &mut bool,
 ) -> Option<ServerMsg> {
     Some(match msg {
@@ -656,6 +699,10 @@ fn handle_msg(
             Err(e) => ServerMsg::Error {
                 message: e.to_string(),
             },
+        },
+        ClientMsg::Resume { by } => match resume(&by) {
+            Ok(()) => ServerMsg::Ok,
+            Err(message) => ServerMsg::Error { message },
         },
         ClientMsg::Stop { reason } => {
             let _ = client_stop.send(Some(reason));
