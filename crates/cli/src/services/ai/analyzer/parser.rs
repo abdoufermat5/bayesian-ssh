@@ -12,7 +12,7 @@ pub fn parse_program(src: &str, depth: usize) -> Result<Node, String> {
     if depth > MAX_DEPTH {
         return Err("nested too deep".into());
     }
-    let lexed = lex(src, depth)?;
+    let lexed = lex(src, depth).map_err(|e| e.to_string())?;
     let mut p = Parser {
         toks: lexed.toks,
         heredocs: lexed.heredocs,

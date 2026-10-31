@@ -4,6 +4,34 @@
 use super::ast::{Node, Part, Word};
 use super::parser::parse_program;
 
+/// Why the tokenizer gave up. The `Display` text ends up in the analysis' `unknown_reason`.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum LexError {
+    #[error("here-doc without delimiter")]
+    HereDocWithoutDelimiter,
+    #[error("unexpected character '{0}'")]
+    UnexpectedChar(char),
+    #[error("unterminated single quote")]
+    UnterminatedSingleQuote,
+    #[error("unterminated double quote")]
+    UnterminatedDoubleQuote,
+    #[error("unterminated $(")]
+    UnterminatedCommandSubst,
+    #[error("unterminated ${{")]
+    UnterminatedParamExpansion,
+    #[error("unterminated backtick")]
+    UnterminatedBacktick,
+    #[error("unterminated process substitution")]
+    UnterminatedProcessSubst,
+    #[error("unterminated $'")]
+    UnterminatedAnsiC,
+    #[error("substitutions nested too deep")]
+    NestedTooDeep,
+    /// A nested command failed to parse; the parser's message, unchanged.
+    #[error("{0}")]
+    Parse(String),
+}
+
 /// Nesting limit for `$(...)`, backticks, and `sh -c` strings.
 pub const MAX_DEPTH: usize = 8;
 
@@ -86,7 +114,7 @@ pub struct Lexed {
     pub heredocs: Vec<Heredoc>,
 }
 
-pub fn lex(src: &str, depth: usize) -> Result<Lexed, String> {
+pub fn lex(src: &str, depth: usize) -> Result<Lexed, LexError> {
     let mut lx = Lexer {
         chars: src.chars().collect(),
         i: 0,
@@ -98,7 +126,7 @@ pub fn lex(src: &str, depth: usize) -> Result<Lexed, String> {
     };
     lx.run()?;
     if lx.want_delim.is_some() {
-        return Err("here-doc without delimiter".into());
+        return Err(LexError::HereDocWithoutDelimiter);
     }
     Ok(Lexed {
         toks: lx.toks,
@@ -108,7 +136,7 @@ pub fn lex(src: &str, depth: usize) -> Result<Lexed, String> {
 
 /// Commands hidden in text the shell expands but doesn't split into words
 /// (here-doc bodies, `${...}` and `$((...))` contents).
-fn subs_in_text(text: &str, depth: usize) -> Result<Vec<Node>, String> {
+fn subs_in_text(text: &str, depth: usize) -> Result<Vec<Node>, LexError> {
     let mut lx = Lexer::bare(text, depth);
     let mut wb = WordBuilder::default();
     lx.dq_content(None, &mut wb)?;
@@ -121,10 +149,44 @@ struct Lexer {
     depth: usize,
     toks: Vec<Token>,
     heredocs: Vec<Heredoc>,
-    /// Here-docs whose bodies start after the next newline: (index, strip tabs, quoted).
-    pending: Vec<(usize, bool, bool)>,
-    /// After `<<` / `<<-`: the next word is the delimiter. Holds `strip_tabs`.
-    want_delim: Option<bool>,
+    /// Here-docs whose bodies start after the next newline.
+    pending: Vec<PendingHeredoc>,
+    /// After `<<` / `<<-`: the next word is the delimiter.
+    want_delim: Option<TabStrip>,
+}
+
+/// Whether text came from inside quotes or from a backslash escape.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Quoting {
+    Bare,
+    Quoted,
+}
+
+impl Quoting {
+    fn is_quoted(self) -> bool {
+        self == Quoting::Quoted
+    }
+}
+
+/// Where a `$` appears: inside double quotes (or a here-doc body) or not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DollarContext {
+    Bare,
+    DoubleQuoted,
+}
+
+/// `<<-` strips leading tabs from the body lines, `<<` does not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TabStrip {
+    Keep,
+    Strip,
+}
+
+/// A here-doc whose body starts after the next newline.
+struct PendingHeredoc {
+    idx: usize,
+    tabs: TabStrip,
+    quoted: Quoting,
 }
 
 #[derive(Default)]
@@ -134,7 +196,8 @@ struct WordBuilder {
 }
 
 impl WordBuilder {
-    fn lit(&mut self, text: &str, quoted: bool) {
+    fn lit(&mut self, text: &str, quoting: Quoting) {
+        let quoted = quoting.is_quoted();
         if let Some(Part::Lit {
             text: last,
             quoted: q,
@@ -151,9 +214,9 @@ impl WordBuilder {
         });
     }
 
-    fn ch(&mut self, c: char, quoted: bool) {
+    fn ch(&mut self, c: char, quoting: Quoting) {
         let mut buf = [0u8; 4];
-        self.lit(c.encode_utf8(&mut buf), quoted);
+        self.lit(c.encode_utf8(&mut buf), quoting);
     }
 
     fn finish(self) -> Word {
@@ -193,7 +256,7 @@ impl Lexer {
         self.toks.push(Token { tok, pos });
     }
 
-    fn run(&mut self) -> Result<(), String> {
+    fn run(&mut self) -> Result<(), LexError> {
         loop {
             while let Some(c) = self.peek() {
                 if c == ' ' || c == '\t' {
@@ -226,7 +289,7 @@ impl Lexer {
         }
     }
 
-    fn operator(&mut self) -> Result<(), String> {
+    fn operator(&mut self) -> Result<(), LexError> {
         let pos = self.i;
         let c = self.chars[self.i];
         let n1 = self.peek_at(1);
@@ -247,12 +310,12 @@ impl Lexer {
             ('<', Some('<'), Some('<')) => (Op::TLess, 3),
             ('<', Some('<'), Some('-')) => {
                 self.i += 3;
-                self.want_delim = Some(true);
+                self.want_delim = Some(TabStrip::Strip);
                 return Ok(());
             }
             ('<', Some('<'), _) => {
                 self.i += 2;
-                self.want_delim = Some(false);
+                self.want_delim = Some(TabStrip::Keep);
                 return Ok(());
             }
             ('<', Some('&'), _) => (Op::LessAnd, 2),
@@ -262,30 +325,35 @@ impl Lexer {
             ('>', Some('&'), _) => (Op::GreatAnd, 2),
             ('>', Some('|'), _) => (Op::Clobber, 2),
             ('>', _, _) => (Op::Great, 1),
-            _ => return Err(format!("unexpected character '{c}'")),
+            _ => return Err(LexError::UnexpectedChar(c)),
         };
         if self.want_delim.is_some() {
-            return Err("here-doc without delimiter".into());
+            return Err(LexError::HereDocWithoutDelimiter);
         }
         self.i += len;
         self.push(Tok::Op(op), pos);
         Ok(())
     }
 
-    fn word(&mut self) -> Result<(), String> {
+    fn word(&mut self) -> Result<(), LexError> {
         let pos = self.i;
         let word = self.read_word()?;
-        if let Some(strip) = self.want_delim.take() {
-            let quoted = word
+        if let Some(tabs) = self.want_delim.take() {
+            let quoted = if word
                 .parts
                 .iter()
-                .any(|p| matches!(p, Part::Lit { quoted: true, .. }));
+                .any(|p| matches!(p, Part::Lit { quoted: true, .. }))
+            {
+                Quoting::Quoted
+            } else {
+                Quoting::Bare
+            };
             let idx = self.heredocs.len();
             self.heredocs.push(Heredoc {
                 delim: word.text(),
                 subs: Vec::new(),
             });
-            self.pending.push((idx, strip, quoted));
+            self.pending.push(PendingHeredoc { idx, tabs, quoted });
             self.push(Tok::HereDoc(idx), pos);
             return Ok(());
         }
@@ -308,9 +376,9 @@ impl Lexer {
         Ok(())
     }
 
-    fn read_heredoc_bodies(&mut self) -> Result<(), String> {
+    fn read_heredoc_bodies(&mut self) -> Result<(), LexError> {
         let pending = std::mem::take(&mut self.pending);
-        for (idx, strip, quoted) in pending {
+        for PendingHeredoc { idx, tabs, quoted } in pending {
             let delim = self.heredocs[idx].delim.clone();
             let mut body = String::new();
             while self.i < self.chars.len() {
@@ -322,7 +390,7 @@ impl Lexer {
                 if self.peek() == Some('\n') {
                     self.i += 1;
                 }
-                let cmp = if strip {
+                let cmp = if tabs == TabStrip::Strip {
                     line.trim_start_matches('\t')
                 } else {
                     line.as_str()
@@ -333,7 +401,7 @@ impl Lexer {
                 body.push_str(&line);
                 body.push('\n');
             }
-            if !quoted {
+            if !quoted.is_quoted() {
                 self.heredocs[idx].subs = subs_in_text(&body, self.depth + 1)?;
             }
         }
@@ -341,7 +409,7 @@ impl Lexer {
     }
 
     /// One shell word, with quotes removed and expansions recorded.
-    fn read_word(&mut self) -> Result<Word, String> {
+    fn read_word(&mut self) -> Result<Word, LexError> {
         let mut wb = WordBuilder::default();
         while let Some(c) = self.peek() {
             match c {
@@ -356,11 +424,11 @@ impl Lexer {
                 '\\' => match self.peek_at(1) {
                     Some('\n') => self.i += 2,
                     Some(n) => {
-                        wb.ch(n, true);
+                        wb.ch(n, Quoting::Quoted);
                         self.i += 2;
                     }
                     None => {
-                        wb.ch('\\', true);
+                        wb.ch('\\', Quoting::Quoted);
                         self.i += 1;
                     }
                 },
@@ -371,21 +439,21 @@ impl Lexer {
                         self.i += 1;
                     }
                     if self.peek().is_none() {
-                        return Err("unterminated single quote".into());
+                        return Err(LexError::UnterminatedSingleQuote);
                     }
                     let text: String = self.chars[start..self.i].iter().collect();
                     self.i += 1;
-                    wb.lit(&text, true);
+                    wb.lit(&text, Quoting::Quoted);
                 }
                 '"' => {
                     self.i += 1;
-                    wb.lit("", true);
+                    wb.lit("", Quoting::Quoted);
                     self.dq_content(Some('"'), &mut wb)?;
                 }
-                '$' => self.dollar(&mut wb, false)?,
+                '$' => self.dollar(&mut wb, DollarContext::Bare)?,
                 '`' => self.backtick(&mut wb)?,
                 _ => {
-                    wb.ch(c, false);
+                    wb.ch(c, Quoting::Bare);
                     self.i += 1;
                 }
             }
@@ -394,11 +462,11 @@ impl Lexer {
     }
 
     /// Inside double quotes (terminator `"`) or a here-doc body (no terminator).
-    fn dq_content(&mut self, term: Option<char>, wb: &mut WordBuilder) -> Result<(), String> {
+    fn dq_content(&mut self, term: Option<char>, wb: &mut WordBuilder) -> Result<(), LexError> {
         loop {
             let Some(c) = self.peek() else {
                 return if term.is_some() {
-                    Err("unterminated double quote".into())
+                    Err(LexError::UnterminatedDoubleQuote)
                 } else {
                     Ok(())
                 };
@@ -411,35 +479,36 @@ impl Lexer {
                 '\\' => match self.peek_at(1) {
                     Some('\n') => self.i += 2,
                     Some(n @ ('$' | '`' | '"' | '\\')) => {
-                        wb.ch(n, true);
+                        wb.ch(n, Quoting::Quoted);
                         self.i += 2;
                     }
                     _ => {
-                        wb.ch('\\', true);
+                        wb.ch('\\', Quoting::Quoted);
                         self.i += 1;
                     }
                 },
-                '$' => self.dollar(wb, true)?,
+                '$' => self.dollar(wb, DollarContext::DoubleQuoted)?,
                 '`' => self.backtick(wb)?,
                 _ => {
-                    wb.ch(c, true);
+                    wb.ch(c, Quoting::Quoted);
                     self.i += 1;
                 }
             }
         }
     }
 
-    fn dollar(&mut self, wb: &mut WordBuilder, in_dq: bool) -> Result<(), String> {
+    fn dollar(&mut self, wb: &mut WordBuilder, ctx: DollarContext) -> Result<(), LexError> {
         let start = self.i;
+        let in_dq = ctx == DollarContext::DoubleQuoted;
         match self.peek_at(1) {
             Some('\'') if !in_dq => {
                 self.i += 2;
                 let text = self.ansi_c()?;
-                wb.lit(&text, true);
+                wb.lit(&text, Quoting::Quoted);
             }
             Some('"') if !in_dq => {
                 self.i += 2;
-                wb.lit("", true);
+                wb.lit("", Quoting::Quoted);
                 self.dq_content(Some('"'), wb)?;
             }
             Some('(') => {
@@ -459,7 +528,8 @@ impl Lexer {
                         }
                     }
                 }
-                let end = find_close_paren(&self.chars, self.i + 2).ok_or("unterminated $(")?;
+                let end = find_close_paren(&self.chars, self.i + 2)
+                    .ok_or(LexError::UnterminatedCommandSubst)?;
                 let inner: String = self.chars[self.i + 2..end].iter().collect();
                 wb.subs.push(self.parse_inner(&inner)?);
                 let src: String = self.chars[start..=end].iter().collect();
@@ -467,7 +537,8 @@ impl Lexer {
                 self.i = end + 1;
             }
             Some('{') => {
-                let end = find_close_brace(&self.chars, self.i + 2).ok_or("unterminated ${")?;
+                let end = find_close_brace(&self.chars, self.i + 2)
+                    .ok_or(LexError::UnterminatedParamExpansion)?;
                 let inner: String = self.chars[self.i + 2..end].iter().collect();
                 wb.subs.extend(subs_in_text(&inner, self.depth + 1)?);
                 let src: String = self.chars[start..=end].iter().collect();
@@ -493,16 +564,24 @@ impl Lexer {
                 wb.parts.push(Part::Dynamic(format!("${c}")));
             }
             _ => {
-                wb.ch('$', in_dq);
+                wb.ch(
+                    '$',
+                    if in_dq {
+                        Quoting::Quoted
+                    } else {
+                        Quoting::Bare
+                    },
+                );
                 self.i += 1;
             }
         }
         Ok(())
     }
 
-    fn backtick(&mut self, wb: &mut WordBuilder) -> Result<(), String> {
+    fn backtick(&mut self, wb: &mut WordBuilder) -> Result<(), LexError> {
         let start = self.i;
-        let end = find_backtick_end(&self.chars, self.i + 1).ok_or("unterminated backtick")?;
+        let end =
+            find_backtick_end(&self.chars, self.i + 1).ok_or(LexError::UnterminatedBacktick)?;
         let mut inner = String::new();
         let mut k = self.i + 1;
         while k < end {
@@ -523,10 +602,10 @@ impl Lexer {
     }
 
     /// `<(cmd)` and `>(cmd)`
-    fn process_subst(&mut self, wb: &mut WordBuilder) -> Result<(), String> {
+    fn process_subst(&mut self, wb: &mut WordBuilder) -> Result<(), LexError> {
         let start = self.i;
         let end =
-            find_close_paren(&self.chars, self.i + 2).ok_or("unterminated process substitution")?;
+            find_close_paren(&self.chars, self.i + 2).ok_or(LexError::UnterminatedProcessSubst)?;
         let inner: String = self.chars[self.i + 2..end].iter().collect();
         wb.subs.push(self.parse_inner(&inner)?);
         let src: String = self.chars[start..=end].iter().collect();
@@ -535,23 +614,23 @@ impl Lexer {
         Ok(())
     }
 
-    fn parse_inner(&self, src: &str) -> Result<Node, String> {
+    fn parse_inner(&self, src: &str) -> Result<Node, LexError> {
         if self.depth + 1 > MAX_DEPTH {
-            return Err("substitutions nested too deep".into());
+            return Err(LexError::NestedTooDeep);
         }
-        parse_program(src, self.depth + 1)
+        parse_program(src, self.depth + 1).map_err(LexError::Parse)
     }
 
     /// Body of `$'...'`, `self.i` just after the opening quote.
-    fn ansi_c(&mut self) -> Result<String, String> {
+    fn ansi_c(&mut self) -> Result<String, LexError> {
         let mut out = String::new();
         loop {
-            let c = self.peek().ok_or("unterminated $'")?;
+            let c = self.peek().ok_or(LexError::UnterminatedAnsiC)?;
             self.i += 1;
             match c {
                 '\'' => return Ok(out),
                 '\\' => {
-                    let e = self.peek().ok_or("unterminated $'")?;
+                    let e = self.peek().ok_or(LexError::UnterminatedAnsiC)?;
                     self.i += 1;
                     match e {
                         'n' => out.push('\n'),
