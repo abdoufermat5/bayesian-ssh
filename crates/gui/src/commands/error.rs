@@ -26,6 +26,9 @@ pub enum CommandError {
     /// A malformed UUID argument.
     #[error("{0}")]
     Uuid(#[from] uuid::Error),
+    /// A connection field the core refused.
+    #[error("{0}")]
+    Validation(#[from] bayesian_ssh::models::ValidationError),
 }
 
 impl From<String> for CommandError {

@@ -432,16 +432,12 @@ mod tests {
     use std::process::{ExitStatus, Output};
 
     fn conn(kerberos: bool, bastion: Option<&str>) -> Connection {
-        Connection::new(
-            "web".into(),
-            "web.internal".into(),
-            "alice".into(),
-            2222,
-            bastion.map(Into::into),
-            Some("jump".into()),
-            kerberos,
-            None,
-        )
+        Connection {
+            bastion: bastion.map(Into::into),
+            bastion_user: Some("jump".into()),
+            use_kerberos: kerberos,
+            ..Connection::new("web".into(), "web.internal".into(), "alice".into(), 2222)
+        }
     }
 
     #[test]

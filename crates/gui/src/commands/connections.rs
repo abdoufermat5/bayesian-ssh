@@ -72,18 +72,22 @@ pub fn add_connection(
     let default_k = config.use_kerberos_by_default;
 
     let user = user.unwrap_or(default_u);
-    validate_connection_fields(&name, &host, &user, &bastion, &bastion_user, &key_path)?;
+    validate_connection_fields(
+        &name,
+        &host,
+        &user,
+        bastion.as_deref(),
+        bastion_user.as_deref(),
+        key_path.as_deref(),
+    )?;
 
-    let mut connection = Connection::new(
-        name,
-        host,
-        user,
-        port.unwrap_or(default_p),
+    let mut connection = Connection {
         bastion,
         bastion_user,
-        kerberos.unwrap_or(default_k),
+        use_kerberos: kerberos.unwrap_or(default_k),
         key_path,
-    );
+        ..Connection::new(name, host, user, port.unwrap_or(default_p))
+    };
 
     connection.forward_agent = forward_agent.unwrap_or(false);
     for tag in tags {
@@ -123,7 +127,14 @@ pub fn edit_connection(
         return Err("Connection id mismatch.".into());
     }
 
-    validate_connection_fields(&name, &host, &user, &bastion, &bastion_user, &key_path)?;
+    validate_connection_fields(
+        &name,
+        &host,
+        &user,
+        bastion.as_deref(),
+        bastion_user.as_deref(),
+        key_path.as_deref(),
+    )?;
 
     let mut connection = Connection {
         id: uuid,

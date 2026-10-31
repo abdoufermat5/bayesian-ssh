@@ -2,8 +2,6 @@
 //!
 //! This is the existing behavior extracted behind the `SshTransport` trait.
 
-#![expect(dead_code, reason = "pending refactor")]
-
 use crate::config::{AppConfig, HostKeyPolicy};
 use crate::models::Connection;
 use async_trait::async_trait;
@@ -1389,16 +1387,12 @@ mod tests {
     use super::*;
 
     fn c(kerb: bool, bastion: Option<&str>, key: Option<&str>) -> Connection {
-        Connection::new(
-            "x".into(),
-            "target.example".into(),
-            "alice".into(),
-            2222,
-            bastion.map(String::from),
-            None,
-            kerb,
-            key.map(String::from),
-        )
+        Connection {
+            bastion: bastion.map(String::from),
+            use_kerberos: kerb,
+            key_path: key.map(String::from),
+            ..Connection::new("x".into(), "target.example".into(), "alice".into(), 2222)
+        }
     }
 
     #[test]

@@ -119,20 +119,12 @@ mod tests {
             "web1.example.com".into(),
             "root".into(),
             22,
-            None,
-            None,
-            false,
-            None,
         );
         let conn2 = Connection::new(
             "db-prod".into(),
             "db1.example.com".into(),
             "root".into(),
             22,
-            None,
-            None,
-            false,
-            None,
         );
         db.add_connection(&conn1).unwrap();
         db.add_connection(&conn2).unwrap();
@@ -173,26 +165,8 @@ mod tests {
         };
         let db = Database::new(&config).unwrap();
 
-        let conn1 = Connection::new(
-            "shared".into(),
-            "a.example.com".into(),
-            "u".into(),
-            22,
-            None,
-            None,
-            false,
-            None,
-        );
-        let conn2 = Connection::new(
-            "shared".into(),
-            "b.example.com".into(),
-            "u".into(),
-            22,
-            None,
-            None,
-            false,
-            None,
-        );
+        let conn1 = Connection::new("shared".into(), "a.example.com".into(), "u".into(), 22);
+        let conn2 = Connection::new("shared".into(), "b.example.com".into(), "u".into(), 22);
         db.add_connection(&conn1).unwrap();
         let result = db.add_connection(&conn2);
         assert!(result.is_err(), "expected duplicate name to fail");

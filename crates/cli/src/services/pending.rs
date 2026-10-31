@@ -78,16 +78,10 @@ mod tests {
     use chrono::Utc;
 
     fn changed() -> Connection {
-        let mut conn = Connection::new(
-            "db-prod".into(),
-            "old.example".into(),
-            "alice".into(),
-            22,
-            None,
-            None,
-            true,
-            None,
-        );
+        let mut conn = Connection {
+            use_kerberos: true,
+            ..Connection::new("db-prod".into(), "old.example".into(), "alice".into(), 22)
+        };
         let mut previous = conn.clone();
         previous.host = "db.example".into();
         conn.host = "attacker.example".into();
@@ -98,16 +92,7 @@ mod tests {
 
     #[test]
     fn unchanged_connection_passes() {
-        let conn = Connection::new(
-            "db".into(),
-            "h".into(),
-            "u".into(),
-            22,
-            None,
-            None,
-            false,
-            None,
-        );
+        let conn = Connection::new("db".into(), "h".into(), "u".into(), 22);
         assert!(ensure_cleared(&conn).is_ok());
         assert_eq!(describe(&conn), Vec::<String>::new());
     }

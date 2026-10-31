@@ -1,5 +1,5 @@
 use crate::config::AppConfig;
-use crate::services::SshService;
+use crate::services::{NewConnection, SshService};
 use anyhow::Result;
 use tracing::info;
 
@@ -37,8 +37,8 @@ pub async fn execute(args: AddArgs, config: AppConfig) -> Result<()> {
     let ssh_service = SshService::new(config)?;
 
     ssh_service
-        .add_connection(
-            name.clone(),
+        .add_connection(NewConnection {
+            name: name.clone(),
             host,
             user,
             port,
@@ -49,7 +49,7 @@ pub async fn execute(args: AddArgs, config: AppConfig) -> Result<()> {
             key,
             tags,
             forward_agent,
-        )
+        })
         .await?;
 
     println!("✅ Connection '{}' added successfully!", name);

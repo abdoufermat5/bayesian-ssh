@@ -19,7 +19,7 @@ mod source;
 mod tag;
 
 pub use search::{Prediction, RankContext, ScoreBreakdown, SearchField};
-pub use session::live_pid;
+pub use session::{live_pid, ActiveSession};
 pub use source::SourceSummary;
 
 const SCHEMA_VERSION: i32 = 11;
@@ -574,16 +574,7 @@ mod tests {
     }
 
     fn sample(name: &str) -> Connection {
-        Connection::new(
-            name.into(),
-            "h.example.com".into(),
-            "u".into(),
-            22,
-            None,
-            None,
-            false,
-            None,
-        )
+        Connection::new(name.into(), "h.example.com".into(), "u".into(), 22)
     }
 
     #[test]
@@ -855,16 +846,8 @@ mod tests {
         let db = open(dir.path());
         db.add_connection(&sample("web")).unwrap();
         // Never saved: `bssh connect deploy@10.0.0.9`.
-        let mut direct = Connection::new(
-            "10.0.0.9".into(),
-            "10.0.0.9".into(),
-            "deploy".into(),
-            2222,
-            None,
-            None,
-            false,
-            None,
-        );
+        let mut direct =
+            Connection::new("10.0.0.9".into(), "10.0.0.9".into(), "deploy".into(), 2222);
         direct.update_last_used();
         let mut session = Session::new(direct);
         session.mark_terminated(0);

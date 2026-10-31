@@ -730,16 +730,7 @@ mod tests {
         p.scope.tags = vec!["prod".into()];
         config.ai.policies.insert("ops".into(), p.clone());
 
-        let mut conn = Connection::new(
-            "db-1".into(),
-            "h".into(),
-            "u".into(),
-            22,
-            None,
-            None,
-            false,
-            None,
-        );
+        let mut conn = Connection::new("db-1".into(), "h".into(), "u".into(), 22);
         conn.tags = vec!["prod".into()];
         conn.source_id = Some(uuid::Uuid::new_v4());
         let facts = policy::connection_facts(

@@ -2,7 +2,7 @@
 
 use crate::cli::utils::{confirm, format_elapsed, truncate_display};
 use crate::config::AppConfig;
-use crate::database::{live_pid, Database};
+use crate::database::{live_pid, ActiveSession, Database};
 use anyhow::Result;
 use nix::sys::signal::{kill, Signal};
 
@@ -69,7 +69,13 @@ fn list_active_sessions(db: &Database) -> Result<()> {
     );
     println!("{}", "─".repeat(70));
 
-    for (conn_name, pid, started_at) in &sessions {
+    for ActiveSession {
+        connection: conn_name,
+        pid,
+        started_at,
+        ..
+    } in &sessions
+    {
         let duration = chrono::Utc::now().signed_duration_since(*started_at);
         let duration_str = format_elapsed(duration);
         let pid_str = pid
@@ -112,7 +118,13 @@ fn close_session(db: &Database, target: &str, confirmation: Confirmation) -> Res
         return Ok(());
     }
 
-    for (session_id, conn_name, pid, _) in sessions {
+    for ActiveSession {
+        id: session_id,
+        connection: conn_name,
+        pid,
+        ..
+    } in sessions
+    {
         if let Some(p) = pid {
             if let Some(target) = live_pid(p) {
                 if confirmation == Confirmation::Ask
@@ -173,7 +185,7 @@ fn close_all_sessions(db: &Database, confirmation: Confirmation) -> Result<()> {
     let mut closed = 0;
     let mut cleaned = 0;
 
-    for (_conn_name, pid, _) in &sessions {
+    for ActiveSession { pid, .. } in &sessions {
         if let Some(p) = pid {
             if let Some(target) = live_pid(*p) {
                 if kill(target, Signal::SIGTERM).is_ok() {

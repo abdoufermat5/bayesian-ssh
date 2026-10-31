@@ -368,10 +368,6 @@ pub fn conn(name: &str, tags: &[&str]) -> Connection {
         format!("{name}.example.test"),
         "deploy".into(),
         22,
-        None,
-        None,
-        false,
-        None,
     );
     c.tags = tags.iter().map(|t| t.to_string()).collect();
     c

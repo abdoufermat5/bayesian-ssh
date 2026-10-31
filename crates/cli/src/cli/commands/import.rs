@@ -2,7 +2,7 @@ use crate::config::AppConfig;
 use crate::services::inventory::ssh_config::{
     parse_ssh_config, resolve_bastion, BastionRoute, ParsedHost,
 };
-use crate::services::SshService;
+use crate::services::{NewConnection, SshService};
 use anyhow::{anyhow, bail, Result};
 use tracing::info;
 
@@ -82,19 +82,19 @@ pub async fn execute(
             // not let the configured default bastion leak into it.
             let direct = no_bastion || conn.bastion.is_none();
             if let Err(e) = ssh_service
-                .add_connection(
-                    conn.name,
-                    conn.host,
-                    Some(conn.user),
-                    Some(conn.port),
-                    Some(conn.use_kerberos),
-                    conn.bastion,
-                    direct,
-                    conn.bastion_user,
-                    conn.key_path,
-                    conn.tags,
-                    conn.forward_agent,
-                )
+                .add_connection(NewConnection {
+                    name: conn.name,
+                    host: conn.host,
+                    user: Some(conn.user),
+                    port: Some(conn.port),
+                    kerberos: Some(conn.use_kerberos),
+                    bastion: conn.bastion,
+                    no_bastion: direct,
+                    bastion_user: conn.bastion_user,
+                    key: conn.key_path,
+                    tags: conn.tags,
+                    forward_agent: conn.forward_agent,
+                })
                 .await
             {
                 eprintln!("Warning: Failed to import connection '{}': {}", name, e);
@@ -170,20 +170,22 @@ impl SshConfigImport<'_> {
         }
 
         self.service
-            .add_connection(
-                host.alias.clone(), // Use Host as the connection name
-                actual_host,        // Use HostName as the actual host
-                host.user.clone(),
-                host.port,
-                None, // kerberos
+            .add_connection(NewConnection {
+                // Host is the connection name, HostName the actual host.
+                name: host.alias.clone(),
+                host: actual_host,
+                user: host.user.clone(),
+                port: host.port,
+                kerberos: None,
                 bastion,
-                direct, // --no-bastion or `ProxyJump none`
+                // --no-bastion or `ProxyJump none`
+                no_bastion: direct,
                 bastion_user,
-                host.identity_file.clone(),
-                vec!["imported".to_string()],
+                key: host.identity_file.clone(),
+                tags: vec!["imported".to_string()],
                 // Agent forwarding is a local, per-connection decision.
-                false,
-            )
+                forward_agent: false,
+            })
             .await?;
 
         Ok(())

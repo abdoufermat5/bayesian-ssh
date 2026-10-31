@@ -120,7 +120,9 @@ pub fn plan(
             if changed {
                 match updated.validate() {
                     Ok(()) => plan.update.push((existing.clone(), host.clone())),
-                    Err(reason) => plan.invalid.push((existing.name.clone(), reason)),
+                    Err(reason) => plan
+                        .invalid
+                        .push((existing.name.clone(), reason.to_string())),
                 }
             }
             if existing.stale_since.is_some() {
@@ -143,18 +145,17 @@ pub fn plan(
             planned.name = name.clone();
         }
 
-        let probe = Connection::new(
-            name.clone(),
-            host.host.clone(),
-            host.user.clone().unwrap_or_else(|| "inventory".to_string()),
-            host.port.unwrap_or(22),
-            None,
-            None,
-            false,
-            host.key_path.clone(),
-        );
+        let probe = Connection {
+            key_path: host.key_path.clone(),
+            ..Connection::new(
+                name.clone(),
+                host.host.clone(),
+                host.user.clone().unwrap_or_else(|| "inventory".to_string()),
+                host.port.unwrap_or(22),
+            )
+        };
         if let Err(reason) = probe.validate() {
-            plan.invalid.push((name, reason));
+            plan.invalid.push((name, reason.to_string()));
             continue;
         }
         used_names.insert(name);
@@ -216,19 +217,21 @@ pub fn apply(
     let tx = db.conn.unchecked_transaction()?;
 
     for host in &plan.add {
-        let mut connection = Connection::new(
-            host.name.clone(),
-            host.host.clone(),
-            host.user
-                .clone()
-                .or_else(|| source_user.clone())
-                .unwrap_or_else(|| config.default_user.clone()),
-            host.port.unwrap_or(config.default_port),
-            host.bastion.clone().or_else(|| bastion.clone()),
-            host.bastion_user.clone().or_else(|| bastion_user.clone()),
-            host.use_kerberos,
-            host.key_path.clone(),
-        );
+        let mut connection = Connection {
+            bastion: host.bastion.clone().or_else(|| bastion.clone()),
+            bastion_user: host.bastion_user.clone().or_else(|| bastion_user.clone()),
+            use_kerberos: host.use_kerberos,
+            key_path: host.key_path.clone(),
+            ..Connection::new(
+                host.name.clone(),
+                host.host.clone(),
+                host.user
+                    .clone()
+                    .or_else(|| source_user.clone())
+                    .unwrap_or_else(|| config.default_user.clone()),
+                host.port.unwrap_or(config.default_port),
+            )
+        };
         connection.source_id = Some(source.id);
         connection.external_id = Some(host.external_id.clone());
         connection.tags = normalized_tags(&host.tags);
@@ -462,16 +465,7 @@ mod tests {
     }
 
     fn existing(_id: &str, name: &str, host: &str, external: &str) -> Connection {
-        let mut connection = Connection::new(
-            name.into(),
-            host.into(),
-            "deploy".into(),
-            22,
-            None,
-            None,
-            false,
-            None,
-        );
+        let mut connection = Connection::new(name.into(), host.into(), "deploy".into(), 22);
         connection.source_id = Some(Uuid::new_v4());
         connection.external_id = Some(external.into());
         connection
@@ -553,16 +547,11 @@ mod tests {
     }
 
     fn stored_host(db: &Database, source: &Source, forward_agent: bool) -> Connection {
-        let mut conn = Connection::new(
-            "db-prod".into(),
-            "db.example".into(),
-            "alice".into(),
-            22,
-            Some("bastion.example".into()),
-            None,
-            true,
-            None,
-        );
+        let mut conn = Connection {
+            bastion: Some("bastion.example".into()),
+            use_kerberos: true,
+            ..Connection::new("db-prod".into(), "db.example".into(), "alice".into(), 22)
+        };
         conn.source_id = Some(source.id);
         conn.external_id = Some("entry-1".into());
         conn.forward_agent = forward_agent;

@@ -12,11 +12,9 @@ const INVALID_USER_CHARS: &[char] = &[
 ];
 
 /// Why a connection field failed validation. The [`std::fmt::Display`]
-/// messages are user-facing and byte-identical to the pre-refactor strings;
-/// they are flattened to `String` at the frozen [`validate_connection_fields`]
-/// boundary.
-#[derive(Debug, thiserror::Error)]
-enum ValidationError {
+/// messages are shown to users as they are.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ValidationError {
     #[error("{label} cannot be empty.")]
     Empty { label: &'static str },
     #[error("{label} is too long (max {max} characters).")]
@@ -116,29 +114,18 @@ fn validate_key_path_field(field: Option<&str>) -> Result<(), ValidationError> {
     Ok(())
 }
 
-/// Validate a connection's fields, returning a human-readable error message.
+/// Validate a connection's fields before they are stored or reach an ssh argv.
 ///
-/// The `String` return is frozen: the desktop GUI and the inventory sync both
-/// consume the message as a string (see `REFACTOR-REPORT.md`).
+/// # Errors
+///
+/// The first field that fails, as a [`ValidationError`].
 pub fn validate_connection_fields(
     name: &str,
     host: &str,
     user: &str,
-    bastion: &Option<String>,
-    bastion_user: &Option<String>,
-    key_path: &Option<String>,
-) -> Result<(), String> {
-    validate_connection_fields_inner(name, host, user, bastion, bastion_user, key_path)
-        .map_err(|e| e.to_string())
-}
-
-fn validate_connection_fields_inner(
-    name: &str,
-    host: &str,
-    user: &str,
-    bastion: &Option<String>,
-    bastion_user: &Option<String>,
-    key_path: &Option<String>,
+    bastion: Option<&str>,
+    bastion_user: Option<&str>,
+    key_path: Option<&str>,
 ) -> Result<(), ValidationError> {
     let name = name.trim();
     if name.is_empty() {
@@ -163,22 +150,23 @@ fn validate_connection_fields_inner(
     if let Some(bu) = bastion_user {
         validate_user_field(bu, "Bastion user")?;
     }
-    validate_key_path_field(key_path.as_deref())
+    validate_key_path_field(key_path)
 }
 
 impl super::Connection {
     /// Validate this connection's fields; see [`validate_connection_fields`].
     ///
-    /// The `String` return is frozen: the inventory sync consumes the message
-    /// as a string (see `REFACTOR-REPORT.md`).
-    pub fn validate(&self) -> Result<(), String> {
+    /// # Errors
+    ///
+    /// The first field that fails, as a [`ValidationError`].
+    pub fn validate(&self) -> Result<(), ValidationError> {
         validate_connection_fields(
             &self.name,
             &self.host,
             &self.user,
-            &self.bastion,
-            &self.bastion_user,
-            &self.key_path,
+            self.bastion.as_deref(),
+            self.bastion_user.as_deref(),
+            self.key_path.as_deref(),
         )
     }
 }

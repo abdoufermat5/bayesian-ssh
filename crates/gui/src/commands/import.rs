@@ -48,16 +48,15 @@ pub fn import_ssh_config(file: Option<String>) -> Result<usize, CommandError> {
         }
 
         let actual_host = hostname.unwrap_or_else(|| host.clone());
-        let mut connection = Connection::new(
-            host,
-            actual_host,
-            user.unwrap_or_else(|| cfg.default_user.clone()),
-            port.unwrap_or(cfg.default_port),
-            None,
-            None,
-            false,
-            identity,
-        );
+        let mut connection = Connection {
+            key_path: identity,
+            ..Connection::new(
+                host,
+                actual_host,
+                user.unwrap_or_else(|| cfg.default_user.clone()),
+                port.unwrap_or(cfg.default_port),
+            )
+        };
         // Skip entries the add/edit dialogs would reject (e.g. multi-pattern
         // "Host a b" lines, or values that ssh would parse as options).
         if connection.validate().is_err() {

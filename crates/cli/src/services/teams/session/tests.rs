@@ -60,16 +60,15 @@ fn team_db() -> (tempfile::TempDir, Database, AppConfig, Uuid, Source) {
 }
 
 fn local_backup(db: &Database) -> Connection {
-    let mut c = Connection::new(
-        "backup-pc".into(),
-        "10.8.0.10".into(),
-        "abdoufermat".into(),
-        22,
-        None,
-        None,
-        false,
-        Some("/home/me/.ssh/id_rsa".into()),
-    );
+    let mut c = Connection {
+        key_path: Some("/home/me/.ssh/id_rsa".into()),
+        ..Connection::new(
+            "backup-pc".into(),
+            "10.8.0.10".into(),
+            "abdoufermat".into(),
+            22,
+        )
+    };
     c.forward_agent = true;
     db.add_connection(&c).unwrap();
     c

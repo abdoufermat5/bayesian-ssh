@@ -117,16 +117,7 @@ mod tests {
     use crate::config::AuthConfig;
     use crate::models::Connection;
     fn minimal_conn() -> Connection {
-        Connection::new(
-            "test".into(),
-            "host.example".into(),
-            "user".into(),
-            22,
-            None,
-            None,
-            false,
-            None,
-        )
+        Connection::new("test".into(), "host.example".into(), "user".into(), 22)
     }
 
     #[test]

@@ -1353,16 +1353,7 @@ fn resolve_keeps_user_empty_write_paths_and_approval() {
 
 #[test]
 fn host_in_scope_by_tag_name_and_wildcard() {
-    let mut conn = Connection::new(
-        "web-1".into(),
-        "h".into(),
-        "u".into(),
-        22,
-        None,
-        None,
-        false,
-        None,
-    );
+    let mut conn = Connection::new("web-1".into(), "h".into(), "u".into(), 22);
     conn.tags = vec!["staging".into()];
     let mut p = Policy::default();
     assert!(!host_in_scope(&p, &conn, TagTrust::Trusted));
@@ -1404,16 +1395,7 @@ fn source_tags_count_for_scope_only_when_trusted() {
 
 #[test]
 fn connection_facts_follow_the_connection_source() {
-    let mut conn = Connection::new(
-        "web-1".into(),
-        "h".into(),
-        "u".into(),
-        22,
-        None,
-        None,
-        false,
-        None,
-    );
+    let mut conn = Connection::new("web-1".into(), "h".into(), "u".into(), 22);
     conn.tags = vec!["prod".into()];
 
     let local = connection_facts(&conn, None, &[], Enforcement::default());

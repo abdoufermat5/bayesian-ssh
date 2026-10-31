@@ -226,16 +226,17 @@ mod tests {
     }
 
     fn make_conn(bastion: Option<&str>, kerberos: bool) -> Connection {
-        Connection::new(
-            "web".into(),
-            "web.example.com".into(),
-            "deploy".into(),
-            2222,
-            bastion.map(String::from),
-            Some("jump".into()),
-            kerberos,
-            None,
-        )
+        Connection {
+            bastion: bastion.map(String::from),
+            bastion_user: Some("jump".into()),
+            use_kerberos: kerberos,
+            ..Connection::new(
+                "web".into(),
+                "web.example.com".into(),
+                "deploy".into(),
+                2222,
+            )
+        }
     }
 
     #[test]

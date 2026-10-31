@@ -1,6 +1,6 @@
 use crate::cli::utils::resolve_connection;
 use crate::config::AppConfig;
-use crate::services::SshService;
+use crate::services::{ConnectOverrides, SshService};
 use anyhow::Result;
 use tracing::info;
 
@@ -42,16 +42,18 @@ pub async fn execute(args: ConnectArgs, config: AppConfig) -> Result<()> {
                     "Connection not resolved, attempting direct connection to {}",
                     target
                 );
-                crate::models::Connection::new(
-                    target.clone(),
-                    target.clone(),
-                    user.clone().unwrap_or_else(|| config.default_user.clone()),
-                    port.unwrap_or(config.default_port),
-                    bastion.clone(),
-                    bastion_user.clone(),
-                    kerberos.unwrap_or(config.use_kerberos_by_default),
-                    key.clone(),
-                )
+                crate::models::Connection {
+                    bastion: bastion.clone(),
+                    bastion_user: bastion_user.clone(),
+                    use_kerberos: kerberos.unwrap_or(config.use_kerberos_by_default),
+                    key_path: key.clone(),
+                    ..crate::models::Connection::new(
+                        target.clone(),
+                        target.clone(),
+                        user.clone().unwrap_or_else(|| config.default_user.clone()),
+                        port.unwrap_or(config.default_port),
+                    )
+                }
             }
         };
 
@@ -82,14 +84,16 @@ pub async fn execute(args: ConnectArgs, config: AppConfig) -> Result<()> {
     ssh_service
         .connect_to_connection(
             &connection,
-            user,
-            port,
-            kerberos,
-            bastion,
-            no_bastion,
-            bastion_user,
-            key,
-            record,
+            ConnectOverrides {
+                user,
+                port,
+                kerberos,
+                bastion,
+                no_bastion,
+                bastion_user,
+                key,
+                record,
+            },
         )
         .await
 }

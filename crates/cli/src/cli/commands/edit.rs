@@ -134,16 +134,16 @@ mod tests {
     use super::*;
 
     fn connection() -> Connection {
-        let mut c = Connection::new(
-            "web".to_string(),
-            "web.example.com".to_string(),
-            "deploy".to_string(),
-            22,
-            Some("jump".to_string()),
-            Some("ops".to_string()),
-            false,
-            None,
-        );
+        let mut c = Connection {
+            bastion: Some("jump".to_string()),
+            bastion_user: Some("ops".to_string()),
+            ..Connection::new(
+                "web".to_string(),
+                "web.example.com".to_string(),
+                "deploy".to_string(),
+                22,
+            )
+        };
         c.add_tag("prod".to_string());
         c
     }

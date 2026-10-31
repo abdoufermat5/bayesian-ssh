@@ -8,4 +8,4 @@ pub use session::{
     Session, SessionContext, SessionHistoryEntry, SessionStatus, SessionStatusKind, SessionTextHit,
 };
 pub use source::{DiscoveredHost, Source, SourceKind};
-pub use validation::validate_connection_fields;
+pub use validation::{validate_connection_fields, ValidationError};

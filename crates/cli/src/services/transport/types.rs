@@ -468,16 +468,7 @@ mod tests {
     }
 
     fn conn() -> Connection {
-        Connection::new(
-            "c".into(),
-            "h.example".into(),
-            "u".into(),
-            22,
-            None,
-            None,
-            false,
-            None,
-        )
+        Connection::new("c".into(), "h.example".into(), "u".into(), 22)
     }
 
     fn fake(delay_ms: u64) -> Fake {

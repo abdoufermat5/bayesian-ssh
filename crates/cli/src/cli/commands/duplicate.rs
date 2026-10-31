@@ -1,6 +1,6 @@
 use crate::cli::utils::resolve_connection;
 use crate::config::AppConfig;
-use crate::services::SshService;
+use crate::services::{NewConnection, SshService};
 use anyhow::Result;
 use tracing::info;
 
@@ -21,19 +21,19 @@ pub async fn execute(source: String, new_name: String, config: AppConfig) -> Res
     let direct = original.bastion.is_none();
 
     ssh_service
-        .add_connection(
-            new_name.clone(),
-            original.host,
-            Some(original.user),
-            Some(original.port),
-            Some(original.use_kerberos),
-            original.bastion,
-            direct,
-            original.bastion_user,
-            original.key_path,
-            original.tags,
-            original.forward_agent,
-        )
+        .add_connection(NewConnection {
+            name: new_name.clone(),
+            host: original.host,
+            user: Some(original.user),
+            port: Some(original.port),
+            kerberos: Some(original.use_kerberos),
+            bastion: original.bastion,
+            no_bastion: direct,
+            bastion_user: original.bastion_user,
+            key: original.key_path,
+            tags: original.tags,
+            forward_agent: original.forward_agent,
+        })
         .await?;
 
     println!(

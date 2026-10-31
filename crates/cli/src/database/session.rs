@@ -345,15 +345,10 @@ impl Database {
     // Active session management
     // ──────────────────────────────────────────────────────────────────────────
 
-    #[expect(
-        clippy::type_complexity,
-        reason = "tuple return is frozen by cross-area caller close.rs; see REFACTOR-REPORT.md"
-    )]
-    pub fn active_sessions(
-        &self,
-    ) -> Result<Vec<(String, Option<u32>, chrono::DateTime<chrono::Utc>)>> {
+    /// Sessions still marked active, newest first.
+    pub fn active_sessions(&self) -> Result<Vec<ActiveSession>> {
         let mut stmt = self.conn.prepare(
-            "SELECT COALESCE(c.name, s.target, '?'), s.pid, s.started_at
+            "SELECT s.id, COALESCE(c.name, s.target, '?'), s.pid, s.started_at
              FROM sessions s
              LEFT JOIN connections c ON s.connection_id = c.id
              WHERE s.ended_at IS NULL AND s.status_kind = 'active'
@@ -362,22 +357,13 @@ impl Database {
         let mut rows = stmt.query([])?;
         let mut sessions = Vec::new();
         while let Some(row) = rows.next()? {
-            let started_str: String = row.get(2)?;
-            let started_at =
-                chrono::DateTime::parse_from_rfc3339(&started_str)?.with_timezone(&chrono::Utc);
-            sessions.push((row.get(0)?, row.get(1)?, started_at));
+            sessions.push(active_session(row)?);
         }
         Ok(sessions)
     }
 
-    #[expect(
-        clippy::type_complexity,
-        reason = "tuple return is frozen by cross-area caller close.rs; see REFACTOR-REPORT.md"
-    )]
-    pub fn active_sessions_for_connection(
-        &self,
-        target: &str,
-    ) -> Result<Vec<(String, String, Option<u32>, chrono::DateTime<chrono::Utc>)>> {
+    /// Active sessions whose connection name, id or target matches `target`.
+    pub fn active_sessions_for_connection(&self, target: &str) -> Result<Vec<ActiveSession>> {
         let mut stmt = self.conn.prepare(
             "SELECT s.id, COALESCE(c.name, s.target, '?'), s.pid, s.started_at
              FROM sessions s
@@ -391,10 +377,7 @@ impl Database {
         let mut rows = stmt.query(params![like_pattern, target])?;
         let mut sessions = Vec::new();
         while let Some(row) = rows.next()? {
-            let started_str: String = row.get(3)?;
-            let started_at =
-                chrono::DateTime::parse_from_rfc3339(&started_str)?.with_timezone(&chrono::Utc);
-            sessions.push((row.get(0)?, row.get(1)?, row.get(2)?, started_at));
+            sessions.push(active_session(row)?);
         }
         Ok(sessions)
     }
@@ -507,10 +490,6 @@ mod tests {
             "web.example.com".into(),
             "deploy".into(),
             22,
-            None,
-            None,
-            false,
-            None,
         );
         db.add_connection(&conn).unwrap();
 
@@ -545,4 +524,25 @@ mod tests {
         assert_eq!(hits[0].connection_name, "web-prod");
         assert!(hits[0].snippet.contains("[systemctl]") || hits[0].snippet.contains("systemctl"));
     }
+}
+
+/// A session row still marked active, as `bssh close` lists it.
+#[derive(Debug, Clone)]
+pub struct ActiveSession {
+    pub id: String,
+    /// The connection's name, else the session's target, else `?`.
+    pub connection: String,
+    pub pid: Option<u32>,
+    pub started_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Reads `id, connection, pid, started_at` from a row.
+fn active_session(row: &rusqlite::Row) -> Result<ActiveSession> {
+    let started_str: String = row.get(3)?;
+    Ok(ActiveSession {
+        id: row.get(0)?,
+        connection: row.get(1)?,
+        pid: row.get(2)?,
+        started_at: chrono::DateTime::parse_from_rfc3339(&started_str)?.with_timezone(&chrono::Utc),
+    })
 }

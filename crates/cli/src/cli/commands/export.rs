@@ -165,16 +165,10 @@ mod tests {
     use crate::models::Connection;
 
     fn kerberos_conn() -> Connection {
-        Connection::new(
-            "web".into(),
-            "web.internal".into(),
-            "alice".into(),
-            22,
-            None,
-            None,
-            true,
-            None,
-        )
+        Connection {
+            use_kerberos: true,
+            ..Connection::new("web".into(), "web.internal".into(), "alice".into(), 22)
+        }
     }
 
     #[test]

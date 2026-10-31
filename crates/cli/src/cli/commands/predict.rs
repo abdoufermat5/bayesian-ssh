@@ -2,7 +2,7 @@ use crate::cli::utils::fuzzy_select_connection;
 use crate::cli::Cli;
 use crate::config::AppConfig;
 use crate::database::{Database, RankContext};
-use crate::services::SshService;
+use crate::services::{ConnectOverrides, SshService};
 use anyhow::Result;
 use clap::CommandFactory;
 use std::io::{self, IsTerminal, Write};
@@ -79,14 +79,16 @@ pub async fn execute(config: AppConfig) -> Result<()> {
             return ssh_service
                 .connect_to_connection(
                     &predictions[0].connection,
-                    None,
-                    None,
-                    None,
-                    None,
-                    false,
-                    None,
-                    None,
-                    None,
+                    ConnectOverrides {
+                        user: None,
+                        port: None,
+                        kerberos: None,
+                        bastion: None,
+                        no_bastion: false,
+                        bastion_user: None,
+                        key: None,
+                        record: None,
+                    },
                 )
                 .await;
         }
@@ -100,14 +102,16 @@ pub async fn execute(config: AppConfig) -> Result<()> {
                 return ssh_service
                     .connect_to_connection(
                         &predictions[index - 1].connection,
-                        None,
-                        None,
-                        None,
-                        None,
-                        false,
-                        None,
-                        None,
-                        None,
+                        ConnectOverrides {
+                            user: None,
+                            port: None,
+                            kerberos: None,
+                            bastion: None,
+                            no_bastion: false,
+                            bastion_user: None,
+                            key: None,
+                            record: None,
+                        },
                     )
                     .await;
             }
@@ -122,7 +126,19 @@ pub async fn execute(config: AppConfig) -> Result<()> {
             fuzzy_select_connection(&ssh_service, trimmed, "connect to", true, &config).await?
         {
             return ssh_service
-                .connect_to_connection(&selected, None, None, None, None, false, None, None, None)
+                .connect_to_connection(
+                    &selected,
+                    ConnectOverrides {
+                        user: None,
+                        port: None,
+                        kerberos: None,
+                        bastion: None,
+                        no_bastion: false,
+                        bastion_user: None,
+                        key: None,
+                        record: None,
+                    },
+                )
                 .await;
         }
         return Ok(());

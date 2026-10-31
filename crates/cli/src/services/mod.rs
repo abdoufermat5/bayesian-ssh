@@ -18,5 +18,5 @@ pub mod transport;
 pub mod upload;
 
 pub use crypto::*;
-pub use ssh::*;
+pub use ssh::{ConnectOverrides, NewConnection, SshService};
 pub use transfer::TransferService;

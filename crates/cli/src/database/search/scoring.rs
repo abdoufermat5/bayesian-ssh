@@ -745,26 +745,8 @@ mod tests {
         };
         let db = Database::new(&config).unwrap();
 
-        let conn_a = Connection::new(
-            "host-a".into(),
-            "a.example.com".into(),
-            "root".into(),
-            22,
-            None,
-            None,
-            false,
-            None,
-        );
-        let conn_b = Connection::new(
-            "host-b".into(),
-            "b.example.com".into(),
-            "root".into(),
-            22,
-            None,
-            None,
-            false,
-            None,
-        );
+        let conn_a = Connection::new("host-a".into(), "a.example.com".into(), "root".into(), 22);
+        let conn_b = Connection::new("host-b".into(), "b.example.com".into(), "root".into(), 22);
         db.add_connection(&conn_a).unwrap();
         db.add_connection(&conn_b).unwrap();
 

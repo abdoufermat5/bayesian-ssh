@@ -26,6 +26,24 @@ pub struct ConnectOverrides {
     pub record: Option<bool>,
 }
 
+/// A connection to save with `bssh add`: required name and host, plus the
+/// same optional overrides `connect` takes. Unset fields fall back to the
+/// config defaults.
+#[derive(Debug, Default, Clone)]
+pub struct NewConnection {
+    pub name: String,
+    pub host: String,
+    pub user: Option<String>,
+    pub port: Option<u16>,
+    pub kerberos: Option<bool>,
+    pub bastion: Option<String>,
+    pub no_bastion: bool,
+    pub bastion_user: Option<String>,
+    pub key: Option<String>,
+    pub tags: Vec<String>,
+    pub forward_agent: bool,
+}
+
 impl SshService {
     pub fn new(config: AppConfig) -> Result<Self> {
         let database = Database::new(&config)?;
@@ -85,16 +103,19 @@ impl SshService {
             target
         );
 
-        let connection = Connection::new(
-            target.to_string(),
-            target.to_string(),
-            user.unwrap_or_else(|| self.config.default_user.clone()),
-            port.unwrap_or(self.config.default_port),
-            bastion,      // Only use bastion if explicitly specified
-            bastion_user, // Only use bastion_user if explicitly specified
-            kerberos.unwrap_or(self.config.use_kerberos_by_default),
-            key,
-        );
+        let connection = Connection {
+            // Only use a bastion (and its user) if explicitly specified.
+            bastion,
+            bastion_user,
+            use_kerberos: kerberos.unwrap_or(self.config.use_kerberos_by_default),
+            key_path: key,
+            ..Connection::new(
+                target.to_string(),
+                target.to_string(),
+                user.unwrap_or_else(|| self.config.default_user.clone()),
+                port.unwrap_or(self.config.default_port),
+            )
+        };
 
         self.execute_ssh(&connection, record).await
     }
@@ -226,24 +247,20 @@ impl SshService {
         outcome
     }
 
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "cross-area callers in cli/commands; signature frozen until those callers are grouped"
-    )]
-    pub async fn add_connection(
-        &self,
-        name: String,
-        host: String,
-        user: Option<String>,
-        port: Option<u16>,
-        kerberos: Option<bool>,
-        bastion: Option<String>,
-        no_bastion: bool,
-        bastion_user: Option<String>,
-        key: Option<String>,
-        tags: Vec<String>,
-        forward_agent: bool,
-    ) -> Result<()> {
+    pub async fn add_connection(&self, new: NewConnection) -> Result<()> {
+        let NewConnection {
+            name,
+            host,
+            user,
+            port,
+            kerberos,
+            bastion,
+            no_bastion,
+            bastion_user,
+            key,
+            tags,
+            forward_agent,
+        } = new;
         // Determine bastion configuration
         let final_bastion = if no_bastion {
             None // Force no bastion
@@ -266,16 +283,18 @@ impl SshService {
             false // Disable for direct connections
         };
 
-        let connection = Connection::new(
-            name.clone(),
-            host,
-            user.unwrap_or_else(|| self.config.default_user.clone()),
-            port.unwrap_or(self.config.default_port),
-            final_bastion,
-            final_bastion_user,
-            final_kerberos,
-            key,
-        );
+        let connection = Connection {
+            bastion: final_bastion,
+            bastion_user: final_bastion_user,
+            use_kerberos: final_kerberos,
+            key_path: key,
+            ..Connection::new(
+                name.clone(),
+                host,
+                user.unwrap_or_else(|| self.config.default_user.clone()),
+                port.unwrap_or(self.config.default_port),
+            )
+        };
 
         // Add tags
         let mut conn = connection;
@@ -430,22 +449,21 @@ impl SshService {
             })
     }
 
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "cross-area callers in cli/commands; signature frozen until those callers are grouped"
-    )]
     pub async fn connect_to_connection(
         &self,
         connection: &Connection,
-        user: Option<String>,
-        port: Option<u16>,
-        kerberos: Option<bool>,
-        bastion: Option<String>,
-        no_bastion: bool,
-        bastion_user: Option<String>,
-        key: Option<String>,
-        record: Option<bool>,
+        overrides: ConnectOverrides,
     ) -> Result<()> {
+        let ConnectOverrides {
+            user,
+            port,
+            kerberos,
+            bastion,
+            no_bastion,
+            bastion_user,
+            key,
+            record,
+        } = overrides;
         info!("Connecting to connection: {}", connection.name);
         self.confirm_pending_change(connection)?;
 
@@ -506,16 +524,15 @@ mod tests {
     }
 
     fn redirected(service: &SshService) -> Connection {
-        let mut conn = Connection::new(
-            "team-host".into(),
-            "attacker.example".into(),
-            "alice".into(),
-            22,
-            None,
-            None,
-            true,
-            None,
-        );
+        let mut conn = Connection {
+            use_kerberos: true,
+            ..Connection::new(
+                "team-host".into(),
+                "attacker.example".into(),
+                "alice".into(),
+                22,
+            )
+        };
         let mut previous = conn.clone();
         previous.host = "real.example".into();
         conn.pending_change = Some(PendingChange::detect(&previous, Utc::now()));
@@ -544,16 +561,7 @@ mod tests {
     #[test]
     fn connections_without_a_pending_change_are_untouched() {
         let (_dir, service) = service();
-        let conn = Connection::new(
-            "plain".into(),
-            "h.example".into(),
-            "alice".into(),
-            22,
-            None,
-            None,
-            false,
-            None,
-        );
+        let conn = Connection::new("plain".into(), "h.example".into(), "alice".into(), 22);
         assert!(service.confirm_pending_change_with(&conn, false).is_ok());
     }
 }
