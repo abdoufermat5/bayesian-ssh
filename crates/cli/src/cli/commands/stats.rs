@@ -41,7 +41,9 @@ pub async fn execute(config: AppConfig) -> Result<()> {
     if !stats.by_tag.is_empty() {
         println!("\nConnections by Tag:");
         let mut tag_vec: Vec<_> = stats.by_tag.iter().collect();
-        tag_vec.sort_by(|a, b| b.1.cmp(a.1));
+        // Most-used first; ties by name so the output (and which tags make
+        // the top ten) doesn't depend on HashMap iteration order.
+        tag_vec.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
 
         for (tag, count) in tag_vec.iter().take(10) {
             println!("  {}: {} connection(s)", tag, count);
