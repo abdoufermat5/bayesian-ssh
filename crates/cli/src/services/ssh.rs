@@ -12,25 +12,37 @@ pub struct SshService {
     database: Database,
 }
 
+/// Command-line overrides applied on top of a stored connection, or a direct
+/// connect when no connection matches the target.
+#[derive(Debug, Default, Clone)]
+pub struct ConnectOverrides {
+    pub user: Option<String>,
+    pub port: Option<u16>,
+    pub kerberos: Option<bool>,
+    pub bastion: Option<String>,
+    pub no_bastion: bool,
+    pub bastion_user: Option<String>,
+    pub key: Option<String>,
+    pub record: Option<bool>,
+}
+
 impl SshService {
     pub fn new(config: AppConfig) -> Result<Self> {
         let database = Database::new(&config)?;
         Ok(SshService { config, database })
     }
 
-    #[expect(clippy::too_many_arguments, reason = "pending refactor")]
-    pub async fn connect(
-        &self,
-        target: &str,
-        user: Option<String>,
-        port: Option<u16>,
-        kerberos: Option<bool>,
-        bastion: Option<String>,
-        no_bastion: bool,
-        bastion_user: Option<String>,
-        key: Option<String>,
-        record: Option<bool>,
-    ) -> Result<()> {
+    pub async fn connect(&self, target: &str, overrides: ConnectOverrides) -> Result<()> {
+        let ConnectOverrides {
+            user,
+            port,
+            kerberos,
+            bastion,
+            no_bastion,
+            bastion_user,
+            key,
+            record,
+        } = overrides;
         // Try to find connection in database first (also checks aliases)
         if let Some(mut connection) = self.database.get_connection_or_alias(target)? {
             info!("Found existing connection: {}", connection.name);
@@ -214,7 +226,10 @@ impl SshService {
         outcome
     }
 
-    #[expect(clippy::too_many_arguments, reason = "pending refactor")]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "cross-area callers in cli/commands; signature frozen until those callers are grouped"
+    )]
     pub async fn add_connection(
         &self,
         name: String,
@@ -415,7 +430,10 @@ impl SshService {
             })
     }
 
-    #[expect(clippy::too_many_arguments, reason = "pending refactor")]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "cross-area callers in cli/commands; signature frozen until those callers are grouped"
+    )]
     pub async fn connect_to_connection(
         &self,
         connection: &Connection,
