@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.15.1] - 2026-10-31
+
 ### Changed
 - **`auth.agent_socket` now applies to every ssh-family command bssh runs.** It used to reach only the built-in SSH client; system `ssh`, `scp`, the Files panel listing, terminal sessions, `bssh ping` and `bssh key copy` now get it as `SSH_AUTH_SOCK` too. Unset, they inherit the environment as before.
 - **Rust edition 2024.** The workspace moved to the 2024 edition; no behavior change.
