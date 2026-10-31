@@ -3,7 +3,7 @@
 use super::context::RunContext;
 use super::server::build_server;
 use crate::config::AppConfig;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use rmcp::ServiceExt;
 use tracing::info;
 

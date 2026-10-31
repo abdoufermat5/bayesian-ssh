@@ -4,13 +4,13 @@
 use super::handle::Session;
 use super::local::uuid;
 use crate::database::Database;
-use crate::services::teams::client::{validate_server_url, TeamsClient, TeamsError};
+use crate::services::teams::client::{TeamsClient, TeamsError, validate_server_url};
 use crate::services::teams::crypto::DeviceKeys;
 use crate::services::teams::store::TeamsStore;
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use bssh_teams_proto::api::{CreateAccountRequest, EmailCodeRequest, EmailCodeResponse, ErrorCode};
 use chrono::Utc;
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{OptionalExtension, params};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -45,7 +45,9 @@ pub fn load_identity(db: &Database) -> Result<Option<Identity>> {
 
 pub(super) fn require_identity(db: &Database) -> Result<Identity> {
     load_identity(db)?.ok_or_else(|| {
-        anyhow!("Teams isn't set up on this machine: run `bssh teams init --server <url> --email <you>`")
+        anyhow!(
+            "Teams isn't set up on this machine: run `bssh teams init --server <url> --email <you>`"
+        )
     })
 }
 

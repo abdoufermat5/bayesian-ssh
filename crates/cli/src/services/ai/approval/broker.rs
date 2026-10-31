@@ -343,13 +343,13 @@ impl ApprovalBroker for LocalBroker {
                             by: "user".into(),
                             channel: "confirmed-in-client".into(),
                             grant: None,
-                        })
+                        });
                     }
                     Ok(Ok(Some(false))) => {
                         return Ok(ApprovalOutcome::Denied {
                             by: "user".into(),
                             reason: None,
-                        })
+                        });
                     }
                     Ok(Ok(None)) => tracing::debug!("client can't elicit; asking out of band"),
                     Ok(Err(e)) => tracing::warn!("elicitation failed ({e}); asking out of band"),

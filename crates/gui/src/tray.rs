@@ -1,16 +1,15 @@
 use std::process::Command;
 
 use tauri::{
-    include_image,
+    AppHandle, Emitter, Manager, include_image,
     menu::{Menu, MenuBuilder, MenuItemBuilder, SubmenuBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, Manager,
 };
 
 // Tray icons must stay small; use the dedicated 32x32 asset instead of the 512px window icon.
 const TRAY_ICON: tauri::image::Image<'static> = include_image!("icons/32x32.png");
 
-use crate::commands::{close_all_ptys, open_db_and_config, CommandError, PtyState};
+use crate::commands::{CommandError, PtyState, close_all_ptys, open_db_and_config};
 
 pub fn build_tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let show_i = MenuItemBuilder::new("Open Bayesian SSH")

@@ -1,10 +1,10 @@
 //! Change plans: propose, apply, undo, edit_file and service.
 
-use super::support::{call, hosts, CONF, CONF_PATH, PATCH, PATCHED};
+use super::support::{CONF, CONF_PATH, PATCH, PATCHED, call, hosts};
 use crate::services::ai::mcp::context::ToolError;
-use crate::services::ai::mcp::testkit::{ask_writes, kit, policy, FakeEngine, Kit};
+use crate::services::ai::mcp::testkit::{FakeEngine, Kit, ask_writes, kit, policy};
 use crate::services::ai::types::{AiEvent, ApprovalOutcome, ApprovalSubject, Decision};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 fn plan_input() -> Value {
     plan_with_hosts(false)
@@ -80,11 +80,12 @@ async fn propose_asks_once_for_the_whole_plan_and_apply_does_not_ask_again() {
         std::fs::read_to_string(std::path::Path::new(local).join("step-1.orig")).unwrap(),
         CONF
     );
-    assert!(k
-        .exec
-        .commands()
-        .iter()
-        .any(|c| c.contains("/var/tmp/bssh-agent-backups/") && c.contains("cp -p")));
+    assert!(
+        k.exec
+            .commands()
+            .iter()
+            .any(|c| c.contains("/var/tmp/bssh-agent-backups/") && c.contains("cp -p"))
+    );
     // The audit has the change.
     assert!(k.audit.events().iter().any(|e| matches!(
         e,
@@ -95,9 +96,11 @@ async fn propose_asks_once_for_the_whole_plan_and_apply_does_not_ask_again() {
         }
     )));
     // Re-applying is refused.
-    assert!(call(&k, "apply_change", json!({ "change_id": id }))
-        .await
-        .is_err());
+    assert!(
+        call(&k, "apply_change", json!({ "change_id": id }))
+            .await
+            .is_err()
+    );
 }
 
 #[tokio::test]
@@ -129,10 +132,12 @@ async fn denied_approval_or_denied_step_stores_no_plan() {
         reason: None,
     });
     assert!(call(&k, "propose_change", plan_input()).await.is_err());
-    assert!(call(&k, "status", json!({})).await.unwrap()["changes"]
-        .as_array()
-        .unwrap()
-        .is_empty());
+    assert!(
+        call(&k, "status", json!({})).await.unwrap()["changes"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
 
     // The engine denies one step: the whole plan is refused without asking.
     let k = kit(
@@ -193,15 +198,18 @@ async fn apply_stops_at_the_first_failure_and_undo_restores() {
         2,
         "step-3 must not run"
     );
-    assert!(!k
-        .exec
-        .commands()
-        .iter()
-        .any(|c| c.contains("systemctl reload")));
-    assert!(a["steps"][1]["untrusted_output"]
-        .as_str()
-        .unwrap()
-        .contains("configuration test failed"));
+    assert!(
+        !k.exec
+            .commands()
+            .iter()
+            .any(|c| c.contains("systemctl reload"))
+    );
+    assert!(
+        a["steps"][1]["untrusted_output"]
+            .as_str()
+            .unwrap()
+            .contains("configuration test failed")
+    );
     assert!(a["verify"].as_array().unwrap().is_empty());
     assert_eq!(k.files.get("web-1", CONF_PATH).unwrap(), PATCHED);
 
@@ -211,11 +219,12 @@ async fn apply_stops_at_the_first_failure_and_undo_restores() {
     assert_eq!(u["status"], "undone", "{u}");
     assert_eq!(k.broker.count(), before + 1);
     assert_eq!(k.files.get("web-1", CONF_PATH).unwrap(), CONF);
-    assert!(k
-        .exec
-        .commands()
-        .iter()
-        .any(|c| c.contains("systemctl reload")));
+    assert!(
+        k.exec
+            .commands()
+            .iter()
+            .any(|c| c.contains("systemctl reload"))
+    );
     assert!(
         call(&k, "undo", json!({ "change_id": id })).await.is_err(),
         "already undone"
@@ -279,10 +288,12 @@ async fn unhealthy_service_fails_the_step() {
         .await
         .unwrap();
     assert_eq!(a["failed_step"], "step-3");
-    assert!(a["steps"][2]["error"]
-        .as_str()
-        .unwrap()
-        .contains("not active"));
+    assert!(
+        a["steps"][2]["error"]
+            .as_str()
+            .unwrap()
+            .contains("not active")
+    );
 }
 
 #[tokio::test]
@@ -343,20 +354,24 @@ async fn edit_file_rejects_unclean_patches_without_writing() {
         !k.exec.commands().iter().any(|c| c.contains("cp -p")),
         "no backup, no write"
     );
-    assert!(call(
-        &k,
-        "edit_file",
-        json!({ "host": "web-1", "path": CONF_PATH, "patch": "garbage" })
-    )
-    .await
-    .is_err());
-    assert!(call(
-        &k,
-        "edit_file",
-        json!({ "host": "web-1", "path": "/etc/missing.conf", "patch": PATCH })
-    )
-    .await
-    .is_err());
+    assert!(
+        call(
+            &k,
+            "edit_file",
+            json!({ "host": "web-1", "path": CONF_PATH, "patch": "garbage" })
+        )
+        .await
+        .is_err()
+    );
+    assert!(
+        call(
+            &k,
+            "edit_file",
+            json!({ "host": "web-1", "path": "/etc/missing.conf", "patch": PATCH })
+        )
+        .await
+        .is_err()
+    );
 }
 
 #[tokio::test]
@@ -387,18 +402,21 @@ async fn service_tool_runs_and_checks_health() {
     assert_eq!(v["status"], "ok");
     assert_eq!(v["healthy"], true);
     let cmds = k.exec.commands();
-    assert!(cmds
-        .iter()
-        .any(|c| c == "sudo -n systemctl restart -- 'nginx.service'"));
+    assert!(
+        cmds.iter()
+            .any(|c| c == "sudo -n systemctl restart -- 'nginx.service'")
+    );
     assert!(cmds.iter().any(|c| c.contains("is-active")));
     assert_eq!(k.broker.count(), 1);
-    assert!(call(
-        &k,
-        "service",
-        json!({ "host": "web-1", "unit": "a b", "action": "stop" })
-    )
-    .await
-    .is_err());
+    assert!(
+        call(
+            &k,
+            "service",
+            json!({ "host": "web-1", "unit": "a b", "action": "stop" })
+        )
+        .await
+        .is_err()
+    );
     k.exec.on("is-active", "", 3);
     let v = call(
         &k,

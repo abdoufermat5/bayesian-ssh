@@ -1,12 +1,12 @@
 //! `bssh teams share` and `bssh teams unshare`: connections in the team vault.
 
-use super::passphrase::{passphrase, Passphrase};
+use super::passphrase::{Passphrase, passphrase};
 use super::sync::print_sync;
 use crate::cli::utils::confirm;
 use crate::config::AppConfig;
-use crate::services::teams::session::{self, Session, TeamSync};
 use crate::services::teams::TeamsStore;
-use anyhow::{anyhow, Result};
+use crate::services::teams::session::{self, Session, TeamSync};
+use anyhow::{Result, anyhow};
 
 /// The arguments of `bssh teams share`.
 pub(super) struct ShareRequest<'a> {

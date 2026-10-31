@@ -12,7 +12,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 use uuid::Uuid;

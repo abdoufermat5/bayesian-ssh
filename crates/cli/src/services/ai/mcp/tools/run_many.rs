@@ -6,7 +6,7 @@ use super::inputs::RunManyArgs;
 use super::outputs::{RunManyEntry, RunManyOut};
 use crate::cli::utils::MAX_PARALLEL_HOSTS;
 use crate::models::Connection;
-use crate::services::ai::mcp::context::{failed, RunContext, ToolError, ToolResult};
+use crate::services::ai::mcp::context::{RunContext, ToolError, ToolResult, failed};
 use crate::services::ai::mcp::server::{current_progress_token, with_progress_token};
 use crate::services::ai::types::{Enforcement, ExecLimits, HostFacts, JailKind, ToolName};
 use serde_json::json;

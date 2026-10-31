@@ -9,7 +9,7 @@ use anyhow::Result;
 use serde::Serialize;
 use std::time::Duration;
 
-use super::scripts::{truncate_chars, AGENT_USER, HOST_PRINCIPALS_DIR, SSH_DIR};
+use super::scripts::{AGENT_USER, HOST_PRINCIPALS_DIR, SSH_DIR, truncate_chars};
 
 /// What `bssh ai doctor` found on one host.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]

@@ -168,7 +168,7 @@ impl StepInput {
                         id,
                         path,
                         reason: e.to_string(),
-                    })
+                    });
                 }
             };
             if let Err(source) = check_patch(&patch) {

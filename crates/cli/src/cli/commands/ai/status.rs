@@ -6,7 +6,7 @@
 use crate::cli::parser_ai::AiArgsStatus;
 use crate::config::AppConfig;
 use crate::services::ai::ai_dir;
-use crate::services::ai::control_client::{connect_all, RunHello};
+use crate::services::ai::control_client::{RunHello, connect_all};
 use crate::services::ai::feed::event_run_id;
 use crate::services::ai::store::{AiStore, RunRecord};
 use crate::services::ai::types::{AiEvent, ApprovalRequest, Grant};

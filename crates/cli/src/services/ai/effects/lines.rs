@@ -97,7 +97,7 @@ pub fn command_lines(command: &str) -> Vec<String> {
                         None if n.is_whitespace()
                             || matches!(n, ';' | '&' | '|' | '<' | '>' | ')') =>
                         {
-                            break
+                            break;
                         }
                         None => delim.push(n),
                     }

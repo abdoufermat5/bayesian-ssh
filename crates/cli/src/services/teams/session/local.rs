@@ -6,7 +6,7 @@ use crate::database::Database;
 use crate::models::{Connection, DiscoveredHost, Source, SourceKind};
 use crate::services::inventory::sync as inventory;
 use crate::services::teams::VaultView;
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use bssh_teams_proto::api::AuditKind;
 use bssh_teams_proto::wire::{Fixed, PublicKey32};
 use chrono::Utc;

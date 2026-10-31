@@ -24,7 +24,7 @@
 
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use argon2::Algorithm::Argon2id;
 use argon2::{Params, Version};
 use rand::RngCore;
@@ -147,7 +147,7 @@ fn decrypt_v2(encrypted: &[u8], passphrase: &str) -> Result<Vec<u8>> {
 // ──────────────────────────────────────────────────────────────────────────────
 
 mod v1_legacy {
-    use anyhow::{bail, Result};
+    use anyhow::{Result, bail};
     use hmac::Mac;
     use sha2::{Digest, Sha256};
     type HmacSha256 = hmac::Hmac<Sha256>;

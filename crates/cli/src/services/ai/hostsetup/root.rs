@@ -5,7 +5,7 @@ use crate::models::Connection;
 use crate::services::ai::jail::shell_quote;
 use crate::services::ai::types::{ExecLimits, ExecMode, ExecResult, Executor};
 use crate::services::transport::SubprocessTransport;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::io::IsTerminal;
 use std::process::Stdio;
 use std::time::Duration;
@@ -106,7 +106,9 @@ async fn run_root_script_interactive(
     policy: HostKeyPolicy,
 ) -> Result<i32> {
     if conn.use_kerberos && conn.bastion.is_some() {
-        bail!("interactive sudo through a Kerberos bastion is not supported: log in and run the script by hand");
+        bail!(
+            "interactive sudo through a Kerberos bastion is not supported: log in and run the script by hand"
+        );
     }
     let mut argv = SubprocessTransport::build_shell_argv(conn, policy);
     argv.push(root_command(script, SudoPassword::Prompt));

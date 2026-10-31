@@ -1,6 +1,6 @@
 //! Approval tier for a call that must ask.
 
-use super::glob::{glob_match, GlobMode};
+use super::glob::{GlobMode, glob_match};
 use crate::services::ai::types::{Analysis, HostFacts, Policy, RiskTag, Tier, ToolCall, ToolName};
 
 /// A command is "low risk and reversible" when it was analyzed and carries none of the

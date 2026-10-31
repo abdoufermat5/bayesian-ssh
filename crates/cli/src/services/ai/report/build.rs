@@ -1,7 +1,7 @@
 //! Builds a run report from audit entries and the change records on disk.
 
 use crate::config::AppConfig;
-use crate::services::ai::audit::{read_entries, AuditEntry};
+use crate::services::ai::audit::{AuditEntry, read_entries};
 use crate::services::ai::plan::{ChangeRecord, PlanState, StepRecord};
 use crate::services::ai::types::{
     AiEvent, ApprovalOutcome, ChangePlan, Decision, Redaction, Step, StepAction,

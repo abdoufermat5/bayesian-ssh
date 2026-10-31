@@ -1,7 +1,7 @@
 use crate::cli::utils::confirm;
 use crate::config::AppConfig;
 use crate::database::Database;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::info;

@@ -16,10 +16,10 @@ mod fold;
 mod line;
 mod words;
 
-pub use cards::{request_lines, run_header, RunHeader};
+pub use cards::{RunHeader, request_lines, run_header};
 pub use context::FeedContext;
 pub use fold::Folder;
-pub use line::{event_feed, event_line, event_run_id, FeedLine};
+pub use line::{FeedLine, event_feed, event_line, event_run_id};
 pub use words::kind_word;
 
 #[cfg(test)]

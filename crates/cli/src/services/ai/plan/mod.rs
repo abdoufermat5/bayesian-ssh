@@ -14,10 +14,10 @@ mod store;
 mod undo;
 
 pub use apply::{apply, service_healthy};
-pub use edit::{do_edit, edit_file, restore_edit, MAX_EDIT_BYTES, REMOTE_BACKUP_ROOT};
+pub use edit::{MAX_EDIT_BYTES, REMOTE_BACKUP_ROOT, do_edit, edit_file, restore_edit};
 pub use input::{
-    action_verb, apply_unified_diff, build_plan, check_patch, plan_hosts, service_command,
-    step_host, PatchError, PlanError, ProposeInput, ServiceActionArg, StepInput, MAX_STEPS,
+    MAX_STEPS, PatchError, PlanError, ProposeInput, ServiceActionArg, StepInput, action_verb,
+    apply_unified_diff, build_plan, check_patch, plan_hosts, service_command, step_host,
 };
 pub use propose::propose;
 pub use store::{ChangeRecord, EditBackup, PlanEntry, PlanState, PlanStore, StepRecord};

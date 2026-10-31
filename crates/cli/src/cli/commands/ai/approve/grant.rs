@@ -73,14 +73,16 @@ mod tests {
         // A call without a host can't be granted: the broker needs a host to scope it to.
         let mut c = call(ToolName::Run, Some("uptime"));
         c.host = None;
-        assert!(build_grant(
-            &base(ApprovalSubject::Call {
-                call: c,
-                analysis: None,
-            }),
-            5
-        )
-        .is_none());
+        assert!(
+            build_grant(
+                &base(ApprovalSubject::Call {
+                    call: c,
+                    analysis: None,
+                }),
+                5
+            )
+            .is_none()
+        );
     }
 
     #[test]

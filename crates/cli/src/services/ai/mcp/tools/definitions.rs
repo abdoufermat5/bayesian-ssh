@@ -136,32 +136,62 @@ pub fn definitions() -> Vec<Tool> {
         def::<ProposeInput, ProposeOut>(
             ToolName::ProposeChange,
             "Submit a change plan (steps, verify, rollback) for approval. Writes go through here. Steps: run, edit_file+patch, service+action, undo. Approval covers the exact plan; apply_change then runs it. Multi-host plans run the first host as a canary.",
-            write_ann("Propose a change", Harm::Additive, Repeat::Once, Reach::Local),
+            write_ann(
+                "Propose a change",
+                Harm::Additive,
+                Repeat::Once,
+                Reach::Local,
+            ),
         ),
         def::<ChangeIdArgs, ApplyOut>(
             ToolName::ApplyChange,
             "Apply an approved change plan exactly as approved, stop at the first failure, then run its verify steps.",
-            write_ann("Apply a change", Harm::Destructive, Repeat::Once, Reach::Remote),
+            write_ann(
+                "Apply a change",
+                Harm::Destructive,
+                Repeat::Once,
+                Reach::Remote,
+            ),
         ),
         def::<EditFileArgs, EditOut>(
             ToolName::EditFile,
             "Edit one text file with a unified diff. The approver sees the diff; the original is backed up on the host and locally first. Prefer propose_change for multi-step fixes.",
-            write_ann("Edit a file", Harm::Destructive, Repeat::Once, Reach::Remote),
+            write_ann(
+                "Edit a file",
+                Harm::Destructive,
+                Repeat::Once,
+                Reach::Remote,
+            ),
         ),
         def::<ServiceArgs, ServiceOut>(
             ToolName::Service,
             "start, stop, restart or reload a systemd unit, then check that it is active.",
-            write_ann("Control a service", Harm::Destructive, Repeat::Once, Reach::Remote),
+            write_ann(
+                "Control a service",
+                Harm::Destructive,
+                Repeat::Once,
+                Reach::Remote,
+            ),
         ),
         def::<RunArgs, ExecOut>(
             ToolName::Run,
             "Run an arbitrary command outside the jail. Last resort: usually needs human approval. Prefer propose_change for fixes.",
-            write_ann("Run a command", Harm::Destructive, Repeat::Once, Reach::Remote),
+            write_ann(
+                "Run a command",
+                Harm::Destructive,
+                Repeat::Once,
+                Reach::Remote,
+            ),
         ),
         def::<ChangeIdArgs, UndoOut>(
             ToolName::Undo,
             "Undo a change: restore the backed-up files and run the plan's rollback steps. Needs approval.",
-            write_ann("Undo a change", Harm::Destructive, Repeat::Idempotent, Reach::Remote),
+            write_ann(
+                "Undo a change",
+                Harm::Destructive,
+                Repeat::Idempotent,
+                Reach::Remote,
+            ),
         ),
         def::<NoArgs, StatusOut>(
             ToolName::Status,
@@ -184,7 +214,7 @@ pub fn definitions() -> Vec<Tool> {
 #[cfg(test)]
 mod tests {
     use super::definitions;
-    use crate::services::ai::mcp::tools::names::{name_str, ALL_TOOLS};
+    use crate::services::ai::mcp::tools::names::{ALL_TOOLS, name_str};
     use serde_json::Value;
 
     #[test]

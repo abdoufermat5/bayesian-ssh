@@ -6,7 +6,7 @@ use crate::cli::utils::confirm;
 use crate::config::AppConfig;
 use crate::services::ai::exec::AiExecutor;
 use crate::services::ai::{cert, hostsetup};
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 /// Run the `ai ca` subcommand.
 ///

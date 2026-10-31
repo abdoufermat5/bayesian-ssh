@@ -217,9 +217,9 @@ impl OutputSink {
 #[cfg(test)]
 mod tests {
     use super::{FlowControl, OUTPUT_HIGH_WATER_BYTES, OUTPUT_LOW_WATER_BYTES, OUTPUT_WAIT_POLL};
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::mpsc::{channel, Receiver, RecvTimeoutError};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::mpsc::{Receiver, RecvTimeoutError, channel};
     use std::time::Duration;
 
     /// Start a waiter thread and signal when `wait_while_congested` returns.

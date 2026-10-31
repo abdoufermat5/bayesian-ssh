@@ -9,8 +9,8 @@
 
 use super::dto::{EmailCodeDto, IdentityDto, TeamDto, TeamsStatus};
 use super::state::{
-    block_on, command_error, on_init_thread, on_teams_thread, open_store, TeamsInitError,
-    TeamsState,
+    TeamsInitError, TeamsState, block_on, command_error, on_init_thread, on_teams_thread,
+    open_store,
 };
 use crate::commands::CommandError;
 use bayesian_ssh::services::teams::client::TeamsError;

@@ -12,7 +12,7 @@ use crate::database::Database;
 use crate::models::Connection;
 use crate::services::auth::SSH_AUTH_SOCK;
 use crate::services::transport::subprocess_impl::{
-    jump_proxy_command, ssh_strict_host_key_value, HopOptions,
+    HopOptions, jump_proxy_command, ssh_strict_host_key_value,
 };
 use serde::{Deserialize, Serialize};
 use std::process::{Command, Output};

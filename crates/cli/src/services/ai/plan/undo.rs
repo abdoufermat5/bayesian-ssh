@@ -11,7 +11,7 @@ use tracing::warn;
 
 use super::apply::exec_step;
 use super::input::{plan_hosts, step_command, step_host};
-use super::store::{persist_record, PlanState, StepRecord};
+use super::store::{PlanState, StepRecord, persist_record};
 
 // ---------------------------------------------------------------- undo
 
@@ -27,7 +27,7 @@ pub async fn undo(ctx: &Arc<RunContext>, change_id: &str) -> ToolResult {
         s => {
             return Err(ToolError::Invalid(format!(
                 "change is {s:?}; nothing to undo"
-            )))
+            )));
         }
     }
     let plan = entry.plan.clone();

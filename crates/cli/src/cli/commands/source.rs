@@ -1,15 +1,15 @@
 //! `bssh source`: inventory sources and reconciling their hosts into the
 //! connection database.
 
-use crate::cli::utils::{confirm, format_duration};
 use crate::cli::SourceCommands;
+use crate::cli::utils::{confirm, format_duration};
 use crate::config::AppConfig;
 use crate::database::Database;
 use crate::models::{Source, SourceKind};
 use crate::services::inventory::{provider_for, sync};
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use chrono::Utc;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::collections::HashSet;
 
 /// Age in days after which `source sync --prune` deletes a stale host; the
@@ -537,11 +537,13 @@ mod tests {
             err.to_string(),
             "--region is not valid for a tailscale source"
         );
-        assert!(ensure_flags_allowed(
-            SourceKind::Tailscale,
-            &add_request(PeerScope::IncludeOffline)
-        )
-        .is_ok());
+        assert!(
+            ensure_flags_allowed(
+                SourceKind::Tailscale,
+                &add_request(PeerScope::IncludeOffline)
+            )
+            .is_ok()
+        );
     }
 
     #[test]

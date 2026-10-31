@@ -15,7 +15,7 @@
 
 use crate::config::AppConfig;
 use crate::services::crypto;
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use rand::RngCore;
 use russh::keys::ssh_key::certificate::{Builder, CertType};
 use russh::keys::ssh_key::private::Ed25519Keypair;
@@ -638,10 +638,10 @@ mod tests {
 #[cfg(test)]
 mod wire_tests {
     use super::*;
-    use russh::keys::ssh_key::private::Ed25519Keypair;
     use russh::keys::PublicKeyOrCertificate;
+    use russh::keys::ssh_key::private::Ed25519Keypair;
     use russh::server::{self, Auth, Msg, Server as _, Session};
-    use russh::{client, Channel, ChannelId};
+    use russh::{Channel, ChannelId, client};
     use std::sync::Arc;
     use tokio::net::TcpListener;
 

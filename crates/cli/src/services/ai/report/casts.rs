@@ -2,7 +2,7 @@
 
 use crate::config::AppConfig;
 use crate::services::ai::types::ExecResult;
-use crate::services::recording::{recordings_dir, Recorder};
+use crate::services::recording::{Recorder, recordings_dir};
 use std::path::PathBuf;
 
 fn safe_part(s: &str) -> String {

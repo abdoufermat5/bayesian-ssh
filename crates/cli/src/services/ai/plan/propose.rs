@@ -6,13 +6,13 @@ use crate::services::ai::types::{
     Analysis, ApprovalSubject, ChangePlan, Decision, HostFacts, Step, StepAction, Tier, ToolCall,
     ToolName,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::input::{
-    action_verb, build_plan, plan_hosts, step_command, step_host, step_kind, step_tool,
-    ProposeInput,
+    ProposeInput, action_verb, build_plan, plan_hosts, step_command, step_host, step_kind,
+    step_tool,
 };
 use super::store::{ChangeRecord, PlanEntry, PlanState};
 

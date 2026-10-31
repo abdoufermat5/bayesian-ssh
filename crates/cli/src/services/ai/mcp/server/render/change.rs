@@ -130,13 +130,17 @@ pub(super) fn render_apply(v: &Value, tag: &str) -> String {
     let status_line = match status {
         "applied" => {
             if verify_total > 0 {
-                format!("Applied on {host} · step {steps_ok}/{steps_total} ok · checks {verify_ok}/{verify_total} ok")
+                format!(
+                    "Applied on {host} · step {steps_ok}/{steps_total} ok · checks {verify_ok}/{verify_total} ok"
+                )
             } else {
                 format!("Applied on {host} · step {steps_ok}/{steps_total} ok")
             }
         }
         "applied_verify_failed" => {
-            format!("Applied on {host} with verification failure · step {steps_ok}/{steps_total} ok · checks {verify_ok}/{verify_total} ok")
+            format!(
+                "Applied on {host} with verification failure · step {steps_ok}/{steps_total} ok · checks {verify_ok}/{verify_total} ok"
+            )
         }
         _ => {
             let failed = v["failed_step"].as_str().unwrap_or("unknown");

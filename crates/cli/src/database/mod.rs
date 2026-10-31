@@ -19,7 +19,7 @@ mod source;
 mod tag;
 
 pub use search::{Prediction, RankContext, ScoreBreakdown, SearchField};
-pub use session::{live_pid, ActiveSession};
+pub use session::{ActiveSession, live_pid};
 pub use source::SourceSummary;
 
 const SCHEMA_VERSION: i32 = 11;
@@ -560,7 +560,7 @@ pub(crate) fn escape_like(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{escape_like, Database, SCHEMA_VERSION};
+    use super::{Database, SCHEMA_VERSION, escape_like};
     use crate::config::AppConfig;
     use crate::models::Connection;
     use tempfile::tempdir;
@@ -617,9 +617,11 @@ mod tests {
         assert_eq!(open.len(), 1, "only the live session stays open");
         assert!(matches!(open[0].status, SessionStatus::Active));
         // Unknown exit: the reconciled session must not be reported as failed.
-        assert!(history
-            .iter()
-            .all(|e| e.ended_at.is_none() || e.exit_code.is_none_or(|c| c == 0)));
+        assert!(
+            history
+                .iter()
+                .all(|e| e.ended_at.is_none() || e.exit_code.is_none_or(|c| c == 0))
+        );
     }
 
     #[test]
@@ -825,12 +827,13 @@ mod tests {
             chrono::Utc::now(),
         ));
         db.add_connection(&conn).unwrap();
-        assert!(db
-            .connection("web")
-            .unwrap()
-            .unwrap()
-            .pending_change
-            .is_some());
+        assert!(
+            db.connection("web")
+                .unwrap()
+                .unwrap()
+                .pending_change
+                .is_some()
+        );
 
         db.clear_pending_change(&conn.id).unwrap();
         let stored = db.connection("web").unwrap().unwrap();

@@ -10,7 +10,7 @@ use super::types::{ExecLimits, ExecMode, ExecResult, Executor};
 use crate::config::AppConfig;
 use crate::models::Connection;
 use crate::services::transport::{
-    execute_with_fallback, CertAuth, ExecOptions, LimitedOutput, TransportError,
+    CertAuth, ExecOptions, LimitedOutput, TransportError, execute_with_fallback,
 };
 use async_trait::async_trait;
 use std::time::{Duration, Instant};
@@ -74,9 +74,11 @@ impl AiExecutor {
     #[cfg(unix)]
     fn control_dir(&self) -> Option<std::path::PathBuf> {
         let name = format!("bssh-ai-{}-{}", std::process::id(), self.control_id);
-        let mut candidates = vec![crate::services::ai::ai_dir(&self.config)
-            .join("ssh")
-            .join(&self.control_id)];
+        let mut candidates = vec![
+            crate::services::ai::ai_dir(&self.config)
+                .join("ssh")
+                .join(&self.control_id),
+        ];
         let tmp = std::path::Path::new("/tmp");
         if tmp.is_dir() {
             candidates.push(tmp.join(&name));

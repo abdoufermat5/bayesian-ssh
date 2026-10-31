@@ -18,6 +18,6 @@ pub(crate) mod mock;
 mod tests;
 mod transport;
 
-pub use audit::{walk_audit_pages, AuditWalk};
+pub use audit::{AuditWalk, walk_audit_pages};
 pub use error::{ClientResult, TeamsError};
-pub use http::{validate_server_url, AuthSigner, TeamsClient, MAX_POLL_WAIT_SECS};
+pub use http::{AuthSigner, MAX_POLL_WAIT_SECS, TeamsClient, validate_server_url};

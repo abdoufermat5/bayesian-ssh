@@ -13,8 +13,8 @@
 use anyhow::{Context, Result};
 
 use crate::config::AppConfig;
-use crate::services::transport::{execute_with_fallback, pick_kind, TransportKind};
 use crate::services::SshService;
+use crate::services::transport::{TransportKind, execute_with_fallback, pick_kind};
 
 pub async fn execute(target: String, port: u16, bind: String, config: AppConfig) -> Result<()> {
     let ssh_service = SshService::new(config.clone())?;

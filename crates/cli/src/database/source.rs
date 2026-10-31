@@ -2,7 +2,7 @@ use crate::database::Database;
 use crate::models::{Connection, Source, SourceKind};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{OptionalExtension, params};
 use uuid::Uuid;
 
 /// A source plus the counts shown by `bssh source list`.

@@ -2,7 +2,7 @@
 
 use crate::config::AppConfig;
 use crate::database::Database;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -176,7 +176,9 @@ pub async fn execute_copy(config: AppConfig, target: String, key: Option<String>
         } else if default_rsa.exists() {
             default_rsa
         } else {
-            return Err(anyhow!("No public key found to copy. Generate one with 'bssh key generate --name id_ed25519'"));
+            return Err(anyhow!(
+                "No public key found to copy. Generate one with 'bssh key generate --name id_ed25519'"
+            ));
         }
     };
 

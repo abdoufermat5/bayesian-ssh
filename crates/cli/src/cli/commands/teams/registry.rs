@@ -1,11 +1,11 @@
 //! `bssh teams create` and `bssh teams list`: the teams stored on this machine.
 
-use super::passphrase::{passphrase, Passphrase};
+use super::passphrase::{Passphrase, passphrase};
 use super::sync::print_sync;
 use crate::config::AppConfig;
+use crate::services::teams::TeamsStore;
 use crate::services::teams::orgs;
 use crate::services::teams::session::{self, Session};
-use crate::services::teams::TeamsStore;
 use anyhow::Result;
 
 /// The arguments of `bssh teams create`.

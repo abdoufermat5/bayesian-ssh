@@ -1,6 +1,6 @@
 //! Approval requests: in-client elicitation first, then the broker.
 
-use super::call_slot::{current_call_slot, CallSlot};
+use super::call_slot::{CallSlot, current_call_slot};
 use super::error::ToolError;
 use super::run_context::PendingInfo;
 use super::run_context::RunContext;
@@ -12,8 +12,8 @@ use crate::services::ai::types::{
     Tier, ToolCall,
 };
 use anyhow::Result;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 use tracing::{debug, warn};
 
@@ -159,13 +159,13 @@ impl RunContext {
                             by: "user".into(),
                             channel: "confirmed-in-client".into(),
                             grant: None,
-                        })
+                        });
                     }
                     Ok(Ok(Some(false))) => {
                         return Ok(ApprovalOutcome::Denied {
                             by: "user".into(),
                             reason: None,
-                        })
+                        });
                     }
                     Ok(Ok(None)) => debug!("client can't elicit; asking out of band"),
                     Ok(Err(e)) => {

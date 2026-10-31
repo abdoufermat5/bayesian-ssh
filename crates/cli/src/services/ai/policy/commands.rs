@@ -1,6 +1,6 @@
 //! Text matching of `deny` patterns, for calls the analyzer could not fully parse.
 
-use super::glob::{glob_match, GlobMode};
+use super::glob::{GlobMode, glob_match};
 use crate::services::ai::types::{Analysis, ToolCall};
 
 /// Command lines the `deny` patterns are matched against: every analyzed simple command

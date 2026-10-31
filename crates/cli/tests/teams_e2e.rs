@@ -6,7 +6,7 @@
 
 use bayesian_ssh::config::AppConfig;
 use bayesian_ssh::services::teams::client::TeamsClient;
-use bayesian_ssh::services::teams::codec::{unwrap_all, CryptoCodec};
+use bayesian_ssh::services::teams::codec::{CryptoCodec, unwrap_all};
 use bayesian_ssh::services::teams::crypto::{self, DeviceKeys, TeamKey};
 use bayesian_ssh::services::teams::store::TeamLocal;
 use bayesian_ssh::services::teams::{self as teams, SyncEngine, TeamsStore};

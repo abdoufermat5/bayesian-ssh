@@ -1,7 +1,7 @@
 //! The shell scripts shown to the admin before they run as root.
 
 use crate::services::ai::jail::shell_quote;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 pub const AGENT_USER: &str = "bssh-agent";
 /// The agent user's home: a system account, outside `/home` (often `noexec`).
@@ -33,8 +33,7 @@ pub const EXIT_SUDO_PASSWORD: i32 = 77;
 pub const EXIT_NO_SUDO: i32 = 78;
 
 /// Printed by `doctor`. bssh doesn't touch firewalls (Q6).
-pub const EGRESS_NOTE: &str =
-    "Restrict outbound traffic of the bssh-agent user on your external firewall \
+pub const EGRESS_NOTE: &str = "Restrict outbound traffic of the bssh-agent user on your external firewall \
 (or host firewall) if you can. The read-only jail has no network and certificate mode only \
 runs approved commands, but a firewall rule is the last line against exfiltration. \
 bssh does not change firewalls.";

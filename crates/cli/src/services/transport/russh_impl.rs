@@ -5,11 +5,11 @@
 
 use std::sync::Arc;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
+use russh::ChannelMsg;
 use russh::client::{self, Handle};
 use russh::keys::{PrivateKeyWithHashAlg, PublicKey, PublicKeyBase64, PublicKeyOrCertificate};
-use russh::ChannelMsg;
 use tracing::{debug, info, warn};
 
 use crate::config::{AppConfig, HostKeyPolicy};
@@ -325,8 +325,8 @@ impl RusshTransport {
         user: &str,
         rsa_hash: Option<russh::keys::HashAlg>,
     ) -> (bool, usize) {
-        use russh::keys::agent::client::AgentClient;
         use russh::keys::agent::AgentIdentity;
+        use russh::keys::agent::client::AgentClient;
 
         if !self.config.auth.use_agent {
             return (false, 0);
@@ -1002,7 +1002,7 @@ async fn proxy_tcp_channel(
 
 #[cfg(test)]
 mod tests {
-    use super::{host_key_verdict, HostKeyVerdict};
+    use super::{HostKeyVerdict, host_key_verdict};
     use crate::config::HostKeyPolicy;
     use crate::services::known_hosts::CheckResult;
 

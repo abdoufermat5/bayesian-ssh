@@ -1,7 +1,7 @@
 //! Shared helpers for the handler tests.
 
 use crate::services::ai::mcp::context::ToolError;
-use crate::services::ai::mcp::testkit::{allow_all, conn, kit, policy, Kit};
+use crate::services::ai::mcp::testkit::{Kit, allow_all, conn, kit, policy};
 use crate::services::ai::mcp::tools;
 use serde_json::Value;
 

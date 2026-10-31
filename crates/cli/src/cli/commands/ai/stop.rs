@@ -6,9 +6,9 @@
 use crate::cli::parser_ai::AiArgsStop;
 use crate::config::AppConfig;
 use crate::services::ai::ai_dir;
-use crate::services::ai::control_client::{connect_all, ControlClient};
+use crate::services::ai::control_client::{ControlClient, connect_all};
 use crate::services::ai::ui::{self, Glyph, Style};
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 /// Stop one run, or every run, over its control socket.
 ///

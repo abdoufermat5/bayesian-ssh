@@ -145,9 +145,11 @@ mod tests {
         let mut conn = minimal_conn();
         conn.key_path = Some("/home/user/.ssh/custom_ed25519".into());
         let paths = candidate_key_paths(&conn, &cfg);
-        assert!(paths
-            .iter()
-            .any(|p| p.to_string_lossy().contains("custom_ed25519")));
+        assert!(
+            paths
+                .iter()
+                .any(|p| p.to_string_lossy().contains("custom_ed25519"))
+        );
     }
 
     #[test]

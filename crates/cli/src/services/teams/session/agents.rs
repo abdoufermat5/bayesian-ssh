@@ -4,11 +4,11 @@
 use super::handle::Session;
 use super::types::{AgentCreated, Edit, TeamSync};
 use crate::config::AppConfig;
-use crate::services::teams::agent::{credential_path, AgentCredential, AgentCredentialParams};
+use crate::services::teams::agent::{AgentCredential, AgentCredentialParams, credential_path};
 use crate::services::teams::client::TeamsClient;
-use crate::services::teams::crypto::{self, fingerprint, DeviceKeys};
+use crate::services::teams::crypto::{self, DeviceKeys, fingerprint};
 use crate::services::teams::relay::{ApprovalAnswer, IncomingRequest, Peer, RelayEndpoint};
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use bssh_teams_proto::api::{
     DeviceInfo, Member, MemberKind, PutKeysRequest, Role, SignedAgentPolicy,
 };

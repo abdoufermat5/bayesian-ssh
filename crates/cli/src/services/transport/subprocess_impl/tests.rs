@@ -7,11 +7,11 @@ use crate::models::Connection;
 use std::path::PathBuf;
 
 use super::argv::{
-    jump_proxy_command, ssh_strict_host_key_value, ArgvExtras, HopOptions, ShellExtras,
+    ArgvExtras, HopOptions, ShellExtras, jump_proxy_command, ssh_strict_host_key_value,
 };
 use super::interactive::{
-    auth_prompt_kind, cert_through_kerberos_bastion, extract_between_markers, interactive_payload,
-    needs_tty, prompt_error, AuthPrompt,
+    AuthPrompt, auth_prompt_kind, cert_through_kerberos_bastion, extract_between_markers,
+    interactive_payload, needs_tty, prompt_error,
 };
 use super::process::{classify_ssh_failure, run_argv_limited, write_cert_files};
 use super::*;

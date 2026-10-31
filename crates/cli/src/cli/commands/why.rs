@@ -1,8 +1,8 @@
 use crate::cli::utils::{format_duration, resolve_connection};
 use crate::config::AppConfig;
 use crate::database::{Database, RankContext};
-use crate::services::context::abbreviate_home;
 use crate::services::SshService;
+use crate::services::context::abbreviate_home;
 use anyhow::Result;
 
 pub async fn execute(target: String, config: AppConfig) -> Result<()> {

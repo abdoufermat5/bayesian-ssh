@@ -12,7 +12,7 @@
 use super::client::ClientResult;
 use super::codec::VaultCodec;
 use super::store::{OutboxRow, TeamsStore};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use bssh_teams_proto::api::{
     EncryptedEntry, IngestAuditRequest, IngestAuditResponse, PullResponse, PushRequest,
@@ -722,7 +722,7 @@ mod tests {
     use super::*;
     use crate::services::teams::{queue_edit, read_vault};
     use bssh_teams_proto::api::AuditKind;
-    use bssh_teams_proto::layout::{audit_event_hash, AUDIT_GENESIS};
+    use bssh_teams_proto::layout::{AUDIT_GENESIS, audit_event_hash};
 
     fn engine(f: &Fixture) -> SyncEngine<'_, FakeServer, FakeCodec> {
         SyncEngine::new(&f.store, &f.server, &f.me, f.team)
@@ -920,11 +920,12 @@ mod tests {
         let report = engine(&f).sync().await;
         assert!(report.is_clean(), "{report:?}");
         assert_eq!(report.audit_uploaded, 3);
-        assert!(f
-            .store
-            .pending_audit(f.team, f.me.device, 10)
-            .unwrap()
-            .is_empty());
+        assert!(
+            f.store
+                .pending_audit(f.team, f.me.device, 10)
+                .unwrap()
+                .is_empty()
+        );
         let st = f.server.state.borrow();
         assert_eq!(
             st.audit_stored.iter().map(|e| e.seq).collect::<Vec<_>>(),
@@ -991,11 +992,12 @@ mod tests {
         let report = engine(&f).sync().await;
         assert!(report.is_clean(), "{report:?}");
         assert_eq!(report.audit_uploaded, 3);
-        assert!(f
-            .store
-            .pending_audit(f.team, f.me.device, 10)
-            .unwrap()
-            .is_empty());
+        assert!(
+            f.store
+                .pending_audit(f.team, f.me.device, 10)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[tokio::test]

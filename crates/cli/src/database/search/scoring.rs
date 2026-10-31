@@ -671,7 +671,7 @@ struct ScoreInput<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{context_factor, FeatureCounts, RankContext};
+    use super::{FeatureCounts, RankContext, context_factor};
     use crate::config::AppConfig;
     use crate::database::Database;
     use crate::models::{Connection, Session, SessionContext};

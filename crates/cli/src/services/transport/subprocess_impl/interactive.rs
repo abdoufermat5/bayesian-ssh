@@ -9,9 +9,9 @@ use crate::models::Connection;
 use std::process::Stdio;
 use tokio::process::Command as TokioCommand;
 
-use super::argv::{prepare_ssh_command, ShellExtras};
-use super::process::classify_ssh_failure;
 use super::SubprocessTransport;
+use super::argv::{ShellExtras, prepare_ssh_command};
+use super::process::classify_ssh_failure;
 use crate::services::transport::types::{ExecOptions, ExecOutput, LimitedOutput, TransportError};
 
 impl SubprocessTransport {
@@ -418,7 +418,7 @@ impl SubprocessTransport {
                     return Ok(LimitedOutput {
                         timed_out: true,
                         ..LimitedOutput::default()
-                    })
+                    });
                 }
             },
             None => run.await?,

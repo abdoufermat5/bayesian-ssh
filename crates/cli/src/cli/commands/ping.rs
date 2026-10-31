@@ -1,8 +1,8 @@
-use crate::cli::utils::{resolve_connection, MAX_PARALLEL_HOSTS};
+use crate::cli::utils::{MAX_PARALLEL_HOSTS, resolve_connection};
 use crate::config::AppConfig;
 use crate::models::Connection;
 use crate::services::SshService;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::process::Command;

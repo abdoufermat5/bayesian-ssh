@@ -409,7 +409,7 @@ pub fn sync_search_mode_to_config(fuzzy: bool) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{fill_agent_socket, AppConfig, DesktopSettings};
+    use super::{AppConfig, DesktopSettings, fill_agent_socket};
     use std::path::PathBuf;
 
     #[test]
@@ -440,10 +440,12 @@ mod tests {
         let mut saved = serde_json::to_value(DesktopSettings::default()).unwrap();
         saved["confirm_snippet_execution"] = serde_json::json!(false);
         let loaded: DesktopSettings = serde_json::from_value(saved).unwrap();
-        assert!(serde_json::to_value(&loaded)
-            .unwrap()
-            .get("confirm_snippet_execution")
-            .is_none());
+        assert!(
+            serde_json::to_value(&loaded)
+                .unwrap()
+                .get("confirm_snippet_execution")
+                .is_none()
+        );
     }
 
     #[test]

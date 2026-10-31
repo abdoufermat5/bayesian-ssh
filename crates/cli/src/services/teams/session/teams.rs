@@ -5,9 +5,9 @@ use super::removal::TeamAttentionState;
 use super::types::{Edit, JoinWith, PendingDevice, TeamSync};
 use crate::models::{Source, SourceKind};
 use crate::services::teams::client::TeamsError;
-use crate::services::teams::crypto::{self, fingerprint, TeamKey};
+use crate::services::teams::crypto::{self, TeamKey, fingerprint};
 use crate::services::teams::store::TeamLocal;
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use bssh_teams_proto::api::{
     AcceptInviteRequest, CreateInviteRequest, CreateTeamRequest, ErrorCode, Invite, Member,
     PutKeysRequest, Role,
@@ -248,7 +248,7 @@ impl<'a> Session<'a> {
                     pending_devices: 0,
                     waiting_for_key: false,
                     removed: true,
-                })
+                });
             }
             Err(e) => return Err(e.into()),
         };

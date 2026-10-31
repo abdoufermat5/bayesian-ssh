@@ -3,9 +3,9 @@
 use super::budget::parse_duration;
 use super::candidates::path_candidates;
 use super::commands::matches_deny_fallback;
-use super::deny_paths::{deny_path_hit, path_matches_any, PathHit};
+use super::deny_paths::{PathHit, deny_path_hit, path_matches_any};
 use super::grants::{grant_matches, needs_host};
-use super::scope::{ignored_tag_note, in_scope, TagTrust};
+use super::scope::{TagTrust, ignored_tag_note, in_scope};
 use super::tier::tier_for;
 use crate::services::ai::store::{AiStore, CounterKind};
 use crate::services::ai::types::{
@@ -187,7 +187,7 @@ impl DefaultPolicyEngine {
             match &call.path {
                 Some(p) if path_matches_any(&policy.write_paths, p).is_some() => {}
                 Some(p) => {
-                    return deny(format!("write_paths: '{p}' is outside the writable paths"))
+                    return deny(format!("write_paths: '{p}' is outside the writable paths"));
                 }
                 None => return deny("write_paths: edit_file without a path".into()),
             }
@@ -210,12 +210,12 @@ impl DefaultPolicyEngine {
             ToolName::ListHosts | ToolName::HostInfo | ToolName::Status => {
                 return Decision::Allow {
                     reason: "read: metadata tools are always allowed in scope".into(),
-                }
+                };
             }
             ToolName::Observe | ToolName::SearchLogs => {
                 return Decision::Allow {
                     reason: "read: observe tools run read-only commands".into(),
-                }
+                };
             }
             ToolName::ReadFile => {
                 return match &call.path {
@@ -226,7 +226,7 @@ impl DefaultPolicyEngine {
                     }
                     Some(p) => ask(format!("read_paths: '{p}' is outside the readable paths")),
                     None => deny("target: read_file without a path".into()),
-                }
+                };
             }
             ToolName::RunReadonly | ToolName::RunMany => {
                 // A jail stops writes, but deny paths are only enforced when it runs as the
@@ -260,7 +260,7 @@ impl DefaultPolicyEngine {
                 return Decision::Ask {
                     tier: policy.approval.default,
                     reason: "request_access: wider scope always needs a human".into(),
-                }
+                };
             }
             _ => {}
         }

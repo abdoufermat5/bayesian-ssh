@@ -4,7 +4,7 @@ use crate::database::Database;
 use crate::models::{Connection, DiscoveredHost, Source, SourceKind};
 use anyhow::Result;
 use chrono::{Duration, Utc};
-use rusqlite::{params, Transaction};
+use rusqlite::{Transaction, params};
 use serde::Serialize;
 use std::collections::HashSet;
 

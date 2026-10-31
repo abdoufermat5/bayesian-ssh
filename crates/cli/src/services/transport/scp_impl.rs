@@ -362,10 +362,11 @@ mod tests {
         assert!(argv.contains(&"-O".to_string()));
         assert!(argv.contains(&"-P".to_string()));
         assert!(argv.contains(&"22".to_string()));
-        assert!(argv
-            .last()
-            .unwrap()
-            .contains("alice@target.example:/remote/file.txt"));
+        assert!(
+            argv.last()
+                .unwrap()
+                .contains("alice@target.example:/remote/file.txt")
+        );
     }
 
     #[test]

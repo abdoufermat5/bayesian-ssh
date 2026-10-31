@@ -1,6 +1,6 @@
 //! Which hosts a policy covers and whether a host's tags may relax it.
 
-use super::glob::{glob_match, GlobMode};
+use super::glob::{GlobMode, glob_match};
 use crate::models::Connection;
 use crate::services::ai::types::{Enforcement, HostFacts, Policy, Scope};
 

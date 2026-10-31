@@ -5,9 +5,9 @@ use crate::services::ai::types::{ApprovalRequest, ApprovalSubject, Tier};
 use crate::services::ai::ui::{self, Glyph, Style, Tone};
 use chrono::{DateTime, Utc};
 
-use super::context::{plan_hosts, FeedContext};
+use super::context::{FeedContext, plan_hosts};
 use super::line::FeedLine;
-use super::words::{call_text, count, kind_word, oneline, CLOCK_W};
+use super::words::{CLOCK_W, call_text, count, kind_word, oneline};
 
 /// What the header line of a run shows.
 #[derive(Debug, Clone, Default)]
@@ -156,11 +156,13 @@ pub fn request_lines(
         "waiting for you"
     };
     let width = ctx.width;
-    let mut out = vec![FeedLine::new(&time, Glyph::Ask, kind)
-        .host(Some(&host))
-        .text(text)
-        .meta(Tone::Warn, waiting)
-        .render(style, width)];
+    let mut out = vec![
+        FeedLine::new(&time, Glyph::Ask, kind)
+            .host(Some(&host))
+            .text(text)
+            .meta(Tone::Warn, waiting)
+            .render(style, width),
+    ];
     let indent = " ".repeat(CLOCK_W + 2);
     if let Some(e) = request_effects(req) {
         out.push(format!(

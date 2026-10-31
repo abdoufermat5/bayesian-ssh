@@ -1,11 +1,11 @@
 //! `bssh teams audit`: the team's verified audit log.
 
-use super::passphrase::{passphrase, Passphrase};
+use super::passphrase::{Passphrase, passphrase};
 use crate::config::AppConfig;
+use crate::services::teams::TeamsStore;
 use crate::services::teams::audit::EventCheck;
 use crate::services::teams::session::{self, AuditQuery, Session, TeamAudit};
-use crate::services::teams::TeamsStore;
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 
 /// How much of the audit log to show.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -142,7 +142,9 @@ fn print_audit(team: &str, log: &TeamAudit) {
         for p in &log.problems {
             println!("   - {p}");
         }
-        println!("   Events can't be edited, reordered or removed without this showing; treat it as tampering.");
+        println!(
+            "   Events can't be edited, reordered or removed without this showing; treat it as tampering."
+        );
     }
     if !log.complete {
         println!(

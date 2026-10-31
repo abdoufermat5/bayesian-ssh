@@ -3,7 +3,7 @@
 //! accept an id prefix or the name of one of its teams. Pure on purpose: the
 //! selection rules are tested without a server.
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use bssh_teams_proto::api::OrgInfo;
 use uuid::Uuid;
 

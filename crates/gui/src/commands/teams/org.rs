@@ -7,7 +7,7 @@
 //! Each operation runs on its own thread with a single-threaded runtime: the
 //! sync engine's futures hold the SQLite connection and aren't `Send`.
 
-use super::state::{open_store, with_session, TeamsState};
+use super::state::{TeamsState, open_store, with_session};
 use crate::commands::CommandError;
 use bayesian_ssh::services::teams::client::TeamsError;
 use bayesian_ssh::services::teams::orgs;

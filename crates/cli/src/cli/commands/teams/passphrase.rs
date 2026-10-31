@@ -1,7 +1,7 @@
 //! The Teams passphrase, read from the environment or prompted for on the
 //! terminal by every command that opens a session.
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use zeroize::Zeroizing;
 
 /// Env var read instead of prompting, for scripts.

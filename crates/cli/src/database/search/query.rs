@@ -1,5 +1,5 @@
 use crate::database::search::RankContext;
-use crate::database::{escape_like, Database};
+use crate::database::{Database, escape_like};
 use crate::models::Connection;
 use anyhow::Result;
 use rusqlite::params;

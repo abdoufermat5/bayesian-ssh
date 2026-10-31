@@ -2,10 +2,10 @@
 
 use crate::cli::parser_ai::AiArgsInstall;
 use crate::config::AppConfig;
-use crate::services::ai::install::{run_install, Client, InstallOptions};
+use crate::services::ai::install::{Client, InstallOptions, run_install};
 use crate::services::ai::policy;
 use crate::services::ai::types::Profile;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 
 /// Install or remove bssh from an agent client configuration.
 ///

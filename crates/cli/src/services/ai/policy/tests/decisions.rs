@@ -1,9 +1,9 @@
 use crate::config::AppConfig;
 use crate::models::Connection;
-use crate::services::ai::policy::scope::{in_scope, TagTrust};
+use crate::services::ai::policy::scope::{TagTrust, in_scope};
 use crate::services::ai::policy::{
-    builtin_profile, circuit_breaker, connection_facts, host_in_scope, resolve, tags_trusted,
-    DefaultPolicyEngine, ALL_HOSTS, PROBE_LIMIT,
+    ALL_HOSTS, DefaultPolicyEngine, PROBE_LIMIT, builtin_profile, circuit_breaker,
+    connection_facts, host_in_scope, resolve, tags_trusted,
 };
 use crate::services::ai::store::AiStore;
 use crate::services::ai::types::{

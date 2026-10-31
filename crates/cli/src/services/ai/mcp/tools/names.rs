@@ -49,7 +49,7 @@ pub fn parse_tool(name: &str) -> Option<ToolName> {
 
 #[cfg(test)]
 mod tests {
-    use super::{name_str, parse_tool, ALL_TOOLS};
+    use super::{ALL_TOOLS, name_str, parse_tool};
     #[test]
     fn parse_tool_roundtrip() {
         for t in ALL_TOOLS {

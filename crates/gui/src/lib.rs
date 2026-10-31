@@ -6,8 +6,8 @@ mod updater;
 
 use bayesian_ssh::services::agent;
 use commands::{
-    ack_pty, add_connection, add_key_to_agent, attach_pty_output, cancel_upload,
-    check_popout_main_overlap, claim_popout_session, close_all_ptys, close_pty,
+    PtyState, UploadState, ack_pty, add_connection, add_key_to_agent, attach_pty_output,
+    cancel_upload, check_popout_main_overlap, claim_popout_session, close_all_ptys, close_pty,
     complete_onboarding, count_active_sessions, create_environment, detach_pty,
     dock_popout_session, edit_connection, focus_terminal_window, force_quit_app, get_active_env,
     get_agent_status, get_connections, get_history, get_stats, get_workspace_info,
@@ -16,7 +16,7 @@ use commands::{
     pick_ssh_config_file, pick_upload_files, pick_upload_folder, quit_app, read_clipboard_text,
     read_primary_selection, reattach_pty, redraw_pty, remove_connection, remove_environment,
     resize_pty, save_desktop_settings, save_workspace_config, seal_session_ui, set_active_env,
-    spawn_pty, start_agent, start_upload, write_clipboard_text, write_pty, PtyState, UploadState,
+    spawn_pty, start_agent, start_upload, write_clipboard_text, write_pty,
 };
 use kerberos::{acquire_kerberos_ticket, get_kerberos_status, renew_kerberos_ticket};
 use std::collections::HashMap;

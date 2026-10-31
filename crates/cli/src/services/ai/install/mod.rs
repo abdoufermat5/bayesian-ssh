@@ -19,10 +19,10 @@ mod client;
 mod guard;
 mod merge;
 
-pub use apply::{apply, diff, run_install, FileChange, InstallOptions};
+pub use apply::{FileChange, InstallOptions, apply, diff, run_install};
 pub use client::{
-    claude_settings_path, config_path, detected_clients, detected_clients_in, Client,
-    DetectedClient, SERVER_NAME,
+    Client, DetectedClient, SERVER_NAME, claude_settings_path, config_path, detected_clients,
+    detected_clients_in,
 };
 pub use guard::guard_script;
 pub use merge::{merge_codex, merge_guard_settings, merge_json_mcp};

@@ -10,7 +10,7 @@ mod ssh_transport;
 #[cfg(test)]
 mod tests;
 
-pub(crate) use argv::{jump_proxy_command, shell_quote, ssh_strict_host_key_value, HopOptions};
+pub(crate) use argv::{HopOptions, jump_proxy_command, shell_quote, ssh_strict_host_key_value};
 
 use crate::config::AppConfig;
 

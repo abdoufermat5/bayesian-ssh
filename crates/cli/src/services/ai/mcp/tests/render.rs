@@ -293,7 +293,9 @@ fn readable_tool_results_have_no_json_and_preserve_structured() {
     let r = to_result("propose_change", Ok(prop_waiting.clone()));
     let t = &r.content[0].as_text().unwrap().text;
     assert!(!t.contains("{\""));
-    assert!(t.contains("Waiting for approval. Change 696de2f2 was sent to the person running bssh"));
+    assert!(
+        t.contains("Waiting for approval. Change 696de2f2 was sent to the person running bssh")
+    );
     assert!(t.contains("request 440947ca"));
     assert!(t.contains("creates 1 directory"));
     assert!(t.contains("Call status to check if it has been approved."));

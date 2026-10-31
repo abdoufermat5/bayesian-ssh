@@ -4,8 +4,8 @@ use crate::commands::CommandError;
 use crate::commands::{PtySession, PtyState};
 use bayesian_ssh::config::AppConfig;
 use bayesian_ssh::database::Database;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter, Manager, State};
 use uuid::Uuid;
 

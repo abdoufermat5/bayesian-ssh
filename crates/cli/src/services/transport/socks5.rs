@@ -8,7 +8,7 @@
 //! Returns the (target_host, target_port) pair so the caller can open a
 //! `direct-tcpip` SSH channel and begin proxying.
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 

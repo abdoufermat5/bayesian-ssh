@@ -1,5 +1,5 @@
-use super::open_db_and_config;
 use super::CommandError;
+use super::open_db_and_config;
 pub(crate) use bayesian_ssh::models::validate_connection_fields;
 use bayesian_ssh::models::{Connection, Session, SessionStatus};
 use chrono::Utc;

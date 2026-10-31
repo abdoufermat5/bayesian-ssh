@@ -12,7 +12,7 @@ pub use build::{build_report, resolve_run_id, run_report};
 pub use casts::{cast_path, record_output, run_casts};
 pub use model::{ReportApproval, ReportCall, ReportChange, ReportStep, RunReport};
 pub use render::render_report;
-pub use runs::{list_runs, render_runs, RunSummary};
+pub use runs::{RunSummary, list_runs, render_runs};
 
 #[cfg(test)]
 mod tests;

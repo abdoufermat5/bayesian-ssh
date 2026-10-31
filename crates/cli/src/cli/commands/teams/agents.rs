@@ -1,13 +1,13 @@
 //! `bssh teams agent`: agent identities and their approval requests.
 
-use super::passphrase::{passphrase, Passphrase};
+use super::passphrase::{Passphrase, passphrase};
 use super::sync::print_sync;
 use crate::cli::parser::TeamsAgentCommands;
 use crate::cli::utils::confirm;
 use crate::config::AppConfig;
+use crate::services::teams::TeamsStore;
 use crate::services::teams::relay::ApprovalAnswer;
 use crate::services::teams::session::{self, Session};
-use crate::services::teams::TeamsStore;
 use anyhow::Result;
 
 /// The approval request `bssh teams agent approve`/`deny` acts on.

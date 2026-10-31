@@ -5,10 +5,10 @@
 //! signed by an approver key it has pinned. The server queues the opaque
 //! messages and never sees what is asked or decided.
 
-use super::client::{ClientResult, TeamsClient, MAX_POLL_WAIT_SECS};
+use super::client::{ClientResult, MAX_POLL_WAIT_SECS, TeamsClient};
 use super::crypto::{self, DeviceKeys, RelayDraft, RelayTarget};
 use crate::services::ai::types::{ApprovalRequest, Grant};
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use async_trait::async_trait;
 use bssh_teams_proto::api::{RelayAck, RelayKind, RelayMessage, RelayPoll};
 use bssh_teams_proto::wire::PublicKey32;
@@ -616,22 +616,25 @@ mod tests {
                 .len(),
             1
         );
-        assert!(c
-            .agent
-            .1
-            .pending_requests(std::slice::from_ref(&c.agent.0), 0, 0)
-            .await
-            .unwrap()
-            .0
-            .is_empty());
+        assert!(
+            c.agent
+                .1
+                .pending_requests(std::slice::from_ref(&c.agent.0), 0, 0)
+                .await
+                .unwrap()
+                .0
+                .is_empty()
+        );
         // A request from a device the admin doesn't know is dropped.
-        assert!(alice
-            .1
-            .pending_requests(&[], 0, 0)
-            .await
-            .unwrap()
-            .0
-            .is_empty());
+        assert!(
+            alice
+                .1
+                .pending_requests(&[], 0, 0)
+                .await
+                .unwrap()
+                .0
+                .is_empty()
+        );
 
         alice
             .1
@@ -930,17 +933,18 @@ mod tests {
     #[tokio::test]
     async fn sending_needs_an_admin_and_an_expiry_is_capped() {
         let c = cast(&[]);
-        assert!(c
-            .agent
-            .1
-            .send_request(
-                Uuid::new_v4(),
-                &payload(1, Tier::OutOfBand),
-                &[],
-                Duration::from_secs(60)
-            )
-            .await
-            .is_err());
+        assert!(
+            c.agent
+                .1
+                .send_request(
+                    Uuid::new_v4(),
+                    &payload(1, Tier::OutOfBand),
+                    &[],
+                    Duration::from_secs(60)
+                )
+                .await
+                .is_err()
+        );
         let c = cast(&[("alice@x.io", Uuid::new_v4())]);
         let admins = vec![c.admins[0].0.clone()];
         c.agent

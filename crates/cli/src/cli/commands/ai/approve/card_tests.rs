@@ -1,6 +1,6 @@
 //! Tests for the approval card's layout, text, colour and full view.
 
-use super::card::{render_card_w, render_request, Card};
+use super::card::{Card, render_card_w, render_request};
 use super::fixtures::{base, call, demo_plan_request, hello, now, service_request};
 use super::view::View;
 use crate::services::ai::types::{
@@ -113,11 +113,12 @@ fn full_view_lifts_the_limits() {
 fn single_service_call_uses_the_same_frame() {
     let text = plain(&service_request(Tier::OutOfBand));
     println!("{text}");
-    assert!(text
-        .lines()
-        .nth(1)
-        .unwrap()
-        .contains("Restart nginx on db-1"));
+    assert!(
+        text.lines()
+            .nth(1)
+            .unwrap()
+            .contains("Restart nginx on db-1")
+    );
     assert!(text.contains("service request 440947ca"));
     assert!(text.contains("db-1"));
     assert!(text.contains("restarts"));
@@ -167,11 +168,12 @@ fn access_request_card() {
     });
     let text = plain(&r);
     println!("{text}");
-    assert!(text
-        .lines()
-        .nth(1)
-        .unwrap()
-        .contains("Wider access for 30 min"));
+    assert!(
+        text.lines()
+            .nth(1)
+            .unwrap()
+            .contains("Wider access for 30 min")
+    );
     assert!(text.contains("access request 440947ca"));
     assert!(text.contains("hosts  db-1"));
     assert!(text.contains("tags   prod"));

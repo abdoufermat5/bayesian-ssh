@@ -1,8 +1,8 @@
 //! `bssh ai policy <list|show|set|test>` dispatch.
 
-use super::evaluate::{run_test, TestRun};
+use super::evaluate::{TestRun, run_test};
 use super::render::{render_list, render_show};
-use super::set::{set_policy, ScopeArgs, SetPolicy};
+use super::set::{ScopeArgs, SetPolicy, set_policy};
 use crate::cli::parser_ai::{AiArgsPolicy, AiPolicyCommands};
 use crate::config::AppConfig;
 use crate::services::ai::policy;

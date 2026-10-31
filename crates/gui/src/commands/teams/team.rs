@@ -12,7 +12,7 @@ use super::dto::{
     TeamAttentionDto, TeamAuditDto, TeamRemovePreviewDto, TeamSyncDto, TeamSyncResult,
 };
 use super::org::parse_org;
-use super::state::{message, open_store, with_session, TeamsState};
+use super::state::{TeamsState, message, open_store, with_session};
 use crate::commands::CommandError;
 use bayesian_ssh::services::teams::audit::EventCheck;
 use bayesian_ssh::services::teams::crypto::fingerprint;

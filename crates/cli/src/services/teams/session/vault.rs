@@ -6,8 +6,8 @@ use super::types::{Edit, TeamSync};
 use crate::models::Connection;
 use crate::services::inventory::sync as inventory;
 use crate::services::teams::sync::SyncEngine;
-use crate::services::teams::{queue_connection, queue_delete, queue_edit, read_vault, VaultView};
-use anyhow::{anyhow, bail, Result};
+use crate::services::teams::{VaultView, queue_connection, queue_delete, queue_edit, read_vault};
+use anyhow::{Result, anyhow, bail};
 use bssh_teams_proto::api::{ConnectionRecord, Role, VaultPayload};
 use uuid::Uuid;
 

@@ -1,5 +1,5 @@
 use crate::models::{DiscoveredHost, Source, SourceKind};
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::io::Read;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};

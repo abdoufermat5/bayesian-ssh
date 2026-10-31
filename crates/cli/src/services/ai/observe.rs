@@ -6,10 +6,10 @@
 //!
 //!
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// Entries returned at most for list-like facts, so one call can't flood the model.
 pub const MAX_ENTRIES: usize = 500;

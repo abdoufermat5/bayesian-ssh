@@ -12,7 +12,7 @@ use crate::services::ai::exec::AiExecutor;
 use crate::services::ai::hostsetup::{self, HostReport, SudoersSuggestion};
 use crate::services::ai::types::{Executor, JailKind};
 use crate::services::ai::{cert, policy};
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -232,7 +232,7 @@ fn ssh_config_jump(
     hosts: &[crate::services::inventory::ssh_config::ParsedHost],
     conn: &Connection,
 ) -> Option<String> {
-    use crate::services::inventory::ssh_config::{resolve_bastion, BastionRoute};
+    use crate::services::inventory::ssh_config::{BastionRoute, resolve_bastion};
     // The bssh name is the ssh alias for imported hosts; a hand-added name may only match
     // the HostName.
     let host = hosts.iter().find(|h| h.alias == conn.name).or_else(|| {
@@ -387,7 +387,11 @@ fn render_text(report: &DoctorReport, policy_error: Option<String>) -> String {
                     s,
                     "  warn  no read-only jail (reads fall back to the analyzer allowlist): install \
                      bubblewrap or util-linux >= 2.40{}",
-                    if h.jail_helper { "" } else { ", or the bssh-jail helper" }
+                    if h.jail_helper {
+                        ""
+                    } else {
+                        ", or the bssh-jail helper"
+                    }
                 );
             }
             kind => {
@@ -524,10 +528,11 @@ mod tests {
 
         // A ticket that exists is reported as fine, without advice.
         let ok = route_report(&bastioned("web-1"), None, Some(true));
-        assert!(ok
-            .notes
-            .iter()
-            .any(|n| n.contains("Kerberos ticket: valid")));
+        assert!(
+            ok.notes
+                .iter()
+                .any(|n| n.contains("Kerberos ticket: valid"))
+        );
         assert!(!ok.notes.iter().any(|n| n.contains("kinit")));
 
         // A plain jump host and a Kerberos connection with no ticket.
@@ -603,10 +608,12 @@ mod tests {
         assert_eq!(v["hosts"][0]["jail"], "bubblewrap");
         assert_eq!(v["hosts"][0]["ca_trusted"], false);
         assert_eq!(v["local"]["ca_fingerprint"], "SHA256:abc");
-        assert!(v["sudoers"][0]["line"]
-            .as_str()
-            .unwrap()
-            .starts_with("bssh-agent ALL=(root)"));
+        assert!(
+            v["sudoers"][0]["line"]
+                .as_str()
+                .unwrap()
+                .starts_with("bssh-agent ALL=(root)")
+        );
         assert!(v["egress_note"].as_str().unwrap().contains("firewall"));
     }
 }

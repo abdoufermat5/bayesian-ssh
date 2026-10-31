@@ -4,9 +4,9 @@
 //! Each running `bssh ai mcp` serves `<ai_dir>/runs/<run_id>.sock`; [`connect_all`] connects
 //! to every live one and removes sockets whose process is gone.
 
-use super::ipc::{ClientMsg, ServerMsg, IPC_VERSION};
+use super::ipc::{ClientMsg, IPC_VERSION, ServerMsg};
 use super::types::{ApprovalOutcome, ApprovalRequest, Grant};
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -102,8 +102,8 @@ pub use unix_impl::*;
 mod unix_impl {
     use super::*;
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-    use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
     use tokio::net::UnixStream;
+    use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 
     /// One connection to a run's control socket.
     pub struct ControlClient {
@@ -449,11 +449,12 @@ mod tests {
                 reason: "x".into(),
             })
             .unwrap();
-        assert!(c
-            .recv_timeout(Duration::from_millis(200))
-            .await
-            .unwrap()
-            .is_none());
+        assert!(
+            c.recv_timeout(Duration::from_millis(200))
+                .await
+                .unwrap()
+                .is_none()
+        );
         s.stop.send(true).unwrap();
         s.handle.await.unwrap().unwrap();
     }

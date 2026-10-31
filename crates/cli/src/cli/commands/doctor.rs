@@ -1,6 +1,6 @@
 use crate::config::AppConfig;
 use crate::database::Database;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::env;
 use std::path::PathBuf;
 

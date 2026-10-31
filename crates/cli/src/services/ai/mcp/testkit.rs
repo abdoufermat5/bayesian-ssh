@@ -12,7 +12,7 @@ use crate::services::ai::types::{
     Decision, ExecLimits, ExecMode, ExecResult, Executor, HostFacts, Policy, PolicyEngine,
     Redaction, Redactor, RiskTag, Scope, Tier, ToolCall,
 };
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};

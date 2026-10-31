@@ -4,7 +4,7 @@ use super::call_slot::CallSlot;
 use super::inventory::{DbHosts, HostSource, ScopeFn};
 use crate::config::AppConfig;
 use crate::services::ai::analyzer::ShellAnalyzer;
-use crate::services::ai::approval::{serve_control, Elicitor, LocalBroker, RunInfo};
+use crate::services::ai::approval::{Elicitor, LocalBroker, RunInfo, serve_control};
 use crate::services::ai::audit::LocalAudit;
 use crate::services::ai::exec::AiExecutor;
 use crate::services::ai::mcp::files::{FileAccess, SftpFiles};

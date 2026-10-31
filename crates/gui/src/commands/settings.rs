@@ -1,11 +1,11 @@
+use super::CommandError;
 use super::agent::start_agent;
 use super::env::create_environment;
 use super::env::set_active_env;
 use super::import::import_ssh_config;
-use super::CommandError;
 use super::{
-    bayesian_config_root, sync_search_mode_to_config, DesktopSettings, OnboardingPayload,
-    WorkspaceConfigUpdate, WorkspaceInfo,
+    DesktopSettings, OnboardingPayload, WorkspaceConfigUpdate, WorkspaceInfo, bayesian_config_root,
+    sync_search_mode_to_config,
 };
 use bayesian_ssh::config::AppConfig;
 use std::path::PathBuf;

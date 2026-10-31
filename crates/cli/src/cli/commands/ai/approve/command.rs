@@ -2,10 +2,10 @@
 //! before and after.
 
 use super::canvas::Canvas;
-use super::card::{render_card, Card};
-use super::grant::{build_grant, QUICK_GRANT_MINUTES};
-use super::listing::{summary_lines, Pending};
-use super::prompt::{approval_gate, find_request, pick, read_choice, Choice, GrantKey, Human};
+use super::card::{Card, render_card};
+use super::grant::{QUICK_GRANT_MINUTES, build_grant};
+use super::listing::{Pending, summary_lines};
+use super::prompt::{Choice, GrantKey, Human, approval_gate, find_request, pick, read_choice};
 use super::view::View;
 use super::words::human_duration;
 use crate::cli::parser_ai::AiArgsApprove;
@@ -14,7 +14,7 @@ use crate::services::ai::ai_dir;
 use crate::services::ai::control_client::connect_all;
 use crate::services::ai::types::{ApprovalOutcome, ApprovalRequest, ApprovalSubject, Tier};
 use crate::services::ai::ui::{self, Glyph, Style, Tone};
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use chrono::Utc;
 
 /// Ask each live run for its pending approvals, decide, and send the decision.
@@ -285,7 +285,9 @@ mod tests {
             "✗ Denied. opencode 2.1.2 is told \"denied by ana@cli\" and nothing ran."
         );
         let two = service_request(Tier::TwoPerson);
-        assert!(result_line(&s, &two, Ruling::Approved { granted: false })
-            .contains("recorded as the first of two"));
+        assert!(
+            result_line(&s, &two, Ruling::Approved { granted: false })
+                .contains("recorded as the first of two")
+        );
     }
 }

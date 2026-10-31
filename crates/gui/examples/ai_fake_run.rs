@@ -13,7 +13,7 @@
 mod demo {
     use bayesian_ssh::config::AppConfig;
     use bayesian_ssh::services::ai::ai_dir;
-    use bayesian_ssh::services::ai::ipc::{ClientMsg, ServerMsg, IPC_VERSION};
+    use bayesian_ssh::services::ai::ipc::{ClientMsg, IPC_VERSION, ServerMsg};
     use bayesian_ssh::services::ai::types::{
         AiEvent, Analysis, ApprovalRequest, ApprovalSubject, Decision, RiskTag, Tier, ToolCall,
         ToolName,

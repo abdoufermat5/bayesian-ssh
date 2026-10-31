@@ -356,10 +356,12 @@ impl Lexer {
             self.push(Tok::HereDoc(idx), pos);
             return Ok(());
         }
-        if let [Part::Lit {
-            text,
-            quoted: false,
-        }] = word.parts.as_slice()
+        if let [
+            Part::Lit {
+                text,
+                quoted: false,
+            },
+        ] = word.parts.as_slice()
             && text.chars().all(|c| c.is_ascii_digit())
             && matches!(self.peek(), Some('<') | Some('>'))
             && self.peek_at(1) != Some('(')

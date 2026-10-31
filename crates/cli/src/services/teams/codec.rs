@@ -2,7 +2,7 @@
 //! tested without real cryptography.
 
 use super::crypto::{self, DeviceKeys, TeamKey};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use bssh_teams_proto::api::{AuditDetail, AuditEvent, EncryptedEntry, VaultPayload, WrappedKey};
 use bssh_teams_proto::wire::PublicKey32;
 use std::collections::{BTreeMap, HashMap};
@@ -381,14 +381,16 @@ mod tests {
         .expect("member unwraps a key signed by the pinned admin");
 
         // A wrap replayed for another team or device is refused before unwrapping.
-        assert!(unwrap_all(
-            Uuid::new_v4(),
-            member_id,
-            std::slice::from_ref(&wrapped),
-            &member,
-            &trust_root
-        )
-        .is_err());
+        assert!(
+            unwrap_all(
+                Uuid::new_v4(),
+                member_id,
+                std::slice::from_ref(&wrapped),
+                &member,
+                &trust_root
+            )
+            .is_err()
+        );
         assert!(unwrap_all(team, Uuid::new_v4(), &[wrapped], &member, &trust_root).is_err());
 
         let member_codec = CryptoCodec::new(

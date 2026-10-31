@@ -3,9 +3,9 @@
 use super::convert::{exit_text, reds, to_value};
 use super::exec::exec_out;
 use super::inputs::{ObserveArgs, ReadFileArgs, SearchLogsArgs};
-use super::outputs::{FileOut, ObserveOut, NOTICE};
+use super::outputs::{FileOut, NOTICE, ObserveOut};
 use crate::models::Connection;
-use crate::services::ai::mcp::context::{merge_redactions, RunContext, ToolError, ToolResult};
+use crate::services::ai::mcp::context::{RunContext, ToolError, ToolResult, merge_redactions};
 use crate::services::ai::mcp::util::{normalize_path, sh_quote, valid_since, valid_unit};
 use crate::services::ai::observe;
 use crate::services::ai::types::{ExecLimits, ExecMode, ToolName};

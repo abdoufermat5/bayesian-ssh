@@ -55,9 +55,9 @@ mod validation;
 #[cfg(test)]
 mod tests;
 
-pub use budget::{circuit_breaker, parse_duration, PROBE_LIMIT, PROBE_WINDOW};
+pub use budget::{PROBE_LIMIT, PROBE_WINDOW, circuit_breaker, parse_duration};
 pub use engine::DefaultPolicyEngine;
 pub use profile::{builtin_profile, resolve};
-pub use scope::{connection_facts, host_in_scope, tags_trusted, TagTrust, ALL_HOSTS};
+pub use scope::{ALL_HOSTS, TagTrust, connection_facts, host_in_scope, tags_trusted};
 pub use tier::tier_for_call;
 pub use validation::{validation_warnings, validation_warnings_in};

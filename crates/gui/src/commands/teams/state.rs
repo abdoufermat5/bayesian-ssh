@@ -9,9 +9,9 @@
 
 use crate::commands::CommandError;
 use bayesian_ssh::config::AppConfig;
+use bayesian_ssh::services::teams::TeamsStore;
 use bayesian_ssh::services::teams::crypto::DeviceKeys;
 use bayesian_ssh::services::teams::session::{self, Session};
-use bayesian_ssh::services::teams::TeamsStore;
 use serde::Serialize;
 use std::future::Future;
 use std::sync::{Arc, Mutex};

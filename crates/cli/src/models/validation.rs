@@ -23,7 +23,9 @@ pub enum ValidationError {
     StartsWithDash { label: &'static str },
     #[error("{label} has an invalid bracketed IPv6 literal.")]
     InvalidBracketedIpv6 { label: &'static str },
-    #[error("{label} contains invalid characters (spaces, quotes, shell metacharacters, or '@' are not allowed).")]
+    #[error(
+        "{label} contains invalid characters (spaces, quotes, shell metacharacters, or '@' are not allowed)."
+    )]
     InvalidChars { label: &'static str },
     #[error("{label} contains invalid control characters.")]
     InvalidControl { label: &'static str },

@@ -1,9 +1,9 @@
 use crate::config::AppConfig;
 use crate::services::inventory::ssh_config::{
-    parse_ssh_config, resolve_bastion, BastionRoute, ParsedHost,
+    BastionRoute, ParsedHost, parse_ssh_config, resolve_bastion,
 };
 use crate::services::{NewConnection, SshService};
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use tracing::info;
 
 /// How an import treats bastion routes declared in the SSH config.

@@ -88,31 +88,39 @@ fn rejects_bad_steps() {
         action: Some(ServiceActionArg::Stop),
         ..Default::default()
     });
-    assert!(build_plan("r", "c", i)
-        .unwrap_err()
-        .to_string()
-        .contains("exactly one"));
+    assert!(
+        build_plan("r", "c", i)
+            .unwrap_err()
+            .to_string()
+            .contains("exactly one")
+    );
 
     let mut i = input();
     i.steps[1].host = None;
-    assert!(build_plan("r", "c", i)
-        .unwrap_err()
-        .to_string()
-        .contains("host is required"));
+    assert!(
+        build_plan("r", "c", i)
+            .unwrap_err()
+            .to_string()
+            .contains("host is required")
+    );
 
     let mut i = input();
     i.rollback[0].undo = Some("step-2".into());
-    assert!(build_plan("r", "c", i)
-        .unwrap_err()
-        .to_string()
-        .contains("not an edit step"));
+    assert!(
+        build_plan("r", "c", i)
+            .unwrap_err()
+            .to_string()
+            .contains("not an edit step")
+    );
 
     let mut i = input();
     i.steps[2].service = Some("nginx; reboot".into());
-    assert!(build_plan("r", "c", i)
-        .unwrap_err()
-        .to_string()
-        .contains("invalid unit"));
+    assert!(
+        build_plan("r", "c", i)
+            .unwrap_err()
+            .to_string()
+            .contains("invalid unit")
+    );
 
     let mut i = input();
     i.steps[0].patch = Some("not a patch".into());

@@ -1,6 +1,6 @@
 //! Matching paths and `deny_paths` entries, literal or glob on either side.
 
-use super::glob::{glob_match, normalize_path, tokens, GlobMode, Tok};
+use super::glob::{GlobMode, Tok, glob_match, normalize_path, tokens};
 
 pub(super) fn path_matches_any(patterns: &[String], path: &str) -> Option<String> {
     let norm = normalize_path(path);

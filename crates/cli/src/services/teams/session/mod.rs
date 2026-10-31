@@ -22,15 +22,15 @@ mod vault;
 #[cfg(test)]
 mod tests;
 
-pub use audit::{AuditLine, AuditQuery, TeamAudit, DEFAULT_AUDIT_LIMIT};
+pub use audit::{AuditLine, AuditQuery, DEFAULT_AUDIT_LIMIT, TeamAudit};
 pub use billing::explain;
 pub use handle::Session;
 pub use identity::{
-    init, init_interactive, load_identity, request_email_code, unlock, EmailCodePrompt, Identity,
-    InitParams,
+    EmailCodePrompt, Identity, InitParams, init, init_interactive, load_identity,
+    request_email_code, unlock,
 };
 pub use local::{local_team_names, local_teams, record_session_start, resolve_team};
-pub use removal::{plan_removal, PreviewDevice, RemovePreview, TeamAttentionState};
+pub use removal::{PreviewDevice, RemovePreview, TeamAttentionState, plan_removal};
 pub use types::{AgentCreated, Edit, JoinWith, PendingDevice, TeamSync};
 
-pub(crate) use local::{kind_from_str, kind_str, materialize_into, team_of_connection, SCHEMA_V9};
+pub(crate) use local::{SCHEMA_V9, kind_from_str, kind_str, materialize_into, team_of_connection};

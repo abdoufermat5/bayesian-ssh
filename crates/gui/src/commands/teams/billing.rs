@@ -7,7 +7,7 @@
 //! Each operation runs on its own thread with a single-threaded runtime: the
 //! sync engine's futures hold the SQLite connection and aren't `Send`.
 
-use super::state::{with_session, TeamsState};
+use super::state::{TeamsState, with_session};
 use super::team::resolve;
 use crate::commands::CommandError;
 use tauri::State;

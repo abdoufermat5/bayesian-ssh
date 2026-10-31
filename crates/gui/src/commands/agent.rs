@@ -202,9 +202,10 @@ mod tests {
     fn test_add_key_nonexistent_file() {
         let res = add_key_to_agent("/path/to/definitely_nonexistent_key_12345".to_string());
         assert!(res.is_err());
-        assert!(res
-            .unwrap_err()
-            .to_string()
-            .contains("Key file does not exist"));
+        assert!(
+            res.unwrap_err()
+                .to_string()
+                .contains("Key file does not exist")
+        );
     }
 }

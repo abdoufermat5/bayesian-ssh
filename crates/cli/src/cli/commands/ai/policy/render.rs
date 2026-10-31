@@ -255,7 +255,9 @@ mod tests {
         assert!(text.contains("reads       /var/log/*"));
         assert!(text.contains("writes      /var/www/*"));
         assert!(text.contains("denies      /etc/shadow, reboot"));
-        assert!(text.contains("budgets     30 calls/min · 10 changes/run · 5 denials/min · 2h ttl"));
+        assert!(
+            text.contains("budgets     30 calls/min · 10 changes/run · 5 denials/min · 2h ttl")
+        );
         assert!(text.contains("redact      vault secrets: yes · patterns: default"));
     }
 

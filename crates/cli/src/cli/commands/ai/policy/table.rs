@@ -1,8 +1,8 @@
 //! The aligned result table of `bssh ai policy test` and its summary.
 
 use super::test_file::{
-    count_mismatches, decision_kind, decision_reason, expected_label, is_mismatch,
-    ExpectedDecision, TestOutcome,
+    ExpectedDecision, TestOutcome, count_mismatches, decision_kind, decision_reason,
+    expected_label, is_mismatch,
 };
 use crate::services::ai::types::Decision;
 use crate::services::ai::ui::{self, Glyph, Style, Tone};

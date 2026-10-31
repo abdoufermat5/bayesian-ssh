@@ -86,8 +86,8 @@ fn main() {
 #[cfg(target_os = "linux")]
 fn jail(extra_read: &[String]) -> Result<(), String> {
     use landlock::{
-        Access, AccessFs, AccessNet, CompatLevel, Compatible, PathBeneath, PathFd, Ruleset,
-        RulesetAttr, RulesetCreatedAttr, RulesetStatus, ABI,
+        ABI, Access, AccessFs, AccessNet, CompatLevel, Compatible, PathBeneath, PathFd, Ruleset,
+        RulesetAttr, RulesetCreatedAttr, RulesetStatus,
     };
 
     // The newest ABI we know; best-effort drops rights an older kernel doesn't have

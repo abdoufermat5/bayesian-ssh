@@ -1,4 +1,4 @@
-use super::{config_bool, run_command, InventoryProvider};
+use super::{InventoryProvider, config_bool, run_command};
 use crate::models::{DiscoveredHost, Source};
 use anyhow::{Context, Result};
 use serde_json::Value;

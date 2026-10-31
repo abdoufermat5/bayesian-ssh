@@ -2,10 +2,10 @@
 
 use super::canvas::Canvas;
 use super::grant::build_grant;
-use super::listing::{summary_lines, Pending};
+use super::listing::{Pending, summary_lines};
 use crate::cli::parser_ai::AiArgsApprove;
 use crate::services::ai::types::ApprovalRequest;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use chrono::Utc;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use std::io::{BufRead, IsTerminal, Write};
@@ -130,11 +130,7 @@ impl Human {
         let tty = std::io::stdin().is_terminal()
             && std::io::stdout().is_terminal()
             && std::io::stderr().is_terminal();
-        if tty {
-            Self::AtTerminal
-        } else {
-            Self::Piped
-        }
+        if tty { Self::AtTerminal } else { Self::Piped }
     }
 }
 

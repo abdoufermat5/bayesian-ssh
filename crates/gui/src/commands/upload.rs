@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 
 use bayesian_ssh::models::Connection;
 use bayesian_ssh::services::upload::{
-    upload_to_hosts, HostUploadResult, UploadEvent, UploadEventFn, UploadRequest,
+    HostUploadResult, UploadEvent, UploadEventFn, UploadRequest, upload_to_hosts,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};

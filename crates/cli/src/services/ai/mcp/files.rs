@@ -12,10 +12,10 @@
 use crate::config::AppConfig;
 use crate::models::Connection;
 use crate::services::transport::{
-    pick_kind, ExecOptions, LimitedOutput, RusshTransport, SshTransport, SubprocessTransport,
-    TransportKind,
+    ExecOptions, LimitedOutput, RusshTransport, SshTransport, SubprocessTransport, TransportKind,
+    pick_kind,
 };
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use async_trait::async_trait;
 use base64::Engine;
 use std::time::Duration;
