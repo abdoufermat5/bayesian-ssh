@@ -46,8 +46,8 @@ impl TeamsError {
     }
 
     /// The server wants proof that the account owns its email: request a code
-    /// with [`TeamsClient::request_email_code`] and retry with it in
-    /// [`CreateAccountRequest::email_code`].
+    /// with [`TeamsClient::request_email_code`](super::TeamsClient::request_email_code) and retry with it in
+    /// [`CreateAccountRequest::email_code`](bssh_teams_proto::api::CreateAccountRequest::email_code).
     pub fn is_email_verification_required(&self) -> bool {
         self.code() == Some(ErrorCode::EmailVerificationRequired)
     }

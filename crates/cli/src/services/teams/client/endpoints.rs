@@ -286,7 +286,7 @@ impl TeamsClient {
     }
 
     /// One page of the team's audit log (admins only), as `query` describes:
-    /// filters, order, page size and cursor. [`walk_audit_pages`] reads every
+    /// filters, order, page size and cursor. [`walk_audit_pages`](super::walk_audit_pages) reads every
     /// page.
     pub async fn list_audit(
         &self,

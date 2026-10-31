@@ -1,6 +1,6 @@
 //! Policy engine: scope, deny > ask > allow, tiers, grants, budgets.
 //!
-//! Order of evaluation in [`DefaultPolicyEngine::decide`] (first match wins, so deny always
+//! Order of evaluation in [`DefaultPolicyEngine::decide`](crate::services::ai::types::PolicyEngine::decide) (first match wins, so deny always
 //! beats ask and ask beats allow):
 //!
 //! 1. host out of scope, or the call has no host when it needs one: deny (counts as probing)

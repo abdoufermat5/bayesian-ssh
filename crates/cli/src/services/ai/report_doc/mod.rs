@@ -1,6 +1,6 @@
 //! Run reports as documents someone can read without bssh: text, Markdown, HTML, PDF, JSON.
 //!
-//! Every document is built from a [`RunReport`], so from the audit log and the change
+//! Every document is built from a [`RunReport`](crate::services::ai::report::RunReport), so from the audit log and the change
 //! records on disk. Nothing here is written by a model.
 
 mod doc;

@@ -1,6 +1,6 @@
 //! The feed: one aligned line per event, for `bssh ai watch` now and `bssh ai log <run>` later.
 //!
-//! Everything here is a pure function over [`AiEvent`] (no IO, no clock): the caller passes
+//! Everything here is a pure function over [`AiEvent`](crate::services::ai::types::AiEvent) (no IO, no clock): the caller passes
 //! the time an event happened, and a [`FeedContext`] remembers what later lines need (which
 //! call a result belongs to, which request an approval answers, counts for the run-ended line).
 //!

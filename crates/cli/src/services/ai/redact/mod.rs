@@ -3,7 +3,7 @@
 //! [`SecretRedactor`] removes exact values from the bssh vault,
 //! private-key blocks, common token formats, credentials embedded in URLs and
 //! `key=value` secrets. Each hit becomes `«redacted:<kind>»` and is counted in
-//! the returned [`Redaction`] list (one entry per kind, sorted by kind).
+//! the returned [`Redaction`](crate::services::ai::types::Redaction) list (one entry per kind, sorted by kind).
 //!
 //! Rules apply in a fixed order: private-key blocks, vault secrets, token
 //! formats, URL credentials, then `key=value`. Markers contain no character
