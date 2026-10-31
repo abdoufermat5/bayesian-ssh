@@ -18,6 +18,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use bayesian_ssh::config::AppConfig;
 use bayesian_ssh::services::ai::ipc::{ClientMsg, ServerMsg};
+use bayesian_ssh::services::ai::report;
+use bayesian_ssh::services::ai::report_doc::{self, ReportFormat};
 use bayesian_ssh::services::ai::types::{
     AiEvent, ApprovalOutcome, ApprovalRequest, ApprovalSubject, Decision, Grant, Policy, RiskTag,
     ToolName,
@@ -891,6 +893,51 @@ pub fn ai_settings() -> Result<AiSettingsView, String> {
         trusted_tag_sources: config.ai.trusted_tag_sources,
         config_path,
     })
+}
+
+/// Past runs from the active environment's audit log, newest first.
+#[tauri::command(async)]
+pub fn ai_reports(limit: Option<usize>) -> Result<Vec<report::RunSummary>, String> {
+    let config = AppConfig::load(None).map_err(|e| e.to_string())?;
+    report::list_runs(&config, limit.unwrap_or(200)).map_err(|e| e.to_string())
+}
+
+/// The report of one run, from the audit log and its change records.
+#[tauri::command(async)]
+pub fn ai_report(run_id: String) -> Result<report::RunReport, String> {
+    let config = AppConfig::load(None).map_err(|e| e.to_string())?;
+    report::run_report(&config, &run_id).map_err(|e| e.to_string())
+}
+
+/// Save a run's report through a save dialog. `None` when the user cancels.
+/// Sync like the other file dialogs (`commands::dialogs`): they run on the main thread.
+#[tauri::command]
+pub fn ai_report_export(
+    window: tauri::WebviewWindow,
+    run_id: String,
+    format: String,
+) -> Result<Option<String>, String> {
+    let format: ReportFormat = format.parse()?;
+    let config = AppConfig::load(None).map_err(|e| e.to_string())?;
+    let r = report::run_report(&config, &run_id).map_err(|e| e.to_string())?;
+    let mut dialog = rfd::FileDialog::new()
+        .set_title("Save run report")
+        .set_file_name(report_doc::file_name(&r, format))
+        .add_filter(format.label(), &[format.extension()])
+        .set_parent(&window);
+    if let Some(dir) = dirs::download_dir().or_else(dirs::home_dir) {
+        dialog = dialog.set_directory(dir);
+    }
+    let _ = window.minimize();
+    let picked = dialog.save_file();
+    let _ = window.unminimize();
+    let _ = window.set_focus();
+    let Some(path) = picked else {
+        return Ok(None);
+    };
+    let bytes = report_doc::render(&r, format, chrono::Local::now()).map_err(|e| e.to_string())?;
+    std::fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok(Some(path.to_string_lossy().into_owned()))
 }
 
 // ---------------------------------------------------------------- tests

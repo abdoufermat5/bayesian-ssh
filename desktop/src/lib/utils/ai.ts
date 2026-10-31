@@ -52,9 +52,9 @@ export function toolLabel(tool: string): string {
   return TOOL_LABEL[tool as AiToolName] ?? tool;
 }
 
-/** Short run id for lists: the first 8 characters. */
+/** The 8-character form of an id, as the CLI prints it: `change-696de2f2` becomes `696de2f2`. */
 export function shortId(id: string): string {
-  return id.length > 8 ? id.slice(0, 8) : id;
+  return id.replace(/^change-/, "").slice(0, 8);
 }
 
 export function formatCountdown(msLeft: number): string {
@@ -250,7 +250,21 @@ export function redactionSummary(redactions: AiRedaction[]): string {
   return `${total} ${total === 1 ? "redaction" : "redactions"} (${kinds})`;
 }
 
-export function decisionLabel(decision: AiDecision): { label: string; badge: string } {
+/** "2 h 5 min", "45 s": how long a run lasted. Empty when either end is missing or invalid. */
+export function formatDuration(startIso: string | null, endIso: string | null): string {
+  if (!startIso || !endIso) return "";
+  const ms = Date.parse(endIso) - Date.parse(startIso);
+  if (Number.isNaN(ms) || ms < 0) return "";
+  const total = Math.round(ms / 1000);
+  if (total < 60) return `${total} s`;
+  const minutes = Math.floor(total / 60);
+  if (minutes < 60) return `${minutes} min ${total % 60} s`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} h ${minutes % 60} min`;
+  return `${Math.floor(hours / 24)} d ${hours % 24} h`;
+}
+
+export function decisionLabel(decision: Pick<AiDecision, "decision">): { label: string; badge: string } {
   switch (decision.decision) {
     case "allow":
       return { label: "Allowed", badge: "badge-success" };

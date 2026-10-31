@@ -153,6 +153,12 @@ pub struct AiArgsLog {
     /// Print the run report (changes, diffs, undo points) instead of the event list
     #[arg(long)]
     pub report: bool,
+    /// The full report as a document to read or share: txt, md, html, pdf or json
+    #[arg(long, value_name = "FORMAT")]
+    pub format: Option<crate::services::ai::report_doc::ReportFormat>,
+    /// Write the report document to this file (needed for pdf; the format defaults to its extension)
+    #[arg(long, short = 'o', value_name = "FILE")]
+    pub output: Option<std::path::PathBuf>,
 }
 
 #[derive(Args, Debug)]

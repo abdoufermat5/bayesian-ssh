@@ -182,7 +182,10 @@ pub fn run() {
             commands::ai::ai_stop,
             commands::ai::ai_resume,
             commands::ai::ai_revoke_grant,
-            commands::ai::ai_settings
+            commands::ai::ai_settings,
+            commands::ai::ai_reports,
+            commands::ai::ai_report,
+            commands::ai::ai_report_export
         ])
         .run(context)
         .expect("error while running tauri application");

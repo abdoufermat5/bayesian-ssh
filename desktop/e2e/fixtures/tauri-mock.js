@@ -25,6 +25,9 @@
  *   window.__MOCK_AI_RUNS   - runs `ai_list_runs` returns (default none).
  *   window.__MOCK_AI_EVENTS - `{ [runId]: StoredEvent[] }` for `ai_run_events`.
  *   window.__MOCK_AI_SETTINGS - what `ai_settings` returns.
+ *   window.__MOCK_AI_REPORTS - past runs `ai_reports` returns (default none).
+ *   window.__MOCK_AI_REPORT  - `{ [runId]: RunReport }` for `ai_report`.
+ *   window.__MOCK_AI_SAVE_DIR - where `ai_report_export` "saves"; null = cancelled.
  *   window.__UPLOAD_DELAY   - ms delay per upload progress step (default 20).
  *   window.__UPLOAD_SCP_HOSTS  - host names that report `viaScp` (default
  *                             ["homelab-nas"]).
@@ -508,6 +511,16 @@
         record_output: true,
         approval_timeout_secs: 300,
       },
+    ai_reports: () => window.__MOCK_AI_REPORTS || [],
+    ai_report: (a) => {
+      const r = (window.__MOCK_AI_REPORT || {})[a && a.runId];
+      if (!r) throw `no run '${a && a.runId}' in the audit log`;
+      return r;
+    },
+    ai_report_export: (a) => {
+      const dir = window.__MOCK_AI_SAVE_DIR === undefined ? "/home/user/Downloads" : window.__MOCK_AI_SAVE_DIR;
+      return dir === null ? null : `${dir}/bssh-run-${String(a.runId).slice(0, 8)}.${a.format}`;
+    },
   };
 
   const sessionChannels = new Map();

@@ -3,7 +3,10 @@
 //! Reports are built from the audit log only, never by a model.
 
 use super::audit::{read_entries, AuditEntry};
-use super::types::{AiEvent, ApprovalOutcome, Decision, ExecResult, Redaction};
+use super::plan::{ChangeRecord, PlanState, StepRecord};
+use super::types::{
+    AiEvent, ApprovalOutcome, ChangePlan, Decision, ExecResult, Redaction, Step, StepAction,
+};
 use super::ui::{self, Glyph, Style, Tone};
 use crate::config::AppConfig;
 use crate::services::recording::{recordings_dir, Recorder};
@@ -162,6 +165,23 @@ pub struct ReportApproval {
     pub reason: Option<String>,
 }
 
+/// One step of a change: what the plan said and how it ran.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReportStep {
+    /// `step`, `verify` or `undo`.
+    pub phase: String,
+    pub id: String,
+    pub host: Option<String>,
+    /// In words: the command, `edit /etc/x`, `restart nginx`.
+    pub action: String,
+    /// `None`: the step never ran.
+    pub ok: Option<bool>,
+    pub exit_code: Option<i32>,
+    pub error: Option<String>,
+    /// Remote output, redacted and cut when it was recorded. Untrusted.
+    pub output: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReportChange {
     pub seq: u64,
@@ -170,20 +190,26 @@ pub struct ReportChange {
     pub plan_hash: String,
     pub applied: bool,
     pub undo_point: Option<String>,
-    #[serde(skip_serializing, default)]
+    // The fields below come from the change record on disk, not the audit log.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub title: Option<String>,
-    #[serde(skip_serializing, default)]
+    /// Written by the agent.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub approved_by: Option<String>,
-    #[serde(skip_serializing, default)]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub approved_channel: Option<String>,
-    #[serde(skip_serializing, default)]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub approved_at: Option<String>,
-    #[serde(skip_serializing, default)]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub steps_ok: Option<(usize, usize)>,
-    #[serde(skip_serializing, default)]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub checks_ok: Option<(usize, usize)>,
-    #[serde(skip_serializing, default)]
+    #[serde(default)]
     pub undone: bool,
+    #[serde(default)]
+    pub steps: Vec<ReportStep>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RunReport {
@@ -381,12 +407,14 @@ pub fn build_report(entries: &[AuditEntry], run_id: &str) -> RunReport {
                 applied: *applied,
                 undo_point: undo_point.clone(),
                 title: None,
+                reason: None,
                 approved_by: None,
                 approved_channel: None,
                 approved_at: None,
                 steps_ok: None,
                 checks_ok: None,
                 undone: false,
+                steps: Vec::new(),
             }),
             AiEvent::Paused { reason, .. } => r.circuit_breaker.push(reason.clone()),
             AiEvent::Resumed { .. } => {}
@@ -424,6 +452,66 @@ pub fn run_report(config: &AppConfig, run_id: &str) -> Result<RunReport> {
     Ok(r)
 }
 
+/// `<ai_dir>/changes/<run>/<change>.json`, as `plan::persist_record` writes it.
+#[derive(Deserialize)]
+struct StoredChange {
+    plan: Option<ChangePlan>,
+    approved_by: Option<String>,
+    state: Option<PlanState>,
+    #[serde(default)]
+    record: ChangeRecord,
+}
+
+fn step_action(action: &StepAction) -> String {
+    match action {
+        StepAction::Run { command } => command.clone(),
+        StepAction::EditFile { path, .. } => format!("edit {path}"),
+        StepAction::Service { unit, action } => {
+            let verb = serde_json::to_value(action)
+                .ok()
+                .and_then(|v| v.as_str().map(String::from))
+                .unwrap_or_default();
+            format!("{verb} {unit}")
+        }
+        StepAction::Undo { step } => format!("undo {step}"),
+    }
+}
+
+fn report_step(phase: &str, planned: Option<&Step>, ran: Option<&StepRecord>) -> ReportStep {
+    ReportStep {
+        phase: phase.into(),
+        id: planned
+            .map(|s| s.id.clone())
+            .or_else(|| ran.map(|r| r.id.clone()))
+            .unwrap_or_default(),
+        host: planned
+            .and_then(|s| s.host.clone())
+            .or_else(|| ran.and_then(|r| r.host.clone())),
+        action: planned
+            .map(|s| step_action(&s.action))
+            .or_else(|| ran.map(|r| r.kind.clone()))
+            .unwrap_or_default(),
+        ok: ran.map(|r| r.ok),
+        exit_code: ran.and_then(|r| r.exit_code),
+        error: ran.and_then(|r| r.error.clone()),
+        output: ran
+            .map(|r| r.untrusted_output.clone())
+            .filter(|o| !o.trim().is_empty()),
+    }
+}
+
+/// Planned steps in plan order, each with its record when it ran.
+fn report_steps(phase: &str, planned: &[Step], ran: &[StepRecord]) -> Vec<ReportStep> {
+    planned
+        .iter()
+        .map(|s| report_step(phase, Some(s), ran.iter().find(|r| r.id == s.id)))
+        .collect()
+}
+
+fn ok_count(records: &[StepRecord]) -> (usize, usize) {
+    (records.iter().filter(|s| s.ok).count(), records.len())
+}
+
 fn enrich_changes_from_disk(
     config: &AppConfig,
     run_id: &str,
@@ -435,31 +523,30 @@ fn enrich_changes_from_disk(
         .join(run_id);
     for c in changes.iter_mut() {
         let path = changes_dir.join(format!("{}.json", c.change_id));
-        if let Ok(data) = std::fs::read(&path) {
-            if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&data) {
-                if let Some(title) = v["plan"]["title"].as_str() {
-                    c.title = Some(title.to_string());
-                }
-                if let Some(by) = v["approved_by"].as_str() {
-                    c.approved_by = Some(by.to_string());
-                }
-                if v["state"].as_str() == Some("undone") {
-                    c.undone = true;
-                }
-                if let Some(steps) = v["record"]["steps"].as_array() {
-                    let ok_count = steps
-                        .iter()
-                        .filter(|s| s["ok"].as_bool() == Some(true))
-                        .count();
-                    c.steps_ok = Some((ok_count, steps.len()));
-                }
-                if let Some(verify) = v["record"]["verify"].as_array() {
-                    let ok_count = verify
-                        .iter()
-                        .filter(|s| s["ok"].as_bool() == Some(true))
-                        .count();
-                    c.checks_ok = Some((ok_count, verify.len()));
-                }
+        let stored = std::fs::read(&path)
+            .ok()
+            .and_then(|data| serde_json::from_slice::<StoredChange>(&data).ok());
+        if let Some(s) = stored {
+            let rec = &s.record;
+            if let Some(plan) = &s.plan {
+                c.title = Some(plan.title.clone());
+                c.reason = Some(plan.reason.clone()).filter(|r| !r.trim().is_empty());
+                c.steps = report_steps("step", &plan.steps, &rec.steps);
+                c.steps
+                    .extend(report_steps("verify", &plan.verify, &rec.verify));
+                c.steps.extend(rec.undo.iter().map(|r| {
+                    report_step("undo", plan.rollback.iter().find(|s| s.id == r.id), Some(r))
+                }));
+            }
+            if let Some(by) = s.approved_by {
+                c.approved_by = Some(by);
+            }
+            c.undone = s.state == Some(PlanState::Undone);
+            if !rec.steps.is_empty() {
+                c.steps_ok = Some(ok_count(&rec.steps));
+            }
+            if !rec.verify.is_empty() {
+                c.checks_ok = Some(ok_count(&rec.verify));
             }
         }
         if c.approved_by.is_none() {
@@ -770,7 +857,7 @@ pub struct RunSummary {
     pub calls: usize,
     pub denials: usize,
     pub changes: usize,
-    #[serde(skip_serializing, default)]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub end_reason: Option<String>,
 }
 
@@ -1066,6 +1153,101 @@ mod tests {
         assert_eq!(runs[1].calls, 3);
     }
 
+    #[test]
+    fn change_steps_come_from_the_change_record() {
+        let d = tempfile::tempdir().unwrap();
+        let c = cfg(d.path());
+        fixture(&c);
+        let step = |id: &str, action: StepAction| Step {
+            id: id.into(),
+            host: Some("web1".into()),
+            action,
+        };
+        let ran = |id: &str, ok: bool, out: &str| StepRecord {
+            id: id.into(),
+            host: Some("web1".into()),
+            kind: "run".into(),
+            ok,
+            exit_code: Some(if ok { 0 } else { 3 }),
+            output_sha256: None,
+            untrusted_output: out.into(),
+            error: None,
+        };
+        let plan = ChangePlan {
+            change_id: "chg1".into(),
+            run_id: "run-1".into(),
+            title: "Restart nginx".into(),
+            reason: "stale workers".into(),
+            steps: vec![
+                step(
+                    "step-1",
+                    StepAction::Service {
+                        unit: "nginx".into(),
+                        action: ServiceAction::Restart,
+                    },
+                ),
+                step(
+                    "step-2",
+                    StepAction::EditFile {
+                        path: "/etc/nginx/nginx.conf".into(),
+                        patch: String::new(),
+                    },
+                ),
+            ],
+            verify: vec![step(
+                "step-3",
+                StepAction::Run {
+                    command: "systemctl is-active nginx".into(),
+                },
+            )],
+            rollback: vec![],
+        };
+        // The shape `plan::persist_record` writes.
+        let body = serde_json::json!({
+            "change_id": "chg1",
+            "run_id": "run-1",
+            "plan": plan,
+            "plan_hash": "deadbeef",
+            "approved_by": "alice@desktop",
+            "state": PlanState::Failed,
+            "record": ChangeRecord {
+                steps: vec![ran("step-1", false, "Job failed\n")],
+                ..Default::default()
+            },
+        });
+        let dir = crate::services::ai::ai_dir(&c)
+            .join("changes")
+            .join("run-1");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("chg1.json"), body.to_string()).unwrap();
+
+        let ch = &run_report(&c, "run-1").unwrap().changes[0];
+        assert_eq!(ch.title.as_deref(), Some("Restart nginx"));
+        assert_eq!(ch.reason.as_deref(), Some("stale workers"));
+        assert_eq!(ch.approved_by.as_deref(), Some("alice@desktop"));
+        assert_eq!(ch.steps_ok, Some((0, 1)));
+        assert_eq!(ch.checks_ok, None);
+        let got: Vec<(&str, &str, Option<bool>)> = ch
+            .steps
+            .iter()
+            .map(|s| (s.phase.as_str(), s.action.as_str(), s.ok))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                ("step", "restart nginx", Some(false)),
+                ("step", "edit /etc/nginx/nginx.conf", None),
+                ("verify", "systemctl is-active nginx", None),
+            ]
+        );
+        assert_eq!(ch.steps[0].exit_code, Some(3));
+        assert_eq!(ch.steps[0].output.as_deref(), Some("Job failed\n"));
+        // The desktop app reads these from the JSON.
+        let j = serde_json::to_value(ch).unwrap();
+        assert_eq!(j["title"], "Restart nginx");
+        assert_eq!(j["steps"][0]["action"], "restart nginx");
+    }
+
     fn res() -> ExecResult {
         ExecResult {
             stdout: "hello\nworld\n".into(),
@@ -1253,12 +1435,14 @@ mod tests {
                 title: Some(
                     "Free 228 MB on web-1 /var/www (archive 3 old releases + stale bundle)".into(),
                 ),
+                reason: None,
                 approved_by: Some("ana".into()),
                 approved_channel: Some("in-band".into()),
                 approved_at: Some("2026-10-24T17:24:44Z".into()),
                 steps_ok: Some((1, 1)),
                 checks_ok: Some((2, 2)),
                 undone: false,
+                steps: Vec::new(),
             }],
             denials: vec!["run_readonly touch: writes in a read-only call".into()],
             redactions: vec![],

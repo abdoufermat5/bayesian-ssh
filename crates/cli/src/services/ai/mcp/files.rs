@@ -195,9 +195,7 @@ impl SftpFiles {
         // line discipline would otherwise rewrite bytes.
         let expect = (size.saturating_sub(offset)).min(max_bytes as u64) as usize;
         let b64_cap = expect.div_ceil(3) * 4 + 4096;
-        let cmd = format!(
-            "dd if={quoted} bs=1 skip={offset} count={expect} 2>/dev/null | base64"
-        );
+        let cmd = format!("dd if={quoted} bs=1 skip={offset} count={expect} 2>/dev/null | base64");
         let out = self.exec(conn, &cmd, READ_TIMEOUT, b64_cap).await?;
         if out.timed_out {
             bail!("read {path}: timed out");

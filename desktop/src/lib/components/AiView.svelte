@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { Bot, OctagonX, Play } from "lucide-svelte";
-  import type { AiRun } from "$lib/types";
+  import { onMount, untrack } from "svelte";
+  import { invoke } from "@tauri-apps/api/core";
+  import { ChevronDown, Bot, Download, FileText, OctagonX, Play, RefreshCw } from "lucide-svelte";
+  import type { AiReport, AiReportFormat, AiReportSummary, AiRun } from "$lib/types";
   import {
     getAiEvents,
     getAiRun,
@@ -13,6 +14,7 @@
     stopAiRun,
   } from "$lib/stores/ai.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
+  import RunReport from "./ai/RunReport.svelte";
   import { formatDateTime, formatRelative } from "$lib/utils/timezone";
   import {
     buildTimeline,
@@ -35,8 +37,33 @@
   let now = $state(Date.now());
   let stopping = $state(false);
   let resuming = $state(false);
+  let mode = $state<"live" | "reports">("live");
+
+  let reports = $state.raw<AiReportSummary[]>([]);
+  let reportsLoading = $state(false);
+  let reportsError = $state<string | null>(null);
+  /** Chosen run in the list; null follows the newest one. */
+  let reportId = $state<string | null>(null);
+  let reportCache = $state.raw<Record<string, AiReport>>({});
+  let reportLoadingId = $state<string | null>(null);
+  let reportError = $state<string | null>(null);
+  let downloadMenuOpen = $state(false);
+  let exporting = $state(false);
+  let listRequest = 0;
+
+  const FORMATS: { id: AiReportFormat; label: string }[] = [
+    { id: "txt", label: "Text (.txt)" },
+    { id: "md", label: "Markdown (.md)" },
+    { id: "html", label: "HTML (.html)" },
+    { id: "pdf", label: "PDF (.pdf)" },
+    { id: "json", label: "JSON (.json)" },
+  ];
 
   const runs = $derived(getAiRuns());
+  const liveIds = $derived(new Set(runs.filter((r) => r.connected && r.ended === null).map((r) => r.run_id)));
+  const reportRunId = $derived(reportId ?? reports[0]?.run_id ?? null);
+  const shownReport = $derived(reportRunId ? (reportCache[reportRunId] ?? null) : null);
+  const reportLoading = $derived(reportRunId !== null && reportLoadingId === reportRunId);
   const selected = $derived<AiRun | null>(getAiRun(selectedId) ?? runs[0] ?? null);
   const waiting = $derived(pendingApprovals());
   const selectedWaiting = $derived(selected ? waiting.filter((p) => p.run.run_id === selected.run_id) : []);
@@ -48,6 +75,88 @@
     const timer = setInterval(() => (now = Date.now()), 30_000);
     return () => clearInterval(timer);
   });
+
+  // Fetch the chosen run's report once; Refresh clears the cache.
+  $effect(() => {
+    const id = mode === "reports" ? reportRunId : null;
+    if (id) untrack(() => void loadReport(id));
+  });
+
+  function setMode(next: "live" | "reports") {
+    if (next === mode) return;
+    mode = next;
+    downloadMenuOpen = false;
+    if (next === "reports") void loadReports();
+  }
+
+  function openReport(runId: string) {
+    reportId = runId;
+    setMode("reports");
+  }
+
+  async function loadReports() {
+    const request = ++listRequest;
+    reportsLoading = true;
+    reportsError = null;
+    try {
+      const list = await invoke<AiReportSummary[]>("ai_reports", { limit: 200 });
+      if (request !== listRequest) return;
+      reports = list;
+    } catch (err) {
+      if (request !== listRequest) return;
+      reportsError = String(err);
+      notify(`Could not load the reports: ${err}`, "error");
+    } finally {
+      if (request === listRequest) reportsLoading = false;
+    }
+  }
+
+  async function loadReport(runId: string, force = false) {
+    if (!force && reportCache[runId]) return;
+    reportLoadingId = runId;
+    reportError = null;
+    try {
+      const full = await invoke<AiReport>("ai_report", { runId });
+      reportCache = { ...reportCache, [runId]: full };
+    } catch (err) {
+      if (reportRunId === runId) {
+        reportError = String(err);
+        notify(`Could not load the report: ${err}`, "error");
+      }
+    } finally {
+      if (reportLoadingId === runId) reportLoadingId = null;
+    }
+  }
+
+  async function refreshReports() {
+    reportCache = {};
+    const current = reportRunId;
+    await loadReports();
+    // The effect refetches when the chosen run changed; otherwise do it here.
+    if (current && current === reportRunId) await loadReport(current, true);
+  }
+
+  async function download(format: AiReportFormat) {
+    downloadMenuOpen = false;
+    const runId = reportRunId;
+    if (!runId) return;
+    exporting = true;
+    try {
+      const path = await invoke<string | null>("ai_report_export", { runId, format });
+      if (path) notify(`Report saved to ${path}`, "success");
+    } catch (err) {
+      notify(`Could not save the report: ${err}`, "error");
+    } finally {
+      exporting = false;
+    }
+  }
+
+  function onWindowKeydown(e: KeyboardEvent) {
+    if (downloadMenuOpen && e.key === "Escape") {
+      e.stopPropagation();
+      downloadMenuOpen = false;
+    }
+  }
 
   function status(run: AiRun): { label: string; live: boolean; title: string } {
     if (run.ended !== null) return { label: "Ended", live: false, title: run.ended };
@@ -97,13 +206,72 @@
   }
 </script>
 
+{#snippet reportActions()}
+  <div class="relative">
+    <button
+      type="button"
+      class="btn btn-secondary"
+      aria-haspopup="menu"
+      aria-expanded={downloadMenuOpen}
+      disabled={exporting || reportRunId === null}
+      onclick={() => (downloadMenuOpen = !downloadMenuOpen)}
+    >
+      {#if exporting}<span class="spinner size-3" aria-hidden="true"></span>{:else}<Download size={14} />{/if}
+      Download
+      <ChevronDown size={14} />
+    </button>
+    {#if downloadMenuOpen}
+      <div class="fixed inset-0 z-40" role="presentation" onclick={() => (downloadMenuOpen = false)}></div>
+      <div class="popover absolute right-0 top-full mt-1 w-44" role="menu" aria-label="Download format">
+        {#each FORMATS as f (f.id)}
+          <button type="button" class="menu-item" role="menuitem" onclick={() => download(f.id)}>
+            {f.label}
+          </button>
+        {/each}
+      </div>
+    {/if}
+  </div>
+{/snippet}
+
+<svelte:window onkeydown={onWindowKeydown} />
+
 <div class="view">
   <header class="view-header">
     <div class="flex min-w-0 items-baseline gap-2.5">
       <h1 class="view-title">AI agents</h1>
-      <span class="text-sm tabular-nums text-muted">{runs.length} {runs.length === 1 ? "run" : "runs"}</span>
+      <span class="text-sm tabular-nums text-muted">
+        {#if mode === "reports"}
+          {reports.length} {reports.length === 1 ? "run" : "runs"} in the audit log
+        {:else}
+          {runs.length} {runs.length === 1 ? "run" : "runs"}
+        {/if}
+      </span>
+      <div class="segmented ml-1 self-center" role="group" aria-label="AI agents view">
+        <button
+          type="button"
+          class="segmented-item {mode === 'live' ? 'segmented-item-active' : ''}"
+          aria-pressed={mode === "live"}
+          onclick={() => setMode("live")}
+        >
+          Live
+        </button>
+        <button
+          type="button"
+          class="segmented-item {mode === 'reports' ? 'segmented-item-active' : ''}"
+          aria-pressed={mode === "reports"}
+          onclick={() => setMode("reports")}
+        >
+          Reports
+        </button>
+      </div>
     </div>
     <div class="view-actions">
+      {#if mode === "reports"}
+        <button type="button" class="btn btn-ghost" onclick={refreshReports} disabled={reportsLoading || reportLoading}>
+          <RefreshCw size={14} class={reportsLoading || reportLoading ? "animate-spin" : ""} />
+          Refresh
+        </button>
+      {/if}
       {#if waiting.length > 0}
         <button type="button" class="btn btn-primary" onclick={() => openApproval()}>
           Review {waiting.length} {waiting.length === 1 ? "approval" : "approvals"}
@@ -113,7 +281,107 @@
   </header>
 
   <div class="view-body">
-    {#if runs.length === 0}
+    {#if mode === "reports"}
+      {#if reportsLoading && reports.length === 0}
+        <div class="grid items-start gap-4 lg:grid-cols-[minmax(260px,340px)_minmax(0,1fr)]" aria-busy="true" aria-label="Loading runs">
+          <div class="flex flex-col gap-2">
+            {#each [0, 1, 2] as i (i)}
+              <div class="card flex flex-col gap-2">
+                <div class="skeleton h-3.5 w-32"></div>
+                <div class="skeleton h-3 w-48"></div>
+              </div>
+            {/each}
+          </div>
+          <div class="panel flex flex-col gap-2.5 p-4">
+            <div class="skeleton h-4 w-40"></div>
+            <div class="skeleton h-3 w-3/4"></div>
+            <div class="skeleton h-16 w-full"></div>
+          </div>
+        </div>
+      {:else if reportsError && reports.length === 0}
+        <div class="empty-state h-full">
+          <div class="empty-state-icon"><FileText size={18} /></div>
+          <div class="empty-state-title">Could not load the reports</div>
+          <p class="empty-state-desc" role="alert">{reportsError}</p>
+          <div class="empty-state-action">
+            <button type="button" class="btn btn-secondary" onclick={refreshReports}>
+              <RefreshCw size={14} />
+              Try again
+            </button>
+          </div>
+        </div>
+      {:else if reports.length === 0}
+        <div class="empty-state h-full">
+          <div class="empty-state-icon"><FileText size={18} /></div>
+          <div class="empty-state-title">No runs in the audit log yet</div>
+          <p class="empty-state-desc">Runs appear here once an agent works through bssh.</p>
+        </div>
+      {:else}
+        <div class="grid items-start gap-4 lg:grid-cols-[minmax(260px,340px)_minmax(0,1fr)]">
+          <ul class="m-0 flex list-none flex-col gap-2 p-0" aria-label="Past runs">
+            {#each reports as item (item.run_id)}
+              {@const isSelected = reportRunId === item.run_id}
+              <li>
+                <button
+                  type="button"
+                  class="card card-interactive w-full text-left {isSelected ? 'card-selected' : ''}"
+                  aria-pressed={isSelected}
+                  onclick={() => (reportId = item.run_id)}
+                >
+                  <span class="flex items-center justify-between gap-2">
+                    <span class="truncate text-sm font-medium text-primary" title={item.client ?? ""}>{item.client || "Unknown agent"}</span>
+                    {#if item.ended}
+                      <span class="badge badge-neutral" title={item.end_reason ?? item.ended}>Ended</span>
+                    {:else if liveIds.has(item.run_id)}
+                      <span class="badge badge-accent" title="This run is connected now">Running</span>
+                    {:else}
+                      <span class="badge badge-neutral" title="The audit log has no end for this run">No end recorded</span>
+                    {/if}
+                  </span>
+                  <span class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+                    {#if item.started}
+                      <span title={formatDateTime(item.started, timezone)}>started {formatRelative(item.started, now)}</span>
+                    {:else}
+                      <span>start not recorded</span>
+                    {/if}
+                    <span class="tabular-nums">{item.calls} {item.calls === 1 ? "call" : "calls"}</span>
+                    {#if item.denials > 0}
+                      <span class="tabular-nums text-error">{item.denials} denied</span>
+                    {/if}
+                    {#if item.changes > 0}
+                      <span class="tabular-nums">{item.changes} {item.changes === 1 ? "change" : "changes"}</span>
+                    {/if}
+                  </span>
+                </button>
+              </li>
+            {/each}
+          </ul>
+
+          <div class="flex min-w-0 flex-col gap-4">
+            {#if reportsError}
+              <div class="alert alert-error" role="alert">
+                <div class="alert-title">Could not refresh the list</div>
+                <p class="m-0 text-xs">{reportsError}</p>
+              </div>
+            {/if}
+            {#if shownReport}
+              <RunReport report={shownReport} {timezone} actions={reportActions} />
+            {:else if reportLoading}
+              <div class="panel flex flex-col gap-2.5 p-4" aria-busy="true" aria-label="Loading report">
+                <div class="skeleton h-4 w-40"></div>
+                <div class="skeleton h-3 w-3/4"></div>
+                <div class="skeleton h-16 w-full"></div>
+              </div>
+            {:else if reportError}
+              <div class="alert alert-error" role="alert">
+                <div class="alert-title">Could not load this report</div>
+                <p class="m-0 text-xs">{reportError}</p>
+              </div>
+            {/if}
+          </div>
+        </div>
+      {/if}
+    {:else if runs.length === 0}
       <div class="empty-state h-full">
         <div class="empty-state-icon"><Bot size={18} /></div>
         <div class="empty-state-title">No agent is connected</div>
@@ -166,6 +434,15 @@
                   <span class="badge {st.live ? 'badge-accent' : 'badge-neutral'}" title={st.title}>{st.label}</span>
                 </div>
                 <div class="flex items-center gap-2">
+                  <button
+                    type="button"
+                    class="btn btn-secondary"
+                    title="Open this run's report from the audit log"
+                    onclick={() => openReport(selected.run_id)}
+                  >
+                    <FileText size={14} />
+                    Report
+                  </button>
                   {#if selected.paused}
                     <button
                       type="button"

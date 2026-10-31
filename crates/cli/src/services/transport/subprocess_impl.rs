@@ -738,7 +738,10 @@ impl SubprocessTransport {
             extract_between_markers(&raw, &marker_start, &marker_end);
 
         if extras.non_interactive && !saw_start {
-            let combined = format!("{head_txt}\n{raw}\n{}", String::from_utf8_lossy(&ssh_stderr));
+            let combined = format!(
+                "{head_txt}\n{raw}\n{}",
+                String::from_utf8_lossy(&ssh_stderr)
+            );
             if needs_tty(combined.as_bytes(), b"")
                 || combined.contains("Veuillez ajouter l'option -t")
             {

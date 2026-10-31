@@ -3,6 +3,7 @@
 use crate::cli::parser_ai::AiArgsLog;
 use crate::config::AppConfig;
 use crate::services::ai::feed::{self, FeedContext};
+use crate::services::ai::report_doc::{self, ReportFormat};
 use crate::services::ai::types::AiEvent;
 use crate::services::ai::ui::{self, Style};
 use crate::services::ai::{audit, report};
@@ -10,6 +11,14 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 
 pub async fn execute(args: AiArgsLog, config: AppConfig) -> Result<()> {
+    if args.format.is_some() || args.output.is_some() {
+        let Some(run) = args.run.as_deref() else {
+            anyhow::bail!(
+                "name the run to export: bssh ai log <run> --format <txt|md|html|pdf|json>"
+            );
+        };
+        return export(&config, run, args.format, args.output.as_deref());
+    }
     let Some(run) = args.run else {
         let runs = report::list_runs(&config, args.limit)?;
         if args.json {
@@ -54,6 +63,45 @@ pub async fn execute(args: AiArgsLog, config: AppConfig) -> Result<()> {
             "{}",
             render_events(&Style::terminal(), &events, ui::width())
         );
+    }
+    Ok(())
+}
+
+/// `bssh ai log <run> --format … [-o file]`: the report as a document.
+fn export(
+    config: &AppConfig,
+    run: &str,
+    format: Option<ReportFormat>,
+    output: Option<&std::path::Path>,
+) -> Result<()> {
+    let from_extension = || {
+        output
+            .and_then(|p| p.extension())
+            .and_then(|e| e.to_str())
+            .and_then(|e| e.parse().ok())
+    };
+    let format = format.or_else(from_extension).unwrap_or(ReportFormat::Text);
+    let r = report::run_report(config, run)?;
+    let bytes = report_doc::render(&r, format, chrono::Local::now())?;
+    match output {
+        Some(path) => {
+            std::fs::write(path, &bytes).map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))?;
+            println!(
+                "Wrote the report of run {} to {}",
+                ui::short_id(&r.run_id),
+                path.display()
+            );
+        }
+        None if format == ReportFormat::Pdf => {
+            anyhow::bail!(
+                "a PDF needs a file: bssh ai log {run} --format pdf -o {}",
+                report_doc::file_name(&r, format)
+            );
+        }
+        None => {
+            use std::io::Write;
+            std::io::stdout().write_all(&bytes)?;
+        }
     }
     Ok(())
 }

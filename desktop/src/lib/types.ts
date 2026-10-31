@@ -642,6 +642,102 @@ export interface AiRun {
   pause_reason?: string | null;
 }
 
+/** `ai_reports()`: one past run from the audit log. */
+export interface AiReportSummary {
+  run_id: string;
+  client: string | null;
+  policy: string | null;
+  /** RFC 3339. */
+  started: string | null;
+  ended: string | null;
+  end_reason?: string | null;
+  calls: number;
+  denials: number;
+  changes: number;
+}
+
+export interface AiReportCall {
+  seq: number;
+  ts: string;
+  call_id: string;
+  tool: string;
+  host: string | null;
+  command: string | null;
+  path: string | null;
+  decision: "allow" | "ask" | "deny";
+  reason: string;
+  exit_code: number | null;
+  output_sha256: string | null;
+  redactions: AiRedaction[];
+}
+
+export interface AiReportApproval {
+  seq: number;
+  ts: string;
+  request_id: string;
+  outcome: "approved" | "denied" | "expired";
+  by: string | null;
+  channel: string | null;
+  reason: string | null;
+}
+
+/** One step of a change as planned and as it ran. */
+export interface AiReportStep {
+  phase: "step" | "verify" | "undo";
+  id: string;
+  host: string | null;
+  /** In words: the command, `edit /etc/x`, `restart nginx`. */
+  action: string;
+  /** null: never ran. */
+  ok: boolean | null;
+  exit_code: number | null;
+  error: string | null;
+  /** Remote output, redacted and cut. Untrusted text: render as plain text only. */
+  output: string | null;
+}
+
+export interface AiReportChange {
+  seq: number;
+  ts: string;
+  change_id: string;
+  plan_hash: string;
+  applied: boolean;
+  undo_point: string | null;
+  title?: string | null;
+  /** Written by the agent: show labelled "The agent says". */
+  reason?: string | null;
+  approved_by?: string | null;
+  approved_channel?: string | null;
+  approved_at?: string | null;
+  steps_ok?: [number, number] | null;
+  checks_ok?: [number, number] | null;
+  undone: boolean;
+  steps: AiReportStep[];
+}
+
+export interface AiReport {
+  run_id: string;
+  client: string | null;
+  on_behalf_of: string | null;
+  policy: string | null;
+  policy_hash: string | null;
+  started: string | null;
+  ended: string | null;
+  end_reason: string | null;
+  hosts: string[];
+  calls: AiReportCall[];
+  approvals: AiReportApproval[];
+  changes: AiReportChange[];
+  /** Calls the policy denied, one line each. */
+  denials: string[];
+  redactions: AiRedaction[];
+  circuit_breaker: string[];
+  /** Recording file names; show only the count and `bssh ai replay <short run id>`. */
+  recordings: string[];
+}
+
+export type AiReportFormat = "txt" | "md" | "html" | "pdf" | "json";
+
 export interface AiBudgets {
   calls_per_min: number;
   changes_per_run: number;

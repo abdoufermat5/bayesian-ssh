@@ -27,6 +27,7 @@ pub mod jail;
 pub mod audit;
 pub mod install;
 pub mod report;
+pub mod report_doc;
 // The look shared by every AI surface
 pub mod ui;
 // One line per event: the feed of `bssh ai watch` and `bssh ai log`

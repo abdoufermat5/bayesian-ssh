@@ -442,6 +442,191 @@ test.describe("AI view accessibility", () => {
   });
 });
 
+const OLD_RUN = "run-2b9e0d44-0000-4000-8000-000000000002";
+
+const reportOf = (runId: string) => ({
+  run_id: runId,
+  client: "Claude Code 2.0",
+  on_behalf_of: "alice",
+  policy: "default",
+  policy_hash: "ef35a605aa",
+  started: iso(60),
+  ended: iso(55),
+  end_reason: "client left",
+  hosts: ["web-2"],
+  calls: [
+    {
+      seq: 2,
+      ts: iso(59),
+      call_id: "c-1",
+      tool: "run_readonly",
+      host: "web-2",
+      command: "journalctl -u nginx -n 50",
+      path: null,
+      decision: "allow",
+      reason: "read-only",
+      exit_code: 0,
+      output_sha256: "ab",
+      redactions: [],
+    },
+    {
+      seq: 3,
+      ts: iso(58),
+      call_id: "c-2",
+      tool: "run",
+      host: "web-2",
+      command: "rm -rf /var/cache/app",
+      path: null,
+      decision: "deny",
+      reason: "destructive",
+      exit_code: null,
+      output_sha256: null,
+      redactions: [],
+    },
+  ],
+  approvals: [{ seq: 4, ts: iso(57), request_id: "req-1", outcome: "approved", by: "alice", channel: "desktop", reason: null }],
+  changes: [
+    {
+      seq: 5,
+      ts: iso(56),
+      change_id: "change-696de2f2",
+      plan_hash: "486c2f5a",
+      applied: false,
+      undo_point: null,
+      title: "Fix nginx 502 on web-2",
+      reason: "upstream port changed to 8081",
+      approved_by: "alice",
+      undone: false,
+      steps: [
+        { phase: "step", id: "step-1", host: "web-2", action: "nginx -t", ok: true, exit_code: 0, error: null, output: null },
+        {
+          phase: "step",
+          id: "step-2",
+          host: "web-2",
+          action: "reload nginx",
+          ok: false,
+          exit_code: 1,
+          error: "unit failed",
+          output: "<img src=x onerror=alert(1)> Job for nginx.service failed",
+        },
+        { phase: "verify", id: "step-3", host: "web-2", action: "curl -fsS localhost/health", ok: null, exit_code: null, error: null, output: null },
+      ],
+    },
+  ],
+  denials: ["run rm -rf /var/cache/app: destructive"],
+  redactions: [],
+  circuit_breaker: [],
+  recordings: ["ai-run-2b9e-c-1.cast"],
+});
+
+const summaryOf = (runId: string, minutesAgo: number) => ({
+  run_id: runId,
+  client: "Claude Code 2.0",
+  policy: "default",
+  started: iso(minutesAgo),
+  ended: iso(minutesAgo - 5),
+  end_reason: "client left",
+  calls: 2,
+  denials: 1,
+  changes: 1,
+});
+
+async function seedReports(page: Page, saveDir?: string | null) {
+  await page.addInitScript(
+    (d) => {
+      const w = window as unknown as Record<string, unknown>;
+      w.__MOCK_AI_REPORTS = d.list;
+      w.__MOCK_AI_REPORT = d.reports;
+      if (d.saveDir !== undefined) w.__MOCK_AI_SAVE_DIR = d.saveDir;
+    },
+    {
+      list: [summaryOf(RUN_ID, 30), summaryOf(OLD_RUN, 60)],
+      reports: { [RUN_ID]: reportOf(RUN_ID), [OLD_RUN]: reportOf(OLD_RUN) },
+      saveDir,
+    },
+  );
+}
+
+async function openReports(app: AppFixture, page: Page) {
+  await openAi(app, page);
+  await page.getByRole("button", { name: "Reports", exact: true }).click();
+}
+
+test.describe("AI run reports", () => {
+  test("says so when the audit log has no run", async ({ app, page }) => {
+    await openReports(app, page);
+    await expect(page.getByText("No runs in the audit log yet")).toBeVisible();
+  });
+
+  test("shows what a past run did, step by step", async ({ app, page }) => {
+    await seedReports(page);
+    await openReports(app, page);
+
+    await page.getByRole("list", { name: "Past runs" }).getByRole("button").nth(1).click();
+    await app.waitForIpc("ai_report");
+    expect(await app.ipcCalls("ai_report")).toContainEqual({ runId: OLD_RUN });
+
+    const changes = page.getByRole("region", { name: "Changes" });
+    await expect(changes.getByText("Fix nginx 502 on web-2")).toBeVisible();
+    await expect(changes.getByText("upstream port changed to 8081")).toBeVisible();
+    await expect(changes.getByText("Failed, exit 1")).toBeVisible();
+    await expect(changes.getByText("Not run")).toBeVisible();
+    // Remote output stays text.
+    await changes.getByText(/output/i).first().click();
+    await expect(changes.getByText("<img src=x onerror=alert(1)> Job for nginx.service failed")).toBeVisible();
+    await expect(changes.locator("img")).toHaveCount(0);
+
+    await expect(page.getByRole("region", { name: "Denied by policy" }).getByText("rm -rf /var/cache/app")).toBeVisible();
+    await expect(page.getByRole("region", { name: "Recordings" }).getByText("bssh ai replay run-2b9e")).toBeVisible();
+  });
+
+  test("downloads the report in the chosen format", async ({ app, page }) => {
+    await seedReports(page);
+    await openReports(app, page);
+    await expect(page.getByRole("region", { name: "Changes" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Download" }).click();
+    await page.getByRole("menuitem", { name: /PDF/ }).click();
+    await app.waitForIpc("ai_report_export");
+    expect(await app.ipcCalls("ai_report_export")).toEqual([{ runId: RUN_ID, format: "pdf" }]);
+    await expect(page.getByText("Report saved to /home/user/Downloads/bssh-run-run-7f3a.pdf")).toBeVisible();
+  });
+
+  test("a cancelled save says nothing", async ({ app, page }) => {
+    await seedReports(page, null);
+    await openReports(app, page);
+    await expect(page.getByRole("region", { name: "Changes" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Download" }).click();
+    await page.getByRole("menuitem", { name: /Markdown/ }).click();
+    await app.waitForIpc("ai_report_export");
+    await expect(page.getByText(/Report saved to/)).toHaveCount(0);
+    await expect(page.getByText(/Could not save/)).toHaveCount(0);
+  });
+
+  test("a live run opens its report", async ({ app, page }) => {
+    await seed(page, { runs: [baseRun], events: { [RUN_ID]: events } });
+    await seedReports(page);
+    await openAi(app, page);
+
+    await page.getByRole("button", { name: "Report", exact: true }).click();
+    await app.waitForIpc("ai_report");
+    expect(await app.ipcCalls("ai_report")).toEqual([{ runId: RUN_ID }]);
+    await expect(page.getByRole("region", { name: "Run summary" })).toBeVisible();
+  });
+
+  test("has no serious accessibility violations", async ({ app, page }) => {
+    await seedReports(page);
+    await openReports(app, page);
+    await expect(page.getByRole("region", { name: "Changes" })).toBeVisible();
+    const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+    const serious = results.violations.filter((v) => v.impact === "serious" || v.impact === "critical");
+    expect(
+      serious.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`),
+    ).toEqual([]);
+  });
+});
+
 test.describe("AI settings", () => {
   test("shows the policies read-only", async ({ app, page }) => {
     await seed(page, {
