@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.15.0] - 2026-10-31
+
 ### Added
 - **Run reports you can read and share.** The desktop app's AI agents view has a Reports tab: past runs from the audit log, each report with its summary, every change step by step (what the plan said, whether it ran, exit code, error, redacted output), policy denials, approvals and every call. **Download** saves it as text, Markdown, HTML, PDF or JSON, and a live run's **Report** button opens its report. On the command line, `bssh ai log <run> --format <txt|md|html|pdf|json>` prints the same document and `-o <file>` writes it (the format follows the extension). Reports are built from the audit log and change records only, never by a model; the PDF is plain A4 text with no external dependency. `bssh ai log --report --json` now also carries each change's title, the agent's stated reason and its steps.
 - **`bssh ai install` tells you what to do next.** After writing the MCP entry it prints the client to restart, what the policy allows (the built-in default is observe: read-only), where to approve (`bssh ai watch` in another terminal, or the desktop app), and `bssh ai doctor` for the hosts. The entry is pinned with `--env <environment>`, so `bssh env use` no longer silently changes which hosts and policy an agent gets; for Codex it also writes `tool_timeout_sec` = `ai.approval_timeout_secs` + 30, since Codex's 60 s default dropped tool calls before an approval could arrive.
@@ -30,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The observe profile hides the change tools** (`propose_change`, `apply_change`, `edit_file`, `service`, `run`, `undo`) from `list_tools` instead of offering calls that are always refused. The in-client prompt and the out-of-band approval now share one `approval_timeout_secs` deadline.
 - **The desktop app's AI empty state gives the next step** (`bssh ai install <client>`, then restart it), and the read-only policy notice names the exact `config.json` and `bssh ai policy show`.
 
+- **Internal restructuring, no behavior change.** The Rust workspace follows stricter lint rules and was reorganized: typed errors instead of string errors, enums instead of boolean flags, named argument structs, and every source file over about 1,000 lines split into focused modules. The CLI's full `--help` output, the desktop app's command interface and the network formats are unchanged.
 ### Fixed
 - **Kerberos agent logins on a direct host no longer delegate the TGT** (`GSSAPIDelegateCredentials=no`). Through an interactive (Kerberos) bastion they do, and they honour `forward_agent`, because the bastion's hop to the target needs those credentials — without them every AI call died with `Permission denied (gssapi-with-mic)` / `(publickey)`.
 - **`TERM=dumb` (common in agent/CI shells) no longer breaks Kerberos bastions.** Those bastions answered with a misleading "add -t" and closed; bssh now forces `TERM=xterm-256color` for ssh children when TERM is missing or dumb, and treats a missing command marker as an error instead of returning the bastion banner as success.
@@ -38,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Command output behind a Kerberos bastion is exactly the command's output.** The command is now sent as one compound line, so the shell's prompt, its line-editor echo (coloured prompts included) and zsh's end-of-line `%` can no longer leak into results; output without a final newline is kept. Before, `read_file` failed with "got 0 of N bytes" or "could not resolve the path", and `uptime` or `failed_units` came back mixed with prompt lines.
 - **`bssh ai doctor` no longer reports `FAIL no user bssh-agent` behind a Kerberos bastion**, where that user and CA trust are never used; it says `skip` instead.
 - **Hosts with `ProxyJump`/`ProxyCommand` only in `~/.ssh/config`** are routed to the system `ssh` instead of the built-in client, which timed out on them.
+- **`bssh stats` lists tags in a stable order.** Tags with the same number of connections came out in a different order on every run, and the top ten could change; ties are now sorted by name.
 
 ## [2.14.0] - 2026-10-29
 
