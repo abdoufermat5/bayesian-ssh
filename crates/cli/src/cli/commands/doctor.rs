@@ -163,7 +163,8 @@ fn check_ssh_agent(config: &AppConfig) -> HealthCheck {
     let socket = config
         .auth
         .agent_socket
-        .clone()
+        .as_deref()
+        .map(PathBuf::from)
         .or_else(|| env::var_os("SSH_AUTH_SOCK").map(PathBuf::from));
 
     match socket {

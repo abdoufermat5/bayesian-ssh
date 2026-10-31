@@ -12,6 +12,10 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use std::time::Duration;
 
+/// Replay the recordings of a run.
+///
+/// # Errors
+/// Returns an error when a recording cannot be read or played.
 pub async fn execute(args: AiArgsReplay, config: AppConfig) -> Result<()> {
     let entries = audit::read_entries(&config).unwrap_or_default();
     let id = report::resolve_run_id(&entries, &args.run).unwrap_or_else(|_| args.run.clone());

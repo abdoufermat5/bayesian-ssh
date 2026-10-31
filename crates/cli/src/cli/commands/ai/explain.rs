@@ -15,6 +15,10 @@ use crate::services::SshService;
 use anyhow::Result;
 use std::sync::Arc;
 
+/// Explain how the policy decides one command.
+///
+/// # Errors
+/// Returns an error when the analyzer output cannot be serialized.
 pub async fn execute(args: AiArgsExplain, config: AppConfig) -> Result<()> {
     let command = command_string(&args.command);
     let analyzer = ShellAnalyzer::new();
@@ -29,10 +33,12 @@ pub async fn execute(args: AiArgsExplain, config: AppConfig) -> Result<()> {
     let (_, report) = explain_report(
         &Style::terminal(),
         &analyzer,
-        &command,
-        &args.policy,
-        args.host.as_ref().map(|_| facts.name.as_str()),
-        &facts.tags,
+        ExplainRequest {
+            command: &command,
+            policy_name: &args.policy,
+            host: args.host.as_ref().map(|_| facts.name.as_str()),
+            host_tags: &facts.tags,
+        },
         |analysis| decide(&config, &args.policy, &facts, &command, analysis),
     );
     print!("{report}");
@@ -49,22 +55,36 @@ pub(crate) fn command_string(parts: &[String]) -> String {
     }
 }
 
+/// The command and policy context of one explanation.
+pub(crate) struct ExplainRequest<'a> {
+    /// The command as the analyzer sees it.
+    pub(crate) command: &'a str,
+    /// Policy the decision came from.
+    pub(crate) policy_name: &'a str,
+    /// Host the command is for, if any.
+    pub(crate) host: Option<&'a str>,
+    /// That host's tags, already filtered for trust.
+    pub(crate) host_tags: &'a [String],
+}
+
 /// Render the analysis and the decision. Any decision failure is shown as an
 /// unavailable policy instead of failing the command.
 pub(crate) fn explain_report(
     style: &Style,
     analyzer: &dyn Analyzer,
-    command: &str,
-    policy_name: &str,
-    host: Option<&str>,
-    host_tags: &[String],
+    request: ExplainRequest<'_>,
     decide: impl FnOnce(&Analysis) -> Result<Decision>,
 ) -> (Analysis, String) {
+    let ExplainRequest {
+        command,
+        policy_name,
+        host,
+        host_tags,
+    } = request;
     let analysis = analyzer.analyze(command);
     let text = match decide(&analysis) {
         Ok(decision) => render_explain(
             style,
-            command,
             &analysis,
             &PolicySection::Resolved {
                 name: policy_name,
@@ -77,7 +97,6 @@ pub(crate) fn explain_report(
             let error = error.to_string();
             render_explain(
                 style,
-                command,
                 &analysis,
                 &PolicySection::Unavailable { error: &error },
             )
@@ -102,7 +121,6 @@ pub(crate) enum PolicySection<'a> {
 /// Human-readable explain output: verdict line, policy reason, and parsed commands.
 pub(crate) fn render_explain(
     style: &Style,
-    _command: &str,
     analysis: &Analysis,
     policy: &PolicySection<'_>,
 ) -> String {
@@ -200,12 +218,12 @@ pub(crate) fn render_explain(
 
     out.push('\n');
 
-    struct CmdRow {
+    struct CmdRow<'a> {
         idx: String,
         cmd: String,
         verb: &'static str,
         risks: String,
-        rule: Option<String>,
+        rule: Option<&'a str>,
     }
 
     let max_idx_w = analysis.commands.len().to_string().len().max(1);
@@ -215,13 +233,12 @@ pub(crate) fn render_explain(
         let cmd = simple_command_string(simple);
         let verb = command_verb(simple);
         let risks = style.risks(&simple.tags);
-        let rule = simple.rule.clone();
         rows.push(CmdRow {
             idx,
             cmd,
             verb,
             risks,
-            rule,
+            rule: simple.rule.as_deref(),
         });
     }
 
@@ -239,7 +256,7 @@ pub(crate) fn render_explain(
     let has_rules = rows.iter().any(|r| r.rule.is_some());
     let max_rule_w = if has_rules {
         rows.iter()
-            .filter_map(|r| r.rule.as_ref())
+            .filter_map(|r| r.rule)
             .map(|rule| ui::display_width(&format!("rule {rule}")))
             .max()
             .unwrap_or(0)
@@ -267,7 +284,7 @@ pub(crate) fn render_explain(
 
         if has_rules {
             let risks_padded = ui::pad(&r.risks, max_risks_w);
-            if let Some(rule) = &r.rule {
+            if let Some(rule) = r.rule {
                 let rule_str = style.paint(Tone::Dim, &format!("rule {rule}"));
                 out.push_str(&format!(
                     "{}{cmd_padded}   {verb_padded}   {risks_padded}   {rule_str}\n",
@@ -437,7 +454,6 @@ mod tests {
     fn render_minimal_analysis() {
         let text = render_explain(
             &Style::plain(),
-            "ls",
             &empty_analysis(),
             &PolicySection::Unavailable {
                 error: "policy::resolve: not implemented yet",
@@ -455,7 +471,6 @@ mod tests {
         analysis.unknown_reason = Some("contains eval".to_string());
         let text = render_explain(
             &Style::plain(),
-            "eval $x",
             &analysis,
             &PolicySection::Unavailable { error: "e" },
         );
@@ -489,7 +504,6 @@ mod tests {
         let host_tags = vec!["staging".to_string()];
         let text = render_explain(
             &Style::plain(),
-            "sudo rm -rf ...",
             &analysis,
             &PolicySection::Resolved {
                 name: "default",
@@ -531,7 +545,6 @@ mod tests {
         };
         let text = render_explain(
             &style,
-            "sudo rm -rf /var/www",
             &analysis,
             &PolicySection::Resolved {
                 name: "default",
@@ -555,7 +568,6 @@ mod tests {
         };
         let text = render_explain(
             &style,
-            "ls",
             &analysis,
             &PolicySection::Resolved {
                 name: "default",
@@ -572,7 +584,6 @@ mod tests {
         };
         let text = render_explain(
             &style,
-            "ls",
             &analysis,
             &PolicySection::Resolved {
                 name: "default",
@@ -590,7 +601,6 @@ mod tests {
         };
         let text = render_explain(
             &style,
-            "ls",
             &analysis,
             &PolicySection::Resolved {
                 name: "default",
@@ -608,7 +618,6 @@ mod tests {
         };
         let text = render_explain(
             &style,
-            "ls",
             &analysis,
             &PolicySection::Resolved {
                 name: "default",
@@ -626,7 +635,6 @@ mod tests {
         analysis.commands.push(simple("ls", &[]));
         let text = render_explain(
             &Style::plain(),
-            "ls",
             &analysis,
             &PolicySection::Unavailable { error: "e" },
         );
@@ -641,7 +649,6 @@ mod tests {
         };
         let text = render_explain(
             &Style::plain(),
-            "ls",
             &empty_analysis(),
             &PolicySection::Resolved {
                 name: "default",
@@ -662,7 +669,6 @@ mod tests {
         }
         let text = render_explain(
             &Style::plain(),
-            "x",
             &analysis,
             &PolicySection::Unavailable { error: "e" },
         );
@@ -688,10 +694,12 @@ mod tests {
         let (got, text) = explain_report(
             &Style::plain(),
             &analyzer,
-            "ls -la",
-            "default",
-            Some("db-1"),
-            &[],
+            ExplainRequest {
+                command: "ls -la",
+                policy_name: "default",
+                host: Some("db-1"),
+                host_tags: &[],
+            },
             |_| {
                 Ok(Decision::Allow {
                     reason: "read".to_string(),
@@ -745,10 +753,12 @@ mod tests {
         let (_, text) = explain_report(
             &Style::plain(),
             &ShellAnalyzer::new(),
-            "ls",
-            "ops",
-            Some("db-1"),
-            &facts.tags,
+            ExplainRequest {
+                command: "ls",
+                policy_name: "ops",
+                host: Some("db-1"),
+                host_tags: &facts.tags,
+            },
             |analysis| {
                 let engine = DefaultPolicyEngine::new(Arc::new(AiStore::open(&config)?));
                 let call = tool_call("ls", &facts, analysis);
@@ -765,10 +775,12 @@ mod tests {
         let (_, text) = explain_report(
             &Style::plain(),
             &ShellAnalyzer::new(),
-            "ls",
-            "default",
-            None,
-            &[],
+            ExplainRequest {
+                command: "ls",
+                policy_name: "default",
+                host: None,
+                host_tags: &[],
+            },
             |_| anyhow::bail!("store locked"),
         );
         assert!(text.contains("[unavailable]  policy unavailable"));

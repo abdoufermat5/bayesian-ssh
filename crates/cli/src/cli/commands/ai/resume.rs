@@ -11,6 +11,10 @@ use crate::services::ai::control_client::connect_all;
 use crate::services::ai::ui::{self, Glyph, Style};
 use anyhow::{bail, Result};
 
+/// Resume paused runs over their control sockets.
+///
+/// # Errors
+/// Returns an error when no run was resumed.
 pub async fn execute(args: AiArgsResume, config: AppConfig) -> Result<()> {
     let mut clients = connect_all(&ai_dir(&config), "bssh-cli").await;
     if clients.is_empty() {
@@ -18,7 +22,8 @@ pub async fn execute(args: AiArgsResume, config: AppConfig) -> Result<()> {
         return Ok(());
     }
     let ids: Vec<String> = clients.iter().map(|c| c.hello.run_id.clone()).collect();
-    let chosen = super::stop::select_runs(&ids, args.run.as_deref(), false)?;
+    let chosen =
+        super::stop::select_runs(&ids, super::stop::RunSelection::One(args.run.as_deref()))?;
     let style = Style::terminal();
     let mut resumed = 0;
     for idx in chosen {

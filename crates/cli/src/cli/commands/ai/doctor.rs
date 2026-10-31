@@ -50,6 +50,10 @@ struct DoctorReport {
     egress_note: &'static str,
 }
 
+/// Check every host the policy reaches and print the report.
+///
+/// # Errors
+/// Returns an error when a host cannot be checked or the report cannot be serialized.
 pub async fn execute(args: AiArgsDoctor, config: AppConfig) -> Result<()> {
     let pol = policy::resolve(&config, &args.policy);
     // A source we can't read fails closed: its tags don't widen the policy.

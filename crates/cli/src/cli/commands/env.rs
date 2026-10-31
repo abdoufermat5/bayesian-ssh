@@ -25,7 +25,7 @@ pub async fn execute(command: EnvCommands) -> Result<()> {
     Ok(())
 }
 
-fn get_environments_dir() -> PathBuf {
+fn environments_dir() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("~/.config"))
         .join("bayesian-ssh")
@@ -33,7 +33,7 @@ fn get_environments_dir() -> PathBuf {
 }
 
 fn list_environments() -> Result<()> {
-    let envs_dir = get_environments_dir();
+    let envs_dir = environments_dir();
     if !envs_dir.exists() {
         println!("No environments found.");
         return Ok(());
@@ -67,7 +67,7 @@ fn list_environments() -> Result<()> {
 }
 
 fn use_environment(name: &str) -> Result<()> {
-    let env_dir = get_environments_dir().join(name);
+    let env_dir = environments_dir().join(name);
     if !env_dir.exists() {
         anyhow::bail!(
             "Environment '{}' does not exist. Use `bayesian-ssh env create {}` to create it.",
@@ -82,7 +82,7 @@ fn use_environment(name: &str) -> Result<()> {
 }
 
 fn create_environment(name: &str) -> Result<()> {
-    let env_dir = get_environments_dir().join(name);
+    let env_dir = environments_dir().join(name);
     if env_dir.exists() {
         anyhow::bail!("Environment '{}' already exists.", name);
     }
@@ -111,7 +111,7 @@ fn remove_environment(name: &str) -> Result<()> {
         anyhow::bail!("Cannot remove the built-in 'default' environment.");
     }
 
-    let env_dir = get_environments_dir().join(name);
+    let env_dir = environments_dir().join(name);
     if !env_dir.exists() {
         anyhow::bail!("Environment '{}' does not exist.", name);
     }

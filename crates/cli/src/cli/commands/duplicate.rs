@@ -17,18 +17,21 @@ pub async fn execute(source: String, new_name: String, config: AppConfig) -> Res
 
     info!("Duplicating connection {} to {}", original.name, new_name);
 
+    // A connection copied without a bastion must stay direct.
+    let direct = original.bastion.is_none();
+
     ssh_service
         .add_connection(
             new_name.clone(),
-            original.host.clone(),
-            Some(original.user.clone()),
+            original.host,
+            Some(original.user),
             Some(original.port),
             Some(original.use_kerberos),
-            original.bastion.clone(),
-            original.bastion.is_none(),
-            original.bastion_user.clone(),
-            original.key_path.clone(),
-            original.tags.clone(),
+            original.bastion,
+            direct,
+            original.bastion_user,
+            original.key_path,
+            original.tags,
             original.forward_agent,
         )
         .await?;

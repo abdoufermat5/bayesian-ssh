@@ -7,11 +7,11 @@ use crate::cli::parser_ai::AiArgsStatus;
 use crate::config::AppConfig;
 use crate::services::ai::ai_dir;
 use crate::services::ai::control_client::{connect_all, RunHello};
+use crate::services::ai::feed::event_run_id;
 use crate::services::ai::store::{AiStore, RunRecord};
 use crate::services::ai::types::{AiEvent, ApprovalRequest, Grant};
 use crate::services::ai::ui::{self, Glyph, Style};
 use anyhow::Result;
-use chrono::{DateTime, Utc};
 use serde::Serialize;
 #[derive(Debug, Serialize)]
 pub struct ActiveRun {
@@ -33,6 +33,10 @@ pub struct StatusReport {
     pub recent: Vec<RunRecord>,
 }
 
+/// Print the active runs and the most recent runs.
+///
+/// # Errors
+/// Returns an error when the status report cannot be serialized.
 pub async fn execute(args: AiArgsStatus, config: AppConfig) -> Result<()> {
     let mut active = Vec::new();
     let entries = crate::services::ai::audit::read_entries(&config).unwrap_or_default();
@@ -41,7 +45,8 @@ pub async fn execute(args: AiArgsStatus, config: AppConfig) -> Result<()> {
         let pending = c.pending().await.unwrap_or_default();
         let grants = c.grants().await.unwrap_or_default();
         let run_id = &c.hello.run_id;
-        let mut on_behalf_of = Some(c.hello.on_behalf_of.clone()).filter(|o| !o.is_empty());
+        let mut on_behalf_of =
+            Some(std::mem::take(&mut c.hello.on_behalf_of)).filter(|o| !o.is_empty());
         let mut hosts = Vec::new();
         let mut calls = 0;
         for e in entries.iter().filter(|e| event_run_id(&e.event) == run_id) {
@@ -71,10 +76,10 @@ pub async fn execute(args: AiArgsStatus, config: AppConfig) -> Result<()> {
         }
         // Hosts it has touched; before its first call, the hosts in its scope.
         if hosts.is_empty() {
-            hosts = c.hello.hosts.clone();
+            hosts = std::mem::take(&mut c.hello.hosts);
         }
         active.push(ActiveRun {
-            run: c.hello.clone(),
+            run: c.hello,
             pending,
             grants,
             on_behalf_of,
@@ -92,25 +97,12 @@ pub async fn execute(args: AiArgsStatus, config: AppConfig) -> Result<()> {
         println!("{}", serde_json::to_string_pretty(&report)?);
     } else {
         let style = Style::terminal();
-        print!("{}", render_status(&report, &style, Utc::now()));
+        print!("{}", render_status(&report, &style));
     }
     Ok(())
 }
 
-fn event_run_id(e: &AiEvent) -> &str {
-    match e {
-        AiEvent::RunStarted { run_id, .. }
-        | AiEvent::Approval { run_id, .. }
-        | AiEvent::Result { run_id, .. }
-        | AiEvent::Change { run_id, .. }
-        | AiEvent::Paused { run_id, .. }
-        | AiEvent::Resumed { run_id, .. }
-        | AiEvent::RunEnded { run_id, .. } => run_id,
-        AiEvent::Call { call, .. } => &call.run_id,
-    }
-}
-
-pub fn render_status(r: &StatusReport, style: &Style, _now: DateTime<Utc>) -> String {
+pub fn render_status(r: &StatusReport, style: &Style) -> String {
     use std::fmt::Write;
     let mut o = String::new();
     if r.active.is_empty() {
@@ -176,16 +168,13 @@ mod tests {
             recent: vec![],
         };
         assert_eq!(
-            render_status(&r, &Style::plain(), Utc::now()),
+            render_status(&r, &Style::plain()),
             "No agents are running.\n"
         );
     }
 
     #[test]
     fn report_renders_active_run_block() {
-        let now = DateTime::parse_from_rfc3339("2026-10-24T17:25:00Z")
-            .unwrap()
-            .with_timezone(&Utc);
         let r = StatusReport {
             active: vec![ActiveRun {
                 run: RunHello {
@@ -204,7 +193,7 @@ mod tests {
             }],
             recent: vec![],
         };
-        let text = render_status(&r, &Style::plain(), now);
+        let text = render_status(&r, &Style::plain());
         let since = ui::clock("2026-10-24T17:23:20Z");
         assert!(text.contains(&format!(
             "● opencode 2.1.2   run dddbee19   policy default   on behalf of ana   hosts web-1   since {since}"
