@@ -54,8 +54,8 @@ impl Database {
 
     /// Fetch the tag set for a single connection. Used by `row_to_connection`
     /// to populate the in-memory `tags` field; for batch loads, prefer
-    /// `get_tags_for_connections`.
-    pub fn get_tags_for_connection(&self, connection_id: &str) -> Result<Vec<String>> {
+    /// [`Database::tags_for_connections`].
+    pub(crate) fn tags_for_connection(&self, connection_id: &str) -> Result<Vec<String>> {
         let mut stmt = self
             .conn
             .prepare("SELECT tag FROM connection_tags WHERE connection_id = ? ORDER BY tag")?;
@@ -69,7 +69,7 @@ impl Database {
 
     /// Batch-fetch tags for many connection IDs in a single query.
     /// Returns a map keyed by connection_id.
-    pub(crate) fn get_tags_for_connections(
+    pub(crate) fn tags_for_connections(
         &self,
         connection_ids: &[String],
     ) -> Result<std::collections::HashMap<String, Vec<String>>> {

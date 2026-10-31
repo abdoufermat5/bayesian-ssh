@@ -50,6 +50,10 @@ struct DoctorReport {
     egress_note: &'static str,
 }
 
+/// Check every host the policy reaches and print the report.
+///
+/// # Errors
+/// Returns an error when a host cannot be checked or the report cannot be serialized.
 pub async fn execute(args: AiArgsDoctor, config: AppConfig) -> Result<()> {
     let pol = policy::resolve(&config, &args.policy);
     // A source we can't read fails closed: its tags don't widen the policy.
@@ -491,16 +495,11 @@ mod tests {
 
     /// A connection with a Kerberos bastion and no ticket, as OVH "The Bastion" users have.
     fn bastioned(name: &str) -> Connection {
-        let mut c = Connection::new(
-            name.into(),
-            "10.0.0.9".into(),
-            "deploy".into(),
-            22,
-            Some("bastion".into()),
-            None,
-            true,
-            None,
-        );
+        let mut c = Connection {
+            bastion: Some("bastion".into()),
+            use_kerberos: true,
+            ..Connection::new(name.into(), "10.0.0.9".into(), "deploy".into(), 22)
+        };
         c.tags = vec!["prod".into()];
         c
     }
@@ -538,16 +537,7 @@ mod tests {
         assert_eq!(j.route, "jump host bastion");
         assert!(j.notes.is_empty(), "{j:?}");
 
-        let direct = Connection::new(
-            "db-1".into(),
-            "10.0.0.10".into(),
-            "deploy".into(),
-            22,
-            None,
-            None,
-            false,
-            None,
-        );
+        let direct = Connection::new("db-1".into(), "10.0.0.10".into(), "deploy".into(), 22);
         assert_eq!(route_report(&direct, None, None).route, "direct");
 
         // `~/.ssh/config` ProxyJump is named when bssh stores no bastion itself.

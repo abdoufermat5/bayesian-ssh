@@ -34,7 +34,7 @@ pub enum AliasAction {
 
 async fn add_alias(db: &Database, alias: &str, target: &str, config: &AppConfig) -> Result<()> {
     // Check if alias already exists
-    if let Some(existing) = db.get_connection_by_alias(alias)? {
+    if let Some(existing) = db.connection_by_alias(alias)? {
         bail!(
             "Alias '{}' already exists and points to '{}'",
             alias,
@@ -43,7 +43,7 @@ async fn add_alias(db: &Database, alias: &str, target: &str, config: &AppConfig)
     }
 
     // Check if alias conflicts with an existing connection name
-    if db.get_connection(alias)?.is_some() {
+    if db.connection(alias)?.is_some() {
         bail!(
             "Cannot create alias '{}' - a connection with that name already exists",
             alias
@@ -78,7 +78,7 @@ async fn list_aliases(db: &Database, target: Option<&str>, config: &AppConfig) -
         let connection =
             resolve_connection(&ssh_service, target_name, "show aliases for", true, config).await?;
 
-        let aliases = db.get_aliases_for_connection(&connection.id.to_string())?;
+        let aliases = db.aliases_for_connection(&connection.id.to_string())?;
 
         if aliases.is_empty() {
             println!("📝 No aliases for connection '{}'", connection.name);

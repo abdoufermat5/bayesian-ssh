@@ -125,16 +125,7 @@ mod tests {
     use crate::models::Connection;
 
     fn simple_conn() -> Connection {
-        Connection::new(
-            "x".into(),
-            "host".into(),
-            "user".into(),
-            22,
-            None,
-            None,
-            false,
-            None,
-        )
+        Connection::new("x".into(), "host".into(), "user".into(), 22)
     }
 
     fn simple_cfg() -> AppConfig {

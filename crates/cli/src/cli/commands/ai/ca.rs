@@ -8,6 +8,10 @@ use crate::services::ai::exec::AiExecutor;
 use crate::services::ai::{cert, hostsetup};
 use anyhow::{bail, Result};
 
+/// Run the `ai ca` subcommand.
+///
+/// # Errors
+/// Returns an error when the CA cannot be created, read, or trusted on a host.
 pub async fn execute(args: AiArgsCa, config: AppConfig) -> Result<()> {
     match args.command {
         AiCaCommands::Init => init(&config),
@@ -17,7 +21,24 @@ pub async fn execute(args: AiArgsCa, config: AppConfig) -> Result<()> {
             tag,
             dry_run,
             yes,
-        } => trust(&config, target.as_deref(), tag.as_deref(), dry_run, yes).await,
+        } => {
+            let step = if dry_run {
+                TrustStep::DryRun
+            } else if yes {
+                TrustStep::AssumeYes
+            } else {
+                TrustStep::Ask
+            };
+            trust(
+                &config,
+                TrustRequest {
+                    target: target.as_deref(),
+                    tag: tag.as_deref(),
+                    step,
+                },
+            )
+            .await
+        }
     }
 }
 
@@ -54,13 +75,25 @@ fn show(config: &AppConfig) -> Result<()> {
     Ok(())
 }
 
-async fn trust(
-    config: &AppConfig,
-    target: Option<&str>,
-    tag: Option<&str>,
-    dry_run: bool,
-    yes: bool,
-) -> Result<()> {
+/// How far `ca trust` goes: print, ask, or run without asking.
+enum TrustStep {
+    /// Print the script and stop (`--dry-run`).
+    DryRun,
+    /// Ask before running it.
+    Ask,
+    /// Run it without asking (`--yes`).
+    AssumeYes,
+}
+
+/// The hosts `ca trust` covers and how far it may go.
+struct TrustRequest<'a> {
+    target: Option<&'a str>,
+    tag: Option<&'a str>,
+    step: TrustStep,
+}
+
+async fn trust(config: &AppConfig, request: TrustRequest<'_>) -> Result<()> {
+    let TrustRequest { target, tag, step } = request;
     let ca_pub = cert::ca_public_key(config)?;
     let script = hostsetup::trust_script(&ca_pub)?;
     let targets = resolve_targets(target, tag, "ai ca trust", config).await?;
@@ -82,13 +115,18 @@ async fn trust(
         cert::AGENT_PRINCIPAL,
         hostsetup::AGENT_USER
     );
-    if dry_run {
-        println!("Dry run: nothing was changed.");
-        return Ok(());
-    }
-    if !yes && !confirm("Run it?", false)? {
-        println!("Cancelled.");
-        return Ok(());
+    match step {
+        TrustStep::DryRun => {
+            println!("Dry run: nothing was changed.");
+            return Ok(());
+        }
+        TrustStep::Ask => {
+            if !confirm("Run it?", false)? {
+                println!("Cancelled.");
+                return Ok(());
+            }
+        }
+        TrustStep::AssumeYes => {}
     }
 
     let exec = AiExecutor::new(config);

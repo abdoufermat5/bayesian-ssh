@@ -19,6 +19,7 @@ use crate::services::teams::agent::AgentRuntime;
 use crate::services::teams::codec::VaultCodec;
 use crate::services::teams::relay::{Peer, RelayEndpoint, RelayRequestPayload, Verdict};
 use crate::services::teams::session::{self, kind_from_str, kind_str, team_of_connection};
+use crate::services::teams::store::AuditAppend;
 use crate::services::teams::TeamsStore;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -225,7 +226,7 @@ pub fn forward_event(config: &AppConfig, event: &AiEvent) -> Result<()> {
     let mut team = None;
     if let AiEvent::Call { call, .. } = event {
         let conn = match call.host.as_deref() {
-            Some(h) => db.get_connection(h)?,
+            Some(h) => db.connection(h)?,
             None => None,
         };
         if let Some(conn) = conn {
@@ -342,14 +343,16 @@ pub(crate) fn flush_pending(
         let at = DateTime::parse_from_rfc3339(&at)
             .map(|t| t.with_timezone(&Utc))
             .unwrap_or_else(|_| Utc::now());
-        store.append_audit_event_full(
+        store.append_audit_event_with(
             team_id,
             codec,
-            kind,
-            entry.as_deref().and_then(|e| Uuid::parse_str(e).ok()),
-            at,
-            Some(serde_json::from_str(&actor)?),
-            Some(detail.as_bytes()),
+            AuditAppend {
+                kind,
+                entry_id: entry.as_deref().and_then(|e| Uuid::parse_str(e).ok()),
+                occurred_at: at,
+                actor: Some(serde_json::from_str(&actor)?),
+                detail: Some(detail.as_bytes()),
+            },
         )?;
         db.conn
             .execute("DELETE FROM ai_audit_pending WHERE id = ?1", [id])?;
@@ -401,6 +404,7 @@ mod tests {
     use crate::services::teams::codec::CryptoCodec;
     use crate::services::teams::crypto::{self, DeviceKeys, TeamKey};
     use crate::services::teams::relay::fake::{approval, cast};
+    use crate::services::teams::relay::ApprovalAnswer;
     use crate::services::teams::store::TeamLocal;
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -425,7 +429,14 @@ mod tests {
             assert_eq!(reqs[0].payload.agent, "deployer");
             assert_eq!(reqs[0].payload.required_approvals, 1);
             admin_ep
-                .send_decision(&reqs[0], true, "alice@x.io", None, None, &admins)
+                .send_decision(
+                    &reqs[0],
+                    ApprovalAnswer::Approve,
+                    "alice@x.io",
+                    None,
+                    None,
+                    &admins,
+                )
                 .await
                 .unwrap();
         });
@@ -462,7 +473,7 @@ mod tests {
                 let (reqs, _) = ep.pending_requests(&[agent_peer], 0, 5).await.unwrap();
                 assert_eq!(reqs[0].payload.required_approvals, 2);
                 let who = if i == 0 { "alice@x.io" } else { "bob@x.io" };
-                ep.send_decision(&reqs[0], true, who, None, None, &admins)
+                ep.send_decision(&reqs[0], ApprovalAnswer::Approve, who, None, None, &admins)
                     .await
                     .unwrap();
             }));
@@ -528,7 +539,7 @@ mod tests {
             let (reqs, _) = ep.pending_requests(&[ap], 0, 5).await.unwrap();
             ep.send_decision(
                 &reqs[0],
-                false,
+                ApprovalAnswer::Deny,
                 "alice@x.io",
                 Some("no".into()),
                 None,

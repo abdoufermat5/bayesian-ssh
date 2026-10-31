@@ -7,7 +7,7 @@ pub async fn execute(config: AppConfig) -> Result<()> {
     info!("Showing application statistics");
 
     let ssh_service = SshService::new(config)?;
-    let stats = ssh_service.get_stats().await?;
+    let stats = ssh_service.stats().await?;
 
     println!("📊 Bayesian SSH Statistics\n");
 

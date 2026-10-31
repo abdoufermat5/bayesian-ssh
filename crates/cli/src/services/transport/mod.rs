@@ -3,8 +3,6 @@
 //! The `SshTransport` trait lets callers (CLI, GUI, transfer service) stay
 //! transport-agnostic. Concrete impls live in sibling modules.
 
-#![allow(dead_code, unused_imports)]
-
 pub mod dispatcher;
 pub mod russh_impl;
 pub mod scp_impl;

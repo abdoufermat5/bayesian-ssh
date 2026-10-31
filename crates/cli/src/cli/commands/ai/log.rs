@@ -10,6 +10,10 @@ use crate::services::ai::{audit, report};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 
+/// Print a run list, a run's events, or a report.
+///
+/// # Errors
+/// Returns an error when the run cannot be resolved or the report cannot be written.
 pub async fn execute(args: AiArgsLog, config: AppConfig) -> Result<()> {
     if args.format.is_some() || args.output.is_some() {
         let Some(run) = args.run.as_deref() else {
@@ -55,13 +59,13 @@ pub async fn execute(args: AiArgsLog, config: AppConfig) -> Result<()> {
             .collect();
         println!("{}", serde_json::to_string_pretty(&v)?);
     } else {
-        let events: Vec<(String, AiEvent)> = events
-            .into_iter()
-            .map(|e| (e.ts.clone(), e.event.clone()))
-            .collect();
         print!(
             "{}",
-            render_events(&Style::terminal(), &events, ui::width())
+            render_events(
+                &Style::terminal(),
+                events.iter().map(|e| (e.ts.as_str(), &e.event)),
+                ui::width()
+            )
         );
     }
     Ok(())
@@ -108,7 +112,11 @@ fn export(
 
 /// A run's events in the `bssh ai watch` line format, each at its own time. Nothing is
 /// folded and asks get their own line: this is the record.
-fn render_events(style: &Style, events: &[(String, AiEvent)], width: usize) -> String {
+fn render_events<'a>(
+    style: &Style,
+    events: impl IntoIterator<Item = (&'a str, &'a AiEvent)>,
+    width: usize,
+) -> String {
     let mut ctx = FeedContext::with_width(width);
     ctx.show_asks = true;
     let mut out = String::new();
@@ -154,7 +162,7 @@ mod tests {
     #[test]
     fn events_read_like_the_watch_feed() {
         let ts = "2026-10-24T17:23:42Z".to_string();
-        let events = vec![
+        let events = [
             (
                 ts.clone(),
                 call(
@@ -188,7 +196,11 @@ mod tests {
                 ),
             ),
         ];
-        let out = render_events(&Style::plain(), &events, 100);
+        let out = render_events(
+            &Style::plain(),
+            events.iter().map(|(ts, ev)| (ts.as_str(), ev)),
+            100,
+        );
         let lines: Vec<&str> = out.lines().collect();
         assert_eq!(lines.len(), 2, "{out}");
         assert!(lines[0].contains("✓ read") && lines[0].ends_with("0.2 s · jail"));

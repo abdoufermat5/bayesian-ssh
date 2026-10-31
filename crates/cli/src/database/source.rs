@@ -33,7 +33,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn get_source(&self, name_or_id: &str) -> Result<Option<Source>> {
+    pub fn source(&self, name_or_id: &str) -> Result<Option<Source>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, kind, config, created_at, last_sync_at, last_sync_error
              FROM sources WHERE id = ?1 OR name = ?1",
@@ -169,7 +169,7 @@ impl Database {
 
         let mut connections = Vec::with_capacity(rows.len());
         for mut connection in rows {
-            connection.tags = self.get_tags_for_connection(&connection.id.to_string())?;
+            connection.tags = self.tags_for_connection(&connection.id.to_string())?;
             connections.push(connection);
         }
         Ok(connections)

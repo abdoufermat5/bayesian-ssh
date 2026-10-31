@@ -4,6 +4,8 @@
 //! parallel (bounded by `parallel`), streaming per-host progress to the
 //! frontend as `upload-event` and a single terminal `upload-finished`.
 
+use super::CommandError;
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -17,7 +19,7 @@ use tauri::{AppHandle, Emitter, State};
 use tokio::task::AbortHandle;
 use uuid::Uuid;
 
-use super::get_db_and_config;
+use super::open_db_and_config;
 
 /// Hosts uploaded to at once when the caller does not specify a value.
 const DEFAULT_PARALLEL_HOSTS: usize = 8;
@@ -78,23 +80,21 @@ pub async fn start_upload(
     local_paths: Vec<String>,
     remote_dir: String,
     parallel: Option<usize>,
-) -> Result<String, String> {
+) -> Result<String, CommandError> {
     if connection_ids.is_empty() {
-        return Err("Select at least one host.".to_string());
+        return Err("Select at least one host.".into());
     }
     if local_paths.is_empty() {
-        return Err("Add at least one file or folder to upload.".to_string());
+        return Err("Add at least one file or folder to upload.".into());
     }
 
     let remote_dir = remote_dir.trim();
     if remote_dir.is_empty() {
-        return Err("Enter a destination directory.".to_string());
+        return Err("Enter a destination directory.".into());
     }
 
-    let (db, config) = get_db_and_config()?;
-    let all = db
-        .list_connections(None, false)
-        .map_err(|e| e.to_string())?;
+    let (db, config) = open_db_and_config()?;
+    let all = db.list_connections(None, false)?;
     let targets: Vec<Connection> = connection_ids
         .iter()
         .filter_map(|id| {
@@ -104,17 +104,17 @@ pub async fn start_upload(
         })
         .collect();
     if targets.is_empty() {
-        return Err("No valid target connections selected".to_string());
+        return Err("No valid target connections selected".into());
     }
     if let Some(changed) = targets.iter().find(|c| c.pending_change.is_some()) {
-        return Err(bayesian_ssh::services::pending::refusal(changed));
+        return Err(bayesian_ssh::services::pending::refusal(changed).into());
     }
 
     let mut locals = Vec::with_capacity(local_paths.len());
     for path in &local_paths {
         let path = PathBuf::from(path);
         if !path.exists() {
-            return Err(format!("Local path not found: {}", path.display()));
+            return Err(format!("Local path not found: {}", path.display()).into());
         }
         locals.push(path);
     }
@@ -209,7 +209,7 @@ pub async fn start_upload(
     });
 
     jobs.lock()
-        .map_err(|_| "Upload state lock poisoned".to_string())?
+        .map_err(|_| CommandError::from("Upload state lock poisoned"))?
         .insert(job_id.clone(), handle.abort_handle());
     let _ = start_tx.send(());
 
@@ -223,11 +223,11 @@ pub fn cancel_upload(
     app: AppHandle,
     state: State<'_, UploadState>,
     job_id: String,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     let handle = state
         .jobs()
         .lock()
-        .map_err(|_| "Upload state lock poisoned".to_string())?
+        .map_err(|_| CommandError::from("Upload state lock poisoned"))?
         .remove(&job_id);
 
     // Nothing to abort: the job already finished (and announced itself).

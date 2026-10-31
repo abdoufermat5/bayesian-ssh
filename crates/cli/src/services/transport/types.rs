@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use crate::models::Connection;
 use async_trait::async_trait;
 use std::path::PathBuf;
@@ -216,8 +214,12 @@ pub struct RemoteEntry {
 }
 
 /// SFTP session abstraction. Subprocess transport returns `Unsupported`.
-// `#[async_trait]` expands to `#[must_use]` on boxed futures; newer clippy flags that.
-#[allow(clippy::double_must_use)]
+// `#[async_trait]` marks the boxed future `#[must_use]`; the `Result` output is
+// already `#[must_use]`, so clippy counts the attribute twice.
+#[expect(
+    clippy::double_must_use,
+    reason = "async_trait boxed future is #[must_use] and Result is #[must_use]"
+)]
 #[async_trait]
 pub trait SftpSession: Send + Sync {
     async fn list(&self, path: &str) -> Result<Vec<RemoteEntry>, TransportError>;
@@ -246,7 +248,10 @@ pub trait SftpSession: Send + Sync {
 }
 
 /// Top-level SSH transport.
-#[allow(clippy::double_must_use)]
+#[expect(
+    clippy::double_must_use,
+    reason = "async_trait boxed future is #[must_use] and Result is #[must_use]"
+)]
 #[async_trait]
 pub trait SshTransport: Send + Sync {
     async fn open_shell(&self, conn: &Connection, io: PtyIo)
@@ -463,16 +468,7 @@ mod tests {
     }
 
     fn conn() -> Connection {
-        Connection::new(
-            "c".into(),
-            "h.example".into(),
-            "u".into(),
-            22,
-            None,
-            None,
-            false,
-            None,
-        )
+        Connection::new("c".into(), "h.example".into(), "u".into(), 22)
     }
 
     fn fake(delay_ms: u64) -> Fake {

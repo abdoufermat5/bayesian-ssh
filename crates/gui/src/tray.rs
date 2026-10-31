@@ -10,7 +10,7 @@ use tauri::{
 // Tray icons must stay small; use the dedicated 32x32 asset instead of the 512px window icon.
 const TRAY_ICON: tauri::image::Image<'static> = include_image!("icons/32x32.png");
 
-use crate::commands::{close_all_ptys, get_db_and_config, PtyState};
+use crate::commands::{close_all_ptys, open_db_and_config, CommandError, PtyState};
 
 pub fn build_tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let show_i = MenuItemBuilder::new("Open Bayesian SSH")
@@ -21,7 +21,7 @@ pub fn build_tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let mut submenu_builder = SubmenuBuilder::new(app, "Quick Connect");
     let mut has_connections = false;
 
-    if let Ok((db, _config)) = get_db_and_config() {
+    if let Ok((db, _config)) = open_db_and_config() {
         if let Ok(conns) = db.list_connections(None, false) {
             for conn in conns.iter().take(10) {
                 let id = format!("connect:{}", conn.name);
@@ -122,16 +122,16 @@ pub fn force_quit_application(app: &AppHandle) {
 
 // Reads the database; menu updates are marshalled to the main thread by Tauri.
 #[tauri::command(async)]
-pub fn refresh_tray_menu(app: AppHandle) -> Result<(), String> {
+pub fn refresh_tray_menu(app: AppHandle) -> Result<(), CommandError> {
     if let Some(tray) = app.tray_by_id("default") {
-        let menu = build_tray_menu(&app).map_err(|e| e.to_string())?;
+        let menu = build_tray_menu(&app)?;
         let _ = tray.set_menu(Some(menu));
     }
     Ok(())
 }
 
 #[tauri::command(async)]
-pub fn send_desktop_notification(title: String, body: String) -> Result<(), String> {
+pub fn send_desktop_notification(title: String, body: String) -> Result<(), CommandError> {
     // Strip control characters that could break the shell/script wrappers below.
     let title: String = title.chars().filter(|c| !c.is_control()).collect();
     let body: String = body.chars().filter(|c| !c.is_control()).collect();
@@ -143,8 +143,7 @@ pub fn send_desktop_notification(title: String, body: String) -> Result<(), Stri
             .arg("Bayesian SSH")
             .arg(&title)
             .arg(&body)
-            .spawn()
-            .map_err(|e| e.to_string())?;
+            .spawn()?;
     }
     #[cfg(target_os = "macos")]
     {

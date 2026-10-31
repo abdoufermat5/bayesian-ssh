@@ -56,6 +56,6 @@ pub fn source_name(
     let id = conn.source_id?;
     crate::database::Database::new(config)
         .ok()
-        .and_then(|db| db.get_source(&id.to_string()).ok().flatten())
+        .and_then(|db| db.source(&id.to_string()).ok().flatten())
         .map(|source| source.name)
 }

@@ -1,6 +1,6 @@
 use crate::cli::utils::resolve_connection;
 use crate::config::AppConfig;
-use crate::services::SshService;
+use crate::services::{NewConnection, SshService};
 use anyhow::Result;
 use tracing::info;
 
@@ -11,26 +11,29 @@ pub async fn execute(source: String, new_name: String, config: AppConfig) -> Res
     let original = resolve_connection(&ssh_service, &source, "duplicate", true, &config).await?;
 
     // Check if new name already exists
-    if ssh_service.get_connection(&new_name).await?.is_some() {
+    if ssh_service.connection(&new_name).await?.is_some() {
         anyhow::bail!("A connection with the name '{}' already exists", new_name);
     }
 
     info!("Duplicating connection {} to {}", original.name, new_name);
 
+    // A connection copied without a bastion must stay direct.
+    let direct = original.bastion.is_none();
+
     ssh_service
-        .add_connection(
-            new_name.clone(),
-            original.host.clone(),
-            Some(original.user.clone()),
-            Some(original.port),
-            Some(original.use_kerberos),
-            original.bastion.clone(),
-            original.bastion.is_none(),
-            original.bastion_user.clone(),
-            original.key_path.clone(),
-            original.tags.clone(),
-            original.forward_agent,
-        )
+        .add_connection(NewConnection {
+            name: new_name.clone(),
+            host: original.host,
+            user: Some(original.user),
+            port: Some(original.port),
+            kerberos: Some(original.use_kerberos),
+            bastion: original.bastion,
+            no_bastion: direct,
+            bastion_user: original.bastion_user,
+            key: original.key_path,
+            tags: original.tags,
+            forward_agent: original.forward_agent,
+        })
         .await?;
 
     println!(

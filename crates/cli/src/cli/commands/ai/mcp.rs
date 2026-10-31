@@ -7,6 +7,10 @@ use crate::config::AppConfig;
 use crate::services::ai::{mcp, policy};
 use anyhow::Result;
 
+/// Serve the MCP protocol on stdio for an agent.
+///
+/// # Errors
+/// Returns an error when the MCP server cannot start.
 pub async fn execute(args: crate::cli::parser_ai::AiArgsMcp, config: AppConfig) -> Result<()> {
     // A policy typo would otherwise be dropped silently by serde; say so once, on stderr.
     for warning in policy::validation_warnings(&config, &args.policy) {

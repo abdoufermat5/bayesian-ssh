@@ -1,22 +1,35 @@
 use crate::cli::utils::resolve_connection;
 use crate::config::AppConfig;
-use crate::services::SshService;
+use crate::services::{ConnectOverrides, SshService};
 use anyhow::Result;
 use tracing::info;
 
-#[allow(clippy::too_many_arguments)]
-pub async fn execute(
-    target: String,
-    user: Option<String>,
-    port: Option<u16>,
-    kerberos: Option<bool>,
-    bastion: Option<String>,
-    no_bastion: bool,
-    bastion_user: Option<String>,
-    key: Option<String>,
-    record: Option<bool>,
-    config: AppConfig,
-) -> Result<()> {
+/// What `bssh connect` was asked to do; `record` is `None` when neither
+/// `--record` nor `--no-record` was given.
+pub struct ConnectArgs {
+    pub target: String,
+    pub user: Option<String>,
+    pub port: Option<u16>,
+    pub kerberos: Option<bool>,
+    pub bastion: Option<String>,
+    pub no_bastion: bool,
+    pub bastion_user: Option<String>,
+    pub key: Option<String>,
+    pub record: Option<bool>,
+}
+
+pub async fn execute(args: ConnectArgs, config: AppConfig) -> Result<()> {
+    let ConnectArgs {
+        target,
+        user,
+        port,
+        kerberos,
+        bastion,
+        no_bastion,
+        bastion_user,
+        key,
+        record,
+    } = args;
     info!("Connecting to target: {}", target);
 
     let ssh_service = SshService::new(config.clone())?;
@@ -29,16 +42,18 @@ pub async fn execute(
                     "Connection not resolved, attempting direct connection to {}",
                     target
                 );
-                crate::models::Connection::new(
-                    target.clone(),
-                    target.clone(),
-                    user.clone().unwrap_or_else(|| config.default_user.clone()),
-                    port.unwrap_or(config.default_port),
-                    bastion.clone(),
-                    bastion_user.clone(),
-                    kerberos.unwrap_or(config.use_kerberos_by_default),
-                    key.clone(),
-                )
+                crate::models::Connection {
+                    bastion: bastion.clone(),
+                    bastion_user: bastion_user.clone(),
+                    use_kerberos: kerberos.unwrap_or(config.use_kerberos_by_default),
+                    key_path: key.clone(),
+                    ..crate::models::Connection::new(
+                        target.clone(),
+                        target.clone(),
+                        user.clone().unwrap_or_else(|| config.default_user.clone()),
+                        port.unwrap_or(config.default_port),
+                    )
+                }
             }
         };
 
@@ -69,14 +84,16 @@ pub async fn execute(
     ssh_service
         .connect_to_connection(
             &connection,
-            user,
-            port,
-            kerberos,
-            bastion,
-            no_bastion,
-            bastion_user,
-            key,
-            record,
+            ConnectOverrides {
+                user,
+                port,
+                kerberos,
+                bastion,
+                no_bastion,
+                bastion_user,
+                key,
+                record,
+            },
         )
         .await
 }

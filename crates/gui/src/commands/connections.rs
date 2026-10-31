@@ -1,16 +1,17 @@
-use super::get_db_and_config;
+use super::open_db_and_config;
+use super::CommandError;
 pub(crate) use bayesian_ssh::models::validate_connection_fields;
 use bayesian_ssh::models::{Connection, Session, SessionStatus};
 use chrono::Utc;
 use std::collections::HashMap;
 use uuid::Uuid;
 
-fn friendly_db_error(e: impl std::fmt::Display) -> String {
+fn friendly_db_error(e: impl std::fmt::Display) -> CommandError {
     let msg = e.to_string();
     if msg.contains("UNIQUE constraint failed") {
-        "A connection with this name already exists.".to_string()
+        "A connection with this name already exists.".into()
     } else {
-        msg
+        msg.into()
     }
 }
 
@@ -18,8 +19,8 @@ fn friendly_db_error(e: impl std::fmt::Display) -> String {
 pub fn get_connections(
     query: Option<String>,
     tag_filter: Option<String>,
-) -> Result<Vec<Connection>, String> {
-    let (db, config) = get_db_and_config()?;
+) -> Result<Vec<Connection>, CommandError> {
+    let (db, config) = open_db_and_config()?;
 
     if let Some(q) = query {
         if !q.trim().is_empty() {
@@ -36,8 +37,8 @@ pub fn get_connections(
 #[tauri::command(async)]
 pub fn predict_connections(
     limit: Option<usize>,
-) -> Result<Vec<bayesian_ssh::database::Prediction>, String> {
-    let (db, config) = get_db_and_config()?;
+) -> Result<Vec<bayesian_ssh::database::Prediction>, CommandError> {
+    let (db, config) = open_db_and_config()?;
     let ctx = if config.prediction.enabled {
         bayesian_ssh::database::RankContext::current_without_cwd(&db)
     } else {
@@ -48,7 +49,10 @@ pub fn predict_connections(
 }
 
 #[tauri::command(async)]
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "tauri command arguments map 1:1 to frontend invoke fields"
+)]
 pub fn add_connection(
     name: String,
     host: String,
@@ -60,37 +64,44 @@ pub fn add_connection(
     key_path: Option<String>,
     tags: Vec<String>,
     forward_agent: Option<bool>,
-) -> Result<(), String> {
-    let (db, config) = get_db_and_config()?;
+) -> Result<(), CommandError> {
+    let (db, config) = open_db_and_config()?;
 
     let default_u = config.default_user.clone();
     let default_p = config.default_port;
     let default_k = config.use_kerberos_by_default;
 
     let user = user.unwrap_or(default_u);
-    validate_connection_fields(&name, &host, &user, &bastion, &bastion_user, &key_path)?;
+    validate_connection_fields(
+        &name,
+        &host,
+        &user,
+        bastion.as_deref(),
+        bastion_user.as_deref(),
+        key_path.as_deref(),
+    )?;
 
-    let mut connection = Connection::new(
-        name,
-        host,
-        user,
-        port.unwrap_or(default_p),
+    let mut connection = Connection {
         bastion,
         bastion_user,
-        kerberos.unwrap_or(default_k),
+        use_kerberos: kerberos.unwrap_or(default_k),
         key_path,
-    );
+        ..Connection::new(name, host, user, port.unwrap_or(default_p))
+    };
 
     connection.forward_agent = forward_agent.unwrap_or(false);
     for tag in tags {
         connection.add_tag(tag);
     }
 
-    db.add_connection(&connection).map_err(|e| e.to_string())
+    db.add_connection(&connection).map_err(CommandError::from)
 }
 
 #[tauri::command(async)]
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "tauri command arguments map 1:1 to frontend invoke fields"
+)]
 pub fn edit_connection(
     id: String,
     name: String,
@@ -103,21 +114,27 @@ pub fn edit_connection(
     key_path: Option<String>,
     tags: Vec<String>,
     forward_agent: Option<bool>,
-) -> Result<(), String> {
-    let (db, _config) = get_db_and_config()?;
+) -> Result<(), CommandError> {
+    let (db, _config) = open_db_and_config()?;
 
-    let uuid = Uuid::parse_str(&id).map_err(|e: uuid::Error| e.to_string())?;
+    let uuid = Uuid::parse_str(&id)?;
 
     let existing = db
-        .get_connection(&id)
-        .map_err(|e| e.to_string())?
+        .connection(&id)?
         .ok_or_else(|| format!("Connection '{}' not found", id))?;
 
     if existing.id != uuid {
-        return Err("Connection id mismatch.".to_string());
+        return Err("Connection id mismatch.".into());
     }
 
-    validate_connection_fields(&name, &host, &user, &bastion, &bastion_user, &key_path)?;
+    validate_connection_fields(
+        &name,
+        &host,
+        &user,
+        bastion.as_deref(),
+        bastion_user.as_deref(),
+        key_path.as_deref(),
+    )?;
 
     let mut connection = Connection {
         id: uuid,
@@ -144,28 +161,27 @@ pub fn edit_connection(
         connection.add_tag(tag);
     }
 
-    db.update_connection(&connection).map_err(|e| e.to_string())
+    db.update_connection(&connection)
+        .map_err(CommandError::from)
 }
 
 /// Clear the route change a team sync made to a connection, after the user
 /// has seen it in the confirmation dialog.
 #[tauri::command(async)]
-pub fn confirm_connection_change(id_or_name: String) -> Result<(), String> {
-    let (db, _config) = get_db_and_config()?;
+pub fn confirm_connection_change(id_or_name: String) -> Result<(), CommandError> {
+    let (db, _config) = open_db_and_config()?;
     let connection = db
-        .get_connection(&id_or_name)
-        .map_err(|e| e.to_string())?
+        .connection(&id_or_name)?
         .ok_or_else(|| format!("Connection '{}' not found", id_or_name))?;
     db.clear_pending_change(&connection.id)
-        .map_err(|e| e.to_string())
+        .map_err(CommandError::from)
 }
 
 #[tauri::command(async)]
-pub fn remove_connection(id_or_name: String) -> Result<(), String> {
-    let (db, _config) = get_db_and_config()?;
+pub fn remove_connection(id_or_name: String) -> Result<(), CommandError> {
+    let (db, _config) = open_db_and_config()?;
 
-    db.remove_connection(&id_or_name)
-        .map_err(|e| e.to_string())?;
+    db.remove_connection(&id_or_name)?;
     Ok(())
 }
 
@@ -189,11 +205,9 @@ pub async fn run_batch_command(
     command: String,
     dry_run: bool,
     timeout_secs: Option<u64>,
-) -> Result<Vec<BatchExecHostResult>, String> {
-    let (db, config) = get_db_and_config()?;
-    let all_conns = db
-        .list_connections(None, false)
-        .map_err(|e| e.to_string())?;
+) -> Result<Vec<BatchExecHostResult>, CommandError> {
+    let (db, config) = open_db_and_config()?;
+    let all_conns = db.list_connections(None, false)?;
 
     let targets: Vec<Connection> = all_conns
         .into_iter()
@@ -201,11 +215,11 @@ pub async fn run_batch_command(
         .collect();
 
     if targets.is_empty() {
-        return Err("No valid target connections selected".to_string());
+        return Err("No valid target connections selected".into());
     }
 
     if command.trim().is_empty() {
-        return Err("Command cannot be empty".to_string());
+        return Err("Command cannot be empty".into());
     }
 
     let timeout_duration = std::time::Duration::from_secs(timeout_secs.unwrap_or(10));
@@ -239,7 +253,7 @@ pub async fn run_batch_command(
 
     // A team sync may have redirected a host since the selection was made.
     if let Some(changed) = targets.iter().find(|c| c.pending_change.is_some()) {
-        return Err(bayesian_ssh::services::pending::refusal(changed));
+        return Err(bayesian_ssh::services::pending::refusal(changed).into());
     }
 
     let conn_lookup: HashMap<String, Connection> = targets

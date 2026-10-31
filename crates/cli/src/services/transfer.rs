@@ -30,6 +30,29 @@ type SharedProgress = std::sync::Arc<dyn Fn(u64, Option<u64>) + Send + Sync>;
 /// A boxed, `Send` future with a borrowed lifetime.
 type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
+/// Resume offset and destination permissions for a single-file upload.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct UploadWriteOptions {
+    pub offset: u64,
+    pub mode: u32,
+}
+
+/// Immutable context threaded through a recursive directory upload.
+#[derive(Clone, Copy)]
+struct UploadDirContext<'a> {
+    mode: u32,
+    progress: Option<&'a SharedProgress>,
+    done: &'a std::sync::Arc<std::sync::atomic::AtomicU64>,
+    expected: u64,
+}
+
+/// Per-tree counters advanced while walking a directory upload.
+#[derive(Default)]
+struct UploadCounters {
+    file_count: u64,
+    total_bytes: u64,
+}
+
 pub struct TransferService {
     config: AppConfig,
 }
@@ -62,8 +85,7 @@ impl TransferService {
             connection,
             local_path,
             remote_path,
-            offset,
-            mode,
+            UploadWriteOptions { offset, mode },
             progress,
         )
         .await
@@ -74,17 +96,16 @@ impl TransferService {
     /// `connection` is used only for logging. Callers that must resolve the
     /// remote destination (e.g. `stat` it) reuse their session here instead of
     /// paying for a second handshake.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn upload_on(
         &self,
         sftp: &dyn crate::services::transport::types::SftpSession,
         connection: &Connection,
         local_path: &Path,
         remote_path: &str,
-        offset: u64,
-        mode: u32,
+        write: UploadWriteOptions,
         progress: Option<ProgressFn>,
     ) -> Result<u64> {
+        let UploadWriteOptions { offset, mode } = write;
         let total = fs::metadata(local_path)
             .await
             .with_context(|| format!("stat {}", local_path.display()))?
@@ -292,34 +313,23 @@ impl TransferService {
     ) -> Result<(u64, u64)> {
         let shared: Option<SharedProgress> = progress.map(std::sync::Arc::from);
         let done = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
-        let mut file_count = 0u64;
-        let mut total_bytes = 0u64;
-        Self::upload_dir_inner(
-            sftp,
-            local_dir,
-            remote_dir,
+        let mut counters = UploadCounters::default();
+        let ctx = UploadDirContext {
             mode,
-            shared.as_ref(),
-            &done,
+            progress: shared.as_ref(),
+            done: &done,
             expected,
-            &mut file_count,
-            &mut total_bytes,
-        )
-        .await?;
-        Ok((file_count, total_bytes))
+        };
+        Self::upload_dir_inner(sftp, local_dir, remote_dir, ctx, &mut counters).await?;
+        Ok((counters.file_count, counters.total_bytes))
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn upload_dir_inner<'a>(
         sftp: &'a dyn crate::services::transport::types::SftpSession,
         local_dir: &'a Path,
         remote_dir: &'a str,
-        mode: u32,
-        progress: Option<&'a SharedProgress>,
-        done: &'a std::sync::Arc<std::sync::atomic::AtomicU64>,
-        expected: u64,
-        file_count: &'a mut u64,
-        total_bytes: &'a mut u64,
+        ctx: UploadDirContext<'a>,
+        counters: &'a mut UploadCounters,
     ) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
             // Create the remote directory (ignore "already exists" errors)
@@ -343,18 +353,8 @@ impl TransferService {
                 let remote_child = format!("{}/{}", remote_dir.trim_end_matches('/'), name_str);
 
                 if file_type.is_dir() {
-                    Self::upload_dir_inner(
-                        sftp,
-                        &local_child,
-                        &remote_child,
-                        mode,
-                        progress,
-                        done,
-                        expected,
-                        file_count,
-                        total_bytes,
-                    )
-                    .await?;
+                    Self::upload_dir_inner(sftp, &local_child, &remote_child, ctx, counters)
+                        .await?;
                 } else if file_type.is_file() {
                     info!("uploading {} → {remote_child}", local_child.display());
 
@@ -378,26 +378,28 @@ impl TransferService {
                     // Report progress per chunk, cumulative across the whole
                     // tree, so the bar advances smoothly instead of jumping
                     // once per file.
-                    let on_chunk: Option<Box<dyn Fn(usize) + Send + Sync>> = progress.map(|cb| {
-                        let cb = std::sync::Arc::clone(cb);
-                        let done = std::sync::Arc::clone(done);
-                        Box::new(move |n: usize| {
-                            let now = done
-                                .fetch_add(n as u64, std::sync::atomic::Ordering::Relaxed)
-                                + n as u64;
-                            cb(now, Some(expected));
-                        }) as Box<dyn Fn(usize) + Send + Sync>
-                    });
+                    let expected = ctx.expected;
+                    let on_chunk: Option<Box<dyn Fn(usize) + Send + Sync>> =
+                        ctx.progress.map(|cb| {
+                            let cb = std::sync::Arc::clone(cb);
+                            let done = std::sync::Arc::clone(ctx.done);
+                            Box::new(move |n: usize| {
+                                let now = done
+                                    .fetch_add(n as u64, std::sync::atomic::Ordering::Relaxed)
+                                    + n as u64;
+                                cb(now, Some(expected));
+                            }) as Box<dyn Fn(usize) + Send + Sync>
+                        });
 
                     let written = sftp
-                        .write_all(&remote_child, 0, rx, mode, on_chunk)
+                        .write_all(&remote_child, 0, rx, ctx.mode, on_chunk)
                         .await
                         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
                     reader.await?.context("upload reader task")?;
 
-                    *file_count += 1;
-                    *total_bytes += written;
+                    counters.file_count += 1;
+                    counters.total_bytes += written;
                 } else if file_type.is_symlink() {
                     warn!("skipping symlink: {}", local_child.display());
                 }

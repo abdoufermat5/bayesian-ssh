@@ -2,9 +2,28 @@ use crate::config::AppConfig;
 use crate::services::inventory::ssh_config::{
     parse_ssh_config, resolve_bastion, BastionRoute, ParsedHost,
 };
-use crate::services::SshService;
+use crate::services::{NewConnection, SshService};
 use anyhow::{anyhow, bail, Result};
 use tracing::info;
+
+/// How an import treats bastion routes declared in the SSH config.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BastionImport {
+    /// Resolve `ProxyJump` / `ProxyCommand` routes into a bastion.
+    Resolve,
+    /// `--no-bastion`: import every host as a direct connection.
+    ForceDirect,
+}
+
+impl From<bool> for BastionImport {
+    fn from(no_bastion: bool) -> Self {
+        if no_bastion {
+            Self::ForceDirect
+        } else {
+            Self::Resolve
+        }
+    }
+}
 
 pub async fn execute(
     file: Option<String>,
@@ -54,7 +73,7 @@ pub async fn execute(
         for conn in connections {
             // Same policy as the ssh-config path: never clobber or abort on
             // an existing name, so re-importing a backup is idempotent.
-            if ssh_service.get_connection(&conn.name).await?.is_some() {
+            if ssh_service.connection(&conn.name).await?.is_some() {
                 skipped += 1;
                 continue;
             }
@@ -63,19 +82,19 @@ pub async fn execute(
             // not let the configured default bastion leak into it.
             let direct = no_bastion || conn.bastion.is_none();
             if let Err(e) = ssh_service
-                .add_connection(
-                    conn.name,
-                    conn.host,
-                    Some(conn.user),
-                    Some(conn.port),
-                    Some(conn.use_kerberos),
-                    conn.bastion,
-                    direct,
-                    conn.bastion_user,
-                    conn.key_path,
-                    conn.tags,
-                    conn.forward_agent,
-                )
+                .add_connection(NewConnection {
+                    name: conn.name,
+                    host: conn.host,
+                    user: Some(conn.user),
+                    port: Some(conn.port),
+                    kerberos: Some(conn.use_kerberos),
+                    bastion: conn.bastion,
+                    no_bastion: direct,
+                    bastion_user: conn.bastion_user,
+                    key: conn.key_path,
+                    tags: conn.tags,
+                    forward_agent: conn.forward_agent,
+                })
                 .await
             {
                 eprintln!("Warning: Failed to import connection '{}': {}", name, e);
@@ -92,8 +111,13 @@ pub async fn execute(
 
     let mut imported_count = 0;
     let hosts = parse_ssh_config(&content);
+    let import = SshConfigImport {
+        service: &ssh_service,
+        hosts: &hosts,
+        policy: BastionImport::from(no_bastion),
+    };
     for host in &hosts {
-        if let Err(e) = import_host(&ssh_service, &hosts, host, no_bastion).await {
+        if let Err(e) = import.host(host).await {
             eprintln!("Warning: Failed to import host '{}': {}", host.alias, e);
         } else {
             imported_count += 1;
@@ -108,55 +132,62 @@ pub async fn execute(
     Ok(())
 }
 
-async fn import_host(
-    ssh_service: &SshService,
-    all: &[ParsedHost],
-    host: &ParsedHost,
-    no_bastion: bool,
-) -> Result<()> {
-    // Skip if host already exists
-    if ssh_service.get_connection(&host.alias).await?.is_some() {
-        return Ok(());
-    }
+/// One SSH-config import run: the parsed hosts, the bastion policy and the
+/// service new connections are written through.
+struct SshConfigImport<'a> {
+    service: &'a SshService,
+    hosts: &'a [ParsedHost],
+    policy: BastionImport,
+}
 
-    // Use HostName if available, otherwise fall back to Host
-    let actual_host = host.hostname.clone().unwrap_or_else(|| host.alias.clone());
-
-    // ProxyJump / `ssh -W %h:%p` ProxyCommand become the connection's bastion.
-    let mut direct = no_bastion;
-    let (mut bastion, mut bastion_user) = (None, None);
-    if !no_bastion {
-        let resolved = resolve_bastion(all, host);
-        for message in &resolved.warnings {
-            eprintln!("Warning: host '{}': {}", host.alias, message);
+impl SshConfigImport<'_> {
+    async fn host(&self, host: &ParsedHost) -> Result<()> {
+        // Skip if host already exists
+        if self.service.connection(&host.alias).await?.is_some() {
+            return Ok(());
         }
-        match resolved.route {
-            BastionRoute::Unset => {}
-            // `ProxyJump none` must not pick up the configured default bastion.
-            BastionRoute::Direct => direct = true,
-            BastionRoute::Hop { bastion: b, user } => {
-                bastion = Some(b);
-                bastion_user = user;
+
+        // Use HostName if available, otherwise fall back to Host
+        let actual_host = host.hostname.clone().unwrap_or_else(|| host.alias.clone());
+
+        // ProxyJump / `ssh -W %h:%p` ProxyCommand become the connection's bastion.
+        let mut direct = self.policy == BastionImport::ForceDirect;
+        let (mut bastion, mut bastion_user) = (None, None);
+        if self.policy == BastionImport::Resolve {
+            let resolved = resolve_bastion(self.hosts, host);
+            for message in &resolved.warnings {
+                eprintln!("Warning: host '{}': {}", host.alias, message);
+            }
+            match resolved.route {
+                BastionRoute::Unset => {}
+                // `ProxyJump none` must not pick up the configured default bastion.
+                BastionRoute::Direct => direct = true,
+                BastionRoute::Hop { bastion: b, user } => {
+                    bastion = Some(b);
+                    bastion_user = user;
+                }
             }
         }
+
+        self.service
+            .add_connection(NewConnection {
+                // Host is the connection name, HostName the actual host.
+                name: host.alias.clone(),
+                host: actual_host,
+                user: host.user.clone(),
+                port: host.port,
+                kerberos: None,
+                bastion,
+                // --no-bastion or `ProxyJump none`
+                no_bastion: direct,
+                bastion_user,
+                key: host.identity_file.clone(),
+                tags: vec!["imported".to_string()],
+                // Agent forwarding is a local, per-connection decision.
+                forward_agent: false,
+            })
+            .await?;
+
+        Ok(())
     }
-
-    ssh_service
-        .add_connection(
-            host.alias.clone(), // Use Host as the connection name
-            actual_host,        // Use HostName as the actual host
-            host.user.clone(),
-            host.port,
-            None, // kerberos
-            bastion,
-            direct, // --no-bastion or `ProxyJump none`
-            bastion_user,
-            host.identity_file.clone(),
-            vec!["imported".to_string()],
-            // Agent forwarding is a local, per-connection decision.
-            false,
-        )
-        .await?;
-
-    Ok(())
 }

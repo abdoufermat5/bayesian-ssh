@@ -27,12 +27,10 @@ impl Database {
     // Public search entry points
     // ──────────────────────────────────────────────────────────────────────────
 
-    #[allow(dead_code)]
     pub fn fuzzy_search_connections(&self, query: &str, limit: usize) -> Result<Vec<Connection>> {
         self.search_connections(query, limit, "fuzzy")
     }
 
-    #[allow(dead_code)]
     pub fn bayesian_search_connections(
         &self,
         query: &str,
@@ -103,7 +101,7 @@ impl Database {
         let mut ids: Vec<String> = all_matches.iter().map(|c| c.id.to_string()).collect();
         ids.sort_unstable();
         ids.dedup();
-        let tag_map = self.get_tags_for_connections(&ids)?;
+        let tag_map = self.tags_for_connections(&ids)?;
         for conn in &mut all_matches {
             if let Some(tags) = tag_map.get(&conn.id.to_string()) {
                 conn.tags = tags.clone();

@@ -130,7 +130,7 @@ async fn teams_end_to_end() {
     let admin_tk1 = unwrap_all(
         team_id,
         admin.id,
-        &admin_api.get_keys(team_id).await.unwrap(),
+        &admin_api.keys(team_id).await.unwrap(),
         &admin.keys(),
         &trust_root,
     )
@@ -208,7 +208,7 @@ async fn teams_end_to_end() {
     let member_keys = unwrap_all(
         team_id,
         member.id,
-        &member_api.get_keys(team_id).await.unwrap(),
+        &member_api.keys(team_id).await.unwrap(),
         &member.keys(),
         &trust_root,
     )
@@ -312,7 +312,7 @@ async fn teams_end_to_end() {
     let keys = unwrap_all(
         team_id,
         admin.id,
-        &admin_api.get_keys(team_id).await.unwrap(),
+        &admin_api.keys(team_id).await.unwrap(),
         &admin.keys(),
         &trust_root,
     )

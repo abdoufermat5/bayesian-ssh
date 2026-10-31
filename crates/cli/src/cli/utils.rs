@@ -117,10 +117,9 @@ pub fn print_connection_info(connection: &Connection, index: usize) {
 }
 
 /// Result type for interactive selection operations
-#[allow(clippy::large_enum_variant)]
 pub enum SelectionResult {
     /// User selected a connection
-    Selected(Connection),
+    Selected(Box<Connection>),
     /// User wants to search again with a new query
     SearchAgain(String),
     /// User cancelled the operation
@@ -173,7 +172,9 @@ pub fn interactive_selection_with_search(
             _ => {
                 if let Ok(index) = input.parse::<usize>() {
                     if index >= 1 && index <= connections.len() {
-                        return Ok(SelectionResult::Selected(connections[index - 1].clone()));
+                        return Ok(SelectionResult::Selected(Box::new(
+                            connections[index - 1].clone(),
+                        )));
                     } else {
                         println!(
                             "❌ Invalid selection. Please enter a number between 1 and {}.",
@@ -219,7 +220,7 @@ pub async fn fuzzy_select_connection(
                 println!("\n💡 Tip: Use 'bssh list' to see all connections or 'bssh add' to create a new one.");
 
                 // Show recent connections as fallback
-                let recent = ssh_service.get_recent_connections(5).await?;
+                let recent = ssh_service.recent_connections(5).await?;
                 if !recent.is_empty() {
                     println!("\n📅 Recent connections:");
                     for (i, conn) in recent.iter().enumerate() {
@@ -234,7 +235,7 @@ pub async fn fuzzy_select_connection(
                         &recent,
                         &format!("Select recent connection to {}", action_name),
                     )? {
-                        SelectionResult::Selected(conn) => return Ok(Some(conn)),
+                        SelectionResult::Selected(conn) => return Ok(Some(*conn)),
                         SelectionResult::SearchAgain(new_query) => {
                             current_query = new_query;
                             continue;
@@ -291,7 +292,7 @@ pub async fn fuzzy_select_connection(
                     &matches,
                     &format!("Select connection to {}", action_name),
                 )? {
-                    SelectionResult::Selected(conn) => return Ok(Some(conn)),
+                    SelectionResult::Selected(conn) => return Ok(Some(*conn)),
                     SelectionResult::SearchAgain(new_query) => {
                         current_query = new_query;
                         println!(); // Add spacing before new results
@@ -417,7 +418,7 @@ pub async fn resolve_connection(
     auto_select_single: bool,
     config: &AppConfig,
 ) -> Result<Connection> {
-    if let Some(conn) = ssh_service.get_connection(target).await? {
+    if let Some(conn) = ssh_service.connection(target).await? {
         return Ok(conn);
     }
 

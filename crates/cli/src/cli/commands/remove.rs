@@ -4,6 +4,23 @@ use crate::services::SshService;
 use anyhow::Result;
 use tracing::info;
 
+/// Whether removal asks for confirmation first.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Confirmation {
+    Ask,
+    Skip,
+}
+
+impl From<bool> for Confirmation {
+    fn from(force: bool) -> Self {
+        if force {
+            Self::Skip
+        } else {
+            Self::Ask
+        }
+    }
+}
+
 pub async fn execute(
     target: Option<String>,
     tag: Option<String>,
@@ -11,6 +28,7 @@ pub async fn execute(
     config: AppConfig,
 ) -> Result<()> {
     let ssh_service = SshService::new(config.clone())?;
+    let confirmation = Confirmation::from(force);
 
     if let Some(tag_name) = tag {
         let connections = ssh_service.list_connections(Some(&tag_name), false).await?;
@@ -28,7 +46,7 @@ pub async fn execute(
             println!(" - {} ({}@{})", conn.name, conn.user, conn.host);
         }
 
-        if !force
+        if confirmation == Confirmation::Ask
             && !confirm(
                 &format!("Remove all {} connection(s)?", connections.len()),
                 false,
@@ -83,13 +101,13 @@ pub async fn execute(
     info!("Removing connection: {}", target_str);
     let connection =
         resolve_connection(&ssh_service, &target_str, "remove", false, &config).await?;
-    remove_connection_with_confirmation(&ssh_service, &connection, force).await
+    remove_connection_with_confirmation(&ssh_service, &connection, confirmation).await
 }
 
 async fn remove_connection_with_confirmation(
     ssh_service: &SshService,
     connection: &crate::models::Connection,
-    force: bool,
+    confirmation: Confirmation,
 ) -> Result<()> {
     println!("\n⚠️  WARNING: You are about to remove the following connection:");
     println!("   Name: {}", connection.name);
@@ -101,7 +119,9 @@ async fn remove_connection_with_confirmation(
     }
 
     println!();
-    if !force && !confirm(&format!("Remove connection '{}'?", connection.name), false)? {
+    if confirmation == Confirmation::Ask
+        && !confirm(&format!("Remove connection '{}'?", connection.name), false)?
+    {
         println!("❌ Removal cancelled.");
         return Ok(());
     }

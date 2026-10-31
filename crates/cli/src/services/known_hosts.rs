@@ -3,8 +3,6 @@
 //! Supports both plain (`hostname key-type base64-key`) and hashed
 //! (`|1|base64-salt|base64-hash`) entries as written by OpenSSH.
 
-#![allow(dead_code)]
-
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use hmac::{Hmac, Mac};
 use sha1::Digest;

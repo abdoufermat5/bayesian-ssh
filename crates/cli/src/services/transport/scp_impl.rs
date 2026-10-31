@@ -329,16 +329,11 @@ mod tests {
     }
 
     fn conn(kerb: bool, bastion: Option<&str>) -> Connection {
-        Connection::new(
-            "x".into(),
-            "target.example".into(),
-            "alice".into(),
-            22,
-            bastion.map(String::from),
-            None,
-            kerb,
-            None,
-        )
+        Connection {
+            bastion: bastion.map(String::from),
+            use_kerberos: kerb,
+            ..Connection::new("x".into(), "target.example".into(), "alice".into(), 22)
+        }
     }
 
     #[test]

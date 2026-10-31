@@ -176,16 +176,16 @@ pub fn run() {
             commands::teams_audit,
             commands::teams_attention,
             commands::teams_remove_preview,
-            commands::ai::ai_list_runs,
-            commands::ai::ai_run_events,
-            commands::ai::ai_decide,
-            commands::ai::ai_stop,
-            commands::ai::ai_resume,
-            commands::ai::ai_revoke_grant,
-            commands::ai::ai_settings,
-            commands::ai::ai_reports,
-            commands::ai::ai_report,
-            commands::ai::ai_report_export
+            commands::ai::api::ai_list_runs,
+            commands::ai::api::ai_run_events,
+            commands::ai::api::ai_decide,
+            commands::ai::api::ai_stop,
+            commands::ai::api::ai_resume,
+            commands::ai::api::ai_revoke_grant,
+            commands::ai::api::ai_settings,
+            commands::ai::api::ai_reports,
+            commands::ai::api::ai_report,
+            commands::ai::api::ai_report_export
         ])
         .run(context)
         .expect("error while running tauri application");

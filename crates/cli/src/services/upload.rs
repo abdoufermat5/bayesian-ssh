@@ -19,7 +19,7 @@ use uuid::Uuid;
 
 use crate::config::AppConfig;
 use crate::models::Connection;
-use crate::services::transfer::{ProgressFn, TransferService};
+use crate::services::transfer::{ProgressFn, TransferService, UploadWriteOptions};
 use crate::services::transport::types::SftpSession;
 
 /// One upload request, shared across every target host.
@@ -84,6 +84,16 @@ pub type UploadEventFn = Arc<dyn Fn(UploadEvent) + Send + Sync>;
 /// A boxed, `Send` future with a borrowed lifetime.
 type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
+/// Pre-flight metadata for one upload request, computed once and shared
+/// across every per-host task.
+#[derive(Clone)]
+struct UploadPlan {
+    local_is_dir: bool,
+    local_name: String,
+    total_bytes: u64,
+    file_count: u64,
+}
+
 /// Upload `req.local` to every connection in `targets`, concurrently.
 ///
 /// Up-front validation problems (missing local path, a directory without
@@ -128,7 +138,12 @@ pub async fn upload_to_hosts(
     };
 
     let req = Arc::new(req);
-    let local_name = local_basename(&req.local);
+    let plan = UploadPlan {
+        local_is_dir,
+        local_name: local_basename(&req.local),
+        total_bytes,
+        file_count,
+    };
     let transfer = Arc::new(TransferService::new(config.clone())?);
     let semaphore = Arc::new(Semaphore::new(parallel.max(1)));
 
@@ -144,21 +159,11 @@ pub async fn upload_to_hosts(
         let req = Arc::clone(&req);
         let on_event = on_event.clone();
         let semaphore = Arc::clone(&semaphore);
-        let local_name = local_name.clone();
+        let plan = plan.clone();
         set.spawn(async move {
             // The semaphore is never closed, so acquire cannot fail.
             let _permit = semaphore.acquire_owned().await.ok();
-            let result = run_host(
-                transfer,
-                conn,
-                req,
-                local_is_dir,
-                local_name,
-                total_bytes,
-                file_count,
-                on_event,
-            )
-            .await;
+            let result = run_host(transfer, conn, req, plan, on_event).await;
             (index, result)
         });
     }
@@ -197,17 +202,19 @@ pub async fn upload_to_hosts(
     Ok(results.into_iter().flatten().collect())
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn run_host(
     transfer: Arc<TransferService>,
     conn: Connection,
     req: Arc<UploadRequest>,
-    local_is_dir: bool,
-    local_name: String,
-    total_bytes: u64,
-    file_count: u64,
+    plan: UploadPlan,
     on_event: Option<UploadEventFn>,
 ) -> HostUploadResult {
+    let UploadPlan {
+        local_is_dir,
+        local_name,
+        total_bytes,
+        file_count,
+    } = plan;
     let started = Instant::now();
     let emit = |event: UploadEvent| {
         if let Some(cb) = &on_event {
@@ -245,7 +252,7 @@ async fn run_host(
             Ok(sftp) => {
                 let dest = resolve_dest(&*sftp, &req.remote, local_is_dir, &local_name).await;
                 remote_path = dest.clone();
-                let progress = make_progress(&conn, &on_event);
+                let progress = make_progress(&conn, on_event.as_ref());
                 if local_is_dir {
                     match transfer
                         .upload_recursive_on(
@@ -272,8 +279,10 @@ async fn run_host(
                             &conn,
                             &req.local,
                             &dest,
-                            req.offset,
-                            req.mode,
+                            UploadWriteOptions {
+                                offset: req.offset,
+                                mode: req.mode,
+                            },
                             Some(progress),
                         )
                         .await
@@ -340,8 +349,8 @@ async fn resolve_dest(
 
 /// Build a throttled progress callback (~10 events/s per host, plus the final
 /// chunk).
-fn make_progress(conn: &Connection, on_event: &Option<UploadEventFn>) -> ProgressFn {
-    let on_event = on_event.clone();
+fn make_progress(conn: &Connection, on_event: Option<&UploadEventFn>) -> ProgressFn {
+    let on_event = on_event.cloned();
     let id = conn.id;
     let last = Arc::new(Mutex::new(None::<Instant>));
     Box::new(move |done, total| {

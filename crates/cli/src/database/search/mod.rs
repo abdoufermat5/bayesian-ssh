@@ -31,10 +31,6 @@ mod tests {
             "web1.example.com".into(),
             "root".into(),
             22,
-            None,
-            None,
-            false,
-            None,
         );
         conn1.add_tag("production".into());
         db.add_connection(&conn1).unwrap();
@@ -44,10 +40,6 @@ mod tests {
             "web2.example.com".into(),
             "root".into(),
             22,
-            None,
-            None,
-            false,
-            None,
         );
         conn2.add_tag("staging".into());
         db.add_connection(&conn2).unwrap();
@@ -94,10 +86,6 @@ mod tests {
             "web1.example.com".into(),
             "root".into(),
             22,
-            None,
-            None,
-            false,
-            None,
         );
         db.add_connection(&conn1).unwrap();
 
@@ -125,10 +113,6 @@ mod tests {
                 format!("10.0.0.{}", i + 1),
                 "root".into(),
                 22,
-                None,
-                None,
-                false,
-                None,
             );
             db.add_connection(&conn).unwrap();
         }

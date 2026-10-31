@@ -88,6 +88,19 @@ pub struct OutboxRow {
     pub queued_at: DateTime<Utc>,
 }
 
+/// One event for [`TeamsStore::append_audit_event_with`].
+#[derive(Debug, Clone)]
+pub struct AuditAppend<'a> {
+    pub kind: AuditKind,
+    pub entry_id: Option<Uuid>,
+    /// When it happened; only millisecond precision is signed.
+    pub occurred_at: DateTime<Utc>,
+    /// Signed with the event (bssh AI events).
+    pub actor: Option<AuditActor>,
+    /// Plaintext, encrypted to the team audit key before signing.
+    pub detail: Option<&'a [u8]>,
+}
+
 pub struct TeamsStore {
     db: Database,
 }
@@ -158,7 +171,7 @@ impl TeamsStore {
         Ok(())
     }
 
-    pub fn get_team(&self, team_id: Uuid) -> Result<Option<TeamLocal>> {
+    pub fn team(&self, team_id: Uuid) -> Result<Option<TeamLocal>> {
         Ok(self
             .list_teams()?
             .into_iter()
@@ -463,23 +476,39 @@ impl TeamsStore {
         entry_id: Option<Uuid>,
         occurred_at: DateTime<Utc>,
     ) -> Result<AuditEvent> {
-        self.append_audit_event_full(team_id, codec, kind, entry_id, occurred_at, None, None)
+        self.append_audit_event_with(
+            team_id,
+            codec,
+            AuditAppend {
+                kind,
+                entry_id,
+                occurred_at,
+                actor: None,
+                detail: None,
+            },
+        )
     }
 
-    /// [`Self::append_audit_event_at`] for a bssh AI event: `actor` is signed
-    /// with the event, `detail` (plaintext) is encrypted to the team audit key
-    /// before signing, so the server never sees it.
-    #[allow(clippy::too_many_arguments)]
-    pub fn append_audit_event_full(
+    /// [`Self::append_audit_event_at`] for any event, with the optional
+    /// `actor` and `detail` of [`AuditAppend`].
+    ///
+    /// # Errors
+    ///
+    /// Fails if the chain head or the outbox can't be read or written, or if
+    /// the event can't be sealed or serialized.
+    pub fn append_audit_event_with(
         &self,
         team_id: Uuid,
         codec: &dyn VaultCodec,
-        kind: AuditKind,
-        entry_id: Option<Uuid>,
-        occurred_at: DateTime<Utc>,
-        actor: Option<AuditActor>,
-        detail: Option<&[u8]>,
+        event: AuditAppend<'_>,
     ) -> Result<AuditEvent> {
+        let AuditAppend {
+            kind,
+            entry_id,
+            occurred_at,
+            actor,
+            detail,
+        } = event;
         let device_id = codec.device_id();
         let tx = self.db.conn.unchecked_transaction()?;
         let head: Option<(i64, Vec<u8>)> = tx
@@ -633,7 +662,7 @@ mod tests {
     #[test]
     fn team_round_trips_and_wrapped_keys_are_stored_verbatim() {
         let (_d, store, team) = store();
-        let t = store.get_team(team).unwrap().unwrap();
+        let t = store.team(team).unwrap().unwrap();
         assert_eq!(t.trust_root_ed25519, Fixed([3u8; 32]));
         assert_eq!(t.server_url, "https://teams.example.com");
 

@@ -2,6 +2,7 @@ use crate::cli::utils::{format_duration, truncate_display};
 use crate::config::AppConfig;
 use crate::services::SshService;
 use anyhow::Result;
+use std::borrow::Cow;
 use tracing::info;
 
 pub async fn execute(
@@ -114,10 +115,10 @@ pub async fn execute(
                 Some(source) => format!("[{}] {}", source, info),
                 None => info,
             };
-            let name = if conn.stale_since.is_some() {
-                format!("{} (stale)", truncate_display(&conn.name, 11))
+            let name: Cow<'_, str> = if conn.stale_since.is_some() {
+                Cow::Owned(format!("{} (stale)", truncate_display(&conn.name, 11)))
             } else {
-                conn.name.clone()
+                Cow::Borrowed(conn.name.as_str())
             };
 
             println!(

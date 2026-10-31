@@ -4,8 +4,6 @@
 //! - `candidate_key_paths()` — ordered list of key files to try
 //! - `AgentClient` wrapper for ssh-agent protocol (via `russh::keys`)
 
-#![allow(dead_code)]
-
 use crate::config::AuthConfig;
 use crate::models::Connection;
 use russh::keys::PrivateKey;
@@ -119,16 +117,7 @@ mod tests {
     use crate::config::AuthConfig;
     use crate::models::Connection;
     fn minimal_conn() -> Connection {
-        Connection::new(
-            "test".into(),
-            "host.example".into(),
-            "user".into(),
-            22,
-            None,
-            None,
-            false,
-            None,
-        )
+        Connection::new("test".into(), "host.example".into(), "user".into(), 22)
     }
 
     #[test]

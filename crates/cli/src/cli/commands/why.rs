@@ -11,18 +11,19 @@ pub async fn execute(target: String, config: AppConfig) -> Result<()> {
 
     let db = Database::new(&config)?;
     let captured = RankContext::current(&db, &config);
+    let disabled_ctx = RankContext::default();
     let rank_ctx = if config.prediction.enabled {
-        captured.clone()
+        &captured
     } else {
-        RankContext::default()
+        &disabled_ctx
     };
 
-    let (pred, rank, total_conns) = db.explain_connection(&connection, &rank_ctx)?;
+    let (pred, rank, total_conns) = db.explain_connection(&connection, rank_ctx)?;
     let b = &pred.breakdown;
 
     let prev_name = captured
         .prev_connection_id
-        .and_then(|id| db.get_connection(&id.to_string()).ok().flatten())
+        .and_then(|id| db.connection(&id.to_string()).ok().flatten())
         .map(|c| c.name);
 
     let repo_label = match &captured.git_root {

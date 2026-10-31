@@ -26,7 +26,7 @@ impl Database {
         Ok(rows > 0)
     }
 
-    pub fn get_aliases_for_connection(&self, connection_id: &str) -> Result<Vec<String>> {
+    pub fn aliases_for_connection(&self, connection_id: &str) -> Result<Vec<String>> {
         let mut stmt = self
             .conn
             .prepare("SELECT alias FROM aliases WHERE connection_id = ?")?;
@@ -40,7 +40,7 @@ impl Database {
 
     /// Batch-fetch aliases for multiple connection IDs in a single query.
     /// Returns a map keyed by connection_id (as stored in the DB, i.e. string form).
-    pub(crate) fn get_aliases_for_connections(
+    pub(crate) fn aliases_for_connections(
         &self,
         connection_ids: &[String],
     ) -> Result<std::collections::HashMap<String, Vec<String>>> {
@@ -67,7 +67,7 @@ impl Database {
         Ok(map)
     }
 
-    pub fn get_connection_by_alias(&self, alias: &str) -> Result<Option<Connection>> {
+    pub fn connection_by_alias(&self, alias: &str) -> Result<Option<Connection>> {
         let mut stmt = self.conn.prepare(
             "SELECT c.id, c.name, c.host, c.user, c.port, c.bastion, c.bastion_user,
                     c.use_kerberos, c.key_path, c.created_at, c.last_used,
@@ -82,19 +82,19 @@ impl Database {
             let mut connection = self.row_to_connection(row)?;
             // Callers may write this connection back (`update_connection`
             // re-syncs tags from it), so it must carry its real tag set.
-            connection.tags = self.get_tags_for_connection(&connection.id.to_string())?;
+            connection.tags = self.tags_for_connection(&connection.id.to_string())?;
             Ok(Some(connection))
         } else {
             Ok(None)
         }
     }
 
-    /// Enhanced get_connection that also checks aliases.
-    pub fn get_connection_or_alias(&self, name_or_alias: &str) -> Result<Option<Connection>> {
-        if let Some(conn) = self.get_connection(name_or_alias)? {
+    /// Enhanced connection that also checks aliases.
+    pub fn connection_or_alias(&self, name_or_alias: &str) -> Result<Option<Connection>> {
+        if let Some(conn) = self.connection(name_or_alias)? {
             return Ok(Some(conn));
         }
-        self.get_connection_by_alias(name_or_alias)
+        self.connection_by_alias(name_or_alias)
     }
 }
 
@@ -119,20 +119,12 @@ mod tests {
             "web1.example.com".into(),
             "root".into(),
             22,
-            None,
-            None,
-            false,
-            None,
         );
         let conn2 = Connection::new(
             "db-prod".into(),
             "db1.example.com".into(),
             "root".into(),
             22,
-            None,
-            None,
-            false,
-            None,
         );
         db.add_connection(&conn1).unwrap();
         db.add_connection(&conn2).unwrap();
@@ -142,7 +134,7 @@ mod tests {
         db.add_alias("dbp", &conn2.id.to_string()).unwrap();
 
         let ids = vec![conn1.id.to_string(), conn2.id.to_string()];
-        let map = db.get_aliases_for_connections(&ids).unwrap();
+        let map = db.aliases_for_connections(&ids).unwrap();
 
         let mut a1 = map.get(&conn1.id.to_string()).unwrap().clone();
         a1.sort();
@@ -160,7 +152,7 @@ mod tests {
             ..Default::default()
         };
         let db = Database::new(&config).unwrap();
-        let map = db.get_aliases_for_connections(&[]).unwrap();
+        let map = db.aliases_for_connections(&[]).unwrap();
         assert!(map.is_empty());
     }
 
@@ -173,26 +165,8 @@ mod tests {
         };
         let db = Database::new(&config).unwrap();
 
-        let conn1 = Connection::new(
-            "shared".into(),
-            "a.example.com".into(),
-            "u".into(),
-            22,
-            None,
-            None,
-            false,
-            None,
-        );
-        let conn2 = Connection::new(
-            "shared".into(),
-            "b.example.com".into(),
-            "u".into(),
-            22,
-            None,
-            None,
-            false,
-            None,
-        );
+        let conn1 = Connection::new("shared".into(), "a.example.com".into(), "u".into(), 22);
+        let conn2 = Connection::new("shared".into(), "b.example.com".into(), "u".into(), 22);
         db.add_connection(&conn1).unwrap();
         let result = db.add_connection(&conn2);
         assert!(result.is_err(), "expected duplicate name to fail");

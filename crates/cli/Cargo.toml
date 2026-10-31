@@ -105,3 +105,6 @@ axum = { version = "0.8", default-features = false, features = ["http1", "tokio"
 [dev-dependencies]
 # In-process MCP client for the round-trip tests.
 rmcp = { version = "3.7.0", features = ["client", "server", "macros", "transport-io", "elicitation"] }
+
+[lints]
+workspace = true

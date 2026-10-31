@@ -71,7 +71,10 @@ pub struct RelayDecisionPayload {
 }
 
 /// Wire access to the relay. [`TeamsClient`] is the production impl.
-#[allow(clippy::double_must_use)]
+#[expect(
+    clippy::double_must_use,
+    reason = "async_trait boxes the future, which is itself must_use, on a Result-returning method"
+)]
 #[async_trait]
 pub trait RelayTransport: Send + Sync {
     async fn post_relay(&self, team_id: Uuid, msg: &RelayMessage) -> ClientResult<RelayAck>;
@@ -109,6 +112,13 @@ pub fn request_hash(plaintext: &[u8]) -> String {
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect()
+}
+
+/// An admin's answer to an approval request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ApprovalAnswer {
+    Approve,
+    Deny,
 }
 
 /// What waiting for decisions ended with.
@@ -340,7 +350,7 @@ impl RelayEndpoint {
     pub async fn send_decision(
         &self,
         req: &IncomingRequest,
-        approved: bool,
+        answer: ApprovalAnswer,
         by_email: &str,
         reason: Option<String>,
         grant: Option<Grant>,
@@ -351,7 +361,7 @@ impl RelayEndpoint {
             v: 1,
             request_id: req.relay_request_id,
             request_hash: req.request_hash.clone(),
-            approved,
+            approved: answer == ApprovalAnswer::Approve,
             by: by_email.to_string(),
             reason,
             grant,
@@ -552,7 +562,6 @@ pub(crate) mod fake {
 }
 
 #[cfg(test)]
-#[allow(clippy::cloned_ref_to_slice_refs)]
 mod tests {
     use super::fake::*;
     use super::*;
@@ -592,7 +601,7 @@ mod tests {
         let (alice, bob) = (&c.admins[0], &c.admins[1]);
         let (reqs, _) = alice
             .1
-            .pending_requests(&[c.agent.0.clone()], 0, 0)
+            .pending_requests(std::slice::from_ref(&c.agent.0), 0, 0)
             .await
             .unwrap();
         assert_eq!(reqs.len(), 1);
@@ -600,7 +609,7 @@ mod tests {
         assert_eq!(reqs[0].request_hash, hash);
         assert_eq!(
             bob.1
-                .pending_requests(&[c.agent.0.clone()], 0, 0)
+                .pending_requests(std::slice::from_ref(&c.agent.0), 0, 0)
                 .await
                 .unwrap()
                 .0
@@ -610,7 +619,7 @@ mod tests {
         assert!(c
             .agent
             .1
-            .pending_requests(&[c.agent.0.clone()], 0, 0)
+            .pending_requests(std::slice::from_ref(&c.agent.0), 0, 0)
             .await
             .unwrap()
             .0
@@ -626,7 +635,14 @@ mod tests {
 
         alice
             .1
-            .send_decision(&reqs[0], true, "alice@x.io", None, None, &admin_peers)
+            .send_decision(
+                &reqs[0],
+                ApprovalAnswer::Approve,
+                "alice@x.io",
+                None,
+                None,
+                &admin_peers,
+            )
             .await
             .unwrap();
         let v = c
@@ -665,14 +681,14 @@ mod tests {
             .unwrap();
         let (reqs, _) = c.admins[0]
             .1
-            .pending_requests(&[c.agent.0.clone()], 0, 0)
+            .pending_requests(std::slice::from_ref(&c.agent.0), 0, 0)
             .await
             .unwrap();
         c.admins[0]
             .1
             .send_decision(
                 &reqs[0],
-                false,
+                ApprovalAnswer::Deny,
                 "alice@x.io",
                 Some("not now".into()),
                 None,
@@ -726,7 +742,14 @@ mod tests {
             .unwrap();
         c.admins[0]
             .1
-            .send_decision(&reqs[0], true, "alice@x.io", None, None, &admin_peers)
+            .send_decision(
+                &reqs[0],
+                ApprovalAnswer::Approve,
+                "alice@x.io",
+                None,
+                None,
+                &admin_peers,
+            )
             .await
             .unwrap();
         let (reqs2, _) = c.admins[2]
@@ -736,7 +759,14 @@ mod tests {
             .unwrap();
         c.admins[2]
             .1
-            .send_decision(&reqs2[0], true, "alice@x.io", None, None, &admin_peers)
+            .send_decision(
+                &reqs2[0],
+                ApprovalAnswer::Approve,
+                "alice@x.io",
+                None,
+                None,
+                &admin_peers,
+            )
             .await
             .unwrap();
         // Same person twice: still waiting.
@@ -761,7 +791,14 @@ mod tests {
             .unwrap();
         c.admins[1]
             .1
-            .send_decision(&reqs3[0], true, "bob@x.io", None, None, &admin_peers)
+            .send_decision(
+                &reqs3[0],
+                ApprovalAnswer::Approve,
+                "bob@x.io",
+                None,
+                None,
+                &admin_peers,
+            )
             .await
             .unwrap();
         let v = c
@@ -807,21 +844,28 @@ mod tests {
             request_hash: hash.clone(),
         };
         evil_ep
-            .send_decision(&fake, true, "evil@x.io", None, None, &[])
+            .send_decision(&fake, ApprovalAnswer::Approve, "evil@x.io", None, None, &[])
             .await
             .unwrap();
 
         // A real admin approves a different request (hash mismatch).
         let (reqs, _) = c.admins[0]
             .1
-            .pending_requests(&[c.agent.0.clone()], 0, 0)
+            .pending_requests(std::slice::from_ref(&c.agent.0), 0, 0)
             .await
             .unwrap();
         let mut other = reqs[0].clone();
         other.request_hash = "deadbeef".into();
         c.admins[0]
             .1
-            .send_decision(&other, true, "alice@x.io", None, None, &[])
+            .send_decision(
+                &other,
+                ApprovalAnswer::Approve,
+                "alice@x.io",
+                None,
+                None,
+                &[],
+            )
             .await
             .unwrap();
 
@@ -858,12 +902,19 @@ mod tests {
             .unwrap();
         let (reqs, _) = c.admins[0]
             .1
-            .pending_requests(&[c.agent.0.clone()], 0, 0)
+            .pending_requests(std::slice::from_ref(&c.agent.0), 0, 0)
             .await
             .unwrap();
         c.admins[0]
             .1
-            .send_decision(&reqs[0], true, "alice@x.io", None, None, &admins)
+            .send_decision(
+                &reqs[0],
+                ApprovalAnswer::Approve,
+                "alice@x.io",
+                None,
+                None,
+                &admins,
+            )
             .await
             .unwrap();
         *c.relay.fail_polls.lock().unwrap() = 1;

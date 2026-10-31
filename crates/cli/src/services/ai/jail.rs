@@ -867,16 +867,7 @@ mod tests {
     }
 
     fn conn() -> Connection {
-        Connection::new(
-            "web".into(),
-            "web.test".into(),
-            "ops".into(),
-            22,
-            None,
-            None,
-            false,
-            None,
-        )
+        Connection::new("web".into(), "web.test".into(), "ops".into(), 22)
     }
 
     async fn probed(landlock: Trial, bwrap: Trial) -> JailKind {

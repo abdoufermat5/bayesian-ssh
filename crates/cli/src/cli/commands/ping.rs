@@ -46,20 +46,20 @@ pub async fn execute(
             "Testing connectivity to '{}' ({})...",
             connection.name, connection.host
         );
-        let (success, duration, stderr) = ping_single_host(connection, timeout_secs).await;
-        if success {
+        let probe = ping_single_host(connection, timeout_secs).await;
+        if probe.reachable {
             println!(
                 "✅ SSH ping to '{}' successful! (took {:.2?})",
-                connection.name, duration
+                connection.name, probe.elapsed
             );
             return Ok(());
         }
         println!(
             "❌ SSH ping to '{}' failed. (took {:.2?})",
-            connection.name, duration
+            connection.name, probe.elapsed
         );
-        if !stderr.is_empty() {
-            println!("Error output:\n{}", stderr.trim());
+        if !probe.stderr.is_empty() {
+            println!("Error output:\n{}", probe.stderr.trim());
         }
         bail!("'{}' is unreachable", connection.name);
     }
@@ -78,8 +78,8 @@ pub async fn execute(
         set.spawn(async move {
             // The semaphore is never closed, so acquire cannot fail.
             let _permit = semaphore.acquire_owned().await.ok();
-            let (success, duration, _) = ping_single_host(&conn, timeout_secs).await;
-            (conn, success, duration)
+            let probe = ping_single_host(&conn, timeout_secs).await;
+            (conn, probe.reachable, probe.elapsed)
         });
     }
 
@@ -174,7 +174,14 @@ fn ping_args(connection: &Connection, timeout_secs: u64) -> Vec<String> {
     args
 }
 
-async fn ping_single_host(connection: &Connection, timeout_secs: u64) -> (bool, Duration, String) {
+/// Outcome of one reachability probe.
+struct PingProbe {
+    reachable: bool,
+    elapsed: Duration,
+    stderr: String,
+}
+
+async fn ping_single_host(connection: &Connection, timeout_secs: u64) -> PingProbe {
     let start_time = Instant::now();
     let mut cmd = Command::new("ssh");
     cmd.args(ping_args(connection, timeout_secs))
@@ -187,14 +194,22 @@ async fn ping_single_host(connection: &Connection, timeout_secs: u64) -> (bool, 
     match tokio::time::timeout(overall, cmd.output()).await {
         Ok(Ok(output)) => {
             let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-            (output.status.success(), start_time.elapsed(), stderr)
+            PingProbe {
+                reachable: output.status.success(),
+                elapsed: start_time.elapsed(),
+                stderr,
+            }
         }
-        Ok(Err(e)) => (false, start_time.elapsed(), e.to_string()),
-        Err(_) => (
-            false,
-            start_time.elapsed(),
-            format!("timed out after {}s", overall.as_secs()),
-        ),
+        Ok(Err(e)) => PingProbe {
+            reachable: false,
+            elapsed: start_time.elapsed(),
+            stderr: e.to_string(),
+        },
+        Err(_) => PingProbe {
+            reachable: false,
+            elapsed: start_time.elapsed(),
+            stderr: format!("timed out after {}s", overall.as_secs()),
+        },
     }
 }
 
@@ -202,22 +217,31 @@ async fn ping_single_host(connection: &Connection, timeout_secs: u64) -> (bool, 
 mod tests {
     use super::*;
 
-    fn conn(bastion: Option<&str>, kerberos: bool) -> Connection {
-        Connection::new(
-            "web".into(),
-            "web.example.com".into(),
-            "deploy".into(),
-            2222,
-            bastion.map(String::from),
-            Some("jump".into()),
-            kerberos,
-            None,
-        )
+    fn conn(bastion: Option<&str>) -> Connection {
+        make_conn(bastion, false)
+    }
+
+    fn kerberos_conn(bastion: Option<&str>) -> Connection {
+        make_conn(bastion, true)
+    }
+
+    fn make_conn(bastion: Option<&str>, kerberos: bool) -> Connection {
+        Connection {
+            bastion: bastion.map(String::from),
+            bastion_user: Some("jump".into()),
+            use_kerberos: kerberos,
+            ..Connection::new(
+                "web".into(),
+                "web.example.com".into(),
+                "deploy".into(),
+                2222,
+            )
+        }
     }
 
     #[test]
     fn direct_probe_targets_host_after_option_terminator() {
-        let args = ping_args(&conn(None, false), 5);
+        let args = ping_args(&conn(None), 5);
         let n = args.len();
         assert_eq!(&args[n - 3..], ["--", "deploy@web.example.com", "exit 0"]);
         assert!(args.contains(&"ConnectTimeout=5".to_string()));
@@ -226,7 +250,7 @@ mod tests {
 
     #[test]
     fn jump_host_probe_uses_proxyjump() {
-        let args = ping_args(&conn(Some("bastion.corp"), false), 5);
+        let args = ping_args(&conn(Some("bastion.corp")), 5);
         let j = args.iter().position(|a| a == "-J").expect("-J present");
         assert_eq!(args[j + 1], "jump@bastion.corp");
         let n = args.len();
@@ -237,7 +261,7 @@ mod tests {
 
     #[test]
     fn interactive_bastion_probe_passes_target_as_sole_argument() {
-        let args = ping_args(&conn(Some("bastion.corp"), true), 5);
+        let args = ping_args(&kerberos_conn(Some("bastion.corp")), 5);
         let n = args.len();
         assert_eq!(
             &args[n - 3..],
@@ -248,7 +272,7 @@ mod tests {
         assert!(args.contains(&"BatchMode=yes".to_string()));
         assert!(!args.contains(&"-J".to_string()));
 
-        let args = ping_args(&conn(Some("bastion.corp:2200"), true), 5);
+        let args = ping_args(&kerberos_conn(Some("bastion.corp:2200")), 5);
         let p = args.iter().position(|a| a == "-p").expect("-p present");
         assert_eq!(args[p + 1], "2200");
         assert!(args.contains(&"jump@bastion.corp".to_string()));

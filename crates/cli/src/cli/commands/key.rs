@@ -27,65 +27,65 @@ pub async fn execute_list() -> Result<()> {
 
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.is_file() {
-            if let Some(ext) = path.extension() {
-                if ext == "pub" {
-                    found_keys += 1;
-                    let priv_path = path.with_extension("");
-                    let filename = path.file_stem().unwrap_or_default().to_string_lossy();
-
-                    let key_content = fs::read_to_string(&path).unwrap_or_default();
-                    let parts: Vec<&str> = key_content.split_whitespace().collect();
-                    let key_type = parts.first().copied().unwrap_or("unknown");
-                    let comment = parts.get(2).copied().unwrap_or("");
-
-                    let fingerprint = if parts.len() >= 2 {
-                        if let Ok(raw) = base64::Engine::decode(
-                            &base64::engine::general_purpose::STANDARD,
-                            parts[1],
-                        ) {
-                            let mut hasher = Sha256::new();
-                            hasher.update(&raw);
-                            let hash = hasher.finalize();
-                            format!(
-                                "SHA256:{}",
-                                base64::Engine::encode(
-                                    &base64::engine::general_purpose::STANDARD_NO_PAD,
-                                    hash
-                                )
-                            )
-                        } else {
-                            "INVALID_BASE64".to_string()
-                        }
-                    } else {
-                        "UNKNOWN".to_string()
-                    };
-
-                    let priv_perm = if priv_path.exists() {
-                        if let Ok(meta) = fs::metadata(&priv_path) {
-                            let mode = meta.permissions().mode() & 0o777;
-                            if mode & 0o077 == 0 {
-                                format!("{:04o} (SECURE)", mode)
-                            } else {
-                                format!("{:04o} (WARNING: insecure perms)", mode)
-                            }
-                        } else {
-                            "UNKNOWN".to_string()
-                        }
-                    } else {
-                        "PUBLIC_ONLY".to_string()
-                    };
-
-                    println!("Key: {}", filename);
-                    println!("  Type:        {}", key_type);
-                    println!("  Fingerprint: {}", fingerprint);
-                    println!("  Comment:     {}", comment);
-                    println!("  Private Key: {}", priv_path.display());
-                    println!("  Permission:  {}", priv_perm);
-                    println!();
-                }
-            }
+        if !path.is_file() {
+            continue;
         }
+        let Some(ext) = path.extension() else {
+            continue;
+        };
+        if ext != "pub" {
+            continue;
+        }
+
+        found_keys += 1;
+        let priv_path = path.with_extension("");
+        let filename = path.file_stem().unwrap_or_default().to_string_lossy();
+
+        let key_content = fs::read_to_string(&path).unwrap_or_default();
+        let parts: Vec<&str> = key_content.split_whitespace().collect();
+        let key_type = parts.first().copied().unwrap_or("unknown");
+        let comment = parts.get(2).copied().unwrap_or("");
+
+        let fingerprint = if parts.len() >= 2 {
+            if let Ok(raw) =
+                base64::Engine::decode(&base64::engine::general_purpose::STANDARD, parts[1])
+            {
+                let mut hasher = Sha256::new();
+                hasher.update(&raw);
+                let hash = hasher.finalize();
+                format!(
+                    "SHA256:{}",
+                    base64::Engine::encode(&base64::engine::general_purpose::STANDARD_NO_PAD, hash)
+                )
+            } else {
+                "INVALID_BASE64".to_string()
+            }
+        } else {
+            "UNKNOWN".to_string()
+        };
+
+        let priv_perm = if priv_path.exists() {
+            if let Ok(meta) = fs::metadata(&priv_path) {
+                let mode = meta.permissions().mode() & 0o777;
+                if mode & 0o077 == 0 {
+                    format!("{:04o} (SECURE)", mode)
+                } else {
+                    format!("{:04o} (WARNING: insecure perms)", mode)
+                }
+            } else {
+                "UNKNOWN".to_string()
+            }
+        } else {
+            "PUBLIC_ONLY".to_string()
+        };
+
+        println!("Key: {}", filename);
+        println!("  Type:        {}", key_type);
+        println!("  Fingerprint: {}", fingerprint);
+        println!("  Comment:     {}", comment);
+        println!("  Private Key: {}", priv_path.display());
+        println!("  Permission:  {}", priv_perm);
+        println!();
     }
 
     if found_keys == 0 {
@@ -155,7 +155,7 @@ pub async fn execute_generate(name: String, key_type: Option<String>) -> Result<
 pub async fn execute_copy(config: AppConfig, target: String, key: Option<String>) -> Result<()> {
     let database = Database::new(&config)?;
     let conn = database
-        .get_connection_or_alias(&target)?
+        .connection_or_alias(&target)?
         .ok_or_else(|| anyhow!("Connection '{}' not found", target))?;
 
     let pub_key_path = if let Some(k) = key {

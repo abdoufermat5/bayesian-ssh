@@ -2,9 +2,28 @@
 
 use crate::cli::utils::{confirm, format_elapsed, truncate_display};
 use crate::config::AppConfig;
-use crate::database::{live_pid, Database};
+use crate::database::{live_pid, ActiveSession, Database};
 use anyhow::Result;
 use nix::sys::signal::{kill, Signal};
+
+/// Whether destructive session operations ask before acting.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Confirmation {
+    /// Prompt unless the user passed `--force`.
+    Ask,
+    /// `--force`: act immediately.
+    Skip,
+}
+
+impl From<bool> for Confirmation {
+    fn from(force: bool) -> Self {
+        if force {
+            Self::Skip
+        } else {
+            Self::Ask
+        }
+    }
+}
 
 /// Execute the close command
 pub async fn execute(
@@ -20,12 +39,14 @@ pub async fn execute(
         return cleanup_stale_sessions(&db, &config);
     }
 
+    let confirmation = Confirmation::from(force);
+
     if all {
-        return close_all_sessions(&db, force);
+        return close_all_sessions(&db, confirmation);
     }
 
     if let Some(target) = target {
-        return close_session(&db, &target, force);
+        return close_session(&db, &target, confirmation);
     }
 
     // No target specified - list active sessions
@@ -34,7 +55,7 @@ pub async fn execute(
 
 /// List all active sessions
 fn list_active_sessions(db: &Database) -> Result<()> {
-    let sessions = db.get_active_sessions()?;
+    let sessions = db.active_sessions()?;
 
     if sessions.is_empty() {
         println!("📋 No active sessions.");
@@ -48,7 +69,13 @@ fn list_active_sessions(db: &Database) -> Result<()> {
     );
     println!("{}", "─".repeat(70));
 
-    for (conn_name, pid, started_at) in &sessions {
+    for ActiveSession {
+        connection: conn_name,
+        pid,
+        started_at,
+        ..
+    } in &sessions
+    {
         let duration = chrono::Utc::now().signed_duration_since(*started_at);
         let duration_str = format_elapsed(duration);
         let pid_str = pid
@@ -83,18 +110,24 @@ fn list_active_sessions(db: &Database) -> Result<()> {
 }
 
 /// Close a specific session
-fn close_session(db: &Database, target: &str, force: bool) -> Result<()> {
-    let sessions = db.get_active_sessions_for_connection(target)?;
+fn close_session(db: &Database, target: &str, confirmation: Confirmation) -> Result<()> {
+    let sessions = db.active_sessions_for_connection(target)?;
 
     if sessions.is_empty() {
         println!("❌ No active sessions found for '{}'", target);
         return Ok(());
     }
 
-    for (session_id, conn_name, pid, _) in sessions {
+    for ActiveSession {
+        id: session_id,
+        connection: conn_name,
+        pid,
+        ..
+    } in sessions
+    {
         if let Some(p) = pid {
             if let Some(target) = live_pid(p) {
-                if !force
+                if confirmation == Confirmation::Ask
                     && !confirm(
                         &format!("Close session for '{}' (PID {})?", conn_name, p),
                         true,
@@ -131,15 +164,15 @@ fn close_session(db: &Database, target: &str, force: bool) -> Result<()> {
 }
 
 /// Close all active sessions
-fn close_all_sessions(db: &Database, force: bool) -> Result<()> {
-    let sessions = db.get_active_sessions()?;
+fn close_all_sessions(db: &Database, confirmation: Confirmation) -> Result<()> {
+    let sessions = db.active_sessions()?;
 
     if sessions.is_empty() {
         println!("📋 No active sessions to close.");
         return Ok(());
     }
 
-    if !force
+    if confirmation == Confirmation::Ask
         && !confirm(
             &format!("Close all {} active sessions?", sessions.len()),
             false,
@@ -152,7 +185,7 @@ fn close_all_sessions(db: &Database, force: bool) -> Result<()> {
     let mut closed = 0;
     let mut cleaned = 0;
 
-    for (_conn_name, pid, _) in &sessions {
+    for ActiveSession { pid, .. } in &sessions {
         if let Some(p) = pid {
             if let Some(target) = live_pid(*p) {
                 if kill(target, Signal::SIGTERM).is_ok() {

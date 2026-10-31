@@ -14,6 +14,10 @@ use crate::services::SshService;
 use anyhow::{bail, Result};
 
 /// Targets of a host command: one connection by name, or every connection with a tag.
+///
+/// # Errors
+/// Returns an error when neither a connection nor a tag is given, or when the
+/// connection cannot be found or listed.
 pub(crate) async fn resolve_targets(
     target: Option<&str>,
     tag: Option<&str>,
@@ -37,6 +41,10 @@ pub(crate) fn print_script(script: &str) {
     }
 }
 
+/// Create the `bssh-agent` user on the selected hosts.
+///
+/// # Errors
+/// Returns an error when a host fails setup.
 pub async fn execute(args: AiArgsSetup, config: AppConfig) -> Result<()> {
     let targets = resolve_targets(
         args.target.as_deref(),

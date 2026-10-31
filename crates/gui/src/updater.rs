@@ -21,7 +21,7 @@ use tauri::utils::config::BundleType;
 use tauri::{AppHandle, Manager, Runtime, Url};
 use tauri_plugin_updater::{Config, UpdaterExt};
 
-use crate::commands::{close_all_ptys, PtyState};
+use crate::commands::{close_all_ptys, CommandError, PtyState};
 
 const ENDPOINT: &str =
     "https://github.com/abdoufermat5/bayesian-ssh/releases/latest/download/latest.json";
@@ -152,7 +152,7 @@ fn updater<R: Runtime>(
 
 /// Look for a newer signed release. `None` when this build is current.
 #[tauri::command]
-pub async fn check_update(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
+pub async fn check_update(app: AppHandle) -> Result<Option<UpdateInfo>, CommandError> {
     refuse_if_managed()?;
     let updater = updater(&app, CHECK_TIMEOUT)?;
     let update = updater.check().await.map_err(|e| e.to_string())?;
@@ -168,7 +168,7 @@ pub async fn check_update(app: AppHandle) -> Result<Option<UpdateInfo>, String> 
 /// The updater verifies the artifact's signature against the embedded key
 /// before installing; open sessions are closed and the app restarts.
 #[tauri::command]
-pub async fn install_update(app: AppHandle, version: String) -> Result<(), String> {
+pub async fn install_update(app: AppHandle, version: String) -> Result<(), CommandError> {
     refuse_if_managed()?;
     let updater = updater(&app, INSTALL_TIMEOUT)?;
     let update = updater
@@ -180,7 +180,8 @@ pub async fn install_update(app: AppHandle, version: String) -> Result<(), Strin
         return Err(format!(
             "the latest release changed from {version} to {}; check for updates again",
             update.version
-        ));
+        )
+        .into());
     }
     update
         .download_and_install(|_, _| {}, || {})

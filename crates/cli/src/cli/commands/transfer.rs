@@ -40,13 +40,57 @@ pub fn split_targets(spec: &str) -> Vec<String> {
         .collect()
 }
 
+/// Which hosts `bssh upload` sends to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HostSelector {
+    /// Hosts listed in the first positional argument.
+    Named,
+    /// Every saved connection (`--all`).
+    All,
+    /// Every connection carrying this tag (`--tag`).
+    Tag(String),
+}
+
+impl HostSelector {
+    /// Maps the mutually exclusive `--all` / `--tag` flags; `--all` wins if both were set.
+    pub fn from_flags(all: bool, tag: Option<String>) -> Self {
+        if all {
+            Self::All
+        } else if let Some(tag) = tag {
+            Self::Tag(tag)
+        } else {
+            Self::Named
+        }
+    }
+}
+
+/// Transfer flags of `bssh upload`.
+pub struct UploadOptions {
+    pub dry_run: bool,
+    /// Maximum number of hosts uploaded to concurrently.
+    pub parallel: usize,
+    /// Byte offset to resume from (single host only).
+    pub offset: u64,
+    /// Remote file permissions.
+    pub mode: u32,
+    pub recursive: bool,
+}
+
+/// Everything `bssh upload` was given on the command line.
+pub struct UploadCommand {
+    /// `[TARGETS] LOCAL REMOTE`, as typed.
+    pub positional: Vec<String>,
+    pub selector: HostSelector,
+    pub options: UploadOptions,
+}
+
 /// Interpret the 2-or-3 positional arguments together with `--all`/`--tag`.
 ///
 /// With `--all`/`--tag`, exactly two positionals (`LOCAL REMOTE`) are expected.
 /// Otherwise three (`TARGETS LOCAL REMOTE`), where `TARGETS` is a
 /// comma-separated list of names/aliases/hosts.
-pub fn parse_upload_args(raw: &[String], all: bool, tag: Option<&str>) -> Result<UploadArgs> {
-    let use_selector = all || tag.is_some();
+pub fn parse_upload_args(raw: &[String], selector: &HostSelector) -> Result<UploadArgs> {
+    let use_selector = *selector != HostSelector::Named;
     let expected = if use_selector { 2 } else { 3 };
     if raw.len() != expected {
         let hint = if use_selector {
@@ -77,11 +121,11 @@ pub fn parse_upload_args(raw: &[String], all: bool, tag: Option<&str>) -> Result
 }
 
 /// Reject flag combinations the transfer service cannot honour.
-pub fn validate_upload_flags(offset: u64, recursive: bool, host_count: usize) -> Result<()> {
-    if offset > 0 && recursive {
+pub fn validate_upload_flags(options: &UploadOptions, host_count: usize) -> Result<()> {
+    if options.offset > 0 && options.recursive {
         bail!("--offset cannot be combined with --recursive (-r)");
     }
-    if offset > 0 && host_count > 1 {
+    if options.offset > 0 && host_count > 1 {
         bail!("--offset can only be used when uploading to a single host");
     }
     Ok(())
@@ -91,33 +135,27 @@ pub fn validate_upload_flags(offset: u64, recursive: bool, host_count: usize) ->
 // Upload
 // ─────────────────────────────────────────────────────────────────────────────
 
-#[allow(clippy::too_many_arguments)]
-pub async fn execute_upload(
-    args: Vec<String>,
-    all: bool,
-    tag: Option<String>,
-    dry_run: bool,
-    parallel: usize,
-    offset: u64,
-    mode: u32,
-    recursive: bool,
-    config: AppConfig,
-) -> Result<()> {
-    let plan = parse_upload_args(&args, all, tag.as_deref())?;
+pub async fn execute_upload(command: UploadCommand, config: AppConfig) -> Result<()> {
+    let UploadCommand {
+        positional,
+        selector,
+        options,
+    } = command;
+    let plan = parse_upload_args(&positional, &selector)?;
 
     let ssh_service = SshService::new(config.clone())?;
-    let targets = resolve_targets(&ssh_service, &plan, all, tag.as_deref(), &config).await?;
+    let targets = resolve_targets(&ssh_service, &plan, &selector, &config).await?;
     if targets.is_empty() {
         println!("No connections matching criteria.");
         return Ok(());
     }
-    validate_upload_flags(offset, recursive, targets.len())?;
+    validate_upload_flags(&options, targets.len())?;
 
     let meta = tokio::fs::metadata(&plan.local)
         .await
         .map_err(|e| anyhow::anyhow!("cannot read '{}': {e}", plan.local.display()))?;
     let local_is_dir = meta.is_dir();
-    if local_is_dir && !recursive {
+    if local_is_dir && !options.recursive {
         bail!(
             "'{}' is a directory — pass --recursive (-r) to upload directories",
             plan.local.display()
@@ -125,7 +163,7 @@ pub async fn execute_upload(
     }
     let (size_bytes, _files) = local_stats(&plan.local).await?;
 
-    if dry_run {
+    if options.dry_run {
         let resolved = resolve_remote_path(
             &plan.remote,
             &local_basename(&plan.local),
@@ -221,12 +259,13 @@ pub async fn execute_upload(
     let request = UploadRequest {
         local: plan.local,
         remote: plan.remote,
-        mode,
-        offset,
-        recursive,
+        mode: options.mode,
+        offset: options.offset,
+        recursive: options.recursive,
     };
 
-    let results = upload_to_hosts(&config, targets, request, parallel.max(1), on_event).await?;
+    let results =
+        upload_to_hosts(&config, targets, request, options.parallel.max(1), on_event).await?;
 
     print_summary(&results);
 
@@ -306,13 +345,12 @@ fn print_summary(results: &[HostUploadResult]) {
 async fn resolve_targets(
     ssh_service: &SshService,
     plan: &UploadArgs,
-    all: bool,
-    tag: Option<&str>,
+    selector: &HostSelector,
     config: &AppConfig,
 ) -> Result<Vec<Connection>> {
-    let mut connections = if all {
+    let mut connections = if *selector == HostSelector::All {
         ssh_service.list_connections(None, false).await?
-    } else if let Some(tag) = tag {
+    } else if let HostSelector::Tag(tag) = selector {
         ssh_service.list_connections(Some(tag), false).await?
     } else if plan.targets.len() == 1 {
         // Keep the interactive fuzzy search for a single target.
@@ -321,7 +359,7 @@ async fn resolve_targets(
         let mut found = Vec::new();
         let mut missing = Vec::new();
         for name in &plan.targets {
-            match ssh_service.get_connection(name).await? {
+            match ssh_service.connection(name).await? {
                 Some(conn) => found.push(conn),
                 None => missing.push(name.clone()),
             }
@@ -344,13 +382,21 @@ async fn resolve_targets(
 // Download
 // ─────────────────────────────────────────────────────────────────────────────
 
-pub async fn execute_download(
-    target: String,
-    remote: String,
-    local: PathBuf,
-    recursive: bool,
-    config: AppConfig,
-) -> Result<()> {
+/// The `bssh download` arguments.
+pub struct DownloadArgs {
+    pub target: String,
+    pub remote: String,
+    pub local: PathBuf,
+    pub recursive: bool,
+}
+
+pub async fn execute_download(args: DownloadArgs, config: AppConfig) -> Result<()> {
+    let DownloadArgs {
+        target,
+        remote,
+        local,
+        recursive,
+    } = args;
     let ssh_service = SshService::new(config.clone())?;
     let connection = resolve_connection(&ssh_service, &target, "download", true, &config).await?;
     ssh_service.confirm_pending_change(&connection)?;
@@ -371,10 +417,8 @@ pub async fn execute_download(
         return Ok(());
     }
 
-    let interactive = std::io::stderr().is_terminal();
-
     if recursive {
-        let bar = progress_bar(interactive, false);
+        let bar = progress_bar(BarStyle::Throughput);
         bar.set_message("downloading");
         let progress: crate::services::transfer::ProgressFn = {
             let bar = bar.clone();
@@ -394,7 +438,7 @@ pub async fn execute_download(
             format_bytes(bytes)
         );
     } else {
-        let bar = progress_bar(interactive, true);
+        let bar = progress_bar(BarStyle::Sized);
         bar.set_message("downloading");
         let progress: crate::services::transfer::ProgressFn = {
             let bar = bar.clone();
@@ -420,16 +464,25 @@ pub async fn execute_download(
     Ok(())
 }
 
+/// How a download's progress is drawn.
+enum BarStyle {
+    /// Bytes and rate only: the total is unknown up front (recursive downloads).
+    Throughput,
+    /// Bar with total and ETA.
+    Sized,
+}
+
 /// A progress bar for a single download; hidden when stderr is not a TTY.
-fn progress_bar(interactive: bool, with_bar: bool) -> ProgressBar {
-    if !interactive {
+fn progress_bar(style: BarStyle) -> ProgressBar {
+    if !std::io::stderr().is_terminal() {
         return ProgressBar::hidden();
     }
-    let template = if with_bar {
-        "{spinner} {bar:30} {bytes:>10}/{total_bytes:<10} \
+    let template = match style {
+        BarStyle::Sized => {
+            "{spinner} {bar:30} {bytes:>10}/{total_bytes:<10} \
          {binary_bytes_per_sec:>12} ETA {eta:>6} {msg}"
-    } else {
-        "{spinner} {bytes:>10} {binary_bytes_per_sec:>12} {msg}"
+        }
+        BarStyle::Throughput => "{spinner} {bytes:>10} {binary_bytes_per_sec:>12} {msg}",
     };
     let bar = ProgressBar::new(0);
     bar.set_style(ProgressStyle::with_template(template).expect("valid indicatif template"));
@@ -439,17 +492,32 @@ fn progress_bar(interactive: bool, with_bar: bool) -> ProgressBar {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_upload_args, split_targets, validate_upload_flags};
+    use super::{
+        parse_upload_args, split_targets, validate_upload_flags, HostSelector, UploadOptions,
+    };
     use std::path::PathBuf;
 
     fn args(items: &[&str]) -> Vec<String> {
         items.iter().map(|s| s.to_string()).collect()
     }
 
+    fn options(offset: u64, recursive: bool) -> UploadOptions {
+        UploadOptions {
+            dry_run: false,
+            parallel: 1,
+            offset,
+            mode: 0o644,
+            recursive,
+        }
+    }
+
     #[test]
     fn three_positionals_are_targets_local_remote() {
-        let plan = parse_upload_args(&args(&["web1,web2", "./a.tar", "/opt/"]), false, None)
-            .expect("valid");
+        let plan = parse_upload_args(
+            &args(&["web1,web2", "./a.tar", "/opt/"]),
+            &HostSelector::Named,
+        )
+        .expect("valid");
         assert_eq!(plan.targets, vec!["web1", "web2"]);
         assert_eq!(plan.local, PathBuf::from("./a.tar"));
         assert_eq!(plan.remote, "/opt/");
@@ -457,18 +525,36 @@ mod tests {
 
     #[test]
     fn two_positionals_require_all_or_tag() {
-        assert!(parse_upload_args(&args(&["./a.tar", "/opt/"]), false, None).is_err());
-        let tagged = parse_upload_args(&args(&["./a.tar", "/opt/"]), false, Some("prod"))
-            .expect("valid with tag");
+        assert!(parse_upload_args(&args(&["./a.tar", "/opt/"]), &HostSelector::Named).is_err());
+        let tagged = parse_upload_args(
+            &args(&["./a.tar", "/opt/"]),
+            &HostSelector::Tag("prod".to_string()),
+        )
+        .expect("valid with tag");
         assert!(tagged.targets.is_empty());
         assert_eq!(tagged.remote, "/opt/");
-        let all = parse_upload_args(&args(&["./a.tar", "/opt/"]), true, None).expect("valid --all");
+        let all = parse_upload_args(&args(&["./a.tar", "/opt/"]), &HostSelector::All)
+            .expect("valid --all");
         assert!(all.targets.is_empty());
     }
 
     #[test]
     fn three_positionals_rejected_with_all() {
-        assert!(parse_upload_args(&args(&["web1", "./a", "/opt/"]), true, None).is_err());
+        assert!(parse_upload_args(&args(&["web1", "./a", "/opt/"]), &HostSelector::All).is_err());
+    }
+
+    #[test]
+    fn selector_from_flags_prefers_all_over_tag() {
+        assert_eq!(HostSelector::from_flags(false, None), HostSelector::Named);
+        assert_eq!(HostSelector::from_flags(true, None), HostSelector::All);
+        assert_eq!(
+            HostSelector::from_flags(false, Some("prod".to_string())),
+            HostSelector::Tag("prod".to_string())
+        );
+        assert_eq!(
+            HostSelector::from_flags(true, Some("prod".to_string())),
+            HostSelector::All
+        );
     }
 
     #[test]
@@ -479,14 +565,14 @@ mod tests {
         );
         assert!(split_targets(" , ").is_empty());
         // Empty target list is an error even at the right arity.
-        assert!(parse_upload_args(&args(&[" , ", "./a", "/opt/"]), false, None).is_err());
+        assert!(parse_upload_args(&args(&[" , ", "./a", "/opt/"]), &HostSelector::Named).is_err());
     }
 
     #[test]
     fn offset_rejected_for_multiple_hosts_or_recursive() {
-        assert!(validate_upload_flags(0, false, 4).is_ok());
-        assert!(validate_upload_flags(1024, false, 1).is_ok());
-        assert!(validate_upload_flags(1024, false, 2).is_err());
-        assert!(validate_upload_flags(1024, true, 1).is_err());
+        assert!(validate_upload_flags(&options(0, false), 4).is_ok());
+        assert!(validate_upload_flags(&options(1024, false), 1).is_ok());
+        assert!(validate_upload_flags(&options(1024, false), 2).is_err());
+        assert!(validate_upload_flags(&options(1024, true), 1).is_err());
     }
 }

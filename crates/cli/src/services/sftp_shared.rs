@@ -7,8 +7,6 @@
 //! subprocess-based path (works for direct connections, classic jump-host
 //! bastions, and interactive Kerberos+bastion sessions).
 
-#![allow(dead_code)]
-
 use crate::config::AppConfig;
 use crate::database::Database;
 use crate::models::Connection;
@@ -395,7 +393,7 @@ pub fn list_remote_directory(
     let config = AppConfig::load(None).map_err(|e| e.to_string())?;
     let db = Database::new(&config).map_err(|e| e.to_string())?;
     let conn = db
-        .get_connection(connection_name)
+        .connection(connection_name)
         .map_err(|e| format!("Database error: {e}"))?
         .ok_or_else(|| format!("Connection '{connection_name}' not found."))?;
     if conn.pending_change.is_some() {
@@ -434,16 +432,12 @@ mod tests {
     use std::process::{ExitStatus, Output};
 
     fn conn(kerberos: bool, bastion: Option<&str>) -> Connection {
-        Connection::new(
-            "web".into(),
-            "web.internal".into(),
-            "alice".into(),
-            2222,
-            bastion.map(Into::into),
-            Some("jump".into()),
-            kerberos,
-            None,
-        )
+        Connection {
+            bastion: bastion.map(Into::into),
+            bastion_user: Some("jump".into()),
+            use_kerberos: kerberos,
+            ..Connection::new("web".into(), "web.internal".into(), "alice".into(), 2222)
+        }
     }
 
     #[test]

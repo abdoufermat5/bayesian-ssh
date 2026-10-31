@@ -11,6 +11,11 @@ use crate::cli::parser_ai::AiArgsWatch;
 use crate::config::AppConfig;
 use anyhow::Result;
 
+/// Follow every running agent and print its events.
+///
+/// # Errors
+/// Returns an error when the terminal cannot be prepared, or on a platform without
+/// Unix sockets.
 pub async fn execute(args: AiArgsWatch, config: AppConfig) -> Result<()> {
     #[cfg(unix)]
     {
@@ -25,16 +30,17 @@ pub async fn execute(args: AiArgsWatch, config: AppConfig) -> Result<()> {
 
 #[cfg(unix)]
 mod unix_impl {
-    use super::*;
+    use super::{AiArgsWatch, AppConfig};
     use crate::cli::commands::ai::approve::render_request;
     use crate::services::ai::ai_dir;
     use crate::services::ai::control_client::{list_sockets, ControlClient, RunHello};
     use crate::services::ai::feed::{
-        event_line, request_lines, run_header, FeedContext, Folder, RunHeader,
+        event_line, event_run_id, request_lines, run_header, FeedContext, Folder, RunHeader,
     };
     use crate::services::ai::ipc::{ClientMsg, ServerMsg};
     use crate::services::ai::types::{AiEvent, ApprovalOutcome, ApprovalRequest, Tier};
     use crate::services::ai::ui::{self, Style, Tone};
+    use anyhow::Result;
     use chrono::Utc;
     use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
     use std::collections::{HashMap, HashSet};
@@ -45,8 +51,17 @@ mod unix_impl {
     use std::time::{Duration, Instant};
     use tokio::sync::mpsc;
 
+    /// Whether a socket that was not joined is retried on the next tick.
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum Retry {
+        /// Try again: the run may still be starting up.
+        Again,
+        /// The socket was stale and removed; do not look at it again.
+        Never,
+    }
+
     /// Everything the main loop reacts to.
-    pub(super) enum Msg {
+    enum Msg {
         Joined {
             hello: RunHello,
             cmd: mpsc::UnboundedSender<ClientMsg>,
@@ -54,7 +69,7 @@ mod unix_impl {
         /// Connected but not wanted (`--run`), or not reachable.
         Skipped {
             socket: PathBuf,
-            retry: bool,
+            retry: Retry,
         },
         Server {
             run_id: String,
@@ -75,6 +90,26 @@ mod unix_impl {
     struct Run {
         hello: RunHello,
         cmd: mpsc::UnboundedSender<ClientMsg>,
+    }
+
+    /// Whether the run sits on a terminal, which decides raw endings and the footer.
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum Term {
+        Tty,
+        Piped,
+    }
+
+    impl Term {
+        fn is_tty(&self) -> bool {
+            matches!(self, Term::Tty)
+        }
+    }
+
+    /// Whether the footer is currently on screen.
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum FooterState {
+        Hidden,
+        Drawn,
     }
 
     /// Keeps the terminal in raw mode; restores it on drop and on panic.
@@ -100,14 +135,13 @@ mod unix_impl {
 
     /// Writes lines, keeping the two-line footer under them on a terminal.
     struct Out {
-        raw: bool,
-        footer: bool,
-        footer_drawn: bool,
+        term: Term,
+        footer: FooterState,
     }
 
     impl Out {
         fn eol(&self) -> &'static str {
-            if self.raw {
+            if self.term.is_tty() {
                 "\r\n"
             } else {
                 "\n"
@@ -115,9 +149,9 @@ mod unix_impl {
         }
 
         fn clear_footer(&mut self, w: &mut impl Write) {
-            if self.footer_drawn {
+            if self.footer == FooterState::Drawn {
                 let _ = write!(w, "\r\x1b[2K\x1b[1A\x1b[2K\r");
-                self.footer_drawn = false;
+                self.footer = FooterState::Hidden;
             }
         }
 
@@ -127,9 +161,9 @@ mod unix_impl {
             for l in lines {
                 let _ = write!(w, "{}{}", l.replace('\n', self.eol()), self.eol());
             }
-            if self.footer {
+            if self.term.is_tty() {
                 let _ = write!(w, "{footer}");
-                self.footer_drawn = true;
+                self.footer = FooterState::Drawn;
             }
             let _ = w.flush();
         }
@@ -169,18 +203,49 @@ mod unix_impl {
         )
     }
 
+    /// How events are printed.
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum Output {
+        /// One JSON event per line; no prompts, no footer.
+        Json,
+        /// The human feed.
+        Human,
+    }
+
+    impl Output {
+        fn is_json(&self) -> bool {
+            matches!(self, Output::Json)
+        }
+    }
+
+    /// Whether the next run header needs a blank line above it.
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum HeaderState {
+        /// No run header has been printed yet.
+        First,
+        /// A run header has been printed.
+        Printed,
+    }
+
+    /// What `a` and `d` send for the newest waiting request.
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum Verdict {
+        Approve,
+        Deny,
+    }
+
     struct Watcher {
         style: Style,
         ctx: FeedContext,
         folder: Folder,
         out: Out,
-        json: bool,
-        tty: bool,
+        output: Output,
+        term: Term,
         host: Option<String>,
         runs: HashMap<String, Run>,
         pending: Vec<Pending>,
         seen_requests: HashSet<String>,
-        first_header: bool,
+        header: HeaderState,
         /// Events shown from the audit log on joining a run, so the same event arriving on
         /// the live stream is not shown twice.
         replayed: HashSet<String>,
@@ -216,7 +281,7 @@ mod unix_impl {
 
         /// The terminal may have been resized since the last line: draw to its width now.
         fn fit(&mut self) {
-            if self.tty {
+            if self.term.is_tty() {
                 self.ctx.width = ui::width();
             }
         }
@@ -238,14 +303,14 @@ mod unix_impl {
                 started_at: hello.started_at.clone(),
             };
             self.runs.insert(hello.run_id.clone(), Run { hello, cmd });
-            if self.json {
+            if self.output.is_json() {
                 return;
             }
             let mut lines = Vec::new();
-            if !self.first_header {
+            if self.header == HeaderState::First {
                 lines.push(String::new());
             }
-            self.first_header = false;
+            self.header = HeaderState::Printed;
             lines.push(run_header(&self.style, &header, self.ctx.width));
             lines.push(String::new());
             self.print(&lines);
@@ -294,7 +359,7 @@ mod unix_impl {
             if !ok {
                 return;
             }
-            if self.json {
+            if self.output.is_json() {
                 if let Ok(s) = serde_json::to_string(&ev) {
                     println!("{s}");
                 }
@@ -319,12 +384,12 @@ mod unix_impl {
             let Some(req) = self.pending.last().map(|p| p.request.clone()) else {
                 return Vec::new();
             };
-            request_lines(&self.style, &req, &mut self.ctx, now, self.tty)
+            request_lines(&self.style, &req, &mut self.ctx, now, self.term.is_tty())
         }
 
         fn request(&mut self, run_id: String, request: ApprovalRequest) {
             self.fit();
-            if !self.seen_requests.insert(request.request_id.clone()) || self.json {
+            if !self.seen_requests.insert(request.request_id.clone()) || self.output.is_json() {
                 return;
             }
             let now = Utc::now();
@@ -334,7 +399,7 @@ mod unix_impl {
                 &request,
                 &mut self.ctx,
                 now,
-                self.tty,
+                self.term.is_tty(),
             ));
             self.pending.push(Pending { run_id, request });
             self.print(&lines);
@@ -370,8 +435,8 @@ mod unix_impl {
                     ));
                     self.print(&lines);
                 }
-                KeyCode::Char('a') => self.decide(true),
-                KeyCode::Char('d') => self.decide(false),
+                KeyCode::Char('a') => self.decide(Verdict::Approve),
+                KeyCode::Char('d') => self.decide(Verdict::Deny),
                 KeyCode::Enter => match self.pending.last() {
                     Some(p) => {
                         let text = match self.runs.get(&p.run_id) {
@@ -390,23 +455,22 @@ mod unix_impl {
             false
         }
 
-        fn decide(&mut self, approve: bool) {
+        fn decide(&mut self, verdict: Verdict) {
             let Some(p) = self.pending.pop() else {
                 self.note("nothing is waiting for you");
                 return;
             };
             let who = format!("{}@cli", whoami::username());
-            let outcome = if approve {
-                ApprovalOutcome::Approved {
+            let outcome = match verdict {
+                Verdict::Approve => ApprovalOutcome::Approved {
                     by: who,
                     channel: "cli".into(),
                     grant: None,
-                }
-            } else {
-                ApprovalOutcome::Denied {
+                },
+                Verdict::Deny => ApprovalOutcome::Denied {
                     by: who,
                     reason: None,
-                }
+                },
             };
             let sent = self.runs.get(&p.run_id).is_some_and(|r| {
                 r.cmd
@@ -418,7 +482,7 @@ mod unix_impl {
             });
             if !sent {
                 self.note("that run has ended; nothing to decide");
-            } else if approve && p.request.tier == Tier::TwoPerson {
+            } else if verdict == Verdict::Approve && p.request.tier == Tier::TwoPerson {
                 self.note("this request needs a second, different approver");
             }
             // The approval event prints the outcome; show the next card now if more wait.
@@ -441,7 +505,7 @@ mod unix_impl {
             }
             self.runs.remove(run_id);
             self.pending.retain(|p| p.run_id != run_id);
-            if !self.json {
+            if !self.output.is_json() {
                 self.print(&[]);
             }
         }
@@ -454,7 +518,7 @@ mod unix_impl {
         };
         entries
             .into_iter()
-            .filter(|e| crate::services::ai::feed::event_run_id(&e.event) == run_id)
+            .filter(|e| event_run_id(&e.event) == run_id)
             .filter_map(|e| {
                 let at = chrono::DateTime::parse_from_rfc3339(&e.ts).ok()?;
                 Some((at.with_timezone(&Utc), e.event))
@@ -463,7 +527,7 @@ mod unix_impl {
     }
 
     /// One run: subscribe, replay what waits, then relay messages and send commands.
-    pub(super) async fn follow(
+    async fn follow(
         mut c: ControlClient,
         mut cmd: mpsc::UnboundedReceiver<ClientMsg>,
         tx: mpsc::UnboundedSender<Msg>,
@@ -509,7 +573,7 @@ mod unix_impl {
                 {
                     let _ = tx.send(Msg::Skipped {
                         socket,
-                        retry: false,
+                        retry: Retry::Never,
                     });
                     return;
                 }
@@ -535,7 +599,7 @@ mod unix_impl {
                 }
                 let _ = tx.send(Msg::Skipped {
                     socket,
-                    retry: !stale,
+                    retry: if stale { Retry::Never } else { Retry::Again },
                 });
             }
         }
@@ -543,12 +607,28 @@ mod unix_impl {
 
     pub(super) async fn run(args: AiArgsWatch, config: AppConfig) -> Result<()> {
         let dir = ai_dir(&config);
-        let tty = !args.json && std::io::stdout().is_terminal() && std::io::stdin().is_terminal();
+        let output = if args.json {
+            Output::Json
+        } else {
+            Output::Human
+        };
+        let term = if output.is_json()
+            || !std::io::stdout().is_terminal()
+            || !std::io::stdin().is_terminal()
+        {
+            Term::Piped
+        } else {
+            Term::Tty
+        };
         let (tx, mut rx) = mpsc::unbounded_channel::<Msg>();
 
-        let _raw = if tty { Some(RawGuard::new()?) } else { None };
+        let _raw = if term.is_tty() {
+            Some(RawGuard::new()?)
+        } else {
+            None
+        };
         let stop = Arc::new(AtomicBool::new(false));
-        if tty {
+        if term.is_tty() {
             let tx = tx.clone();
             let stop = stop.clone();
             std::thread::spawn(move || {
@@ -569,21 +649,20 @@ mod unix_impl {
             ctx: FeedContext::default(),
             folder: Folder::default(),
             out: Out {
-                raw: tty,
-                footer: tty,
-                footer_drawn: false,
+                term,
+                footer: FooterState::Hidden,
             },
-            json: args.json,
-            tty,
+            output,
+            term,
             host: args.host.clone(),
             runs: HashMap::new(),
             pending: Vec::new(),
             seen_requests: HashSet::new(),
-            first_header: true,
+            header: HeaderState::First,
             replayed: HashSet::new(),
             ended: HashSet::new(),
         };
-        if !args.json {
+        if !output.is_json() {
             w.print(&[
                 format!("environment '{}'", config.environment),
                 String::new(),
@@ -617,7 +696,7 @@ mod unix_impl {
                         }
                     }
                 }
-                _ = tokio::signal::ctrl_c(), if !tty => break,
+                _ = tokio::signal::ctrl_c(), if !term.is_tty() => break,
                 msg = rx.recv() => {
                     let Some(msg) = msg else { break };
                     match msg {
@@ -627,7 +706,7 @@ mod unix_impl {
                             w.replay(earlier_events(&config, &run_id));
                         }
                         Msg::Skipped { socket, retry } => {
-                            if retry {
+                            if retry == Retry::Again {
                                 known.remove(&socket);
                             }
                         }
@@ -636,7 +715,7 @@ mod unix_impl {
                             match *msg {
                                 ServerMsg::Event { event } => w.event(event),
                                 ServerMsg::NewRequest { request } => w.request(run_id, request),
-                                ServerMsg::Error { message } if !w.json => {
+                                ServerMsg::Error { message } if !w.output.is_json() => {
                                     w.note(&format!("could not decide: {message}"));
                                 }
                                 _ => {}

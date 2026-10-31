@@ -1,12 +1,13 @@
-use super::get_db_and_config;
+use super::open_db_and_config;
+use super::CommandError;
 use bayesian_ssh::config::AppConfig;
 use bayesian_ssh::database::Database;
 use bayesian_ssh::models::Connection;
 use std::path::PathBuf;
 
 #[tauri::command(async)]
-pub fn import_ssh_config(file: Option<String>) -> Result<usize, String> {
-    let (db, config) = get_db_and_config()?;
+pub fn import_ssh_config(file: Option<String>) -> Result<usize, CommandError> {
+    let (db, config) = open_db_and_config()?;
     let ssh_config_path = if let Some(file) = file.filter(|f| !f.trim().is_empty()) {
         PathBuf::from(file)
     } else {
@@ -18,13 +19,10 @@ pub fn import_ssh_config(file: Option<String>) -> Result<usize, String> {
     };
 
     if !ssh_config_path.exists() {
-        return Err(format!(
-            "SSH config file not found: {}",
-            ssh_config_path.display()
-        ));
+        return Err(format!("SSH config file not found: {}", ssh_config_path.display()).into());
     }
 
-    let content = std::fs::read_to_string(&ssh_config_path).map_err(|e| e.to_string())?;
+    let content = std::fs::read_to_string(&ssh_config_path)?;
 
     let mut imported_count = 0usize;
     let mut current_host: Option<String> = None;
@@ -40,37 +38,32 @@ pub fn import_ssh_config(file: Option<String>) -> Result<usize, String> {
                       identity: Option<String>,
                       db: &Database,
                       cfg: &AppConfig|
-     -> Result<bool, String> {
+     -> Result<bool, CommandError> {
         if host.contains('*') || host.contains('?') {
             return Ok(false);
         }
 
-        if db
-            .get_connection(&host)
-            .map_err(|e| e.to_string())?
-            .is_some()
-        {
+        if db.connection(&host)?.is_some() {
             return Ok(false);
         }
 
         let actual_host = hostname.unwrap_or_else(|| host.clone());
-        let mut connection = Connection::new(
-            host,
-            actual_host,
-            user.unwrap_or_else(|| cfg.default_user.clone()),
-            port.unwrap_or(cfg.default_port),
-            None,
-            None,
-            false,
-            identity,
-        );
+        let mut connection = Connection {
+            key_path: identity,
+            ..Connection::new(
+                host,
+                actual_host,
+                user.unwrap_or_else(|| cfg.default_user.clone()),
+                port.unwrap_or(cfg.default_port),
+            )
+        };
         // Skip entries the add/edit dialogs would reject (e.g. multi-pattern
         // "Host a b" lines, or values that ssh would parse as options).
         if connection.validate().is_err() {
             return Ok(false);
         }
         connection.add_tag("imported".to_string());
-        db.add_connection(&connection).map_err(|e| e.to_string())?;
+        db.add_connection(&connection)?;
         Ok(true)
     };
 

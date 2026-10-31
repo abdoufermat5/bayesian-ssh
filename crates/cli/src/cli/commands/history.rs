@@ -54,7 +54,7 @@ pub async fn execute(
     }
 
     // Get session history with filters
-    let sessions = db.get_session_history(connection.as_deref(), limit, days, show_failed)?;
+    let sessions = db.session_history(connection.as_deref(), limit, days, show_failed)?;
 
     if sessions.is_empty() {
         println!("📋 No session history found.");

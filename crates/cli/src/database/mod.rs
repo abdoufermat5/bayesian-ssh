@@ -19,7 +19,7 @@ mod source;
 mod tag;
 
 pub use search::{Prediction, RankContext, ScoreBreakdown, SearchField};
-pub use session::live_pid;
+pub use session::{live_pid, ActiveSession};
 pub use source::SourceSummary;
 
 const SCHEMA_VERSION: i32 = 11;
@@ -574,16 +574,7 @@ mod tests {
     }
 
     fn sample(name: &str) -> Connection {
-        Connection::new(
-            name.into(),
-            "h.example.com".into(),
-            "u".into(),
-            22,
-            None,
-            None,
-            false,
-            None,
-        )
+        Connection::new(name.into(), "h.example.com".into(), "u".into(), 22)
     }
 
     #[test]
@@ -621,7 +612,7 @@ mod tests {
         let closed = db.close_stale_sessions().unwrap();
         assert_eq!(closed, vec![("web".to_string(), Some(dead_pid))]);
 
-        let history = db.get_session_history(None, 10, None, false).unwrap();
+        let history = db.session_history(None, 10, None, false).unwrap();
         let open: Vec<_> = history.iter().filter(|e| e.ended_at.is_none()).collect();
         assert_eq!(open.len(), 1, "only the live session stays open");
         assert!(matches!(open[0].status, SessionStatus::Active));
@@ -641,11 +632,11 @@ mod tests {
             db.add_connection(&conn).unwrap();
             conn.remove_tag("prod");
             db.update_connection(&conn).unwrap();
-            let got = db.get_connection("web").unwrap().unwrap();
+            let got = db.connection("web").unwrap().unwrap();
             assert!(got.tags.is_empty(), "stale tags returned: {:?}", got.tags);
         }
         let db = open(dir.path());
-        let got = db.get_connection("web").unwrap().unwrap();
+        let got = db.connection("web").unwrap().unwrap();
         assert!(got.tags.is_empty(), "tags resurrected: {:?}", got.tags);
     }
 
@@ -660,7 +651,7 @@ mod tests {
 
         assert!(db.remove_connection("web").unwrap());
         assert!(db.tag_counts().unwrap().is_empty());
-        assert!(db.get_connection_by_alias("w").unwrap().is_none());
+        assert!(db.connection_by_alias("w").unwrap().is_none());
         let aliases: i64 = db
             .conn
             .query_row("SELECT COUNT(*) FROM aliases", [], |r| r.get(0))
@@ -755,7 +746,7 @@ mod tests {
                 .unwrap();
             assert_eq!(n, 1, "missing table {table}");
         }
-        assert!(db.get_connection("keepme").unwrap().is_some());
+        assert!(db.connection("keepme").unwrap().is_some());
     }
 
     #[test]
@@ -816,7 +807,7 @@ mod tests {
 
         let db = Database::new(&config).unwrap();
         assert_eq!(db.current_schema_version().unwrap(), SCHEMA_VERSION);
-        let forwarded = |name: &str| db.get_connection(name).unwrap().unwrap().forward_agent;
+        let forwarded = |name: &str| db.connection(name).unwrap().unwrap().forward_agent;
         // The owner's existing Kerberos bastions keep working.
         assert!(forwarded("local-krb"));
         assert!(!forwarded("local-plain"));
@@ -835,14 +826,14 @@ mod tests {
         ));
         db.add_connection(&conn).unwrap();
         assert!(db
-            .get_connection("web")
+            .connection("web")
             .unwrap()
             .unwrap()
             .pending_change
             .is_some());
 
         db.clear_pending_change(&conn.id).unwrap();
-        let stored = db.get_connection("web").unwrap().unwrap();
+        let stored = db.connection("web").unwrap().unwrap();
         assert!(stored.pending_change.is_none());
         assert_eq!(stored.host, "h.example.com");
     }
@@ -855,27 +846,19 @@ mod tests {
         let db = open(dir.path());
         db.add_connection(&sample("web")).unwrap();
         // Never saved: `bssh connect deploy@10.0.0.9`.
-        let mut direct = Connection::new(
-            "10.0.0.9".into(),
-            "10.0.0.9".into(),
-            "deploy".into(),
-            2222,
-            None,
-            None,
-            false,
-            None,
-        );
+        let mut direct =
+            Connection::new("10.0.0.9".into(), "10.0.0.9".into(), "deploy".into(), 2222);
         direct.update_last_used();
         let mut session = Session::new(direct);
         session.mark_terminated(0);
         db.add_session(&session).unwrap();
         db.update_session(&session).unwrap();
 
-        let history = db.get_session_history(None, 10, None, false).unwrap();
+        let history = db.session_history(None, 10, None, false).unwrap();
         assert_eq!(history.len(), 1);
         assert_eq!(history[0].connection_name, "deploy@10.0.0.9:2222");
         let filtered = db
-            .get_session_history(Some("10.0.0.9"), 10, None, false)
+            .session_history(Some("10.0.0.9"), 10, None, false)
             .unwrap();
         assert_eq!(filtered.len(), 1, "the target is searchable");
         let linked: Option<String> = db
@@ -898,7 +881,7 @@ mod tests {
         db.add_session(&session).unwrap();
 
         assert!(db.remove_connection("web").unwrap());
-        let history = db.get_session_history(None, 10, None, false).unwrap();
+        let history = db.session_history(None, 10, None, false).unwrap();
         assert_eq!(history.len(), 1);
         assert_eq!(history[0].connection_name, "u@h.example.com:22");
     }

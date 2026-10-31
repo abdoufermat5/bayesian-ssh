@@ -39,7 +39,10 @@ pub struct FileRead {
     pub mode: Option<u32>,
 }
 
-#[allow(clippy::double_must_use)]
+#[expect(
+    clippy::double_must_use,
+    reason = "async_trait expands each method into a must_use boxed future and clippy flags the macro output"
+)]
 #[async_trait]
 pub trait FileAccess: Send + Sync {
     async fn read(

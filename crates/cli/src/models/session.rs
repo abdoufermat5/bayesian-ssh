@@ -131,7 +131,6 @@ impl Session {
         self.pid = Some(pid);
     }
 
-    #[allow(dead_code)]
     pub fn mark_disconnected(&mut self) {
         self.status = SessionStatus::Disconnected;
         self.ended_at = Some(Utc::now());
@@ -148,12 +147,10 @@ impl Session {
         self.ended_at = Some(Utc::now());
     }
 
-    #[allow(dead_code)]
     pub fn is_active(&self) -> bool {
         matches!(self.status, SessionStatus::Active)
     }
 
-    #[allow(dead_code)]
     pub fn duration(&self) -> Option<chrono::Duration> {
         self.ended_at
             .or_else(|| Some(Utc::now()))
@@ -168,7 +165,6 @@ pub struct SessionHistoryEntry {
     pub session_id: String,
     pub connection_name: String,
     pub started_at: DateTime<Utc>,
-    #[allow(dead_code)]
     pub ended_at: Option<DateTime<Utc>>,
     pub status: SessionStatus,
     pub exit_code: Option<i32>,

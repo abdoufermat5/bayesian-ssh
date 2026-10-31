@@ -2,23 +2,40 @@ use crate::config::{AppConfig, AppConfigUpdates, HostKeyPolicy};
 use anyhow::Result;
 use tracing::info;
 
-#[allow(clippy::too_many_arguments)]
-pub async fn execute(
-    default_user: Option<String>,
-    default_bastion: Option<String>,
-    default_bastion_user: Option<String>,
-    default_port: Option<u16>,
-    use_kerberos: Option<bool>,
-    log_level: Option<String>,
-    clear_bastion: bool,
-    search_mode: Option<String>,
-    strict_host_key_checking: Option<String>,
-    recording: Option<String>,
-    recording_tags: Option<String>,
-    prediction: Option<String>,
-    capture_cwd: Option<String>,
-    mut config: AppConfig,
-) -> Result<()> {
+/// The `bssh config` flags; `None` leaves a setting untouched.
+pub struct ConfigArgs {
+    pub default_user: Option<String>,
+    pub default_bastion: Option<String>,
+    pub default_bastion_user: Option<String>,
+    pub default_port: Option<u16>,
+    pub use_kerberos: Option<bool>,
+    pub log_level: Option<String>,
+    /// Clear both the default bastion and its user.
+    pub clear_bastion: bool,
+    pub search_mode: Option<String>,
+    pub strict_host_key_checking: Option<String>,
+    pub recording: Option<String>,
+    pub recording_tags: Option<String>,
+    pub prediction: Option<String>,
+    pub capture_cwd: Option<String>,
+}
+
+pub async fn execute(args: ConfigArgs, mut config: AppConfig) -> Result<()> {
+    let ConfigArgs {
+        default_user,
+        default_bastion,
+        default_bastion_user,
+        default_port,
+        use_kerberos,
+        log_level,
+        clear_bastion,
+        search_mode,
+        strict_host_key_checking,
+        recording,
+        recording_tags,
+        prediction,
+        capture_cwd,
+    } = args;
     info!("Updating application configuration");
 
     // Reject an unknown policy here: storing it would leave the transports to

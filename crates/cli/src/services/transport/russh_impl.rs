@@ -3,8 +3,6 @@
 //! Implements `SshTransport` using the pure-Rust `russh` crate.
 //! Eligible connections (no kerberos, no bastion) use this path by default.
 
-#![allow(dead_code)]
-
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
@@ -12,7 +10,6 @@ use async_trait::async_trait;
 use russh::client::{self, Handle};
 use russh::keys::{PrivateKeyWithHashAlg, PublicKey, PublicKeyBase64, PublicKeyOrCertificate};
 use russh::ChannelMsg;
-use tokio::io::AsyncReadExt;
 use tracing::{debug, info, warn};
 
 use crate::config::{AppConfig, HostKeyPolicy};

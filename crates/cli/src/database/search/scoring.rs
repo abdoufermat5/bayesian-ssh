@@ -203,15 +203,15 @@ impl Database {
         let mut predictions: Vec<Prediction> = indexed
             .into_iter()
             .map(|(conn, name_lower, host_lower)| {
-                let breakdown = self.calculate_bayesian_score(
-                    &conn,
-                    "",
-                    &name_lower,
-                    &host_lower,
-                    aggregates.get(&conn.id).copied(),
-                    Some(ctx),
+                let breakdown = self.calculate_bayesian_score(&ScoreInput {
+                    connection: &conn,
+                    query_lower: "",
+                    name_lower: &name_lower,
+                    host_lower: &host_lower,
+                    aggregate: aggregates.get(&conn.id).copied(),
+                    ctx: Some(ctx),
                     totals,
-                );
+                });
                 let score = breakdown.score();
                 Prediction {
                     connection: conn,
@@ -249,15 +249,15 @@ impl Database {
         let cutoff = self.window_cutoff_rfc3339();
         let aggregates = self.session_aggregates(&indexed, Some(ctx), &cutoff);
         let totals = self.global_window_totals(Some(ctx), &cutoff);
-        let breakdown = self.calculate_bayesian_score(
+        let breakdown = self.calculate_bayesian_score(&ScoreInput {
             connection,
-            "",
-            &name_lower,
-            &host_lower,
-            aggregates.get(&connection.id).copied(),
-            Some(ctx),
+            query_lower: "",
+            name_lower: &name_lower,
+            host_lower: &host_lower,
+            aggregate: aggregates.get(&connection.id).copied(),
+            ctx: Some(ctx),
             totals,
-        );
+        });
         let score = breakdown.score();
         let rank = all.iter().filter(|p| p.score > score).count() + 1;
         let total = all.len() + 1;
@@ -312,29 +312,29 @@ impl Database {
         indexed.sort_by(
             |(a, a_name_lower, a_host_lower), (b, b_name_lower, b_host_lower)| {
                 let score_a = if mode == "bayesian" {
-                    self.calculate_bayesian_score(
-                        a,
-                        &query_lower,
-                        a_name_lower,
-                        a_host_lower,
-                        aggregates.get(&a.id).copied(),
+                    self.calculate_bayesian_score(&ScoreInput {
+                        connection: a,
+                        query_lower: &query_lower,
+                        name_lower: a_name_lower,
+                        host_lower: a_host_lower,
+                        aggregate: aggregates.get(&a.id).copied(),
                         ctx,
                         totals,
-                    )
+                    })
                     .score()
                 } else {
                     self.calculate_relevance_score(a, &query_lower, a_name_lower, a_host_lower)
                 };
                 let score_b = if mode == "bayesian" {
-                    self.calculate_bayesian_score(
-                        b,
-                        &query_lower,
-                        b_name_lower,
-                        b_host_lower,
-                        aggregates.get(&b.id).copied(),
+                    self.calculate_bayesian_score(&ScoreInput {
+                        connection: b,
+                        query_lower: &query_lower,
+                        name_lower: b_name_lower,
+                        host_lower: b_host_lower,
+                        aggregate: aggregates.get(&b.id).copied(),
                         ctx,
                         totals,
-                    )
+                    })
                     .score()
                 } else {
                     self.calculate_relevance_score(b, &query_lower, b_name_lower, b_host_lower)
@@ -457,31 +457,25 @@ impl Database {
 
     /// Bayesian-inspired scoring: prior (frequency) × likelihood (match
     /// quality) × recency (temporal decay) × success × context factor.
-    #[allow(clippy::too_many_arguments)]
-    fn calculate_bayesian_score(
-        &self,
-        connection: &Connection,
-        query_lower: &str,
-        name_lower: &str,
-        host_lower: &str,
-        aggregate: Option<SessionAggregate>,
-        ctx: Option<&RankContext>,
-        totals: GlobalTotals,
-    ) -> ScoreBreakdown {
+    fn calculate_bayesian_score(&self, input: &ScoreInput<'_>) -> ScoreBreakdown {
         // Total session count across all connections is used as a
         // smoothing constant. We use a small fixed denominator so the
         // prior remains stable for new connections.
         let total_connections: f64 = 1.0;
-        let agg = aggregate.unwrap_or_default();
+        let agg = input.aggregate.unwrap_or_default();
         let prior = if total_connections > 0.0 {
             (agg.total as f64 + 1.0) / (total_connections + 10.0) // Laplace smoothing
         } else {
             0.1
         };
 
-        let likelihood =
-            self.calculate_match_likelihood(connection, query_lower, name_lower, host_lower);
-        let recency = self.calculate_recency_factor(connection);
+        let likelihood = self.calculate_match_likelihood(
+            input.connection,
+            input.query_lower,
+            input.name_lower,
+            input.host_lower,
+        );
+        let recency = self.calculate_recency_factor(input.connection);
         let success_rate = if agg.total > 0 {
             agg.successes as f64 / agg.total as f64
         } else {
@@ -490,23 +484,27 @@ impl Database {
         let success = 0.5 + success_rate * 0.5;
 
         let features = [
-            ctx.and_then(|c| c.git_root.as_ref())
+            input
+                .ctx
+                .and_then(|c| c.git_root.as_ref())
                 .map(|_| FeatureCounts {
                     hits: agg.repo_hits,
-                    global: totals.n_repo,
+                    global: input.totals.n_repo,
                 }),
-            ctx.and_then(|c| c.hour).map(|_| FeatureCounts {
+            input.ctx.and_then(|c| c.hour).map(|_| FeatureCounts {
                 hits: agg.hour_hits,
-                global: totals.n_hour,
+                global: input.totals.n_hour,
             }),
-            ctx.and_then(|c| c.prev_connection_id)
+            input
+                .ctx
+                .and_then(|c| c.prev_connection_id)
                 .map(|_| FeatureCounts {
                     hits: agg.after_prev_hits,
-                    global: totals.n_prev,
+                    global: input.totals.n_prev,
                 }),
         ];
         let (ctx_factor, [repo, hour, after_prev]) =
-            context_factor(&features, agg.total_w, totals.n);
+            context_factor(&features, agg.total_w, input.totals.n);
 
         ScoreBreakdown {
             prior,
@@ -657,6 +655,19 @@ struct GlobalTotals {
     n_prev: i64,
 }
 
+/// Inputs to [`Database::calculate_bayesian_score`]. The lowercase name and
+/// host are precomputed by the caller so the sort in
+/// [`Database::deduplicate_and_rank`] doesn't re-lowercase per comparison.
+struct ScoreInput<'a> {
+    connection: &'a Connection,
+    query_lower: &'a str,
+    name_lower: &'a str,
+    host_lower: &'a str,
+    aggregate: Option<SessionAggregate>,
+    ctx: Option<&'a RankContext>,
+    totals: GlobalTotals,
+}
+
 #[cfg(test)]
 mod tests {
     use super::{context_factor, FeatureCounts, RankContext};
@@ -734,26 +745,8 @@ mod tests {
         };
         let db = Database::new(&config).unwrap();
 
-        let conn_a = Connection::new(
-            "host-a".into(),
-            "a.example.com".into(),
-            "root".into(),
-            22,
-            None,
-            None,
-            false,
-            None,
-        );
-        let conn_b = Connection::new(
-            "host-b".into(),
-            "b.example.com".into(),
-            "root".into(),
-            22,
-            None,
-            None,
-            false,
-            None,
-        );
+        let conn_a = Connection::new("host-a".into(), "a.example.com".into(), "root".into(), 22);
+        let conn_b = Connection::new("host-b".into(), "b.example.com".into(), "root".into(), 22);
         db.add_connection(&conn_a).unwrap();
         db.add_connection(&conn_b).unwrap();
 

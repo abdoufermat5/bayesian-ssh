@@ -56,20 +56,37 @@ impl std::fmt::Debug for AgentCredential {
     }
 }
 
+/// Everything but the device keys of an [`AgentCredential`].
+#[derive(Debug, Clone)]
+pub struct AgentCredentialParams {
+    pub server_url: String,
+    pub team_id: Uuid,
+    pub team_name: String,
+    pub agent_name: String,
+    pub account_id: Uuid,
+    pub device_id: Uuid,
+    /// The team's trust root (creating admin device), pinned.
+    pub trust_root: PublicKey32,
+    /// Admin devices whose signatures the agent accepts.
+    pub approvers: Vec<Peer>,
+    /// Policy name the gateway serves for this agent.
+    pub policy: String,
+}
+
 impl AgentCredential {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        server_url: String,
-        team_id: Uuid,
-        team_name: String,
-        agent_name: String,
-        account_id: Uuid,
-        device_id: Uuid,
-        keys: &DeviceKeys,
-        trust_root: PublicKey32,
-        approvers: Vec<Peer>,
-        policy: String,
-    ) -> Self {
+    /// A credential for the agent whose device is `keys`.
+    pub fn new(params: AgentCredentialParams, keys: &DeviceKeys) -> Self {
+        let AgentCredentialParams {
+            server_url,
+            team_id,
+            team_name,
+            agent_name,
+            account_id,
+            device_id,
+            trust_root,
+            approvers,
+            policy,
+        } = params;
         Self {
             version: CREDENTIAL_VERSION,
             server_url,
@@ -284,7 +301,7 @@ fn ensure_team_source(db: &Database, team_id: Uuid, team_name: &str) -> Result<(
     {
         return Ok(());
     }
-    let name = if db.get_source(team_name)?.is_some() {
+    let name = if db.source(team_name)?.is_some() {
         format!("team-{}", &team_id.to_string()[..8])
     } else {
         team_name.to_string()
@@ -418,16 +435,18 @@ mod tests {
             x25519: admin.x25519_public(),
         }];
         let cred = AgentCredential::new(
-            "https://teams.example.com".into(),
-            Uuid::new_v4(),
-            "ops".into(),
-            "deployer".into(),
-            Uuid::new_v4(),
-            Uuid::new_v4(),
+            AgentCredentialParams {
+                server_url: "https://teams.example.com".into(),
+                team_id: Uuid::new_v4(),
+                team_name: "ops".into(),
+                agent_name: "deployer".into(),
+                account_id: Uuid::new_v4(),
+                device_id: Uuid::new_v4(),
+                trust_root: admin.ed25519_public(),
+                approvers,
+                policy: "default".into(),
+            },
             &agent,
-            admin.ed25519_public(),
-            approvers,
-            "default".into(),
         );
         (cred, admin, admin_dev)
     }

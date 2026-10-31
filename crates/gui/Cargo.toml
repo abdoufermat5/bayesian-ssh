@@ -36,6 +36,7 @@ bayesian-ssh = { path = "../cli" }
 bssh-teams-proto = { version = "0.1.0", path = "../teams-proto" }
 zeroize = "1"
 anyhow = "1.0"
+thiserror = "1"
 tokio = { version = "1.0", features = ["full"] }
 portable-pty = "0.8"
 futures = "0.3"
@@ -62,3 +63,6 @@ arboard = "3"
 
 [dev-dependencies]
 tempfile = "3"
+
+[lints]
+workspace = true

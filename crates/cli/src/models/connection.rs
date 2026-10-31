@@ -142,27 +142,21 @@ fn parse_port(value: &str) -> Option<u16> {
 }
 
 impl Connection {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        name: String,
-        host: String,
-        user: String,
-        port: u16,
-        bastion: Option<String>,
-        bastion_user: Option<String>,
-        use_kerberos: bool,
-        key_path: Option<String>,
-    ) -> Self {
+    /// A new direct connection: no bastion, no Kerberos, the default key.
+    ///
+    /// Set the optional route fields with struct update syntax:
+    /// `Connection { bastion: Some(b), ..Connection::new(name, host, user, port) }`.
+    pub fn new(name: String, host: String, user: String, port: u16) -> Self {
         Self {
             id: Uuid::new_v4(),
             name,
             host,
             user,
             port,
-            bastion,
-            bastion_user,
-            use_kerberos,
-            key_path,
+            bastion: None,
+            bastion_user: None,
+            use_kerberos: false,
+            key_path: None,
             created_at: Utc::now(),
             last_used: None,
             tags: Vec::new(),
@@ -279,16 +273,12 @@ mod tests {
     use chrono::Utc;
 
     fn conn(bastion: Option<&str>, kerberos: bool) -> Connection {
-        Connection::new(
-            "web".into(),
-            "web.internal".into(),
-            "alice".into(),
-            2222,
-            bastion.map(Into::into),
-            Some("jump".into()),
-            kerberos,
-            None,
-        )
+        Connection {
+            bastion: bastion.map(Into::into),
+            bastion_user: Some("jump".into()),
+            use_kerberos: kerberos,
+            ..Connection::new("web".into(), "web.internal".into(), "alice".into(), 2222)
+        }
     }
 
     #[test]

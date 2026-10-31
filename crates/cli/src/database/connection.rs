@@ -14,7 +14,7 @@ impl Database {
     /// that has a different `id` but the same `name`. The tag set is
     /// written transactionally with the connection row.
     pub fn add_connection(&self, connection: &Connection) -> Result<()> {
-        connection.validate().map_err(|e| anyhow!(e))?;
+        connection.validate()?;
         let tx = self.conn.unchecked_transaction()?;
 
         // Detect name conflicts: if a *different* row already owns the
@@ -99,7 +99,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn get_connection(&self, name_or_id: &str) -> Result<Option<Connection>> {
+    pub fn connection(&self, name_or_id: &str) -> Result<Option<Connection>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used, source_id, external_id, stale_since, forward_agent, pending_change
              FROM connections
@@ -112,7 +112,7 @@ impl Database {
             let mut connection = self.row_to_connection(row)?;
             // `connection_tags` is authoritative. Never fall back to the
             // legacy JSON column: it is stale once tags have been removed.
-            connection.tags = self.get_tags_for_connection(&connection.id.to_string())?;
+            connection.tags = self.tags_for_connection(&connection.id.to_string())?;
             Ok(Some(connection))
         } else {
             Ok(None)
@@ -165,7 +165,7 @@ impl Database {
         }
 
         // Batch-fetch tags in a single query (avoids N+1).
-        let tag_map = self.get_tags_for_connections(&ids)?;
+        let tag_map = self.tags_for_connections(&ids)?;
         for conn in &mut connections {
             if let Some(tags) = tag_map.get(&conn.id.to_string()) {
                 conn.tags = tags.clone();
@@ -173,7 +173,7 @@ impl Database {
         }
 
         // Batch-fetch aliases in a single query as well.
-        let alias_map = self.get_aliases_for_connections(&ids)?;
+        let alias_map = self.aliases_for_connections(&ids)?;
         for conn in &mut connections {
             if let Some(aliases) = alias_map.get(&conn.id.to_string()) {
                 conn.aliases = aliases.clone();
@@ -184,7 +184,7 @@ impl Database {
     }
 
     pub fn update_connection(&self, connection: &Connection) -> Result<()> {
-        connection.validate().map_err(|e| anyhow!(e))?;
+        connection.validate()?;
         let tx = self.conn.unchecked_transaction()?;
 
         // Don't allow renaming onto an existing name.
@@ -288,7 +288,7 @@ impl Database {
     }
 
     pub fn remove_connection(&self, name_or_id: &str) -> Result<bool> {
-        let connection_id = if let Some(conn) = self.get_connection(name_or_id)? {
+        let connection_id = if let Some(conn) = self.connection(name_or_id)? {
             conn.id.to_string()
         } else {
             return Ok(false);
@@ -329,7 +329,7 @@ impl Database {
 
     /// Convert a single row into a `Connection`. Tags are NOT read here;
     /// callers should fetch them from `connection_tags` (in a single batch
-    /// query where possible, see `get_tags_for_connections`).
+    /// query where possible, see [`Database::tags_for_connections`]).
     pub(crate) fn row_to_connection(&self, row: &rusqlite::Row) -> Result<Connection> {
         let id_str: String = row.get(0)?;
         let id = uuid::Uuid::parse_str(&id_str)?;
@@ -371,7 +371,7 @@ impl Database {
         })
     }
 
-    pub fn get_stats(&self) -> Result<crate::models::ConnectionStats> {
+    pub fn stats(&self) -> Result<crate::models::ConnectionStats> {
         let total_connections: i64 =
             self.conn
                 .query_row("SELECT COUNT(*) FROM connections", [], |row| row.get(0))?;
@@ -425,7 +425,7 @@ impl Database {
                 all_ids.push(id);
             }
         }
-        let tag_map = self.get_tags_for_connections(&all_ids)?;
+        let tag_map = self.tags_for_connections(&all_ids)?;
         for conn in &mut recent_connections {
             if let Some(tags) = tag_map.get(&conn.id.to_string()) {
                 conn.tags = tags.clone();

@@ -265,16 +265,10 @@ mod tests {
     use crate::services::ai::types::JailKind;
 
     fn conn() -> Connection {
-        Connection::new(
-            "web-1".into(),
-            "web-1.example".into(),
-            "alice".into(),
-            22,
-            None,
-            None,
-            false,
-            Some("/home/alice/.ssh/id_ed25519".into()),
-        )
+        Connection {
+            key_path: Some("/home/alice/.ssh/id_ed25519".into()),
+            ..Connection::new("web-1".into(), "web-1.example".into(), "alice".into(), 22)
+        }
     }
 
     fn limits() -> ExecLimits {
