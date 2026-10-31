@@ -169,7 +169,7 @@ impl<'a> Session<'a> {
             .await?;
         // Gone for the team; here it goes back to being a local connection (a
         // shared connection is often the sharer's own), not a stale one.
-        if let Some(mut local) = self.db().get_connection(&connection.id.to_string())? {
+        if let Some(mut local) = self.db().connection(&connection.id.to_string())? {
             local.source_id = None;
             local.external_id = None;
             local.stale_since = None;
@@ -183,7 +183,7 @@ impl<'a> Session<'a> {
     pub fn entry_for_connection(&self, team_id: Uuid, name: &str) -> Result<Uuid> {
         let conn = self
             .db()
-            .get_connection_or_alias(name)?
+            .connection_or_alias(name)?
             .ok_or_else(|| anyhow!("no connection named '{name}'"))?;
         match team_of_connection(self.db(), &conn)? {
             Some((t, entry)) if t == team_id => Ok(entry),

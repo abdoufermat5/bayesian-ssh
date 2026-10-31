@@ -334,7 +334,7 @@ fn ensure_team_source(db: &Database, team_id: Uuid, team_name: &str) -> Result<(
     {
         return Ok(());
     }
-    let name = if db.get_source(team_name)?.is_some() {
+    let name = if db.source(team_name)?.is_some() {
         format!("team-{}", &team_id.to_string()[..8])
     } else {
         team_name.to_string()

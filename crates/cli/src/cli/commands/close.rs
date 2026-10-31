@@ -55,7 +55,7 @@ pub async fn execute(
 
 /// List all active sessions
 fn list_active_sessions(db: &Database) -> Result<()> {
-    let sessions = db.get_active_sessions()?;
+    let sessions = db.active_sessions()?;
 
     if sessions.is_empty() {
         println!("📋 No active sessions.");
@@ -105,7 +105,7 @@ fn list_active_sessions(db: &Database) -> Result<()> {
 
 /// Close a specific session
 fn close_session(db: &Database, target: &str, confirmation: Confirmation) -> Result<()> {
-    let sessions = db.get_active_sessions_for_connection(target)?;
+    let sessions = db.active_sessions_for_connection(target)?;
 
     if sessions.is_empty() {
         println!("❌ No active sessions found for '{}'", target);
@@ -153,7 +153,7 @@ fn close_session(db: &Database, target: &str, confirmation: Confirmation) -> Res
 
 /// Close all active sessions
 fn close_all_sessions(db: &Database, confirmation: Confirmation) -> Result<()> {
-    let sessions = db.get_active_sessions()?;
+    let sessions = db.active_sessions()?;
 
     if sessions.is_empty() {
         println!("📋 No active sessions to close.");

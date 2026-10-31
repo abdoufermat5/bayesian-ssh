@@ -116,7 +116,7 @@ pub fn edit_connection(
     let uuid = Uuid::parse_str(&id)?;
 
     let existing = db
-        .get_connection(&id)?
+        .connection(&id)?
         .ok_or_else(|| format!("Connection '{}' not found", id))?;
 
     if existing.id != uuid {
@@ -160,7 +160,7 @@ pub fn edit_connection(
 pub fn confirm_connection_change(id_or_name: String) -> Result<(), CommandError> {
     let (db, _config) = open_db_and_config()?;
     let connection = db
-        .get_connection(&id_or_name)?
+        .connection(&id_or_name)?
         .ok_or_else(|| format!("Connection '{}' not found", id_or_name))?;
     db.clear_pending_change(&connection.id)
         .map_err(CommandError::from)

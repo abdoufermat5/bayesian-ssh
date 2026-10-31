@@ -359,7 +359,7 @@ async fn resolve_targets(
         let mut found = Vec::new();
         let mut missing = Vec::new();
         for name in &plan.targets {
-            match ssh_service.get_connection(name).await? {
+            match ssh_service.connection(name).await? {
                 Some(conn) => found.push(conn),
                 None => missing.push(name.clone()),
             }

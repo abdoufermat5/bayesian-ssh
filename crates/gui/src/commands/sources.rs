@@ -24,7 +24,7 @@ pub fn add_source(
         return Err("Source name cannot be empty.".into());
     }
     let kind: SourceKind = kind.parse().map_err(|e: String| e)?;
-    if db.get_source(name)?.is_some() {
+    if db.source(name)?.is_some() {
         return Err(format!("A source named '{}' already exists.", name).into());
     }
 
@@ -37,7 +37,7 @@ pub fn add_source(
 pub fn remove_source(name: String, delete_hosts: bool) -> Result<(), CommandError> {
     let (db, _) = open_db_and_config()?;
     let source = db
-        .get_source(&name)?
+        .source(&name)?
         .ok_or_else(|| format!("Source '{}' not found.", name))?;
     db.remove_source(source.id, delete_hosts)
         .map_err(CommandError::from)
@@ -47,7 +47,7 @@ pub fn remove_source(name: String, delete_hosts: bool) -> Result<(), CommandErro
 pub fn sync_source(name: String, dry_run: bool) -> Result<sync::SyncReport, CommandError> {
     let (db, config) = open_db_and_config()?;
     let source = db
-        .get_source(&name)?
+        .source(&name)?
         .ok_or_else(|| format!("Source '{}' not found.", name))?;
 
     let discovered = match provider_for(source.kind).fetch(&source) {

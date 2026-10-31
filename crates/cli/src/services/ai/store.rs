@@ -140,7 +140,7 @@ impl AiStore {
         Ok(())
     }
 
-    pub fn get_run(&self, run_id: &str) -> Result<Option<RunRecord>> {
+    pub fn run(&self, run_id: &str) -> Result<Option<RunRecord>> {
         let db = self.db()?;
         let row = db
             .query_row(
@@ -560,7 +560,7 @@ mod tests {
         let a = AiStore::open_in(tmp.path()).unwrap();
         let b = AiStore::open_in(tmp.path()).unwrap();
         a.start_run(&run("r1")).unwrap();
-        assert!(b.get_run("r1").unwrap().is_some());
+        assert!(b.run("r1").unwrap().is_some());
     }
 
     #[test]
@@ -572,12 +572,12 @@ mod tests {
         assert_eq!(s.list_runs(true, 10).unwrap().len(), 1);
         s.end_run("r1", "done").unwrap();
         s.end_run("r1", "again").unwrap();
-        let r = s.get_run("r1").unwrap().unwrap();
+        let r = s.run("r1").unwrap().unwrap();
         assert_eq!(r.reason.as_deref(), Some("done"));
         assert!(r.ended.is_some());
         assert!(s.list_runs(true, 10).unwrap().is_empty());
         assert_eq!(s.list_runs(false, 10).unwrap().len(), 1);
-        assert!(s.get_run("nope").unwrap().is_none());
+        assert!(s.run("nope").unwrap().is_none());
     }
 
     #[test]

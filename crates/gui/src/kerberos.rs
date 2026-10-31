@@ -10,7 +10,7 @@ use crate::commands::CommandError;
 // Spawns `klist` (polled periodically): keep it off the main/UI thread.
 #[tauri::command(async)]
 pub fn get_kerberos_status() -> Result<kerberos::KerberosStatus, CommandError> {
-    kerberos::get_status().map_err(CommandError::from)
+    kerberos::status().map_err(CommandError::from)
 }
 
 // kinit talks to the KDC and can block for its full timeout: run these off the

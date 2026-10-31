@@ -23,7 +23,7 @@ pub async fn execute(target: String, config: AppConfig) -> Result<()> {
 
     let prev_name = captured
         .prev_connection_id
-        .and_then(|id| db.get_connection(&id.to_string()).ok().flatten())
+        .and_then(|id| db.connection(&id.to_string()).ok().flatten())
         .map(|c| c.name);
 
     let repo_label = match &captured.git_root {

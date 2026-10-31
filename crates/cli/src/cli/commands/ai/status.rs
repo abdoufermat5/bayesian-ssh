@@ -69,7 +69,7 @@ pub async fn execute(args: AiArgsStatus, config: AppConfig) -> Result<()> {
         }
         if on_behalf_of.is_none() {
             if let Some(s) = &store {
-                if let Ok(Some(r)) = s.get_run(run_id) {
+                if let Ok(Some(r)) = s.run(run_id) {
                     on_behalf_of = Some(r.on_behalf_of);
                 }
             }

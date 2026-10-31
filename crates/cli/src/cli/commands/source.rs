@@ -256,7 +256,7 @@ fn add(request: AddRequest, config: &AppConfig) -> Result<()> {
     }
 
     let db = Database::new(config)?;
-    if db.get_source(name)?.is_some() {
+    if db.source(name)?.is_some() {
         bail!("A source named '{}' already exists.", name);
     }
 
@@ -352,7 +352,7 @@ fn list(config: &AppConfig) -> Result<()> {
 fn sync_sources(db: &Database, config: &AppConfig, request: SyncRequest) -> Result<()> {
     let keep_going = matches!(&request.selection, Selection::All);
     let sources: Vec<Source> = match request.selection {
-        Selection::Named(name) => match db.get_source(&name)? {
+        Selection::Named(name) => match db.source(&name)? {
             Some(source) => vec![source],
             None => bail!("Source '{}' not found.", name),
         },
@@ -466,7 +466,7 @@ fn print_summary(report: &sync::SyncReport) {
 fn remove(config: &AppConfig, request: RemoveRequest) -> Result<()> {
     let db = Database::new(config)?;
     let source = db
-        .get_source(&request.name)?
+        .source(&request.name)?
         .ok_or_else(|| anyhow!("Source '{}' not found.", request.name))?;
 
     let hosts = db.connections_for_source(source.id)?.len();

@@ -248,7 +248,7 @@ impl AppConfig {
         Ok(())
     }
 
-    pub fn get_active_env() -> String {
+    pub fn active_env() -> String {
         let config_dir = dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("~/.config"))
             .join("bayesian-ssh");
@@ -307,7 +307,7 @@ impl AppConfig {
         enforce_secure_dir(&config_dir);
         Self::migrate_legacy_config(&config_dir)?;
 
-        let environment = env_override.unwrap_or_else(Self::get_active_env);
+        let environment = env_override.unwrap_or_else(Self::active_env);
         Self::validate_env_name(&environment)?;
         let env_dir = config_dir.join("environments").join(&environment);
         std::fs::create_dir_all(&env_dir)?;

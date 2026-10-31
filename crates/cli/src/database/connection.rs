@@ -99,7 +99,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn get_connection(&self, name_or_id: &str) -> Result<Option<Connection>> {
+    pub fn connection(&self, name_or_id: &str) -> Result<Option<Connection>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path, created_at, last_used, source_id, external_id, stale_since, forward_agent, pending_change
              FROM connections
@@ -288,7 +288,7 @@ impl Database {
     }
 
     pub fn remove_connection(&self, name_or_id: &str) -> Result<bool> {
-        let connection_id = if let Some(conn) = self.get_connection(name_or_id)? {
+        let connection_id = if let Some(conn) = self.connection(name_or_id)? {
             conn.id.to_string()
         } else {
             return Ok(false);
@@ -371,7 +371,7 @@ impl Database {
         })
     }
 
-    pub fn get_stats(&self) -> Result<crate::models::ConnectionStats> {
+    pub fn stats(&self) -> Result<crate::models::ConnectionStats> {
         let total_connections: i64 =
             self.conn
                 .query_row("SELECT COUNT(*) FROM connections", [], |row| row.get(0))?;

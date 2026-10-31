@@ -43,7 +43,7 @@ pub fn import_ssh_config(file: Option<String>) -> Result<usize, CommandError> {
             return Ok(false);
         }
 
-        if db.get_connection(&host)?.is_some() {
+        if db.connection(&host)?.is_some() {
             return Ok(false);
         }
 

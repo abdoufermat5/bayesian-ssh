@@ -121,7 +121,7 @@ pub(crate) fn team_of_connection(
     let Some(source_id) = connection.source_id else {
         return Ok(None);
     };
-    let Some(source) = db.get_source(&source_id.to_string())? else {
+    let Some(source) = db.source(&source_id.to_string())? else {
         return Ok(None);
     };
     let (Some(team_id), Some(entry)) = (team_id_of(&source), connection.external_id.as_deref())
@@ -197,10 +197,7 @@ pub(crate) fn materialize_into(
         .ok_or_else(|| anyhow!("team {team_id} has no local source"))?;
 
     if let Some(name) = &view.team_name {
-        if source.name != *name
-            && source.name.starts_with("team-")
-            && db.get_source(name)?.is_none()
-        {
+        if source.name != *name && source.name.starts_with("team-") && db.source(name)?.is_none() {
             db.conn.execute(
                 "UPDATE sources SET name = ?1 WHERE id = ?2",
                 params![name, source.id.to_string()],

@@ -86,7 +86,7 @@ pub fn teams_share(
             let (store, _) = open_store()?;
             let conn = store
                 .database()
-                .get_connection_or_alias(&connection)?
+                .connection_or_alias(&connection)?
                 .ok_or_else(|| anyhow::anyhow!("no connection named '{connection}'"))?;
             Ok(TeamSyncDto::from(&s.share(team_id, &conn).await?.1))
         })
@@ -103,7 +103,7 @@ pub fn teams_unshare(
             let (store, _) = open_store()?;
             let conn = store
                 .database()
-                .get_connection_or_alias(&connection)?
+                .connection_or_alias(&connection)?
                 .ok_or_else(|| anyhow::anyhow!("no connection named '{connection}'"))?;
             Ok(TeamSyncDto::from(&s.unshare(&conn).await?))
         })

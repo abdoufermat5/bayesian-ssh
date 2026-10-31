@@ -82,7 +82,7 @@ impl Database {
     // Session history retrieval
     // ──────────────────────────────────────────────────────────────────────────
 
-    pub fn get_session_history(
+    pub fn session_history(
         &self,
         connection_filter: Option<&str>,
         limit: usize,
@@ -258,7 +258,7 @@ impl Database {
         Ok(hits)
     }
 
-    pub fn get_recording_path(&self, session_id_or_prefix: &str) -> Result<Option<(Uuid, String)>> {
+    pub fn recording_path(&self, session_id_or_prefix: &str) -> Result<Option<(Uuid, String)>> {
         let trimmed = session_id_or_prefix.trim();
         let normalized = if let Ok(uuid) = Uuid::parse_str(trimmed) {
             uuid.to_string()
@@ -349,7 +349,7 @@ impl Database {
         clippy::type_complexity,
         reason = "tuple return is frozen by cross-area caller close.rs; see REFACTOR-REPORT.md"
     )]
-    pub fn get_active_sessions(
+    pub fn active_sessions(
         &self,
     ) -> Result<Vec<(String, Option<u32>, chrono::DateTime<chrono::Utc>)>> {
         let mut stmt = self.conn.prepare(
@@ -374,7 +374,7 @@ impl Database {
         clippy::type_complexity,
         reason = "tuple return is frozen by cross-area caller close.rs; see REFACTOR-REPORT.md"
     )]
-    pub fn get_active_sessions_for_connection(
+    pub fn active_sessions_for_connection(
         &self,
         target: &str,
     ) -> Result<Vec<(String, String, Option<u32>, chrono::DateTime<chrono::Utc>)>> {

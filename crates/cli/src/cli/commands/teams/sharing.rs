@@ -27,7 +27,7 @@ pub(super) async fn share(
     let db = store.database();
     let (team_id, source) = session::resolve_team(db, request.team)?;
     let conn = db
-        .get_connection_or_alias(request.connection)?
+        .connection_or_alias(request.connection)?
         .ok_or_else(|| anyhow!("no connection named '{}'", request.connection))?;
     let s = Session::open(store, config, &passphrase(Passphrase::Existing)?)?;
     let (_, sync) = s.share(team_id, &conn).await?;
@@ -61,7 +61,7 @@ pub(super) async fn unshare(
 ) -> Result<()> {
     let db = store.database();
     let conn = db
-        .get_connection_or_alias(connection)?
+        .connection_or_alias(connection)?
         .ok_or_else(|| anyhow!("no connection named '{connection}'"))?;
     if !confirm(
         &format!(

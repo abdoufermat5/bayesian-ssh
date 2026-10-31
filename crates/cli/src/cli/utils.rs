@@ -220,7 +220,7 @@ pub async fn fuzzy_select_connection(
                 println!("\n💡 Tip: Use 'bssh list' to see all connections or 'bssh add' to create a new one.");
 
                 // Show recent connections as fallback
-                let recent = ssh_service.get_recent_connections(5).await?;
+                let recent = ssh_service.recent_connections(5).await?;
                 if !recent.is_empty() {
                     println!("\n📅 Recent connections:");
                     for (i, conn) in recent.iter().enumerate() {
@@ -418,7 +418,7 @@ pub async fn resolve_connection(
     auto_select_single: bool,
     config: &AppConfig,
 ) -> Result<Connection> {
-    if let Some(conn) = ssh_service.get_connection(target).await? {
+    if let Some(conn) = ssh_service.connection(target).await? {
         return Ok(conn);
     }
 

@@ -11,7 +11,7 @@ pub async fn execute(source: String, new_name: String, config: AppConfig) -> Res
     let original = resolve_connection(&ssh_service, &source, "duplicate", true, &config).await?;
 
     // Check if new name already exists
-    if ssh_service.get_connection(&new_name).await?.is_some() {
+    if ssh_service.connection(&new_name).await?.is_some() {
         anyhow::bail!("A connection with the name '{}' already exists", new_name);
     }
 

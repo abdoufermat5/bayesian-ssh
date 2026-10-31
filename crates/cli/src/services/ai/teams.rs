@@ -225,7 +225,7 @@ pub fn forward_event(config: &AppConfig, event: &AiEvent) -> Result<()> {
     let mut team = None;
     if let AiEvent::Call { call, .. } = event {
         let conn = match call.host.as_deref() {
-            Some(h) => db.get_connection(h)?,
+            Some(h) => db.connection(h)?,
             None => None,
         };
         if let Some(conn) = conn {

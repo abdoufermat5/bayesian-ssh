@@ -180,7 +180,7 @@ struct RunsDirResolver {
 
 impl RunsDirResolver {
     fn resolve(&mut self) -> Option<PathBuf> {
-        let env = AppConfig::get_active_env();
+        let env = AppConfig::active_env();
         if self.env.as_deref() != Some(env.as_str()) || self.dir.is_none() {
             self.dir = AppConfig::load(None).ok().map(|config| {
                 bayesian_ssh::services::ai::control_client::runs_dir(&ai_dir(&config))

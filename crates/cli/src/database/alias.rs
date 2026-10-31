@@ -26,7 +26,7 @@ impl Database {
         Ok(rows > 0)
     }
 
-    pub fn get_aliases_for_connection(&self, connection_id: &str) -> Result<Vec<String>> {
+    pub fn aliases_for_connection(&self, connection_id: &str) -> Result<Vec<String>> {
         let mut stmt = self
             .conn
             .prepare("SELECT alias FROM aliases WHERE connection_id = ?")?;
@@ -67,7 +67,7 @@ impl Database {
         Ok(map)
     }
 
-    pub fn get_connection_by_alias(&self, alias: &str) -> Result<Option<Connection>> {
+    pub fn connection_by_alias(&self, alias: &str) -> Result<Option<Connection>> {
         let mut stmt = self.conn.prepare(
             "SELECT c.id, c.name, c.host, c.user, c.port, c.bastion, c.bastion_user,
                     c.use_kerberos, c.key_path, c.created_at, c.last_used,
@@ -89,12 +89,12 @@ impl Database {
         }
     }
 
-    /// Enhanced get_connection that also checks aliases.
-    pub fn get_connection_or_alias(&self, name_or_alias: &str) -> Result<Option<Connection>> {
-        if let Some(conn) = self.get_connection(name_or_alias)? {
+    /// Enhanced connection that also checks aliases.
+    pub fn connection_or_alias(&self, name_or_alias: &str) -> Result<Option<Connection>> {
+        if let Some(conn) = self.connection(name_or_alias)? {
             return Ok(Some(conn));
         }
-        self.get_connection_by_alias(name_or_alias)
+        self.connection_by_alias(name_or_alias)
     }
 }
 

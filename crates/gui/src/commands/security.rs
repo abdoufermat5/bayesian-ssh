@@ -100,7 +100,7 @@ pub fn copy_ssh_key_to_target(
     let database = Database::new(&config)?;
 
     let conn = database
-        .get_connection_or_alias(&target)?
+        .connection_or_alias(&target)?
         .ok_or_else(|| format!("Connection '{target}' not found"))?;
 
     let pub_key_path = if let Some(k) = key_path {
@@ -201,7 +201,7 @@ pub fn export_connections_payload(
     tag: Option<String>,
 ) -> Result<String, CommandError> {
     let global_config = AppConfig::load(None)?;
-    let active_env = AppConfig::get_active_env();
+    let active_env = AppConfig::active_env();
     let env_list = crate::commands::env::list_environments().unwrap_or_default();
 
     let mut backup_environments = Vec::new();

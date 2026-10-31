@@ -60,7 +60,7 @@ impl DefaultPolicyEngine {
             }
         }
         if let Some(ttl) = parse_duration(&b.run_ttl) {
-            if let Ok(Some(rec)) = self.store.get_run(run) {
+            if let Ok(Some(rec)) = self.store.run(run) {
                 if let Ok(start) = chrono::DateTime::parse_from_rfc3339(&rec.started) {
                     let age = chrono::Utc::now().signed_duration_since(start);
                     if age.to_std().map(|a| a > ttl).unwrap_or(false) {

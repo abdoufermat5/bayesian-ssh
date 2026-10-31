@@ -18,7 +18,7 @@ pub async fn execute(session: String, speed: f64, idle_cap: f64, config: AppConf
 
     let db = Database::new(&config)?;
     let (_, raw_path) = db
-        .get_recording_path(&session)?
+        .recording_path(&session)?
         .ok_or_else(|| anyhow::anyhow!("no recording found for session '{session}'"))?;
 
     let path = Path::new(&raw_path);

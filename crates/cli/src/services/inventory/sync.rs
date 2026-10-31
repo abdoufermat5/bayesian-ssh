@@ -598,7 +598,7 @@ mod tests {
 
         apply_move(&db, &config, &source);
 
-        let stored = db.get_connection("db-prod").unwrap().unwrap();
+        let stored = db.connection("db-prod").unwrap().unwrap();
         assert_eq!(stored.host, "attacker.example");
         let change = stored.pending_change.expect("pending change recorded");
         assert_eq!(change.previous.host, "db.example");
@@ -627,7 +627,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let stored = db.get_connection("db-prod").unwrap().unwrap();
+        let stored = db.connection("db-prod").unwrap().unwrap();
         assert_eq!(stored.host, "attacker2.example");
         let change = stored.pending_change.expect("still pending");
         assert_eq!(change.previous.host, "db.example");
@@ -644,7 +644,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let stored = db.get_connection("db-prod").unwrap().unwrap();
+        let stored = db.connection("db-prod").unwrap().unwrap();
         assert_eq!(stored.host, "db.example");
         assert!(
             stored.pending_change.is_none(),
@@ -675,7 +675,7 @@ mod tests {
         );
         apply(&db, &config, &source, plan, None).unwrap();
 
-        let stored = db.get_connection("db-prod").unwrap().unwrap();
+        let stored = db.connection("db-prod").unwrap().unwrap();
         let change = stored.pending_change.expect("pending change recorded");
         assert_eq!(change.previous.bastion.as_deref(), Some("bastion.example"));
         assert_eq!(stored.bastion.as_deref(), Some("evil-bastion.example"));
@@ -689,7 +689,7 @@ mod tests {
 
         apply_move(&db, &config, &source);
 
-        let stored = db.get_connection("db-prod").unwrap().unwrap();
+        let stored = db.connection("db-prod").unwrap().unwrap();
         assert_eq!(stored.host, "attacker.example");
         assert!(
             stored.pending_change.is_none(),
@@ -707,7 +707,7 @@ mod tests {
         assert_eq!(plan.add.len(), 1);
         apply(&db, &config, &source, plan, None).unwrap();
 
-        let stored = db.get_connection("db-prod").unwrap().unwrap();
+        let stored = db.connection("db-prod").unwrap().unwrap();
         assert!(
             stored.pending_change.is_none(),
             "new entries need no confirmation"

@@ -39,7 +39,7 @@ fn list_environments() -> Result<()> {
         return Ok(());
     }
 
-    let active_env = AppConfig::get_active_env();
+    let active_env = AppConfig::active_env();
     let mut envs = Vec::new();
 
     for entry in std::fs::read_dir(&envs_dir)? {
@@ -99,7 +99,7 @@ fn create_environment(name: &str) -> Result<()> {
 }
 
 fn remove_environment(name: &str) -> Result<()> {
-    let active_env = AppConfig::get_active_env();
+    let active_env = AppConfig::active_env();
     if name == active_env {
         anyhow::bail!(
             "Cannot remove the currently active environment '{}'. Change environment first.",

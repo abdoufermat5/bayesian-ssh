@@ -25,7 +25,7 @@ impl<'a> Session<'a> {
     /// server puts it in the oldest organization the caller owns, or in a new
     /// one.
     pub async fn create_team_in(&self, name: &str, org_id: Option<Uuid>) -> Result<TeamSync> {
-        if self.db().get_source(name)?.is_some() {
+        if self.db().source(name)?.is_some() {
             bail!("a source named '{name}' already exists; pick another team name");
         }
         let team_id = Uuid::new_v4();
@@ -124,7 +124,7 @@ impl<'a> Session<'a> {
         self.remember_authors(team_id, &members)?;
         // Renamed to the team's real name on the first sync that can read it.
         let name = format!("team-{}", &team_id.simple().to_string()[..8]);
-        if self.db().get_source(&name)?.is_none() {
+        if self.db().source(&name)?.is_none() {
             self.db().add_source(&Source::new(
                 name.clone(),
                 SourceKind::Team,

@@ -6,7 +6,7 @@ use bayesian_ssh::models::{ConnectionStats, SessionHistoryEntry, SessionTextHit}
 pub fn get_stats() -> Result<ConnectionStats, CommandError> {
     let (db, _config) = open_db_and_config()?;
 
-    db.get_stats().map_err(CommandError::from)
+    db.stats().map_err(CommandError::from)
 }
 
 #[tauri::command(async)]
@@ -18,7 +18,7 @@ pub fn get_history(limit: Option<usize>) -> Result<Vec<SessionHistoryEntry>, Com
     db.close_stale_sessions()?;
 
     let effective_limit = limit.unwrap_or(config.max_history_size.max(1));
-    db.get_session_history(None, effective_limit, None, false)
+    db.session_history(None, effective_limit, None, false)
         .map_err(CommandError::from)
 }
 
@@ -26,7 +26,7 @@ pub fn get_history(limit: Option<usize>) -> Result<Vec<SessionHistoryEntry>, Com
 pub fn read_recording(session_id: String) -> Result<String, CommandError> {
     let (db, config) = open_db_and_config()?;
     let (_, raw_path) = db
-        .get_recording_path(&session_id)?
+        .recording_path(&session_id)?
         .ok_or_else(|| format!("No recording found for session '{session_id}'"))?;
 
     let rec_dir = bayesian_ssh::services::recording::recordings_dir(&config);

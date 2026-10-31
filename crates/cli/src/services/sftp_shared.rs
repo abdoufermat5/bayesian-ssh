@@ -393,7 +393,7 @@ pub fn list_remote_directory(
     let config = AppConfig::load(None).map_err(|e| e.to_string())?;
     let db = Database::new(&config).map_err(|e| e.to_string())?;
     let conn = db
-        .get_connection(connection_name)
+        .connection(connection_name)
         .map_err(|e| format!("Database error: {e}"))?
         .ok_or_else(|| format!("Connection '{connection_name}' not found."))?;
     if conn.pending_change.is_some() {

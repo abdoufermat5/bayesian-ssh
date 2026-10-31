@@ -42,7 +42,7 @@ pub fn spawn_pty(
     let (db, config) = open_db_and_config()?;
 
     let connection = db
-        .get_connection(&connection_name)?
+        .connection(&connection_name)?
         .ok_or_else(|| format!("Connection '{}' not found", connection_name))?;
     if connection.pending_change.is_some() {
         // The dialog must show the old and new route before ssh runs.

@@ -184,7 +184,7 @@ impl<'a> Session<'a> {
     /// them against the pinned trust root. Empty if none were granted yet.
     pub(super) async fn team_keys(&self, team_id: Uuid, current: u32) -> Result<Vec<TeamKey>> {
         let local = self.local_team(team_id)?;
-        let incoming = self.client.get_keys(team_id).await?;
+        let incoming = self.client.keys(team_id).await?;
         self.store.accept_wrapped_keys(
             team_id,
             self.identity.device_id,

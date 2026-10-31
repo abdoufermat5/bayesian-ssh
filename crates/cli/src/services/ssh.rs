@@ -44,7 +44,7 @@ impl SshService {
             record,
         } = overrides;
         // Try to find connection in database first (also checks aliases)
-        if let Some(mut connection) = self.database.get_connection_or_alias(target)? {
+        if let Some(mut connection) = self.database.connection_or_alias(target)? {
             info!("Found existing connection: {}", connection.name);
             self.confirm_pending_change(&connection)?;
 
@@ -302,8 +302,8 @@ impl SshService {
         self.database.remove_connection(target)
     }
 
-    pub async fn get_connection(&self, target: &str) -> Result<Option<Connection>> {
-        self.database.get_connection(target)
+    pub async fn connection(&self, target: &str) -> Result<Option<Connection>> {
+        self.database.connection(target)
     }
 
     /// The database this service opened (for the small admin operations that
@@ -361,8 +361,8 @@ impl SshService {
         self.database.update_connection(&connection)
     }
 
-    pub async fn get_stats(&self) -> Result<crate::models::ConnectionStats> {
-        self.database.get_stats()
+    pub async fn stats(&self) -> Result<crate::models::ConnectionStats> {
+        self.database.stats()
     }
 
     /// Ensure a valid Kerberos ticket exists, creating one if necessary
@@ -421,7 +421,7 @@ impl SshService {
             .search_connections_ctx(query, limit, mode, ctx.as_ref())
     }
 
-    pub async fn get_recent_connections(&self, limit: usize) -> Result<Vec<Connection>> {
+    pub async fn recent_connections(&self, limit: usize) -> Result<Vec<Connection>> {
         self.database
             .list_connections(None, true)
             .map(|mut connections| {
@@ -537,11 +537,7 @@ mod tests {
 
         // `bssh confirm` clears the record; the gate then lets the connect run.
         service.database().clear_pending_change(&conn.id).unwrap();
-        let cleared = service
-            .database()
-            .get_connection("team-host")
-            .unwrap()
-            .unwrap();
+        let cleared = service.database().connection("team-host").unwrap().unwrap();
         assert!(service.confirm_pending_change_with(&cleared, false).is_ok());
     }
 

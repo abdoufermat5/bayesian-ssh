@@ -24,7 +24,7 @@ pub async fn execute(config: AppConfig) -> Result<()> {
 
     let prev_name = ctx
         .prev_connection_id
-        .and_then(|id| db.get_connection(&id.to_string()).ok().flatten())
+        .and_then(|id| db.connection(&id.to_string()).ok().flatten())
         .map(|c| c.name);
 
     let name_width = predictions

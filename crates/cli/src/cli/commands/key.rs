@@ -155,7 +155,7 @@ pub async fn execute_generate(name: String, key_type: Option<String>) -> Result<
 pub async fn execute_copy(config: AppConfig, target: String, key: Option<String>) -> Result<()> {
     let database = Database::new(&config)?;
     let conn = database
-        .get_connection_or_alias(&target)?
+        .connection_or_alias(&target)?
         .ok_or_else(|| anyhow!("Connection '{}' not found", target))?;
 
     let pub_key_path = if let Some(k) = key {

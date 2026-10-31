@@ -96,7 +96,7 @@ fn sharing_links_the_local_connection_instead_of_adding_a_copy() {
         "{:?}",
         all.iter().map(|c| &c.name).collect::<Vec<_>>()
     );
-    let linked = db.get_connection("backup-pc").unwrap().unwrap();
+    let linked = db.connection("backup-pc").unwrap().unwrap();
     assert_eq!(
         linked.id, local.id,
         "the user's own connection, not a new one"
@@ -117,7 +117,7 @@ fn sharing_links_the_local_connection_instead_of_adding_a_copy() {
         ..VaultView::default()
     };
     materialize_into(&db, &config, team_id, &view).unwrap();
-    let moved = db.get_connection("backup-pc").unwrap().unwrap();
+    let moved = db.connection("backup-pc").unwrap().unwrap();
     assert_eq!(moved.host, "10.10.10.30");
     assert_eq!(moved.pending_change.unwrap().previous.host, "10.8.0.10");
     assert!(!moved.forward_agent);
@@ -134,7 +134,7 @@ fn sharing_again_adopts_the_copy_an_earlier_share_left() {
         ..VaultView::default()
     };
     materialize_into(&db, &config, team_id, &view).unwrap();
-    assert!(db.get_connection("backup-pc@homelab").unwrap().is_some());
+    assert!(db.connection("backup-pc@homelab").unwrap().is_some());
 
     let entry_id = link_to_team_source(&db, &source, &local).unwrap();
     assert_eq!(
@@ -150,7 +150,7 @@ fn sharing_again_adopts_the_copy_an_earlier_share_left() {
         .map(|c| c.name)
         .collect();
     assert_eq!(names, ["backup-pc"]);
-    let linked = db.get_connection("backup-pc").unwrap().unwrap();
+    let linked = db.connection("backup-pc").unwrap().unwrap();
     assert_eq!(linked.id, local.id);
     assert_eq!(linked.external_id, Some(earlier.entry_id.to_string()));
 }

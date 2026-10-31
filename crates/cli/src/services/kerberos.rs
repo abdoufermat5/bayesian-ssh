@@ -1,7 +1,7 @@
 //! Kerberos ticket management (klist / kinit wrappers and krb5.conf parsing).
 //!
 //! Shared service used by both the CLI and the desktop GUI. The GUI exposes
-//! thin Tauri command wrappers around [`get_status`], [`renew_ticket`] and
+//! thin Tauri command wrappers around [`status`], [`renew_ticket`] and
 //! [`acquire_ticket`].
 
 use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
@@ -504,7 +504,7 @@ fn run_kinit(args: &[&str], password: Option<&str>) -> Result<(), String> {
 }
 
 /// Probe the local Kerberos client and report ticket/tooling state.
-pub fn get_status() -> Result<KerberosStatus, String> {
+pub fn status() -> Result<KerberosStatus, String> {
     let config = load_krb5_config();
 
     let klist_path = match resolve_command("klist") {
@@ -546,12 +546,12 @@ pub fn renew_ticket(password: Option<String>) -> Result<KerberosStatus, String> 
 
     let renew = run_kinit(&["-R"], None);
     if renew.is_ok() {
-        return get_status();
+        return status();
     }
 
     if let Some(password) = password.filter(|value| !value.is_empty()) {
         run_kinit(&["-f"], Some(&password))?;
-        return get_status();
+        return status();
     }
 
     Err(renew.unwrap_err())
@@ -609,7 +609,7 @@ pub fn acquire_ticket(
 
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     run_kinit(&arg_refs, Some(password.trim()))?;
-    get_status()
+    status()
 }
 
 #[cfg(test)]

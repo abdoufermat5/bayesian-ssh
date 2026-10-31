@@ -254,7 +254,7 @@ impl TeamsClient {
     }
 
     /// Every key version addressed to this device, oldest first.
-    pub async fn get_keys(&self, team_id: Uuid) -> ClientResult<Vec<WrappedKey>> {
+    pub async fn keys(&self, team_id: Uuid) -> ClientResult<Vec<WrappedKey>> {
         self.get(&format!("/teams/{team_id}/keys"), &[]).await
     }
 

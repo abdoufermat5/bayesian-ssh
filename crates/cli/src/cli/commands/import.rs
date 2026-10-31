@@ -73,7 +73,7 @@ pub async fn execute(
         for conn in connections {
             // Same policy as the ssh-config path: never clobber or abort on
             // an existing name, so re-importing a backup is idempotent.
-            if ssh_service.get_connection(&conn.name).await?.is_some() {
+            if ssh_service.connection(&conn.name).await?.is_some() {
                 skipped += 1;
                 continue;
             }
@@ -143,7 +143,7 @@ struct SshConfigImport<'a> {
 impl SshConfigImport<'_> {
     async fn host(&self, host: &ParsedHost) -> Result<()> {
         // Skip if host already exists
-        if self.service.get_connection(&host.alias).await?.is_some() {
+        if self.service.connection(&host.alias).await?.is_some() {
             return Ok(());
         }
 

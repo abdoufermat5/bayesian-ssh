@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 #[tauri::command(async)]
 pub fn get_active_env() -> Result<String, CommandError> {
-    Ok(AppConfig::get_active_env())
+    Ok(AppConfig::active_env())
 }
 
 #[tauri::command(async)]
@@ -31,7 +31,7 @@ pub fn list_environments() -> Result<Vec<EnvInfo>, CommandError> {
         .join("bayesian-ssh")
         .join("environments");
 
-    let active_env = AppConfig::get_active_env();
+    let active_env = AppConfig::active_env();
     let mut envs = vec![EnvInfo {
         name: "default".to_string(),
         is_active: active_env == "default",
@@ -86,7 +86,7 @@ pub fn remove_environment(name: String) -> Result<(), CommandError> {
     // Must run before `name` is joined onto the environments dir: a name like
     // "../.." would otherwise make remove_dir_all delete outside of it.
     AppConfig::validate_env_name(&name)?;
-    let active_env = AppConfig::get_active_env();
+    let active_env = AppConfig::active_env();
     if name == active_env {
         return Err("Cannot remove the currently active environment.".into());
     }
