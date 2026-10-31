@@ -71,7 +71,10 @@ pub struct RelayDecisionPayload {
 }
 
 /// Wire access to the relay. [`TeamsClient`] is the production impl.
-#[expect(clippy::double_must_use, reason = "pending refactor")]
+#[expect(
+    clippy::double_must_use,
+    reason = "async_trait boxes the future, which is itself must_use, on a Result-returning method"
+)]
 #[async_trait]
 pub trait RelayTransport: Send + Sync {
     async fn post_relay(&self, team_id: Uuid, msg: &RelayMessage) -> ClientResult<RelayAck>;
@@ -552,7 +555,6 @@ pub(crate) mod fake {
 }
 
 #[cfg(test)]
-#[expect(clippy::cloned_ref_to_slice_refs, reason = "pending refactor")]
 mod tests {
     use super::fake::*;
     use super::*;
@@ -592,7 +594,7 @@ mod tests {
         let (alice, bob) = (&c.admins[0], &c.admins[1]);
         let (reqs, _) = alice
             .1
-            .pending_requests(&[c.agent.0.clone()], 0, 0)
+            .pending_requests(std::slice::from_ref(&c.agent.0), 0, 0)
             .await
             .unwrap();
         assert_eq!(reqs.len(), 1);
@@ -600,7 +602,7 @@ mod tests {
         assert_eq!(reqs[0].request_hash, hash);
         assert_eq!(
             bob.1
-                .pending_requests(&[c.agent.0.clone()], 0, 0)
+                .pending_requests(std::slice::from_ref(&c.agent.0), 0, 0)
                 .await
                 .unwrap()
                 .0
@@ -610,7 +612,7 @@ mod tests {
         assert!(c
             .agent
             .1
-            .pending_requests(&[c.agent.0.clone()], 0, 0)
+            .pending_requests(std::slice::from_ref(&c.agent.0), 0, 0)
             .await
             .unwrap()
             .0
@@ -665,7 +667,7 @@ mod tests {
             .unwrap();
         let (reqs, _) = c.admins[0]
             .1
-            .pending_requests(&[c.agent.0.clone()], 0, 0)
+            .pending_requests(std::slice::from_ref(&c.agent.0), 0, 0)
             .await
             .unwrap();
         c.admins[0]
@@ -814,7 +816,7 @@ mod tests {
         // A real admin approves a different request (hash mismatch).
         let (reqs, _) = c.admins[0]
             .1
-            .pending_requests(&[c.agent.0.clone()], 0, 0)
+            .pending_requests(std::slice::from_ref(&c.agent.0), 0, 0)
             .await
             .unwrap();
         let mut other = reqs[0].clone();
@@ -858,7 +860,7 @@ mod tests {
             .unwrap();
         let (reqs, _) = c.admins[0]
             .1
-            .pending_requests(&[c.agent.0.clone()], 0, 0)
+            .pending_requests(std::slice::from_ref(&c.agent.0), 0, 0)
             .await
             .unwrap();
         c.admins[0]
