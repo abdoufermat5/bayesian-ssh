@@ -489,36 +489,6 @@ impl TeamsStore {
         )
     }
 
-    /// [`Self::append_audit_event_at`] for a bssh AI event: `actor` is signed
-    /// with the event, `detail` (plaintext) is encrypted to the team audit key
-    /// before signing, so the server never sees it.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "public signature kept for `services::ai::teams`, outside the teams module; new code uses `append_audit_event_with`"
-    )]
-    pub fn append_audit_event_full(
-        &self,
-        team_id: Uuid,
-        codec: &dyn VaultCodec,
-        kind: AuditKind,
-        entry_id: Option<Uuid>,
-        occurred_at: DateTime<Utc>,
-        actor: Option<AuditActor>,
-        detail: Option<&[u8]>,
-    ) -> Result<AuditEvent> {
-        self.append_audit_event_with(
-            team_id,
-            codec,
-            AuditAppend {
-                kind,
-                entry_id,
-                occurred_at,
-                actor,
-                detail,
-            },
-        )
-    }
-
     /// [`Self::append_audit_event_at`] for any event, with the optional
     /// `actor` and `detail` of [`AuditAppend`].
     ///

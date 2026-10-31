@@ -177,37 +177,6 @@ pub struct InitParams<'a> {
     pub email_code: Option<&'a str>,
 }
 
-/// [`init_interactive_with`] with the parameters spelled out, for
-/// callers outside the Teams module.
-///
-/// # Errors
-///
-/// As [`init_interactive_with`].
-#[expect(
-    clippy::too_many_arguments,
-    reason = "public signature kept for `bssh teams init`, which lives outside the teams module; new code uses `init_interactive_with`"
-)]
-pub async fn init_interactive(
-    store: &TeamsStore,
-    server_url: &str,
-    email: &str,
-    device_name: &str,
-    passphrase: &str,
-    invite_token: Option<&str>,
-    email_code: Option<&str>,
-    prompt: &mut dyn EmailCodePrompt,
-) -> Result<Identity> {
-    let params = InitParams {
-        server_url,
-        email,
-        device_name,
-        passphrase,
-        invite_token,
-        email_code,
-    };
-    init_interactive_with(store, &params, prompt).await
-}
-
 /// [`init`] for `bssh teams init`: when the server answers
 /// `EmailVerificationRequired`, mail a code, ask for it on the terminal and
 /// retry with it. A refused code is asked for again, up to
@@ -220,7 +189,7 @@ pub async fn init_interactive(
 /// # Errors
 ///
 /// Whatever [`init`] fails with, once the verification retries are used up.
-pub async fn init_interactive_with(
+pub async fn init_interactive(
     store: &TeamsStore,
     params: &InitParams<'_>,
     prompt: &mut dyn EmailCodePrompt,

@@ -26,8 +26,8 @@ pub use audit::{AuditLine, AuditQuery, TeamAudit, DEFAULT_AUDIT_LIMIT};
 pub use billing::explain;
 pub use handle::Session;
 pub use identity::{
-    init, init_interactive, init_interactive_with, load_identity, request_email_code, unlock,
-    EmailCodePrompt, Identity, InitParams,
+    init, init_interactive, load_identity, request_email_code, unlock, EmailCodePrompt, Identity,
+    InitParams,
 };
 pub use local::{local_team_names, local_teams, record_session_start, resolve_team};
 pub use removal::{plan_removal, PreviewDevice, RemovePreview, TeamAttentionState};

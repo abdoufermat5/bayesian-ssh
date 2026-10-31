@@ -126,7 +126,7 @@ impl<'a> Session<'a> {
         let members = self.client.list_members(team_id).await?;
         self.remember_authors(team_id, &members)?;
 
-        let cred = AgentCredential::from_params(
+        let cred = AgentCredential::new(
             AgentCredentialParams {
                 server_url: self.identity.server_url.clone(),
                 team_id,

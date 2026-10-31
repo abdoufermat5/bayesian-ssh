@@ -500,28 +500,31 @@ async fn watch(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::teams::agent::AgentCredentialParams;
     use crate::services::teams::relay::Peer;
 
     fn cred() -> AgentCredential {
         let agent = DeviceKeys::generate();
         let admin = DeviceKeys::generate();
         AgentCredential::new(
-            "https://teams.example.com".into(),
-            Uuid::new_v4(),
-            "ops".into(),
-            "deployer".into(),
-            Uuid::new_v4(),
-            Uuid::new_v4(),
-            &agent,
-            admin.ed25519_public(),
-            vec![Peer {
-                device_id: Uuid::new_v4(),
+            AgentCredentialParams {
+                server_url: "https://teams.example.com".into(),
+                team_id: Uuid::new_v4(),
+                team_name: "ops".into(),
+                agent_name: "deployer".into(),
                 account_id: Uuid::new_v4(),
-                label: "alice".into(),
-                ed25519: admin.ed25519_public(),
-                x25519: admin.x25519_public(),
-            }],
-            "default".into(),
+                device_id: Uuid::new_v4(),
+                trust_root: admin.ed25519_public(),
+                approvers: vec![Peer {
+                    device_id: Uuid::new_v4(),
+                    account_id: Uuid::new_v4(),
+                    label: "alice".into(),
+                    ed25519: admin.ed25519_public(),
+                    x25519: admin.x25519_public(),
+                }],
+                policy: "default".into(),
+            },
+            &agent,
         )
     }
 

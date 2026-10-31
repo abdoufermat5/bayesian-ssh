@@ -34,12 +34,14 @@ pub(super) async fn init(
     // without one the error says to rerun with `--email-code`.
     let identity = session::init_interactive(
         store,
-        &request.server,
-        &request.email,
-        &name,
-        &pass,
-        request.invite.as_deref(),
-        request.email_code.as_deref(),
+        &session::InitParams {
+            server_url: &request.server,
+            email: &request.email,
+            device_name: &name,
+            passphrase: &pass,
+            invite_token: request.invite.as_deref(),
+            email_code: request.email_code.as_deref(),
+        },
         &mut TerminalEmailCodePrompt::new(),
     )
     .await?;

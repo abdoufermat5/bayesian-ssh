@@ -19,6 +19,7 @@ use crate::services::teams::agent::AgentRuntime;
 use crate::services::teams::codec::VaultCodec;
 use crate::services::teams::relay::{Peer, RelayEndpoint, RelayRequestPayload, Verdict};
 use crate::services::teams::session::{self, kind_from_str, kind_str, team_of_connection};
+use crate::services::teams::store::AuditAppend;
 use crate::services::teams::TeamsStore;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -342,14 +343,16 @@ pub(crate) fn flush_pending(
         let at = DateTime::parse_from_rfc3339(&at)
             .map(|t| t.with_timezone(&Utc))
             .unwrap_or_else(|_| Utc::now());
-        store.append_audit_event_full(
+        store.append_audit_event_with(
             team_id,
             codec,
-            kind,
-            entry.as_deref().and_then(|e| Uuid::parse_str(e).ok()),
-            at,
-            Some(serde_json::from_str(&actor)?),
-            Some(detail.as_bytes()),
+            AuditAppend {
+                kind,
+                entry_id: entry.as_deref().and_then(|e| Uuid::parse_str(e).ok()),
+                occurred_at: at,
+                actor: Some(serde_json::from_str(&actor)?),
+                detail: Some(detail.as_bytes()),
+            },
         )?;
         db.conn
             .execute("DELETE FROM ai_audit_pending WHERE id = ?1", [id])?;

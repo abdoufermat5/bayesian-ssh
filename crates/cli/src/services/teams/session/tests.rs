@@ -1,7 +1,7 @@
 use super::audit::AuditQuery;
 use super::billing::{explain, org_message};
 use super::handle::Session;
-use super::identity::{init_interactive, load_identity, EmailCodePrompt};
+use super::identity::{init_interactive, load_identity, EmailCodePrompt, InitParams};
 use super::local::{link_to_team_source, materialize_into};
 use super::removal::{plan_removal, ApprovedDevices};
 use crate::config::AppConfig;
@@ -358,12 +358,14 @@ async fn init_mails_a_code_and_retries_with_it() {
 
     let identity = init_interactive(
         &store,
-        &url,
-        "Ana@Example.com",
-        "laptop",
-        "a long passphrase",
-        None,
-        None,
+        &InitParams {
+            server_url: &url,
+            email: "Ana@Example.com",
+            device_name: "laptop",
+            passphrase: "a long passphrase",
+            invite_token: None,
+            email_code: None,
+        },
         &mut prompt,
     )
     .await
@@ -410,12 +412,14 @@ async fn init_sends_a_code_it_was_given() {
 
     init_interactive(
         &store,
-        &url,
-        "ana@example.com",
-        "laptop",
-        "a long passphrase",
-        None,
-        Some("777777"),
+        &InitParams {
+            server_url: &url,
+            email: "ana@example.com",
+            device_name: "laptop",
+            passphrase: "a long passphrase",
+            invite_token: None,
+            email_code: Some("777777"),
+        },
         &mut ScriptedPrompt::new(true, &[]),
     )
     .await
@@ -438,12 +442,14 @@ async fn init_without_a_terminal_mails_a_code_and_says_how_to_rerun() {
 
     let err = init_interactive(
         &store,
-        &url,
-        "ana@example.com",
-        "laptop",
-        "a long passphrase",
-        None,
-        None,
+        &InitParams {
+            server_url: &url,
+            email: "ana@example.com",
+            device_name: "laptop",
+            passphrase: "a long passphrase",
+            invite_token: None,
+            email_code: None,
+        },
         &mut ScriptedPrompt::new(false, &[]),
     )
     .await
@@ -481,12 +487,14 @@ async fn init_reprompts_after_a_refused_code_and_gives_up_after_three() {
 
     let err = init_interactive(
         &store,
-        &url,
-        "ana@example.com",
-        "laptop",
-        "a long passphrase",
-        None,
-        None,
+        &InitParams {
+            server_url: &url,
+            email: "ana@example.com",
+            device_name: "laptop",
+            passphrase: "a long passphrase",
+            invite_token: None,
+            email_code: None,
+        },
         &mut prompt,
     )
     .await
@@ -528,12 +536,14 @@ async fn an_empty_line_mails_a_new_code() {
 
     init_interactive(
         &store,
-        &url,
-        "ana@example.com",
-        "laptop",
-        "a long passphrase",
-        None,
-        None,
+        &InitParams {
+            server_url: &url,
+            email: "ana@example.com",
+            device_name: "laptop",
+            passphrase: "a long passphrase",
+            invite_token: None,
+            email_code: None,
+        },
         &mut prompt,
     )
     .await

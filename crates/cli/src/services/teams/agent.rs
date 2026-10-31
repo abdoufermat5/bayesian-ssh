@@ -75,7 +75,7 @@ pub struct AgentCredentialParams {
 
 impl AgentCredential {
     /// A credential for the agent whose device is `keys`.
-    pub fn from_params(params: AgentCredentialParams, keys: &DeviceKeys) -> Self {
+    pub fn new(params: AgentCredentialParams, keys: &DeviceKeys) -> Self {
         let AgentCredentialParams {
             server_url,
             team_id,
@@ -100,39 +100,6 @@ impl AgentCredential {
             approvers,
             policy,
         }
-    }
-
-    /// [`Self::from_params`] with the parameters spelled out.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "public signature kept for `services::ai::gateway`, outside the teams module; new code uses `from_params`"
-    )]
-    pub fn new(
-        server_url: String,
-        team_id: Uuid,
-        team_name: String,
-        agent_name: String,
-        account_id: Uuid,
-        device_id: Uuid,
-        keys: &DeviceKeys,
-        trust_root: PublicKey32,
-        approvers: Vec<Peer>,
-        policy: String,
-    ) -> Self {
-        Self::from_params(
-            AgentCredentialParams {
-                server_url,
-                team_id,
-                team_name,
-                agent_name,
-                account_id,
-                device_id,
-                trust_root,
-                approvers,
-                policy,
-            },
-            keys,
-        )
     }
 
     pub fn device_keys(&self) -> Result<DeviceKeys> {
@@ -468,16 +435,18 @@ mod tests {
             x25519: admin.x25519_public(),
         }];
         let cred = AgentCredential::new(
-            "https://teams.example.com".into(),
-            Uuid::new_v4(),
-            "ops".into(),
-            "deployer".into(),
-            Uuid::new_v4(),
-            Uuid::new_v4(),
+            AgentCredentialParams {
+                server_url: "https://teams.example.com".into(),
+                team_id: Uuid::new_v4(),
+                team_name: "ops".into(),
+                agent_name: "deployer".into(),
+                account_id: Uuid::new_v4(),
+                device_id: Uuid::new_v4(),
+                trust_root: admin.ed25519_public(),
+                approvers,
+                policy: "default".into(),
+            },
             &agent,
-            admin.ed25519_public(),
-            approvers,
-            "default".into(),
         );
         (cred, admin, admin_dev)
     }
