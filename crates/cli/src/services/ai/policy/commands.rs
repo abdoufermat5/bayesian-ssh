@@ -19,10 +19,10 @@ pub(super) fn command_lines(call: &ToolCall, analysis: Option<&Analysis>) -> Vec
                 }
             };
             out.push(join(&c.program));
-            if let Some(base) = c.program.rsplit('/').next() {
-                if base != c.program {
-                    out.push(join(base));
-                }
+            if let Some(base) = c.program.rsplit('/').next()
+                && base != c.program
+            {
+                out.push(join(base));
             }
         }
     }

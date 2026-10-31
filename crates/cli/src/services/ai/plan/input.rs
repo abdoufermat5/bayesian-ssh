@@ -316,10 +316,10 @@ pub fn step_host(plan: &ChangePlan, step: &Step) -> Option<String> {
 pub fn plan_hosts(plan: &ChangePlan) -> Vec<String> {
     let mut hosts: Vec<String> = Vec::new();
     for s in &plan.steps {
-        if let Some(h) = step_host(plan, s) {
-            if !hosts.contains(&h) {
-                hosts.push(h);
-            }
+        if let Some(h) = step_host(plan, s)
+            && !hosts.contains(&h)
+        {
+            hosts.push(h);
         }
     }
     hosts

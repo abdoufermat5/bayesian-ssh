@@ -59,16 +59,15 @@ impl DefaultPolicyEngine {
                 });
             }
         }
-        if let Some(ttl) = parse_duration(&b.run_ttl) {
-            if let Ok(Some(rec)) = self.store.run(run) {
-                if let Ok(start) = chrono::DateTime::parse_from_rfc3339(&rec.started) {
-                    let age = chrono::Utc::now().signed_duration_since(start);
-                    if age.to_std().map(|a| a > ttl).unwrap_or(false) {
-                        return Some(Decision::Deny {
-                            reason: format!("budget.run_ttl: the run is older than {}", b.run_ttl),
-                        });
-                    }
-                }
+        if let Some(ttl) = parse_duration(&b.run_ttl)
+            && let Ok(Some(rec)) = self.store.run(run)
+            && let Ok(start) = chrono::DateTime::parse_from_rfc3339(&rec.started)
+        {
+            let age = chrono::Utc::now().signed_duration_since(start);
+            if age.to_std().map(|a| a > ttl).unwrap_or(false) {
+                return Some(Decision::Deny {
+                    reason: format!("budget.run_ttl: the run is older than {}", b.run_ttl),
+                });
             }
         }
         None
@@ -120,10 +119,10 @@ impl DefaultPolicyEngine {
         // 4. deny_paths: the tool's path, then every path the command names as written
         // (arguments, input and output redirections, `--opt=`/attached-option values,
         // `~`/`$HOME` paths and arguments relative to a literal `cd`)
-        if let Some(p) = &call.path {
-            if let Some(pat) = path_matches_any(&policy.deny_paths, p) {
-                return deny(format!("deny_paths: '{p}' matches '{pat}'"));
-            }
+        if let Some(p) = &call.path
+            && let Some(pat) = path_matches_any(&policy.deny_paths, p)
+        {
+            return deny(format!("deny_paths: '{p}' matches '{pat}'"));
         }
         let (candidates, runtime_path) = path_candidates(analysis);
         let mut unsure =

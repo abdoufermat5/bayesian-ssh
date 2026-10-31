@@ -66,10 +66,10 @@ fn prune_ai_casts(config: &AppConfig) {
         if !(name.starts_with("ai-") && name.ends_with(".cast")) {
             continue;
         }
-        if let Ok(m) = e.metadata().and_then(|m| m.modified()) {
-            if m < cutoff {
-                let _ = std::fs::remove_file(e.path());
-            }
+        if let Ok(m) = e.metadata().and_then(|m| m.modified())
+            && m < cutoff
+        {
+            let _ = std::fs::remove_file(e.path());
         }
     }
 }

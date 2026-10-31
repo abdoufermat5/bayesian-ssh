@@ -117,10 +117,10 @@ impl RunContext {
     /// The inventory source a connection came from, resolved once per source id.
     fn source_name(&self, conn: &Connection) -> Option<String> {
         let id = conn.source_id?;
-        if let Ok(cache) = self.source_names.lock() {
-            if let Some(name) = cache.get(&id) {
-                return name.clone();
-            }
+        if let Ok(cache) = self.source_names.lock()
+            && let Some(name) = cache.get(&id)
+        {
+            return name.clone();
         }
         let name = crate::services::ai::source_name(&self.config, conn);
         if let Ok(mut cache) = self.source_names.lock() {

@@ -117,10 +117,10 @@ fn skip_globals(globals: &[(&str, bool)], args: &[Arg]) -> Option<usize> {
 }
 
 pub(super) fn eval_rule(rule: &Rule, prog: &str, args: &[Arg]) -> Class {
-    if let [only] = args {
-        if matches!(only.text.as_str(), "--version" | "--help" | "-h" | "-V") {
-            return Class::new(format!("{prog} version"), &[RiskTag::Read]);
-        }
+    if let [only] = args
+        && matches!(only.text.as_str(), "--version" | "--help" | "-h" | "-V")
+    {
+        return Class::new(format!("{prog} version"), &[RiskTag::Read]);
     }
     let sub_start = skip_globals(rule.globals, args);
     for case in rule.cases {
@@ -143,15 +143,14 @@ pub(super) fn eval_rule(rule: &Rule, prog: &str, args: &[Arg]) -> Class {
         if any_match(args, case.lacks) {
             continue;
         }
-        if let Some(max) = case.max_pos {
-            if args[after.min(args.len())..]
+        if let Some(max) = case.max_pos
+            && args[after.min(args.len())..]
                 .iter()
                 .filter(|a| !a.text.starts_with('-'))
                 .count()
                 > max
-            {
-                continue;
-            }
+        {
+            continue;
         }
         let conditional = !case.lacks.is_empty() || case.max_pos.is_some();
         let read_only = case.tags.iter().all(|t| *t == RiskTag::Read);

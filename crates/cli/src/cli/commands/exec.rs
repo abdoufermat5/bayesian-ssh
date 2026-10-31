@@ -64,15 +64,15 @@ fn exit_status(out: &LimitedOutput) -> i32 {
 
 fn limits_notes(out: &LimitedOutput, limits: CliLimits) -> Vec<String> {
     let mut notes = Vec::new();
-    if out.truncated {
-        if let Some(n) = limits.max_output_bytes {
-            notes.push(format!("output truncated at {n} bytes per stream"));
-        }
+    if out.truncated
+        && let Some(n) = limits.max_output_bytes
+    {
+        notes.push(format!("output truncated at {n} bytes per stream"));
     }
-    if out.timed_out {
-        if let Some(t) = limits.timeout {
-            notes.push(format!("timed out after {}s", t.as_secs()));
-        }
+    if out.timed_out
+        && let Some(t) = limits.timeout
+    {
+        notes.push(format!("timed out after {}s", t.as_secs()));
     }
     notes
 }

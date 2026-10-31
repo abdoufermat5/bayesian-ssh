@@ -232,10 +232,10 @@ fn resolve_cache_path(config: &Krb5Config, klist_output: Option<&str>) -> Option
         }
     }
 
-    if let Some(output) = klist_output {
-        if let Some(path) = parse_cache_path_from_klist(output) {
-            return Some(path);
-        }
+    if let Some(output) = klist_output
+        && let Some(path) = parse_cache_path_from_klist(output)
+    {
+        return Some(path);
     }
 
     if let Some(template) = config.default_ccache_name.as_ref() {
@@ -360,10 +360,10 @@ fn parse_klist_datetime(value: &str) -> Option<DateTime<Local>> {
         "%d %B %Y %H:%M:%S",
         "%F %T",
     ] {
-        if let Ok(naive) = NaiveDateTime::parse_from_str(trimmed, fmt) {
-            if let Some(local) = Local.from_local_datetime(&naive).single() {
-                return Some(local);
-            }
+        if let Ok(naive) = NaiveDateTime::parse_from_str(trimmed, fmt)
+            && let Some(local) = Local.from_local_datetime(&naive).single()
+        {
+            return Some(local);
         }
     }
     None
@@ -482,12 +482,12 @@ fn run_kinit(args: &[&str], password: Option<&str>) -> Result<(), String> {
         .spawn()
         .map_err(|e| format!("Failed to run kinit: {e}"))?;
 
-    if let Some(password) = password {
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin
-                .write_all(format!("{password}\n").as_bytes())
-                .map_err(|e| format!("Failed to send password to kinit: {e}"))?;
-        }
+    if let Some(password) = password
+        && let Some(mut stdin) = child.stdin.take()
+    {
+        stdin
+            .write_all(format!("{password}\n").as_bytes())
+            .map_err(|e| format!("Failed to send password to kinit: {e}"))?;
     }
 
     let output = child

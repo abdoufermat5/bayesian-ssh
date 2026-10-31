@@ -50,10 +50,10 @@ pub(crate) fn pick_kind_with(
 fn ssh_config_uses_proxy(host: &str) -> bool {
     static CACHE: LazyLock<Mutex<HashMap<String, bool>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
-    if let Ok(map) = CACHE.lock() {
-        if let Some(found) = map.get(host) {
-            return *found;
-        }
+    if let Ok(map) = CACHE.lock()
+        && let Some(found) = map.get(host)
+    {
+        return *found;
     }
     let found = std::process::Command::new("ssh")
         .arg("-G")

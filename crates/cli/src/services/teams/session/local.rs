@@ -196,14 +196,16 @@ pub(crate) fn materialize_into(
         .find(|(id, _)| *id == team_id)
         .ok_or_else(|| anyhow!("team {team_id} has no local source"))?;
 
-    if let Some(name) = &view.team_name {
-        if source.name != *name && source.name.starts_with("team-") && db.source(name)?.is_none() {
-            db.conn.execute(
-                "UPDATE sources SET name = ?1 WHERE id = ?2",
-                params![name, source.id.to_string()],
-            )?;
-            source.name = name.clone();
-        }
+    if let Some(name) = &view.team_name
+        && source.name != *name
+        && source.name.starts_with("team-")
+        && db.source(name)?.is_none()
+    {
+        db.conn.execute(
+            "UPDATE sources SET name = ?1 WHERE id = ?2",
+            params![name, source.id.to_string()],
+        )?;
+        source.name = name.clone();
     }
 
     let discovered: Vec<DiscoveredHost> = view

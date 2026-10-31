@@ -1,7 +1,7 @@
 [package]
 name = "bssh-ai-jail"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 authors = ["Abdoufermat5"]
 description = "Read-only Landlock jail for bssh AI: runs one command with no writes and no TCP"
 license = "MIT"

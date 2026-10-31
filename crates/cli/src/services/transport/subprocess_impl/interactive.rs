@@ -424,10 +424,10 @@ impl SubprocessTransport {
             None => run.await?,
         };
         let limited = LimitedOutput::from_output(out, opts.max_output_bytes);
-        if opts.non_interactive {
-            if let Some(err) = classify_ssh_failure(&limited, Some(conn)) {
-                return Err(err);
-            }
+        if opts.non_interactive
+            && let Some(err) = classify_ssh_failure(&limited, Some(conn))
+        {
+            return Err(err);
         }
         Ok(limited)
     }

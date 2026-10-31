@@ -334,13 +334,13 @@ fn enrich_changes_from_disk(
                 c.approved_channel = app.channel.clone();
                 c.approved_at = Some(app.ts.clone());
             }
-        } else if c.approved_at.is_none() {
-            if let Some(app) = approvals.iter().find(|a| a.outcome == "approved") {
-                if c.approved_channel.is_none() {
-                    c.approved_channel = app.channel.clone();
-                }
-                c.approved_at = Some(app.ts.clone());
+        } else if c.approved_at.is_none()
+            && let Some(app) = approvals.iter().find(|a| a.outcome == "approved")
+        {
+            if c.approved_channel.is_none() {
+                c.approved_channel = app.channel.clone();
             }
+            c.approved_at = Some(app.ts.clone());
         }
     }
 }

@@ -203,11 +203,11 @@ impl Style {
 
 fn locale_is_utf8() -> bool {
     for var in ["LC_ALL", "LC_CTYPE", "LANG"] {
-        if let Ok(v) = std::env::var(var) {
-            if !v.is_empty() {
-                let v = v.to_ascii_lowercase();
-                return v.contains("utf-8") || v.contains("utf8");
-            }
+        if let Ok(v) = std::env::var(var)
+            && !v.is_empty()
+        {
+            let v = v.to_ascii_lowercase();
+            return v.contains("utf-8") || v.contains("utf8");
         }
     }
     // No locale at all: modern terminals are UTF-8.

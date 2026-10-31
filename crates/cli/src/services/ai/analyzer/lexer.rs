@@ -202,11 +202,10 @@ impl WordBuilder {
             text: last,
             quoted: q,
         }) = self.parts.last_mut()
+            && *q == quoted
         {
-            if *q == quoted {
-                last.push_str(text);
-                return;
-            }
+            last.push_str(text);
+            return;
         }
         self.parts.push(Part::Lit {
             text: text.to_string(),
@@ -361,16 +360,13 @@ impl Lexer {
             text,
             quoted: false,
         }] = word.parts.as_slice()
+            && text.chars().all(|c| c.is_ascii_digit())
+            && matches!(self.peek(), Some('<') | Some('>'))
+            && self.peek_at(1) != Some('(')
+            && let Ok(n) = text.parse::<u32>()
         {
-            if text.chars().all(|c| c.is_ascii_digit())
-                && matches!(self.peek(), Some('<') | Some('>'))
-                && self.peek_at(1) != Some('(')
-            {
-                if let Ok(n) = text.parse::<u32>() {
-                    self.push(Tok::IoNumber(n), pos);
-                    return Ok(());
-                }
-            }
+            self.push(Tok::IoNumber(n), pos);
+            return Ok(());
         }
         self.push(Tok::Word(word), pos);
         Ok(())
@@ -512,20 +508,20 @@ impl Lexer {
                 self.dq_content(Some('"'), wb)?;
             }
             Some('(') => {
-                if self.peek_at(2) == Some('(') {
-                    if let Some(end) = find_close_paren(&self.chars, self.i + 2) {
-                        let inner = &self.chars[self.i + 2..end];
-                        if inner.last() == Some(&')')
-                            && find_close_paren(inner, 1) == Some(inner.len() - 1)
-                        {
-                            // `$(( ... ))`: arithmetic. Expansions inside still run.
-                            let body: String = inner[1..inner.len() - 1].iter().collect();
-                            wb.subs.extend(subs_in_text(&body, self.depth + 1)?);
-                            let src: String = self.chars[start..=end].iter().collect();
-                            wb.parts.push(Part::Dynamic(src));
-                            self.i = end + 1;
-                            return Ok(());
-                        }
+                if self.peek_at(2) == Some('(')
+                    && let Some(end) = find_close_paren(&self.chars, self.i + 2)
+                {
+                    let inner = &self.chars[self.i + 2..end];
+                    if inner.last() == Some(&')')
+                        && find_close_paren(inner, 1) == Some(inner.len() - 1)
+                    {
+                        // `$(( ... ))`: arithmetic. Expansions inside still run.
+                        let body: String = inner[1..inner.len() - 1].iter().collect();
+                        wb.subs.extend(subs_in_text(&body, self.depth + 1)?);
+                        let src: String = self.chars[start..=end].iter().collect();
+                        wb.parts.push(Part::Dynamic(src));
+                        self.i = end + 1;
+                        return Ok(());
                     }
                 }
                 let end = find_close_paren(&self.chars, self.i + 2)

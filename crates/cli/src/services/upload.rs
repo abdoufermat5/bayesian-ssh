@@ -337,12 +337,12 @@ async fn resolve_dest(
     local_is_dir: bool,
     local_name: &str,
 ) -> String {
-    if !local_is_dir && !remote.ends_with('/') {
-        if let Ok(entry) = sftp.stat(remote).await {
-            if entry.is_dir {
-                return resolve_remote_path(remote, local_name, false, true);
-            }
-        }
+    if !local_is_dir
+        && !remote.ends_with('/')
+        && let Ok(entry) = sftp.stat(remote).await
+        && entry.is_dir
+    {
+        return resolve_remote_path(remote, local_name, false, true);
     }
     resolve_remote_path(remote, local_name, local_is_dir, false)
 }

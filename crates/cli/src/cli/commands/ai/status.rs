@@ -58,21 +58,20 @@ pub async fn execute(args: AiArgsStatus, config: AppConfig) -> Result<()> {
                 }
                 AiEvent::Call { call, .. } => {
                     calls += 1;
-                    if let Some(h) = &call.host {
-                        if !hosts.contains(h) {
-                            hosts.push(h.clone());
-                        }
+                    if let Some(h) = &call.host
+                        && !hosts.contains(h)
+                    {
+                        hosts.push(h.clone());
                     }
                 }
                 _ => {}
             }
         }
-        if on_behalf_of.is_none() {
-            if let Some(s) = &store {
-                if let Ok(Some(r)) = s.run(run_id) {
-                    on_behalf_of = Some(r.on_behalf_of);
-                }
-            }
+        if on_behalf_of.is_none()
+            && let Some(s) = &store
+            && let Ok(Some(r)) = s.run(run_id)
+        {
+            on_behalf_of = Some(r.on_behalf_of);
         }
         // Hosts it has touched; before its first call, the hosts in its scope.
         if hosts.is_empty() {

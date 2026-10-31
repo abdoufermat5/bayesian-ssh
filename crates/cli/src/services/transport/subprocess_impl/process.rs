@@ -76,15 +76,15 @@ pub(super) fn classify_ssh_failure(
     if *marker == "Permission denied" {
         // The bastion hop prints `user@bastion: Permission denied (...)`; name that hop,
         // otherwise the agent reads it as the target refusing a key that works on it.
-        if let Some(conn) = conn {
-            if let Some(bastion) = &conn.bastion {
-                let bu = conn.bastion_user.as_deref().unwrap_or(&conn.user);
-                if line.starts_with(&format!("{bu}@")) {
-                    return Some(TransportError::permanent(anyhow::anyhow!(
-                        "the bastion {bastion} refused the login ({line}); \
+        if let Some(conn) = conn
+            && let Some(bastion) = &conn.bastion
+        {
+            let bu = conn.bastion_user.as_deref().unwrap_or(&conn.user);
+            if line.starts_with(&format!("{bu}@")) {
+                return Some(TransportError::permanent(anyhow::anyhow!(
+                    "the bastion {bastion} refused the login ({line}); \
                          use a key or ssh-agent that works on the bastion"
-                    )));
-                }
+                )));
             }
         }
         return Some(TransportError::permanent(anyhow::anyhow!(

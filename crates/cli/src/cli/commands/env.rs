@@ -45,10 +45,10 @@ fn list_environments() -> Result<()> {
     for entry in std::fs::read_dir(&envs_dir)? {
         let entry = entry?;
         let path = entry.path();
-        if path.is_dir() {
-            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                envs.push(name.to_string());
-            }
+        if path.is_dir()
+            && let Some(name) = path.file_name().and_then(|n| n.to_str())
+        {
+            envs.push(name.to_string());
         }
     }
 

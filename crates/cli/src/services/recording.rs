@@ -251,10 +251,10 @@ impl Recorder {
     }
 
     pub fn finish_in_place(&mut self) -> String {
-        if let Some(mut writer) = self.writer.take() {
-            if let Err(e) = writer.flush() {
-                tracing::warn!("failed to flush session recording: {e}");
-            }
+        if let Some(mut writer) = self.writer.take()
+            && let Err(e) = writer.flush()
+        {
+            tracing::warn!("failed to flush session recording: {e}");
         }
         std::mem::take(&mut self.text)
     }

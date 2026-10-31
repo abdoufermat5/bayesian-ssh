@@ -58,10 +58,10 @@ fn parse_status(root: &Value, include_offline: bool) -> Vec<DiscoveredHost> {
                 })
                 .unwrap_or_default();
             tags.push("tailscale".to_string());
-            if let Some(os) = peer.get("OS").and_then(|os| os.as_str()) {
-                if !os.is_empty() {
-                    tags.push(os.to_lowercase());
-                }
+            if let Some(os) = peer.get("OS").and_then(|os| os.as_str())
+                && !os.is_empty()
+            {
+                tags.push(os.to_lowercase());
             }
 
             Some(DiscoveredHost {

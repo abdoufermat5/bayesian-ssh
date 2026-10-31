@@ -330,10 +330,10 @@ mod unix_impl {
         }
 
         fn event(&mut self, ev: AiEvent) {
-            if let Ok(key) = serde_json::to_string(&ev) {
-                if self.replayed.remove(&key) {
-                    return;
-                }
+            if let Ok(key) = serde_json::to_string(&ev)
+                && self.replayed.remove(&key)
+            {
+                return;
             }
             self.event_at(ev, Utc::now());
         }
@@ -633,12 +633,11 @@ mod unix_impl {
             let stop = stop.clone();
             std::thread::spawn(move || {
                 while !stop.load(Ordering::Relaxed) {
-                    if event::poll(Duration::from_millis(100)).unwrap_or(false) {
-                        if let Ok(Event::Key(k)) = event::read() {
-                            if tx.send(Msg::Key(k)).is_err() {
-                                break;
-                            }
-                        }
+                    if event::poll(Duration::from_millis(100)).unwrap_or(false)
+                        && let Ok(Event::Key(k)) = event::read()
+                        && tx.send(Msg::Key(k)).is_err()
+                    {
+                        break;
                     }
                 }
             });
@@ -690,11 +689,10 @@ mod unix_impl {
                             tokio::spawn(connect(sock, args.run.clone(), tx.clone()));
                         }
                     }
-                    if last_event.elapsed() > Duration::from_secs(2) {
-                        if let Some(l) = w.folder.flush(&w.style) {
+                    if last_event.elapsed() > Duration::from_secs(2)
+                        && let Some(l) = w.folder.flush(&w.style) {
                             w.print(&[l]);
                         }
-                    }
                 }
                 _ = tokio::signal::ctrl_c(), if !term.is_tty() => break,
                 msg = rx.recv() => {

@@ -227,10 +227,10 @@ fn cleanup_stale_sessions(db: &Database, config: &AppConfig) -> Result<()> {
     if config.recording.retention_days > 0 {
         let pruned = db.prune_recordings(config.recording.retention_days)?;
         for path in &pruned {
-            if let Err(e) = std::fs::remove_file(path) {
-                if e.kind() != std::io::ErrorKind::NotFound {
-                    tracing::warn!("Failed to delete expired recording '{path}': {e}");
-                }
+            if let Err(e) = std::fs::remove_file(path)
+                && e.kind() != std::io::ErrorKind::NotFound
+            {
+                tracing::warn!("Failed to delete expired recording '{path}': {e}");
             }
         }
         if !pruned.is_empty() {

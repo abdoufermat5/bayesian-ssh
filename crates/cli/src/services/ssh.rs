@@ -233,10 +233,10 @@ impl SshService {
             {
                 Ok(paths) => {
                     for p in paths {
-                        if let Err(e) = std::fs::remove_file(&p) {
-                            if e.kind() != std::io::ErrorKind::NotFound {
-                                warn!("Failed to remove expired recording '{p}': {e}");
-                            }
+                        if let Err(e) = std::fs::remove_file(&p)
+                            && e.kind() != std::io::ErrorKind::NotFound
+                        {
+                            warn!("Failed to remove expired recording '{p}': {e}");
                         }
                     }
                 }

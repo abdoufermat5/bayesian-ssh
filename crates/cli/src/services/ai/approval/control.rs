@@ -199,10 +199,10 @@ async fn handle_conn(
             },
             _ = done.changed() => break,
         };
-        if let Some(r) = reply {
-            if send_msg(&mut wr, &r).await.is_err() {
-                break;
-            }
+        if let Some(r) = reply
+            && send_msg(&mut wr, &r).await.is_err()
+        {
+            break;
         }
     }
 }

@@ -196,10 +196,10 @@ pub fn spawn_pty(
         let mut reader = reader;
 
         bayesian_ssh::services::pty::read_loop(&mut reader, |str_data| {
-            if let Some(rec) = &recorder_clone {
-                if let Ok(mut g) = rec.lock() {
-                    g.output(&str_data);
-                }
+            if let Some(rec) = &recorder_clone
+                && let Ok(mut g) = rec.lock()
+            {
+                g.output(&str_data);
             }
 
             // Replay append and live delivery happen under one gate, so a
@@ -314,10 +314,10 @@ pub fn resize_pty(
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     bayesian_ssh::services::pty::resize(master.as_ref(), cols, rows)?;
     drop(master);
-    if let Some(rec) = &session.recorder {
-        if let Ok(mut g) = rec.lock() {
-            g.resize(cols, rows);
-        }
+    if let Some(rec) = &session.recorder
+        && let Ok(mut g) = rec.lock()
+    {
+        g.resize(cols, rows);
     }
     Ok(())
 }

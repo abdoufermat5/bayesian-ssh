@@ -354,10 +354,10 @@ fn parse_sftp_output(output: &Output, path: &str) -> Result<Vec<RemoteFileEntry>
         let mut name = parts[name_parts_start..].join(" ");
         // `ls -l` renders symlinks as `name -> target`; keep only the name so
         // the derived path points at the link itself.
-        if permissions.starts_with('l') {
-            if let Some((link, _target)) = name.split_once(" -> ") {
-                name = link.to_string();
-            }
+        if permissions.starts_with('l')
+            && let Some((link, _target)) = name.split_once(" -> ")
+        {
+            name = link.to_string();
         }
         if name == "." || name == ".." {
             continue;

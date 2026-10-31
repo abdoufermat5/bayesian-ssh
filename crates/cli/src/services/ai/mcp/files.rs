@@ -145,10 +145,11 @@ impl SftpFiles {
         };
         let (res, buf) = tokio::join!(reader, collector);
         // The reader fails when we stop listening after the range is full: that is fine.
-        if let Err(e) = res {
-            if (buf.len() as u64) < want && (buf.len() as u64) < st.size {
-                return Err(anyhow!("read {path}: {e}"));
-            }
+        if let Err(e) = res
+            && (buf.len() as u64) < want
+            && (buf.len() as u64) < st.size
+        {
+            return Err(anyhow!("read {path}: {e}"));
         }
         let start = (offset as usize).min(buf.len());
         let end = (start + max_bytes).min(buf.len());

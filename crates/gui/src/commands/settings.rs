@@ -52,10 +52,10 @@ pub fn save_workspace_config(update: WorkspaceConfigUpdate) -> Result<(), Comman
             Some(PathBuf::from(path))
         };
     }
-    if let Some(mode) = update.search_mode {
-        if mode == "bayesian" || mode == "fuzzy" {
-            config.search_mode = mode;
-        }
+    if let Some(mode) = update.search_mode
+        && (mode == "bayesian" || mode == "fuzzy")
+    {
+        config.search_mode = mode;
     }
     if let Some(log_level) = update.log_level {
         config.log_level = log_level;

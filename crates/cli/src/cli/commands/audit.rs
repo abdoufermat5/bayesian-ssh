@@ -80,45 +80,41 @@ pub async fn execute(fix: bool, config: AppConfig) -> Result<()> {
     }
 
     // 3. Audit Local SSH Keys (Permissions & Weak Algorithms)
-    if let Some(ssh_dir) = dirs::home_dir().map(|h| h.join(".ssh")) {
-        if ssh_dir.exists() {
-            if let Ok(entries) = fs::read_dir(&ssh_dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.is_file() {
-                        let filename = path.file_name().unwrap_or_default().to_string_lossy();
-                        if filename.starts_with("id_dsa") {
-                            findings.push(AuditFinding {
+    if let Some(ssh_dir) = dirs::home_dir().map(|h| h.join(".ssh"))
+        && ssh_dir.exists()
+        && let Ok(entries) = fs::read_dir(&ssh_dir)
+    {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                let filename = path.file_name().unwrap_or_default().to_string_lossy();
+                if filename.starts_with("id_dsa") {
+                    findings.push(AuditFinding {
                                 severity: AuditSeverity::Warning,
                                 title: format!("Deprecated Weak Key Algorithm: {}", filename),
                                 description: format!("Key file {} uses DSA, which is cryptographically weak and deprecated in OpenSSH.", path.display()),
                                 remediation: "Migrate to Ed25519 or RSA-4096 using 'bssh key generate'.".into(),
                             });
-                        }
+                }
 
-                        if is_private_key_candidate(&path) {
-                            if let Ok(meta) = fs::metadata(&path) {
-                                let mode = meta.permissions().mode() & 0o777;
-                                if mode & 0o077 != 0 {
-                                    findings.push(AuditFinding {
-                                        severity: AuditSeverity::Warning,
-                                        title: format!(
-                                            "Insecure Private Key Permissions: {}",
-                                            filename
-                                        ),
-                                        description: format!(
-                                            "Key file {} mode is {:04o} (expected 0600).",
-                                            path.display(),
-                                            mode
-                                        ),
-                                        remediation: format!(
-                                            "Run 'bssh audit --fix' or 'chmod 600 {}'",
-                                            path.display()
-                                        ),
-                                    });
-                                }
-                            }
-                        }
+                if is_private_key_candidate(&path)
+                    && let Ok(meta) = fs::metadata(&path)
+                {
+                    let mode = meta.permissions().mode() & 0o777;
+                    if mode & 0o077 != 0 {
+                        findings.push(AuditFinding {
+                            severity: AuditSeverity::Warning,
+                            title: format!("Insecure Private Key Permissions: {}", filename),
+                            description: format!(
+                                "Key file {} mode is {:04o} (expected 0600).",
+                                path.display(),
+                                mode
+                            ),
+                            remediation: format!(
+                                "Run 'bssh audit --fix' or 'chmod 600 {}'",
+                                path.display()
+                            ),
+                        });
                     }
                 }
             }

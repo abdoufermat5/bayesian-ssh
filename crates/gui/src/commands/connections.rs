@@ -22,12 +22,12 @@ pub fn get_connections(
 ) -> Result<Vec<Connection>, CommandError> {
     let (db, config) = open_db_and_config()?;
 
-    if let Some(q) = query {
-        if !q.trim().is_empty() {
-            return db
-                .search_connections(&q, 100, &config.search_mode)
-                .map_err(friendly_db_error);
-        }
+    if let Some(q) = query
+        && !q.trim().is_empty()
+    {
+        return db
+            .search_connections(&q, 100, &config.search_mode)
+            .map_err(friendly_db_error);
     }
 
     db.list_connections(tag_filter.as_deref(), false)

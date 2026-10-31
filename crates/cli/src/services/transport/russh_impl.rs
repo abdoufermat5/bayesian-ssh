@@ -938,11 +938,10 @@ impl SshTransport for RusshTransport {
                 } => {
                     if let Ok((c, r)) = size() {
                         let _ = channel.window_change(c as u32, r as u32, 0, 0).await;
-                        if let Some(ref rec) = recorder {
-                            if let Ok(mut g) = rec.lock() {
+                        if let Some(ref rec) = recorder
+                            && let Ok(mut g) = rec.lock() {
                                 g.resize(c, r);
                             }
-                        }
                     }
                 }
                 msg = channel.wait() => {
@@ -954,11 +953,10 @@ impl SshTransport for RusshTransport {
                             if let Some(ref rec) = recorder {
                                 dec_buf.clear();
                                 carry.decode_into(data, &mut dec_buf);
-                                if !dec_buf.is_empty() {
-                                    if let Ok(mut g) = rec.lock() {
+                                if !dec_buf.is_empty()
+                                    && let Ok(mut g) = rec.lock() {
                                         g.output(&dec_buf);
                                     }
-                                }
                             }
                         }
                         Some(ChannelMsg::ExitStatus { exit_status }) => {
@@ -976,10 +974,10 @@ impl SshTransport for RusshTransport {
         if let Some(ref rec) = recorder {
             dec_buf.clear();
             carry.finish_into(&mut dec_buf);
-            if !dec_buf.is_empty() {
-                if let Ok(mut g) = rec.lock() {
-                    g.output(&dec_buf);
-                }
+            if !dec_buf.is_empty()
+                && let Ok(mut g) = rec.lock()
+            {
+                g.output(&dec_buf);
             }
         }
 

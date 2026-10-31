@@ -107,10 +107,11 @@ impl SshTransport for SubprocessTransport {
             Some(cert) => Some(write_cert_files(cert).map_err(TransportError::permanent)?),
             None => None,
         };
-        if opts.non_interactive && cert_files.is_none() {
-            if let Some(dir) = &opts.control_dir {
-                prepare_control_dir(dir)?;
-            }
+        if opts.non_interactive
+            && cert_files.is_none()
+            && let Some(dir) = &opts.control_dir
+        {
+            prepare_control_dir(dir)?;
         }
         let extras = ArgvExtras {
             non_interactive: opts.non_interactive,

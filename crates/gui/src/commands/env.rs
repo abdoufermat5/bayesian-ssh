@@ -37,20 +37,20 @@ pub fn list_environments() -> Result<Vec<EnvInfo>, CommandError> {
         is_active: active_env == "default",
     }];
 
-    if envs_dir.exists() {
-        if let Ok(entries) = std::fs::read_dir(&envs_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                        let name_str = name.to_string();
-                        if name_str != "default" {
-                            envs.push(EnvInfo {
-                                name: name_str.clone(),
-                                is_active: name_str == active_env,
-                            });
-                        }
-                    }
+    if envs_dir.exists()
+        && let Ok(entries) = std::fs::read_dir(&envs_dir)
+    {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir()
+                && let Some(name) = path.file_name().and_then(|n| n.to_str())
+            {
+                let name_str = name.to_string();
+                if name_str != "default" {
+                    envs.push(EnvInfo {
+                        name: name_str.clone(),
+                        is_active: name_str == active_env,
+                    });
                 }
             }
         }

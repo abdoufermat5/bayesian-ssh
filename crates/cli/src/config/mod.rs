@@ -455,10 +455,10 @@ impl AppConfig {
         if let Some(max_size) = updates.max_history_size {
             self.max_history_size = max_size;
         }
-        if let Some(search_mode) = updates.search_mode {
-            if search_mode == "bayesian" || search_mode == "fuzzy" {
-                self.search_mode = search_mode;
-            }
+        if let Some(search_mode) = updates.search_mode
+            && (search_mode == "bayesian" || search_mode == "fuzzy")
+        {
+            self.search_mode = search_mode;
         }
         if let Some(enabled) = updates.recording_enabled {
             self.recording.enabled = enabled;

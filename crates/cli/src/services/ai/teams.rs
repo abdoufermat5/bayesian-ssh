@@ -229,11 +229,11 @@ pub fn forward_event(config: &AppConfig, event: &AiEvent) -> Result<()> {
             Some(h) => db.connection(h)?,
             None => None,
         };
-        if let Some(conn) = conn {
-            if let Some((t, e)) = team_of_connection(&db, &conn)? {
-                team = Some(t);
-                entry_id = Some(e);
-            }
+        if let Some(conn) = conn
+            && let Some((t, e)) = team_of_connection(&db, &conn)?
+        {
+            team = Some(t);
+            entry_id = Some(e);
         }
     }
     if team.is_none() {

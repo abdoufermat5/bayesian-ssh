@@ -160,21 +160,21 @@ pub fn check_incoming_keys(
             }
             continue;
         }
-        if let Some(newest) = newest_stored {
-            if k.key_version < newest {
-                return Err(KeyCheckError::StaleVersion {
-                    version: k.key_version,
-                    newest_stored: newest,
-                });
-            }
+        if let Some(newest) = newest_stored
+            && k.key_version < newest
+        {
+            return Err(KeyCheckError::StaleVersion {
+                version: k.key_version,
+                newest_stored: newest,
+            });
         }
-        if let Some(current) = current_version {
-            if k.key_version > current {
-                return Err(KeyCheckError::AheadOfServer {
-                    version: k.key_version,
-                    current,
-                });
-            }
+        if let Some(current) = current_version
+            && k.key_version > current
+        {
+            return Err(KeyCheckError::AheadOfServer {
+                version: k.key_version,
+                current,
+            });
         }
         fresh.push(k.clone());
     }

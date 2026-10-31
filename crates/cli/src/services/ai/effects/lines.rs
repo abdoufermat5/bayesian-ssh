@@ -23,11 +23,12 @@ pub fn command_lines(command: &str) -> Vec<String> {
                 cur.push(c);
                 if c == q {
                     quote = None;
-                } else if c == '\\' && q == '"' {
-                    if let Some(n) = at(i + 1) {
-                        cur.push(n);
-                        i += 1;
-                    }
+                } else if c == '\\'
+                    && q == '"'
+                    && let Some(n) = at(i + 1)
+                {
+                    cur.push(n);
+                    i += 1;
                 }
                 i += 1;
                 continue;

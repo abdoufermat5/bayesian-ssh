@@ -166,10 +166,10 @@ impl TeamsClient {
 
     pub(super) async fn token(&self) -> ClientResult<String> {
         let mut guard = self.token.lock().await;
-        if let Some(t) = guard.as_ref() {
-            if t.expires_at - ChronoDuration::seconds(TOKEN_SKEW_SECS) > Utc::now() {
-                return Ok(t.value.clone());
-            }
+        if let Some(t) = guard.as_ref()
+            && t.expires_at - ChronoDuration::seconds(TOKEN_SKEW_SECS) > Utc::now()
+        {
+            return Ok(t.value.clone());
         }
         let challenge = self.request_challenge().await?;
         let signature =

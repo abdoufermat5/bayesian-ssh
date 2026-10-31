@@ -167,14 +167,14 @@ pub(super) fn build(r: &RunReport, generated: DateTime<Local>) -> Doc {
             (None, _) => "no end recorded".into(),
         },
     ));
-    if let (Some(s), Some(e)) = (r.started.as_deref(), r.ended.as_deref()) {
-        if let (Ok(s), Ok(e)) = (
+    if let (Some(s), Some(e)) = (r.started.as_deref(), r.ended.as_deref())
+        && let (Ok(s), Ok(e)) = (
             DateTime::parse_from_rfc3339(s),
             DateTime::parse_from_rfc3339(e),
-        ) {
-            let ms = (e - s).num_milliseconds().max(0) as u64;
-            facts.push(("Duration", ui::duration_ms(ms)));
-        }
+        )
+    {
+        let ms = (e - s).num_milliseconds().max(0) as u64;
+        facts.push(("Duration", ui::duration_ms(ms)));
     }
     facts.push((
         "Hosts",

@@ -100,14 +100,13 @@ pub async fn check_host(
     let passwd = shell_quote(&format!(
         "getent passwd {AGENT_USER} && id -nG {AGENT_USER}"
     ));
-    if let Ok(r) = run_plain(conn, exec, &format!("sh -c {passwd}")).await {
-        if r.exit_code == Some(0) {
-            if let Some((home, groups)) = parse_agent_user(&r.stdout) {
-                report.agent_user = true;
-                report.agent_home = Some(home);
-                report.agent_groups = groups;
-            }
-        }
+    if let Ok(r) = run_plain(conn, exec, &format!("sh -c {passwd}")).await
+        && r.exit_code == Some(0)
+        && let Some((home, groups)) = parse_agent_user(&r.stdout)
+    {
+        report.agent_user = true;
+        report.agent_home = Some(home);
+        report.agent_groups = groups;
     }
     if let Some(home) = &report.agent_home {
         let helper = format!("{home}/{}", jail::HELPER_REL_PATH);
@@ -122,13 +121,13 @@ pub async fn check_host(
         Err(e) => report.error = Some(format!("jail probe failed: {e:#}")),
     }
 
-    if let Some(key) = ca_public_key {
-        if let Some(body) = crate::services::ai::cert::key_body(key) {
-            let check = shell_quote(&ca_check_script(body));
-            if let Ok(r) = run_plain(conn, exec, &format!("sh -c {check}")).await {
-                report.ca_trusted = Some(r.stdout.contains("bssh-ca-trusted"));
-                report.principals_mapped = Some(r.stdout.contains("bssh-principals-ok"));
-            }
+    if let Some(key) = ca_public_key
+        && let Some(body) = crate::services::ai::cert::key_body(key)
+    {
+        let check = shell_quote(&ca_check_script(body));
+        if let Ok(r) = run_plain(conn, exec, &format!("sh -c {check}")).await {
+            report.ca_trusted = Some(r.stdout.contains("bssh-ca-trusted"));
+            report.principals_mapped = Some(r.stdout.contains("bssh-principals-ok"));
         }
     }
 

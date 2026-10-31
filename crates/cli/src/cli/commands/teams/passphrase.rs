@@ -23,10 +23,10 @@ pub(crate) enum Passphrase {
 /// Fails when the terminal cannot be read, and for a new passphrase when it is
 /// shorter than eight characters or the repetition differs.
 pub(crate) fn passphrase(mode: Passphrase) -> Result<Zeroizing<String>> {
-    if let Ok(p) = std::env::var(PASSPHRASE_ENV) {
-        if !p.is_empty() {
-            return Ok(Zeroizing::new(p));
-        }
+    if let Ok(p) = std::env::var(PASSPHRASE_ENV)
+        && !p.is_empty()
+    {
+        return Ok(Zeroizing::new(p));
     }
     let prompt = match mode {
         Passphrase::New => "Choose a passphrase for this device's Teams keys: ",

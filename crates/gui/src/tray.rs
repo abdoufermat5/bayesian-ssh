@@ -21,26 +21,25 @@ pub fn build_tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let mut submenu_builder = SubmenuBuilder::new(app, "Quick Connect");
     let mut has_connections = false;
 
-    if let Ok((db, _config)) = open_db_and_config() {
-        if let Ok(conns) = db.list_connections(None, false) {
-            for conn in conns.iter().take(10) {
-                let id = format!("connect:{}", conn.name);
-                if let Ok(item) = MenuItemBuilder::new(&conn.name).id(id).build(app) {
-                    submenu_builder = submenu_builder.item(&item);
-                    has_connections = true;
-                }
+    if let Ok((db, _config)) = open_db_and_config()
+        && let Ok(conns) = db.list_connections(None, false)
+    {
+        for conn in conns.iter().take(10) {
+            let id = format!("connect:{}", conn.name);
+            if let Ok(item) = MenuItemBuilder::new(&conn.name).id(id).build(app) {
+                submenu_builder = submenu_builder.item(&item);
+                has_connections = true;
             }
         }
     }
 
-    if !has_connections {
-        if let Ok(item) = MenuItemBuilder::new("No Servers Configured")
+    if !has_connections
+        && let Ok(item) = MenuItemBuilder::new("No Servers Configured")
             .id("no_servers")
             .enabled(false)
             .build(app)
-        {
-            submenu_builder = submenu_builder.item(&item);
-        }
+    {
+        submenu_builder = submenu_builder.item(&item);
     }
 
     let submenu = submenu_builder.build()?;

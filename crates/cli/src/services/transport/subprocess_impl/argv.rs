@@ -204,15 +204,16 @@ impl SubprocessTransport {
         }
         // One ssh connection per run: a bastion handshake is paid once, not per call.
         // Not with a certificate: every certified call is a different identity.
-        if extras.non_interactive && extras.cert.is_none() {
-            if let Some(dir) = &extras.control_dir {
-                argv.push("-o".into());
-                argv.push("ControlMaster=auto".into());
-                argv.push("-o".into());
-                argv.push(format!("ControlPath={}", dir.join("%C").to_string_lossy()));
-                argv.push("-o".into());
-                argv.push("ControlPersist=60".into());
-            }
+        if extras.non_interactive
+            && extras.cert.is_none()
+            && let Some(dir) = &extras.control_dir
+        {
+            argv.push("-o".into());
+            argv.push("ControlMaster=auto".into());
+            argv.push("-o".into());
+            argv.push(format!("ControlPath={}", dir.join("%C").to_string_lossy()));
+            argv.push("-o".into());
+            argv.push("ControlPersist=60".into());
         }
         argv.push("-o".into());
         argv.push(format!(

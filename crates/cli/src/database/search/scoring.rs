@@ -75,10 +75,12 @@ impl Prediction {
             ("after_prev", b.after_prev, b.after_prev_hits),
             ("hour", b.hour, b.hour_hits),
         ] {
-            if let Some(lr) = lr_opt {
-                if lr > 1.0 && hits > 0 && best.is_none_or(|(_, best_lr)| lr > best_lr) {
-                    best = Some((name, lr));
-                }
+            if let Some(lr) = lr_opt
+                && lr > 1.0
+                && hits > 0
+                && best.is_none_or(|(_, best_lr)| lr > best_lr)
+            {
+                best = Some((name, lr));
             }
         }
 
@@ -144,16 +146,15 @@ pub(crate) fn context_factor(
     let n_f = n.max(0) as f64;
 
     for (idx, feat_opt) in features.iter().take(3).enumerate() {
-        if let Some(fc) = feat_opt {
-            if fc.global >= 3 {
-                let p_conn = (fc.hits.max(0) as f64 + ALPHA) / (total_w_f + 2.0 * ALPHA);
-                let p_global =
-                    (fc.global as f64 + ALPHA) / (n_f.max(fc.global as f64) + 2.0 * ALPHA);
-                let lr = p_conn / p_global;
-                lrs[idx] = Some(lr);
-                product *= lr;
-                any_used = true;
-            }
+        if let Some(fc) = feat_opt
+            && fc.global >= 3
+        {
+            let p_conn = (fc.hits.max(0) as f64 + ALPHA) / (total_w_f + 2.0 * ALPHA);
+            let p_global = (fc.global as f64 + ALPHA) / (n_f.max(fc.global as f64) + 2.0 * ALPHA);
+            let lr = p_conn / p_global;
+            lrs[idx] = Some(lr);
+            product *= lr;
+            any_used = true;
         }
     }
 

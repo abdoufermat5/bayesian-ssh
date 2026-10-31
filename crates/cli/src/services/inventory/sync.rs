@@ -97,10 +97,10 @@ pub fn plan(
                 updated.key_path = Some(key.clone());
             }
             for tag in &host.tags {
-                if let Some(tag) = Connection::normalize_tag(tag) {
-                    if !updated.tags.contains(&tag) {
-                        updated.tags.push(tag);
-                    }
+                if let Some(tag) = Connection::normalize_tag(tag)
+                    && !updated.tags.contains(&tag)
+                {
+                    updated.tags.push(tag);
                 }
             }
 
@@ -251,10 +251,10 @@ pub fn apply(
             updated.key_path = Some(key.clone());
         }
         for tag in &host.tags {
-            if let Some(tag) = Connection::normalize_tag(tag) {
-                if !updated.tags.contains(&tag) {
-                    updated.tags.push(tag);
-                }
+            if let Some(tag) = Connection::normalize_tag(tag)
+                && !updated.tags.contains(&tag)
+            {
+                updated.tags.push(tag);
             }
         }
         if source.kind == SourceKind::Team {
@@ -344,10 +344,10 @@ pub fn apply(
 fn normalized_tags(tags: &[String]) -> Vec<String> {
     let mut normalized = Vec::new();
     for tag in tags {
-        if let Some(tag) = Connection::normalize_tag(tag) {
-            if !normalized.contains(&tag) {
-                normalized.push(tag);
-            }
+        if let Some(tag) = Connection::normalize_tag(tag)
+            && !normalized.contains(&tag)
+        {
+            normalized.push(tag);
         }
     }
     normalized
