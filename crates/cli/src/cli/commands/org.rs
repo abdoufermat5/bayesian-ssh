@@ -2,7 +2,7 @@
 //! no name on the server, so it is labelled by its owners' emails and `<org>`
 //! arguments accept an id prefix or one of its team names.
 
-use crate::cli::commands::teams::{open_in_browser, passphrase, print_billing};
+use crate::cli::commands::teams::{open_in_browser, passphrase, print_billing, Passphrase};
 use crate::cli::{OrgCommands, OrgOwnerCommands};
 use crate::config::AppConfig;
 use crate::services::teams::orgs;
@@ -12,6 +12,11 @@ use anyhow::Result;
 use bssh_teams_proto::api::{BillingInterval, OrgInfo, OrgRole};
 use uuid::Uuid;
 
+/// Runs `bssh org <command>` after opening the Teams store.
+///
+/// # Errors
+/// Fails when the store cannot be opened or the command fails; session errors
+/// gain a hint when [`session::explain`] knows one.
 pub async fn execute(command: OrgCommands, config: AppConfig) -> Result<()> {
     let store = TeamsStore::open(&config)?;
     run(command, &store, &config)
@@ -26,13 +31,13 @@ async fn run(command: OrgCommands, store: &TeamsStore, config: &AppConfig) -> Re
     let db = store.database();
     match command {
         OrgCommands::List => {
-            let s = Session::open(store, config, &passphrase(false)?)?;
+            let s = Session::open(store, config, &passphrase(Passphrase::Existing)?)?;
             let visible = s.list_orgs().await?;
             print_list(&visible, &session::local_team_names(db)?);
         }
 
         OrgCommands::Show { org } => {
-            let s = Session::open(store, config, &passphrase(false)?)?;
+            let s = Session::open(store, config, &passphrase(Passphrase::Existing)?)?;
             let visible = s.list_orgs().await?;
             let local = session::local_team_names(db)?;
             let org_id = orgs::select(&visible, org.as_deref(), &local)?;
@@ -47,7 +52,7 @@ async fn run(command: OrgCommands, store: &TeamsStore, config: &AppConfig) -> Re
         }
 
         OrgCommands::Create => {
-            let s = Session::open(store, config, &passphrase(false)?)?;
+            let s = Session::open(store, config, &passphrase(Passphrase::Existing)?)?;
             let org = s.create_org().await?;
             println!(
                 "✅ Created organization {} ({}).",
@@ -63,7 +68,7 @@ async fn run(command: OrgCommands, store: &TeamsStore, config: &AppConfig) -> Re
         }
 
         OrgCommands::Owners { command } => {
-            let s = Session::open(store, config, &passphrase(false)?)?;
+            let s = Session::open(store, config, &passphrase(Passphrase::Existing)?)?;
             let visible = s.list_orgs().await?;
             let local = session::local_team_names(db)?;
             match command {
@@ -98,7 +103,7 @@ async fn run(command: OrgCommands, store: &TeamsStore, config: &AppConfig) -> Re
             yearly,
             manage,
         } => {
-            let s = Session::open(store, config, &passphrase(false)?)?;
+            let s = Session::open(store, config, &passphrase(Passphrase::Existing)?)?;
             let visible = s.list_orgs().await?;
             let local = session::local_team_names(db)?;
             let org_id = orgs::select(&visible, org.as_deref(), &local)?;

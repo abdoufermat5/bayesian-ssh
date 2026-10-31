@@ -6,6 +6,25 @@ use crate::database::{live_pid, Database};
 use anyhow::Result;
 use nix::sys::signal::{kill, Signal};
 
+/// Whether destructive session operations ask before acting.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Confirmation {
+    /// Prompt unless the user passed `--force`.
+    Ask,
+    /// `--force`: act immediately.
+    Skip,
+}
+
+impl From<bool> for Confirmation {
+    fn from(force: bool) -> Self {
+        if force {
+            Self::Skip
+        } else {
+            Self::Ask
+        }
+    }
+}
+
 /// Execute the close command
 pub async fn execute(
     target: Option<String>,
@@ -20,12 +39,14 @@ pub async fn execute(
         return cleanup_stale_sessions(&db, &config);
     }
 
+    let confirmation = Confirmation::from(force);
+
     if all {
-        return close_all_sessions(&db, force);
+        return close_all_sessions(&db, confirmation);
     }
 
     if let Some(target) = target {
-        return close_session(&db, &target, force);
+        return close_session(&db, &target, confirmation);
     }
 
     // No target specified - list active sessions
@@ -83,7 +104,7 @@ fn list_active_sessions(db: &Database) -> Result<()> {
 }
 
 /// Close a specific session
-fn close_session(db: &Database, target: &str, force: bool) -> Result<()> {
+fn close_session(db: &Database, target: &str, confirmation: Confirmation) -> Result<()> {
     let sessions = db.get_active_sessions_for_connection(target)?;
 
     if sessions.is_empty() {
@@ -94,7 +115,7 @@ fn close_session(db: &Database, target: &str, force: bool) -> Result<()> {
     for (session_id, conn_name, pid, _) in sessions {
         if let Some(p) = pid {
             if let Some(target) = live_pid(p) {
-                if !force
+                if confirmation == Confirmation::Ask
                     && !confirm(
                         &format!("Close session for '{}' (PID {})?", conn_name, p),
                         true,
@@ -131,7 +152,7 @@ fn close_session(db: &Database, target: &str, force: bool) -> Result<()> {
 }
 
 /// Close all active sessions
-fn close_all_sessions(db: &Database, force: bool) -> Result<()> {
+fn close_all_sessions(db: &Database, confirmation: Confirmation) -> Result<()> {
     let sessions = db.get_active_sessions()?;
 
     if sessions.is_empty() {
@@ -139,7 +160,7 @@ fn close_all_sessions(db: &Database, force: bool) -> Result<()> {
         return Ok(());
     }
 
-    if !force
+    if confirmation == Confirmation::Ask
         && !confirm(
             &format!("Close all {} active sessions?", sessions.len()),
             false,

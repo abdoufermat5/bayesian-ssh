@@ -164,27 +164,28 @@ mod tests {
     use super::generate_ssh_config;
     use crate::models::Connection;
 
-    fn conn(kerberos: bool, forward_agent: bool) -> Connection {
-        let mut conn = Connection::new(
+    fn kerberos_conn() -> Connection {
+        Connection::new(
             "web".into(),
             "web.internal".into(),
             "alice".into(),
             22,
             None,
             None,
-            kerberos,
+            true,
             None,
-        );
-        conn.forward_agent = forward_agent;
-        conn
+        )
     }
 
     #[test]
     fn ssh_config_exports_forward_agent_only_when_it_is_enabled() {
-        assert!(generate_ssh_config(&[conn(true, false)]).contains("GSSAPIAuthentication yes"));
-        assert!(!generate_ssh_config(&[conn(true, false)]).contains("ForwardAgent"));
+        let without_agent = generate_ssh_config(&[kerberos_conn()]);
+        assert!(without_agent.contains("GSSAPIAuthentication yes"));
+        assert!(!without_agent.contains("ForwardAgent"));
 
-        let config = generate_ssh_config(&[conn(true, true)]);
+        let mut with_agent = kerberos_conn();
+        with_agent.forward_agent = true;
+        let config = generate_ssh_config(&[with_agent]);
         assert!(config.contains("    ForwardAgent yes\n"), "{config}");
     }
 }

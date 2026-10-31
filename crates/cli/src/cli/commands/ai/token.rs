@@ -6,6 +6,10 @@ use crate::services::ai::gateway;
 use crate::services::teams::agent::find_credential;
 use anyhow::Result;
 
+/// Issue a short-lived gateway token.
+///
+/// # Errors
+/// Returns an error when the TTL, the credential, or the token is invalid.
 pub async fn execute(args: AiArgsToken, config: AppConfig) -> Result<()> {
     let ttl = gateway::parse_ttl(&args.ttl)?;
     let cred = find_credential(&config, &args.agent)?;

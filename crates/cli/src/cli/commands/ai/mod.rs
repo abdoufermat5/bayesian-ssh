@@ -21,6 +21,10 @@ pub mod stop;
 pub mod token;
 pub mod watch;
 
+/// Dispatch one `bssh ai ...` subcommand.
+///
+/// # Errors
+/// Returns the error of the selected subcommand.
 pub async fn execute(command: AiCommands, config: AppConfig) -> Result<()> {
     match command {
         AiCommands::Mcp(a) => mcp::execute(a, config).await,

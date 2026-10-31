@@ -6,6 +6,10 @@ use crate::services::ai::gateway::{self, ServeOptions};
 use crate::services::ai::mcp::RmcpBackend;
 use anyhow::Result;
 
+/// Run the gateway for unattended Teams agents.
+///
+/// # Errors
+/// Returns an error when the gateway cannot start or serve.
 pub async fn execute(args: AiArgsServe, config: AppConfig) -> Result<()> {
     // The gateway authenticates and syncs the signed policy; the MCP server core is
     // mounted through `gateway::McpBackend`.

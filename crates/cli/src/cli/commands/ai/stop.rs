@@ -9,6 +9,11 @@ use crate::services::ai::ai_dir;
 use crate::services::ai::control_client::{connect_all, ControlClient};
 use crate::services::ai::ui::{self, Glyph, Style};
 use anyhow::{bail, Result};
+
+/// Stop one run, or every run, over its control socket.
+///
+/// # Errors
+/// Returns an error when no run was stopped.
 pub async fn execute(args: AiArgsStop, config: AppConfig) -> Result<()> {
     let mut clients = connect_all(&ai_dir(&config), "bssh-cli").await;
     if clients.is_empty() {
@@ -16,7 +21,12 @@ pub async fn execute(args: AiArgsStop, config: AppConfig) -> Result<()> {
         return Ok(());
     }
     let ids: Vec<String> = clients.iter().map(|c| c.hello.run_id.clone()).collect();
-    let chosen = select_runs(&ids, args.run.as_deref(), args.all)?;
+    let selection = if args.all {
+        RunSelection::All
+    } else {
+        RunSelection::One(args.run.as_deref())
+    };
+    let chosen = select_runs(&ids, selection)?;
     let mut stopped = 0;
     let style = Style::terminal();
     for idx in chosen {
@@ -62,11 +72,24 @@ pub fn render_stop_error(style: &Style, run_id: &str, err: &str) -> String {
     )
 }
 
-/// Which of the live runs to stop: `--all`, a run id (or unique prefix), or the only one.
-pub(crate) fn select_runs(ids: &[String], run: Option<&str>, all: bool) -> Result<Vec<usize>> {
-    if all {
-        return Ok((0..ids.len()).collect());
-    }
+/// Which live runs a command acts on.
+pub(crate) enum RunSelection<'a> {
+    /// Every live run (`--all`).
+    All,
+    /// A run id or unique prefix, or `None` for the only run.
+    One(Option<&'a str>),
+}
+
+/// Indices of the live runs to act on: `--all`, a run id (or unique prefix), or the only one.
+///
+/// # Errors
+/// Returns an error when the name matches no run or several runs, or when several
+/// runs are active and none was named.
+pub(crate) fn select_runs(ids: &[String], selection: RunSelection<'_>) -> Result<Vec<usize>> {
+    let run = match selection {
+        RunSelection::All => return Ok((0..ids.len()).collect()),
+        RunSelection::One(run) => run,
+    };
     match run {
         Some(r) => {
             if let Some(i) = ids.iter().position(|id| id == r) {
@@ -109,24 +132,33 @@ mod tests {
 
     #[test]
     fn all_selects_everything() {
-        assert_eq!(select_runs(&ids(), None, true).unwrap(), vec![0, 1, 2]);
+        assert_eq!(
+            select_runs(&ids(), RunSelection::All).unwrap(),
+            vec![0, 1, 2]
+        );
     }
 
     #[test]
     fn exact_and_prefix() {
         assert_eq!(
-            select_runs(&ids(), Some("run-abb"), false).unwrap(),
+            select_runs(&ids(), RunSelection::One(Some("run-abb"))).unwrap(),
             vec![1]
         );
-        assert_eq!(select_runs(&ids(), Some("oth"), false).unwrap(), vec![2]);
-        assert!(select_runs(&ids(), Some("run-a"), false).is_err());
-        assert!(select_runs(&ids(), Some("zzz"), false).is_err());
+        assert_eq!(
+            select_runs(&ids(), RunSelection::One(Some("oth"))).unwrap(),
+            vec![2]
+        );
+        assert!(select_runs(&ids(), RunSelection::One(Some("run-a"))).is_err());
+        assert!(select_runs(&ids(), RunSelection::One(Some("zzz"))).is_err());
     }
 
     #[test]
     fn single_run_needs_no_argument() {
-        assert_eq!(select_runs(&["only".into()], None, false).unwrap(), vec![0]);
-        assert!(select_runs(&ids(), None, false).is_err());
+        assert_eq!(
+            select_runs(&["only".into()], RunSelection::One(None)).unwrap(),
+            vec![0]
+        );
+        assert!(select_runs(&ids(), RunSelection::One(None)).is_err());
     }
 
     #[test]

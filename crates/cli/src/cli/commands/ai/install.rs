@@ -7,6 +7,11 @@ use crate::services::ai::policy;
 use crate::services::ai::types::Profile;
 use anyhow::{anyhow, Context, Result};
 
+/// Install or remove bssh from an agent client configuration.
+///
+/// # Errors
+/// Returns an error when the client is unknown, the policy cannot be resolved, or
+/// the install fails.
 pub async fn execute(args: AiArgsInstall, config: AppConfig) -> Result<()> {
     let client = Client::parse(&args.client)?;
     let home = dirs::home_dir().ok_or_else(|| anyhow!("cannot find your home directory"))?;

@@ -117,10 +117,9 @@ pub fn print_connection_info(connection: &Connection, index: usize) {
 }
 
 /// Result type for interactive selection operations
-#[expect(clippy::large_enum_variant, reason = "pending refactor")]
 pub enum SelectionResult {
     /// User selected a connection
-    Selected(Connection),
+    Selected(Box<Connection>),
     /// User wants to search again with a new query
     SearchAgain(String),
     /// User cancelled the operation
@@ -173,7 +172,9 @@ pub fn interactive_selection_with_search(
             _ => {
                 if let Ok(index) = input.parse::<usize>() {
                     if index >= 1 && index <= connections.len() {
-                        return Ok(SelectionResult::Selected(connections[index - 1].clone()));
+                        return Ok(SelectionResult::Selected(Box::new(
+                            connections[index - 1].clone(),
+                        )));
                     } else {
                         println!(
                             "❌ Invalid selection. Please enter a number between 1 and {}.",
@@ -234,7 +235,7 @@ pub async fn fuzzy_select_connection(
                         &recent,
                         &format!("Select recent connection to {}", action_name),
                     )? {
-                        SelectionResult::Selected(conn) => return Ok(Some(conn)),
+                        SelectionResult::Selected(conn) => return Ok(Some(*conn)),
                         SelectionResult::SearchAgain(new_query) => {
                             current_query = new_query;
                             continue;
@@ -291,7 +292,7 @@ pub async fn fuzzy_select_connection(
                     &matches,
                     &format!("Select connection to {}", action_name),
                 )? {
-                    SelectionResult::Selected(conn) => return Ok(Some(conn)),
+                    SelectionResult::Selected(conn) => return Ok(Some(*conn)),
                     SelectionResult::SearchAgain(new_query) => {
                         current_query = new_query;
                         println!(); // Add spacing before new results
