@@ -49,7 +49,7 @@ impl SshTransport for SubprocessTransport {
             .split_first()
             .ok_or_else(|| TransportError::permanent(anyhow::anyhow!("empty argv")))?;
 
-        let output = prepare_ssh_command(cmd_name)
+        let output = prepare_ssh_command(cmd_name, self.config.auth.agent_socket.as_deref())
             .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -129,7 +129,13 @@ impl SshTransport for SubprocessTransport {
         let (cmd_name, args) = argv
             .split_first()
             .ok_or_else(|| TransportError::permanent(anyhow::anyhow!("empty argv")))?;
-        let out = run_argv_limited(cmd_name, args, opts).await?;
+        let out = run_argv_limited(
+            cmd_name,
+            args,
+            opts,
+            self.config.auth.agent_socket.as_deref(),
+        )
+        .await?;
         drop(cert_files);
 
         if opts.non_interactive {
@@ -169,7 +175,7 @@ impl SshTransport for SubprocessTransport {
             .split_first()
             .ok_or_else(|| TransportError::Permanent(anyhow::anyhow!("empty argv")))?;
 
-        let mut child = prepare_ssh_command(cmd_name)
+        let mut child = prepare_ssh_command(cmd_name, self.config.auth.agent_socket.as_deref())
             .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -206,7 +212,7 @@ impl SshTransport for SubprocessTransport {
             .split_first()
             .ok_or_else(|| TransportError::Permanent(anyhow::anyhow!("empty argv")))?;
 
-        let mut child = prepare_ssh_command(cmd_name)
+        let mut child = prepare_ssh_command(cmd_name, self.config.auth.agent_socket.as_deref())
             .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -239,7 +245,7 @@ impl SshTransport for SubprocessTransport {
             .ok_or_else(|| TransportError::permanent(anyhow::anyhow!("empty argv")))?;
 
         let Some(recorder) = recorder else {
-            let mut child = prepare_ssh_command(cmd_name)
+            let mut child = prepare_ssh_command(cmd_name, self.config.auth.agent_socket.as_deref())
                 .args(args)
                 .stdin(Stdio::inherit())
                 .stdout(Stdio::inherit())
@@ -278,6 +284,7 @@ impl SshTransport for SubprocessTransport {
             args,
             rows,
             cols,
+            agent_socket: self.config.auth.agent_socket.as_deref(),
         })
         .map_err(|e| TransportError::permanent(anyhow::anyhow!(e)))?;
 

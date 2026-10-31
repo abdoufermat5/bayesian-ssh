@@ -17,18 +17,14 @@ fn expand_path(path: &str) -> PathBuf {
 }
 
 fn resolve_active_socket() -> Option<String> {
-    if let Ok(sock) = std::env::var("SSH_AUTH_SOCK") {
+    if let Some(sock) = crate::agent_socket::current() {
         if bayesian_ssh::services::agent::is_valid_socket(&sock) {
             return Some(sock);
         }
-        std::env::remove_var("SSH_AUTH_SOCK");
     }
-    if let Some(discovered) = bayesian_ssh::services::agent::find_ssh_agent_socket() {
-        std::env::set_var("SSH_AUTH_SOCK", &discovered);
-        Some(discovered)
-    } else {
-        None
-    }
+    let discovered = bayesian_ssh::services::agent::find_ssh_agent_socket();
+    crate::agent_socket::set(discovered.clone());
+    discovered
 }
 
 #[tauri::command(async)]
@@ -77,7 +73,7 @@ pub fn start_agent() -> Result<AgentStatus, CommandError> {
         }
     }
 
-    std::env::remove_var("SSH_AUTH_SOCK");
+    crate::agent_socket::set(None);
 
     let output = Command::new("ssh-agent")
         .arg("-s")
@@ -97,14 +93,7 @@ pub fn start_agent() -> Result<AgentStatus, CommandError> {
             if let Some(end) = line.find(';') {
                 let val = &line["SSH_AUTH_SOCK=".len()..end];
                 socket_path = Some(val.to_string());
-                std::env::set_var("SSH_AUTH_SOCK", val);
-            }
-        }
-        // e.g. SSH_AGENT_PID=XXXXX; export SSH_AGENT_PID;
-        if line.starts_with("SSH_AGENT_PID=") {
-            if let Some(end) = line.find(';') {
-                let val = &line["SSH_AGENT_PID=".len()..end];
-                std::env::set_var("SSH_AGENT_PID", val);
+                crate::agent_socket::set(Some(val.to_string()));
             }
         }
     }
@@ -164,7 +153,7 @@ pub fn add_key_to_agent(key_path: String) -> Result<String, CommandError> {
             || err_msg.contains("No such file")
             || err_msg.contains("refused")
         {
-            std::env::remove_var("SSH_AUTH_SOCK");
+            crate::agent_socket::set(None);
             if let Ok(new_status) = start_agent() {
                 if let Some(new_sock) = new_status.socket_path {
                     if let Ok(new_output) = Command::new("ssh-add")

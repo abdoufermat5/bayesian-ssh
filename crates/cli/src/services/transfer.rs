@@ -565,7 +565,14 @@ impl TransferService {
             connection.host,
             remote_path,
         );
-        scp_impl::scp_upload(connection, local_path, remote_path, recursive).await
+        scp_impl::scp_upload(
+            connection,
+            local_path,
+            remote_path,
+            recursive,
+            self.config.auth.agent_socket.as_deref(),
+        )
+        .await
     }
 
     /// Download via SCP (bastion-aware).
@@ -582,7 +589,14 @@ impl TransferService {
             remote_path,
             local_path.display(),
         );
-        scp_impl::scp_download(connection, remote_path, local_path, recursive).await
+        scp_impl::scp_download(
+            connection,
+            remote_path,
+            local_path,
+            recursive,
+            self.config.auth.agent_socket.as_deref(),
+        )
+        .await
     }
 
     /// Returns `true` when SFTP is available for this connection, `false`

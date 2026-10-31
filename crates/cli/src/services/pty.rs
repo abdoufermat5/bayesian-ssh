@@ -37,6 +37,9 @@ pub struct PtySpawnOptions<'a> {
     pub args: &'a [String],
     pub rows: u16,
     pub cols: u16,
+    /// The configured ssh-agent socket (`auth.agent_socket`); when set it
+    /// replaces the inherited `SSH_AUTH_SOCK`.
+    pub agent_socket: Option<&'a std::path::Path>,
 }
 
 /// Spawn a command inside a fresh PTY.
@@ -52,6 +55,9 @@ pub fn spawn(options: PtySpawnOptions<'_>) -> Result<SpawnedPty, String> {
     // (SSH_AUTH_SOCK) are passed down.
     for (key, val) in std::env::vars() {
         cmd_builder.env(key, val);
+    }
+    if let Some(sock) = options.agent_socket {
+        cmd_builder.env(crate::services::auth::SSH_AUTH_SOCK, sock);
     }
 
     // Ensure TERM is set for xterm.js compatibility — without this,

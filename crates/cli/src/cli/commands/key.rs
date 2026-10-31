@@ -204,6 +204,9 @@ pub async fn execute_copy(config: AppConfig, target: String, key: Option<String>
     );
 
     let mut cmd = Command::new("ssh");
+    if let Some(sock) = &config.auth.agent_socket {
+        cmd.env(crate::services::auth::SSH_AUTH_SOCK, sock);
+    }
     cmd.arg("-p").arg(conn.port.to_string());
     if let Some(bastion) = &conn.bastion {
         let bu = conn.bastion_user.as_deref().unwrap_or(&conn.user);

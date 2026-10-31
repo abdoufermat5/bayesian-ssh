@@ -30,7 +30,7 @@ pub struct EnvStatus {
 /// can display a dismissible warning when these are missing.
 #[tauri::command(async)]
 pub fn get_env_status() -> EnvStatus {
-    let ssh_auth_sock = std::env::var("SSH_AUTH_SOCK").ok();
+    let ssh_auth_sock = crate::agent_socket::current();
     let krb5_ccname = std::env::var("KRB5CCNAME").ok();
 
     let ssh_agent_available = ssh_auth_sock

@@ -46,7 +46,12 @@ pub async fn execute(
             "Testing connectivity to '{}' ({})...",
             connection.name, connection.host
         );
-        let probe = ping_single_host(connection, timeout_secs).await;
+        let probe = ping_single_host(
+            connection,
+            timeout_secs,
+            config.auth.agent_socket.as_deref(),
+        )
+        .await;
         if probe.reachable {
             println!(
                 "✅ SSH ping to '{}' successful! (took {:.2?})",
@@ -75,10 +80,11 @@ pub async fn execute(
 
     for conn in targets {
         let semaphore = Arc::clone(&semaphore);
+        let agent = config.auth.agent_socket.clone();
         set.spawn(async move {
             // The semaphore is never closed, so acquire cannot fail.
             let _permit = semaphore.acquire_owned().await.ok();
-            let probe = ping_single_host(&conn, timeout_secs).await;
+            let probe = ping_single_host(&conn, timeout_secs, agent.as_deref()).await;
             (conn, probe.reachable, probe.elapsed)
         });
     }
@@ -181,9 +187,17 @@ struct PingProbe {
     stderr: String,
 }
 
-async fn ping_single_host(connection: &Connection, timeout_secs: u64) -> PingProbe {
+/// `agent` is the configured ssh-agent socket (`auth.agent_socket`), if any.
+async fn ping_single_host(
+    connection: &Connection,
+    timeout_secs: u64,
+    agent: Option<&std::path::Path>,
+) -> PingProbe {
     let start_time = Instant::now();
     let mut cmd = Command::new("ssh");
+    if let Some(sock) = agent {
+        cmd.env(crate::services::auth::SSH_AUTH_SOCK, sock);
+    }
     cmd.args(ping_args(connection, timeout_secs))
         .stdin(std::process::Stdio::null())
         .kill_on_drop(true);

@@ -727,6 +727,7 @@ mod run {
             "sh",
             &["-c".to_string(), script.to_string()],
             opts,
+            None,
         ))
         .expect("run")
     }
@@ -820,6 +821,7 @@ mod run {
             "/nonexistent/ssh-binary",
             &[],
             &ExecOptions::default(),
+            None,
         ));
         assert!(res.is_err());
     }

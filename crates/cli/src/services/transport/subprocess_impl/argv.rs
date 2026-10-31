@@ -7,7 +7,8 @@
 
 use crate::config::HostKeyPolicy;
 use crate::models::Connection;
-use std::path::PathBuf;
+use crate::services::auth::SSH_AUTH_SOCK;
+use std::path::{Path, PathBuf};
 use tokio::process::Command as TokioCommand;
 
 use super::SubprocessTransport;
@@ -40,8 +41,14 @@ fn proxy_quote(value: &str) -> String {
 /// Agent and CI shells often export `TERM=dumb`. Some Kerberos bastions then
 /// refuse the session with a misleading "add -t" message even when `-tt` was
 /// sent. Give `ssh` a real terminal type whenever ours is missing or dumb.
-pub(super) fn prepare_ssh_command(program: &str) -> TokioCommand {
+///
+/// `agent` is the configured ssh-agent socket (`auth.agent_socket`); when set it
+/// replaces the inherited `SSH_AUTH_SOCK`.
+pub(super) fn prepare_ssh_command(program: &str, agent: Option<&Path>) -> TokioCommand {
     let mut cmd = TokioCommand::new(program);
+    if let Some(sock) = agent {
+        cmd.env(SSH_AUTH_SOCK, sock);
+    }
     let bad_term = match std::env::var_os("TERM") {
         None => true,
         Some(t) if t.is_empty() => true,

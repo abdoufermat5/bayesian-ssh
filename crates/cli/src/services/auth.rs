@@ -97,14 +97,21 @@ pub fn load_key_with_passphrase(path: &Path, passphrase: &str) -> Result<Private
 // Agent socket
 // ──────────────────────────────────────────────────────────────────────────────
 
+/// Environment variable that tells `ssh`, `scp` and `ssh-add` where the agent listens.
+pub const SSH_AUTH_SOCK: &str = "SSH_AUTH_SOCK";
+
 /// Resolve the ssh-agent socket path.
 ///
 /// Priority: `AuthConfig.agent_socket` → `SSH_AUTH_SOCK` env var.
 pub fn agent_socket_path(cfg: &AuthConfig) -> Option<PathBuf> {
-    if let Some(ref p) = cfg.agent_socket {
-        return Some(p.clone());
-    }
-    std::env::var("SSH_AUTH_SOCK").ok().map(PathBuf::from)
+    agent_socket_path_from(cfg, std::env::var(SSH_AUTH_SOCK).ok())
+}
+
+/// [`agent_socket_path`] with the `SSH_AUTH_SOCK` value passed in.
+fn agent_socket_path_from(cfg: &AuthConfig, env_socket: Option<String>) -> Option<PathBuf> {
+    cfg.agent_socket
+        .clone()
+        .or_else(|| env_socket.map(PathBuf::from))
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -157,28 +164,21 @@ mod tests {
         assert_eq!(count, 1);
     }
 
-    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
     #[test]
     fn agent_socket_from_env() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        std::env::set_var("SSH_AUTH_SOCK", "/tmp/agent.sock");
         let cfg = AuthConfig::default();
-        let sock = agent_socket_path(&cfg);
+        let sock = agent_socket_path_from(&cfg, Some("/tmp/agent.sock".into()));
         assert_eq!(sock, Some(PathBuf::from("/tmp/agent.sock")));
-        std::env::remove_var("SSH_AUTH_SOCK");
+        assert_eq!(agent_socket_path_from(&cfg, None), None);
     }
 
     #[test]
     fn agent_socket_config_overrides_env() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        std::env::set_var("SSH_AUTH_SOCK", "/tmp/env.sock");
         let cfg = AuthConfig {
             agent_socket: Some(PathBuf::from("/tmp/cfg.sock")),
             ..Default::default()
         };
-        let sock = agent_socket_path(&cfg);
+        let sock = agent_socket_path_from(&cfg, Some("/tmp/env.sock".into()));
         assert_eq!(sock, Some(PathBuf::from("/tmp/cfg.sock")));
-        std::env::remove_var("SSH_AUTH_SOCK");
     }
 }

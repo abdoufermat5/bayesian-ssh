@@ -155,13 +155,11 @@ pub fn load_desktop_settings() -> Result<DesktopSettings, CommandError> {
         // discovered at startup.
         if let Some(sock) = &settings.custom_agent_socket {
             if !sock.trim().is_empty() && bayesian_ssh::services::agent::is_valid_socket(sock) {
-                std::env::set_var("SSH_AUTH_SOCK", sock);
+                crate::agent_socket::set(Some(sock.clone()));
             }
         } else {
-            // Pre-fill from running environment so settings panel shows the live socket
-            settings.custom_agent_socket = std::env::var("SSH_AUTH_SOCK")
-                .ok()
-                .filter(|s| !s.is_empty());
+            // Pre-fill with the live socket so the settings panel shows it.
+            settings.custom_agent_socket = crate::agent_socket::current();
         }
 
         settings
@@ -206,21 +204,16 @@ pub fn save_desktop_settings(settings: DesktopSettings) -> Result<(), CommandErr
         let _ = config.save();
     }
 
-    // Apply custom agent socket environment variable immediately
+    // Use the custom agent socket right away.
     match settings
         .custom_agent_socket
         .as_deref()
         .filter(|sock| !sock.trim().is_empty())
     {
-        Some(sock) => std::env::set_var("SSH_AUTH_SOCK", sock),
-        None => {
-            // Custom socket cleared: fall back to auto-discovery instead of
-            // leaving new sessions without any agent.
-            std::env::remove_var("SSH_AUTH_SOCK");
-            if let Some(sock) = bayesian_ssh::services::agent::find_ssh_agent_socket() {
-                std::env::set_var("SSH_AUTH_SOCK", sock);
-            }
-        }
+        Some(sock) => crate::agent_socket::set(Some(sock.to_string())),
+        // Custom socket cleared: fall back to auto-discovery instead of
+        // leaving new sessions without any agent.
+        None => crate::agent_socket::set(bayesian_ssh::services::agent::find_ssh_agent_socket()),
     }
 
     Ok(())

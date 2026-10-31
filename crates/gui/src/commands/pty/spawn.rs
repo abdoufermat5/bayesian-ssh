@@ -73,6 +73,7 @@ pub fn spawn_pty(
             args,
             rows: bayesian_ssh::services::pty::DEFAULT_ROWS,
             cols: bayesian_ssh::services::pty::DEFAULT_COLS,
+            agent_socket: config.auth.agent_socket.as_deref(),
         })?;
 
     let child = spawned.child;

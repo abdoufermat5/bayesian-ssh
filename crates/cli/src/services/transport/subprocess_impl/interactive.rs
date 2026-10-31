@@ -61,7 +61,7 @@ impl SubprocessTransport {
             .split_first()
             .ok_or_else(|| TransportError::permanent(anyhow::anyhow!("empty argv")))?;
 
-        let mut child = prepare_ssh_command(cmd_name)
+        let mut child = prepare_ssh_command(cmd_name, self.config.auth.agent_socket.as_deref())
             .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

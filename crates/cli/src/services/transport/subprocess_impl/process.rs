@@ -6,7 +6,7 @@
 //! This is the existing behavior extracted behind the `SshTransport` trait.
 
 use crate::models::Connection;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tokio::io::{AsyncRead, AsyncReadExt};
 
@@ -113,8 +113,9 @@ pub(crate) async fn run_argv_limited(
     program: &str,
     args: &[String],
     opts: &ExecOptions,
+    agent: Option<&Path>,
 ) -> Result<LimitedOutput, TransportError> {
-    let mut child = prepare_ssh_command(program)
+    let mut child = prepare_ssh_command(program, agent)
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

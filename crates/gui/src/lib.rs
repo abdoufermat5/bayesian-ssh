@@ -1,3 +1,4 @@
+mod agent_socket;
 mod commands;
 mod kerberos;
 mod tray;
@@ -26,6 +27,7 @@ use tauri::{Manager, WindowEvent};
 pub fn run() {
     #[cfg(unix)]
     init_shell_env();
+    agent_socket::init_from_env();
 
     let mut context = tauri::generate_context!();
     let mut builder = tauri::Builder::default()
