@@ -1,4 +1,5 @@
 use super::AgentStatus;
+use super::CommandError;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -31,7 +32,7 @@ fn resolve_active_socket() -> Option<String> {
 }
 
 #[tauri::command(async)]
-pub fn get_agent_status() -> Result<AgentStatus, String> {
+pub fn get_agent_status() -> Result<AgentStatus, CommandError> {
     let socket = resolve_active_socket();
     let active = socket.is_some();
 
@@ -63,7 +64,7 @@ pub fn get_agent_status() -> Result<AgentStatus, String> {
 }
 
 #[tauri::command(async)]
-pub fn start_agent() -> Result<AgentStatus, String> {
+pub fn start_agent() -> Result<AgentStatus, CommandError> {
     if let Some(sock) = resolve_active_socket() {
         let test_cmd = Command::new("ssh-add")
             .env("SSH_AUTH_SOCK", &sock)
@@ -81,10 +82,10 @@ pub fn start_agent() -> Result<AgentStatus, String> {
     let output = Command::new("ssh-agent")
         .arg("-s")
         .output()
-        .map_err(|e| format!("Failed to start ssh-agent: {}", e))?;
+        .map_err(|e| CommandError::from(format!("Failed to start ssh-agent: {}", e)))?;
 
     if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).to_string());
+        return Err(String::from_utf8_lossy(&output.stderr).to_string().into());
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -109,21 +110,18 @@ pub fn start_agent() -> Result<AgentStatus, String> {
     }
 
     if socket_path.is_none() {
-        return Err("Failed to parse ssh-agent environment variables".to_string());
+        return Err("Failed to parse ssh-agent environment variables".into());
     }
 
     get_agent_status()
 }
 
 #[tauri::command(async)]
-pub fn add_key_to_agent(key_path: String) -> Result<String, String> {
+pub fn add_key_to_agent(key_path: String) -> Result<String, CommandError> {
     let resolved_key = expand_path(&key_path);
 
     if !resolved_key.exists() {
-        return Err(format!(
-            "Key file does not exist: {}",
-            resolved_key.display()
-        ));
+        return Err(format!("Key file does not exist: {}", resolved_key.display()).into());
     }
 
     let socket = match resolve_active_socket() {
@@ -140,7 +138,7 @@ pub fn add_key_to_agent(key_path: String) -> Result<String, String> {
         .env("SSH_AUTH_SOCK", &socket)
         .arg(&resolved_key)
         .output()
-        .map_err(|e| format!("Failed to execute ssh-add: {}", e))?;
+        .map_err(|e| CommandError::from(format!("Failed to execute ssh-add: {}", e)))?;
 
     if output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -192,7 +190,7 @@ pub fn add_key_to_agent(key_path: String) -> Result<String, String> {
             }
         }
 
-        Err(err_msg)
+        Err(err_msg.into())
     }
 }
 
@@ -218,6 +216,9 @@ mod tests {
     fn test_add_key_nonexistent_file() {
         let res = add_key_to_agent("/path/to/definitely_nonexistent_key_12345".to_string());
         assert!(res.is_err());
-        assert!(res.unwrap_err().contains("Key file does not exist"));
+        assert!(res
+            .unwrap_err()
+            .to_string()
+            .contains("Key file does not exist"));
     }
 }

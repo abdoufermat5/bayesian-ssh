@@ -16,6 +16,7 @@ pub mod app;
 pub mod connections;
 pub mod dialogs;
 pub mod env;
+pub mod error;
 pub mod history;
 pub mod import;
 pub mod pty;
@@ -31,6 +32,7 @@ pub use app::*;
 pub use connections::*;
 pub use dialogs::*;
 pub use env::*;
+pub use error::CommandError;
 pub use history::*;
 pub use import::*;
 pub use pty::*;
@@ -57,9 +59,9 @@ impl PtyState {
     }
 }
 
-pub fn get_db_and_config() -> Result<(Database, AppConfig), String> {
-    let config = AppConfig::load(None).map_err(|e| e.to_string())?;
-    let db = Database::new(&config).map_err(|e| e.to_string())?;
+pub fn open_db_and_config() -> Result<(Database, AppConfig), CommandError> {
+    let config = AppConfig::load(None)?;
+    let db = Database::new(&config)?;
     Ok((db, config))
 }
 
@@ -313,7 +315,7 @@ impl Default for DesktopSettings {
             custom_agent_socket: current_sock,
             kerberos_warn_minutes: default_kerberos_warn_minutes(),
             monitor_kerberos: default_monitor_kerberos(),
-            default_user: std::env::var("USER").unwrap_or_else(|_| "root".to_string()),
+            default_user: std::env::var("USER").unwrap_or_else(|_| "root".into()),
             default_port: 22,
             fuzzy_search: false,
             default_key_path: None,

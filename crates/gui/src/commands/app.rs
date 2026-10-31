@@ -1,3 +1,4 @@
+use super::CommandError;
 use serde::Serialize;
 use tauri::AppHandle;
 
@@ -5,13 +6,13 @@ use crate::tray;
 
 // Closing sessions kills their children (blocking): keep it off the main thread.
 #[tauri::command(async)]
-pub fn quit_app(app: AppHandle) -> Result<(), String> {
+pub fn quit_app(app: AppHandle) -> Result<(), CommandError> {
     tray::quit_application(&app);
     Ok(())
 }
 
 #[tauri::command(async)]
-pub fn force_quit_app(app: AppHandle) -> Result<(), String> {
+pub fn force_quit_app(app: AppHandle) -> Result<(), CommandError> {
     tray::force_quit_application(&app);
     Ok(())
 }

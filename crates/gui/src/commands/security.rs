@@ -1,3 +1,4 @@
+use super::CommandError;
 use bayesian_ssh::config::AppConfig;
 use bayesian_ssh::database::Database;
 use bayesian_ssh::models::Connection;
@@ -15,8 +16,8 @@ pub fn get_app_version() -> String {
 }
 
 #[tauri::command(async)]
-pub fn list_ssh_keys() -> Result<Vec<security::SshKeyInfo>, String> {
-    security::scan_ssh_keys()
+pub fn list_ssh_keys() -> Result<Vec<security::SshKeyInfo>, CommandError> {
+    Ok(security::scan_ssh_keys()?)
 }
 
 // ssh-keygen can block (RSA generation, touch prompts for *-sk keys): keep it
@@ -25,7 +26,7 @@ pub fn list_ssh_keys() -> Result<Vec<security::SshKeyInfo>, String> {
 pub fn generate_ssh_key(
     name: String,
     key_type: Option<String>,
-) -> Result<security::SshKeyInfo, String> {
+) -> Result<security::SshKeyInfo, CommandError> {
     // Reject anything that is not a plain file name: this blocks path
     // traversal (e.g. "../../etc/cron.d/x") and absolute paths.
     let name = name.trim().to_string();
@@ -39,25 +40,25 @@ pub fn generate_ssh_key(
             .any(|c| !(c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.'))
     {
         return Err(
-            "Key name may only contain letters, digits, '_', '-' and '.' (no paths).".to_string(),
+            "Key name may only contain letters, digits, '_', '-' and '.' (no paths).".into(),
         );
     }
 
     let ssh_dir = dirs::home_dir()
-        .ok_or_else(|| "Could not resolve home directory".to_string())?
+        .ok_or_else(|| CommandError::from("Could not resolve home directory"))?
         .join(".ssh");
 
-    fs::create_dir_all(&ssh_dir).map_err(|e| e.to_string())?;
+    fs::create_dir_all(&ssh_dir)?;
     bayesian_ssh::config::enforce_secure_dir(&ssh_dir);
 
     let key_path = ssh_dir.join(&name);
     if key_path.exists() {
-        return Err(format!("Key file already exists at {}", key_path.display()));
+        return Err(format!("Key file already exists at {}", key_path.display()).into());
     }
 
     let kt = key_type.unwrap_or_else(|| "ed25519".to_string());
     if !["ed25519", "rsa", "ecdsa", "dsa", "ed25519-sk", "ecdsa-sk"].contains(&kt.as_str()) {
-        return Err(format!("Unsupported key type: {kt}"));
+        return Err(format!("Unsupported key type: {kt}").into());
     }
 
     let status = Command::new("ssh-keygen")
@@ -68,18 +69,16 @@ pub fn generate_ssh_key(
         .arg("-N")
         .arg("")
         .status()
-        .map_err(|e| format!("Failed to run ssh-keygen: {e}"))?;
+        .map_err(|e| CommandError::from(format!("Failed to run ssh-keygen: {e}")))?;
 
     if !status.success() {
-        return Err(format!("ssh-keygen exited with status {status}"));
+        return Err(format!("ssh-keygen exited with status {status}").into());
     }
 
     bayesian_ssh::config::enforce_secure_file(&key_path);
     let pub_key_path = PathBuf::from(format!("{}.pub", key_path.display()));
     if pub_key_path.exists() {
-        let mut perms = fs::metadata(&pub_key_path)
-            .map_err(|e| e.to_string())?
-            .permissions();
+        let mut perms = fs::metadata(&pub_key_path)?.permissions();
         perms.set_mode(0o644);
         let _ = fs::set_permissions(&pub_key_path, perms);
     }
@@ -87,19 +86,21 @@ pub fn generate_ssh_key(
     security::scan_ssh_keys()?
         .into_iter()
         .find(|k| k.name == name)
-        .ok_or_else(|| "Key generated but details could not be loaded".to_string())
+        .ok_or_else(|| CommandError::from("Key generated but details could not be loaded"))
 }
 
 // Runs ssh against a remote host (can block for the whole connect timeout),
 // so keep it off the main/UI thread.
 #[tauri::command(async)]
-pub fn copy_ssh_key_to_target(target: String, key_path: Option<String>) -> Result<String, String> {
-    let config = AppConfig::load(None).map_err(|e| e.to_string())?;
-    let database = Database::new(&config).map_err(|e| e.to_string())?;
+pub fn copy_ssh_key_to_target(
+    target: String,
+    key_path: Option<String>,
+) -> Result<String, CommandError> {
+    let config = AppConfig::load(None)?;
+    let database = Database::new(&config)?;
 
     let conn = database
-        .get_connection_or_alias(&target)
-        .map_err(|e| e.to_string())?
+        .get_connection_or_alias(&target)?
         .ok_or_else(|| format!("Connection '{target}' not found"))?;
 
     let pub_key_path = if let Some(k) = key_path {
@@ -121,23 +122,15 @@ pub fn copy_ssh_key_to_target(target: String, key_path: Option<String>) -> Resul
         } else if default_rsa.exists() {
             default_rsa
         } else {
-            return Err(
-                "No public key found. Generate one first using the Key Manager.".to_string(),
-            );
+            return Err("No public key found. Generate one first using the Key Manager.".into());
         }
     };
 
     if !pub_key_path.exists() {
-        return Err(format!(
-            "Public key file not found: {}",
-            pub_key_path.display()
-        ));
+        return Err(format!("Public key file not found: {}", pub_key_path.display()).into());
     }
 
-    let pub_key_content = fs::read_to_string(&pub_key_path)
-        .map_err(|e| e.to_string())?
-        .trim()
-        .to_string();
+    let pub_key_content = fs::read_to_string(&pub_key_path)?.trim().to_string();
 
     // Shell-quote the public key content to prevent command injection.
     let quoted_key = format!("'{}'", pub_key_content.replace('\'', "'\"'\"'"));
@@ -156,11 +149,13 @@ pub fn copy_ssh_key_to_target(target: String, key_path: Option<String>) -> Resul
     ssh_argv.push(format!("{}@{}", conn.user, conn.host));
     ssh_argv.push(remote_cmd);
 
-    let (bin, args) = ssh_argv.split_first().unwrap();
+    let (bin, args) = ssh_argv
+        .split_first()
+        .expect("ssh_argv starts with the ssh binary");
     let status = Command::new(bin)
         .args(args)
         .status()
-        .map_err(|e| format!("Failed to execute ssh: {e}"))?;
+        .map_err(|e| CommandError::from(format!("Failed to execute ssh: {e}")))?;
 
     if status.success() {
         Ok(format!(
@@ -170,17 +165,15 @@ pub fn copy_ssh_key_to_target(target: String, key_path: Option<String>) -> Resul
             conn.host
         ))
     } else {
-        Err(format!("SSH failed with exit code {}", status))
+        Err(format!("SSH failed with exit code {}", status).into())
     }
 }
 
 #[tauri::command(async)]
-pub fn run_security_audit() -> Result<security::AuditReportDto, String> {
-    let config = AppConfig::load(None).map_err(|e| e.to_string())?;
-    let database = Database::new(&config).map_err(|e| e.to_string())?;
-    let connections = database
-        .list_connections(None, false)
-        .map_err(|e| e.to_string())?;
+pub fn run_security_audit() -> Result<security::AuditReportDto, CommandError> {
+    let config = AppConfig::load(None)?;
+    let database = Database::new(&config)?;
+    let connections = database.list_connections(None, false)?;
 
     Ok(security::build_audit_report(&config, &connections))
 }
@@ -206,8 +199,8 @@ pub fn export_connections_payload(
     passphrase: Option<String>,
     _format: Option<String>,
     tag: Option<String>,
-) -> Result<String, String> {
-    let global_config = AppConfig::load(None).map_err(|e| e.to_string())?;
+) -> Result<String, CommandError> {
+    let global_config = AppConfig::load(None)?;
     let active_env = AppConfig::get_active_env();
     let env_list = crate::commands::env::list_environments().unwrap_or_default();
 
@@ -242,19 +235,18 @@ pub fn export_connections_payload(
         environments: backup_environments,
     };
 
-    let raw_content = serde_json::to_string_pretty(&payload).map_err(|e| e.to_string())?;
+    let raw_content = serde_json::to_string_pretty(&payload)?;
 
     let bytes = match passphrase {
         Some(ref pass) if !pass.trim().is_empty() => {
-            bayesian_ssh::services::crypto::encrypt_data(raw_content.as_bytes(), pass)
-                .map_err(|e| e.to_string())?
+            bayesian_ssh::services::crypto::encrypt_data(raw_content.as_bytes(), pass)?
         }
         _ => raw_content.into_bytes(),
     };
 
     if let Some(path_str) = output_path {
         std::fs::write(&path_str, &bytes)
-            .map_err(|e| format!("Failed to write export file: {e}"))?;
+            .map_err(|e| CommandError::from(format!("Failed to write export file: {e}")))?;
         bayesian_ssh::config::enforce_secure_file(std::path::Path::new(&path_str));
         Ok(format!(
             "Exported {} environment(s) and {} connection(s) to {}",
@@ -272,21 +264,20 @@ pub fn import_connections_payload(
     file_path: String,
     passphrase: Option<String>,
     no_bastion: bool,
-) -> Result<usize, String> {
+) -> Result<usize, CommandError> {
     let path = std::path::PathBuf::from(&file_path);
 
     if !path.exists() {
-        return Err(format!("File does not exist: {}", file_path));
+        return Err(format!("File does not exist: {}", file_path).into());
     }
 
-    let raw_bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+    let raw_bytes = std::fs::read(&path)?;
 
     // Only payloads carrying the encryption header are decrypted; a passphrase
     // typed for a plain JSON backup must not turn a valid import into an error.
     let content_bytes = if raw_bytes.starts_with(b"BSSH") {
         let pass = passphrase.ok_or_else(|| "Encrypted file requires passphrase".to_string())?;
-        bayesian_ssh::services::crypto::decrypt_data(&raw_bytes, &pass)
-            .map_err(|e| e.to_string())?
+        bayesian_ssh::services::crypto::decrypt_data(&raw_bytes, &pass)?
     } else {
         raw_bytes
     };
@@ -337,8 +328,8 @@ pub fn import_connections_payload(
 
     // Case 2: Try parsing Vec<Connection> (v1 legacy format)
     if let Ok(connections) = serde_json::from_str::<Vec<Connection>>(&content_str) {
-        let active_config = AppConfig::load(None).map_err(|e| e.to_string())?;
-        let db = Database::new(&active_config).map_err(|e| e.to_string())?;
+        let active_config = AppConfig::load(None)?;
+        let db = Database::new(&active_config)?;
         let mut count = 0;
 
         for mut conn in connections {
@@ -359,7 +350,7 @@ pub fn import_connections_payload(
         return Ok(count);
     }
 
-    Err("Import file is not a valid Bayesian SSH backup payload".to_string())
+    Err("Import file is not a valid Bayesian SSH backup payload".into())
 }
 
 /// Apply the same field validation as the add/edit dialogs to connections
@@ -370,7 +361,7 @@ fn is_importable(conn: &Connection) -> bool {
 }
 
 #[tauri::command(async)]
-pub fn fix_security_permissions() -> Result<usize, String> {
-    let config = AppConfig::load(None).map_err(|e| e.to_string())?;
-    bayesian_ssh::cli::commands::audit::fix_permissions(&config).map_err(|e| e.to_string())
+pub fn fix_security_permissions() -> Result<usize, CommandError> {
+    let config = AppConfig::load(None)?;
+    bayesian_ssh::cli::commands::audit::fix_permissions(&config).map_err(CommandError::from)
 }
