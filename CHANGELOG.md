@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.15.2] - 2026-11-01
+
 ### Added
 - **`bssh ai prune` cleans up AI data.** Nothing ever removed agent logs, recordings or change backups, and deleting lines from `audit/events.jsonl` by hand broke the log's signature chain. `bssh ai prune --older-than 30d` (also `12h`, `2w`; days round up), `--run <id>` (repeatable) or `--all` removes the log entries, `.cast` recordings, change backups and runs-database rows of ended runs; `--keep-recordings`, `--keep-backups` (they are the undo points) and `--keep-runs-db` narrow it. `--archive [DIR]` first copies everything, byte for byte, to `<ai dir>/archive/<timestamp>/` (or DIR) with a `manifest.json`, fsynced before anything is deleted. `--wipe --all` resets the chain and removes every AI artifact (the audit key stays). `--dry-run` prints the plan, `--yes` skips the question (required without a terminal), `--json` prints the plan or result, `--stats` prints how much space each part takes. Active runs are never touched: a run counts as active until it has ended, or until 24 hours have passed with no live control socket. The prune finishes with a verify line.
 - **The audit chain survives pruning.** A pruned entry stays in the log as a stub (same sequence number, hashes and signature, event removed), and the leading stubs fold into a signed `audit/anchor.json` that verification starts from. Tampering with a stub or the anchor is still detected. Pruning rewrites the log under the lock appends use, so a running `bssh ai mcp` never loses an event; appends after a prune or a wipe continue the chain.
