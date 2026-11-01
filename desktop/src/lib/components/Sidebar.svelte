@@ -12,9 +12,9 @@
     Ticket,
   } from "lucide-svelte";
   import { attentionCount } from "$lib/stores/attention.svelte";
-  import { aiPendingCount } from "$lib/stores/ai.svelte";
-  import { GLOBAL_SHORTCUTS, viewDigit } from "$lib/shortcuts";
-  import { VIEW_META, viewEnabled } from "$lib/viewMeta";
+  import { aiPendingCount, getAiMode, setAiMode, showAiReports } from "$lib/stores/ai.svelte";
+  import { AI_REPORTS_DIGIT, GLOBAL_SHORTCUTS, viewDigit } from "$lib/shortcuts";
+  import { AI_REPORTS_META, VIEW_META, viewEnabled } from "$lib/viewMeta";
   import type { AppTab, DesktopSettings, EnvInfo } from "$lib/types";
 
   type KerberosHealth = "missing" | "expired" | "warning" | "valid" | "unavailable";
@@ -66,11 +66,22 @@
     settings,
   }: Props = $props();
 
-  type NavItem = { tab: AppTab; icon: typeof Server; label: string; badge?: number; attention?: number; key: string | null };
+  type NavItem = {
+    id: string;
+    tab: AppTab;
+    icon: typeof Server;
+    label: string;
+    badge?: number;
+    attention?: number;
+    key: string | null;
+    /** Overrides "this tab is showing" (two entries share the AI tab). */
+    active?: boolean;
+    onSelect?: () => void;
+  };
 
-  function navItem(tab: Exclude<AppTab, "settings">, extra: { badge?: number; attention?: number } = {}): NavItem {
+  function navItem(tab: Exclude<AppTab, "settings">, extra: Partial<NavItem> = {}): NavItem {
     const { label, icon } = VIEW_META[tab];
-    return { tab, icon, label, key: viewDigit(tab), ...extra };
+    return { id: tab, tab, icon, label, key: viewDigit(tab), ...extra };
   }
 
   // Section order follows VIEW_ORDER, so the digit shortcuts (shown in each tooltip) run 1..n down the list.
@@ -97,7 +108,21 @@
     },
     {
       label: "AI",
-      items: [navItem("ai", { attention: aiPendingCount() })],
+      items: [
+        navItem("ai", {
+          attention: aiPendingCount(),
+          active: activeTab === "ai" && getAiMode() === "live",
+          onSelect: () => setAiMode("live"),
+        }),
+        {
+          id: "ai-reports",
+          tab: "ai",
+          ...AI_REPORTS_META,
+          key: AI_REPORTS_DIGIT,
+          active: activeTab === "ai" && getAiMode() === "reports",
+          onSelect: () => showAiReports(),
+        },
+      ],
     },
   ]);
 
@@ -219,12 +244,15 @@
         <div class="h-2"></div>
       {/if}
       <div class="nav-section">
-        {#each section.items as item (item.tab)}
-          {@const active = activeTab === item.tab}
+        {#each section.items as item (item.id)}
+          {@const active = item.active ?? activeTab === item.tab}
           <button
             type="button"
             class="nav-item {active ? 'nav-item-active' : ''} {sidebarCollapsed ? 'nav-item-collapsed' : ''}"
-            onclick={() => onTabChange(item.tab)}
+            onclick={() => {
+              item.onSelect?.();
+              onTabChange(item.tab);
+            }}
             title={item.key ? `${item.label} (${item.key})` : item.label}
             aria-keyshortcuts={item.key ?? undefined}
             aria-label={item.attention

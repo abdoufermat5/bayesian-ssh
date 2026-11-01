@@ -27,6 +27,39 @@ let answered = $state.raw<Set<string>>(new Set());
 let unlisten: UnlistenFn[] = [];
 let starting: Promise<void> | null = null;
 
+// ---- which part of the AI view is showing, so the sidebar and shortcuts can reach it
+
+export type AiMode = "live" | "reports";
+
+let viewMode = $state<AiMode>("live");
+/** Run to select in the reports list, set by a deep link; AiView takes it. */
+let reportTarget = $state<string | null>(null);
+
+export function getAiMode(): AiMode {
+  return viewMode;
+}
+
+export function setAiMode(mode: AiMode) {
+  viewMode = mode;
+}
+
+/**
+ * Make the AI view show the reports, optionally on one run. The caller also
+ * switches to the "ai" tab (sidebar, shortcut, palette).
+ */
+export function showAiReports(runId?: string) {
+  viewMode = "reports";
+  if (runId) reportTarget = runId;
+}
+
+export function pendingAiReportTarget(): string | null {
+  return reportTarget;
+}
+
+export function clearAiReportTarget() {
+  reportTarget = null;
+}
+
 export function getAiRuns(): AiRun[] {
   return runs;
 }

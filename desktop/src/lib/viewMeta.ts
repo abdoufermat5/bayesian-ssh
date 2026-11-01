@@ -1,6 +1,7 @@
 import {
   Bot,
   Clock,
+  FileText,
   HardDrive,
   KeyRound,
   Server,
@@ -33,3 +34,6 @@ export function viewEnabled(
   if (tab === "sftp") return settings.enable_sftp !== false;
   return true;
 }
+
+/** The AI reports are a part of the "ai" view with their own sidebar entry, palette item and key. */
+export const AI_REPORTS_META = { label: "AI reports", icon: FileText };

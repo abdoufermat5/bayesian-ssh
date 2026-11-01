@@ -14,6 +14,7 @@
 //! process can't reach it, and it shows the exact command, not a summary.
 
 pub mod api;
+mod files;
 mod hub;
 mod sink;
 #[cfg(unix)]

@@ -170,6 +170,41 @@ impl AiStore {
         Ok(rows)
     }
 
+    // ------------------------------------------------------------ pruning
+
+    /// Delete these runs and everything keyed by them (approvals, grants, counters, changes),
+    /// in one transaction. Returns the number of runs removed.
+    pub fn delete_runs(&self, ids: &[String]) -> Result<usize> {
+        let mut db = self.db()?;
+        let tx = db.transaction()?;
+        let mut removed = 0;
+        for id in ids {
+            removed += tx.execute("DELETE FROM runs WHERE id = ?1", params![id])?;
+            for table in ["approvals", "grants", "counters", "changes"] {
+                tx.execute(
+                    &format!("DELETE FROM {table} WHERE run_id = ?1"),
+                    params![id],
+                )?;
+            }
+        }
+        tx.commit()?;
+        Ok(removed)
+    }
+
+    /// Delete every row and give the space back (best effort: another process may hold the
+    /// database).
+    pub fn delete_everything(&self) -> Result<()> {
+        let mut db = self.db()?;
+        let tx = db.transaction()?;
+        for table in ["runs", "approvals", "grants", "counters", "changes"] {
+            tx.execute(&format!("DELETE FROM {table}"), [])?;
+        }
+        tx.commit()?;
+        let _ = db.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()));
+        let _ = db.execute_batch("VACUUM");
+        Ok(())
+    }
+
     // ------------------------------------------------------------ approvals
 
     /// Persist a request as `pending`.

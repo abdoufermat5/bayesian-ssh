@@ -12,6 +12,7 @@ pub mod install;
 pub mod log;
 pub mod mcp;
 pub mod policy;
+pub mod prune;
 pub mod replay;
 pub mod resume;
 pub mod serve;
@@ -43,5 +44,6 @@ pub async fn execute(command: AiCommands, config: AppConfig) -> Result<()> {
         AiCommands::Serve(a) => serve::execute(a, config).await,
         AiCommands::Token(a) => token::execute(a, config).await,
         AiCommands::Watch(a) => watch::execute(a, config).await,
+        AiCommands::Prune(a) => prune::execute(a, config).await,
     }
 }

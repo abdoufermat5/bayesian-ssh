@@ -519,9 +519,16 @@ const reportOf = (runId: string) => ({
   recordings: ["ai-run-2b9e-c-1.cast"],
 });
 
-const summaryOf = (runId: string, minutesAgo: number) => ({
+const summaryOf = (
+  runId: string,
+  minutesAgo: number,
+  extra: Record<string, unknown> = {},
+) => ({
   run_id: runId,
   client: "Claude Code 2.0",
+  on_behalf_of: "alice",
+  hosts: ["web-2"],
+  approvals: 1,
   policy: "default",
   started: iso(minutesAgo),
   ended: iso(minutesAgo - 5),
@@ -529,9 +536,10 @@ const summaryOf = (runId: string, minutesAgo: number) => ({
   calls: 2,
   denials: 1,
   changes: 1,
+  ...extra,
 });
 
-async function seedReports(page: Page, saveDir?: string | null) {
+async function seedReports(page: Page, saveDir?: string | null, list?: unknown[]) {
   await page.addInitScript(
     (d) => {
       const w = window as unknown as Record<string, unknown>;
@@ -540,7 +548,7 @@ async function seedReports(page: Page, saveDir?: string | null) {
       if (d.saveDir !== undefined) w.__MOCK_AI_SAVE_DIR = d.saveDir;
     },
     {
-      list: [summaryOf(RUN_ID, 30), summaryOf(OLD_RUN, 60)],
+      list: list ?? [summaryOf(RUN_ID, 30), summaryOf(OLD_RUN, 60)],
       reports: { [RUN_ID]: reportOf(RUN_ID), [OLD_RUN]: reportOf(OLD_RUN) },
       saveDir,
     },
@@ -555,7 +563,7 @@ async function openReports(app: AppFixture, page: Page) {
 test.describe("AI run reports", () => {
   test("says so when the audit log has no run", async ({ app, page }) => {
     await openReports(app, page);
-    await expect(page.getByText("No runs in the audit log yet")).toBeVisible();
+    await expect(page.getByText("No agent runs recorded yet")).toBeVisible();
   });
 
   test("shows what a past run did, step by step", async ({ app, page }) => {
@@ -590,6 +598,114 @@ test.describe("AI run reports", () => {
     await app.waitForIpc("ai_report_export");
     expect(await app.ipcCalls("ai_report_export")).toEqual([{ runId: RUN_ID, format: "pdf" }]);
     await expect(page.getByText("Report saved to /home/user/Downloads/bssh-run-run-7f3a.pdf")).toBeVisible();
+
+    // The saved file can be opened or shown right away.
+    await page.getByRole("button", { name: "Open", exact: true }).click();
+    await app.waitForIpc("ai_open_path");
+    expect(await app.ipcCalls("ai_open_path")).toEqual([{ path: "/home/user/Downloads/bssh-run-run-7f3a.pdf" }]);
+    await page.getByRole("button", { name: "Show in folder" }).click();
+    await app.waitForIpc("ai_reveal_path");
+    expect(await app.ipcCalls("ai_reveal_path")).toEqual([{ path: "/home/user/Downloads/bssh-run-run-7f3a.pdf" }]);
+    await page.getByRole("button", { name: "Dismiss" }).click();
+    await expect(page.getByText(/Report saved to/)).toHaveCount(0);
+  });
+
+  test("the backend refuses paths it did not write", async ({ app, page }) => {
+    await seedReports(page);
+    await openReports(app, page);
+    await expect(page.getByRole("region", { name: "Changes" })).toBeVisible();
+    const err = await page.evaluate(async () => {
+      const internals = (window as unknown as { __TAURI_INTERNALS__: { invoke: (c: string, a: unknown) => Promise<unknown> } })
+        .__TAURI_INTERNALS__;
+      try {
+        await internals.invoke("ai_open_path", { path: "/etc/passwd" });
+        return null;
+      } catch (e) {
+        return String(e);
+      }
+    });
+    expect(err).toContain("Only report files saved by this app");
+  });
+
+  test("View / Print opens the HTML report in the browser", async ({ app, page }) => {
+    await seedReports(page);
+    await openReports(app, page);
+    await expect(page.getByRole("region", { name: "Changes" })).toBeVisible();
+    await page.getByRole("button", { name: "View / Print" }).click();
+    await app.waitForIpc("ai_report_view_html");
+    expect(await app.ipcCalls("ai_report_view_html")).toEqual([{ runId: RUN_ID }]);
+    await expect(page.getByText(/Opened in your browser/)).toBeVisible();
+  });
+
+  test("the sidebar entry opens the reports from anywhere", async ({ app, page }) => {
+    await seedReports(page);
+    await app.gotoApp();
+    await page.locator('.sidebar [aria-label="AI reports"]').click();
+    await expect(page.getByRole("list", { name: "Past runs" })).toBeVisible();
+    await expect(page.locator('.sidebar [aria-label="AI reports"]')).toHaveAttribute("aria-current", "page");
+    await expect(page.locator('.sidebar [aria-label="AI agents"]')).not.toHaveAttribute("aria-current", "page");
+    await page.locator('.sidebar [aria-label="AI agents"]').click();
+    await expect(page.getByRole("list", { name: "Past runs" })).toHaveCount(0);
+  });
+
+  test("the 9 key and the palette open the reports", async ({ app, page }) => {
+    await seedReports(page);
+    await app.gotoApp();
+    await page.keyboard.press("9");
+    await expect(page.getByRole("list", { name: "Past runs" })).toBeVisible();
+
+    await app.setActiveTab("connections");
+    await app.openPalette();
+    await page.getByRole("dialog").getByRole("combobox").fill("ai reports");
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("list", { name: "Past runs" })).toBeVisible();
+  });
+
+  test("an ended live run links to its report", async ({ app, page }) => {
+    await seed(page, { runs: [{ ...baseRun, ended: iso(1), connected: false }], events: { [RUN_ID]: events } });
+    await seedReports(page, undefined, [summaryOf(RUN_ID, 30), summaryOf(OLD_RUN, 60)]);
+    await openAi(app, page);
+    await page.getByRole("button", { name: /^Open the report of/ }).click();
+    await app.waitForIpc("ai_report");
+    expect(await app.ipcCalls("ai_report")).toContainEqual({ runId: RUN_ID });
+    await expect(page.getByRole("list", { name: "Past runs" })).toBeVisible();
+  });
+
+  test("searches and filters the list", async ({ app, page }) => {
+    const third = "run-9c1d0e55-0000-4000-8000-000000000003";
+    await seedReports(page, undefined, [
+      summaryOf(RUN_ID, 30),
+      summaryOf(OLD_RUN, 60, { client: "Codex", on_behalf_of: "bob", hosts: ["db-1"], changes: 0, denials: 0, approvals: 0 }),
+      summaryOf(third, 90, { client: "Cursor", on_behalf_of: null, hosts: [], changes: 0, denials: 2, approvals: 0 }),
+    ]);
+    await openReports(app, page);
+    const list = page.getByRole("list", { name: "Past runs" });
+    await expect(list.getByRole("button")).toHaveCount(3);
+
+    await page.getByRole("searchbox", { name: "Search reports" }).or(page.getByLabel("Search reports")).fill("db-1");
+    await expect(list.getByRole("button")).toHaveCount(1);
+    await expect(list.getByText("Codex")).toBeVisible();
+    await page.getByLabel("Search reports").fill("bob");
+    await expect(list.getByRole("button")).toHaveCount(1);
+    await page.getByLabel("Search reports").fill("9c1d");
+    await expect(list.getByText("Cursor")).toBeVisible();
+    await page.getByLabel("Search reports").fill("");
+
+    await page.getByRole("button", { name: "With denials" }).click();
+    await expect(list.getByRole("button")).toHaveCount(2);
+    await page.getByRole("button", { name: "With changes" }).click();
+    await expect(list.getByRole("button")).toHaveCount(1);
+    await page.getByRole("button", { name: "With approvals" }).click();
+    await expect(list.getByRole("button")).toHaveCount(1);
+    await page.getByLabel("Search reports").fill("nomatch");
+    await expect(page.getByText("No run matches.")).toBeVisible();
+    await page.getByRole("button", { name: "Clear the filters" }).click();
+    await expect(list.getByRole("button")).toHaveCount(3);
+  });
+
+  test("the empty list explains where reports come from", async ({ app, page }) => {
+    await openReports(app, page);
+    await expect(page.getByText("bssh ai install claude-code")).toBeVisible();
   });
 
   test("a cancelled save says nothing", async ({ app, page }) => {
@@ -676,5 +792,98 @@ test.describe("AI settings", () => {
     await app.nav("Settings");
     await page.locator('nav[aria-label="Settings sections"]').getByRole("button", { name: "AI agents", exact: true }).click();
     await expect(page.getByText("No policy defined")).toBeVisible();
+  });
+});
+
+test.describe("AI cleanup", () => {
+  async function openCleanup(app: AppFixture, page: Page) {
+    await seedReports(page);
+    await openReports(app, page);
+    await page.getByRole("button", { name: "Clean up…" }).click();
+    const dialog = page.getByRole("dialog", { name: "Clean up AI data" });
+    await expect(dialog).toBeVisible();
+    return dialog;
+  }
+
+  test("shows the storage, previews and deletes runs older than N days", async ({ app, page }) => {
+    const dialog = await openCleanup(app, page);
+    await expect(dialog.getByTestId("st-log")).toHaveText("47 KB");
+    await dialog.getByRole("button", { name: "7d" }).click();
+    await expect(dialog.getByTestId("plan-summary")).toBeVisible();
+    const confirm = dialog.getByRole("button", { name: /^Delete \d+ runs? \(/ });
+    await expect(confirm).toBeEnabled();
+    await confirm.click();
+    await app.waitForIpc("ai_prune");
+    const [call] = (await app.ipcCalls("ai_prune")) as { req: { selection: unknown; mode: string } }[];
+    expect(call.req.mode).toBe("delete");
+    expect(call.req.selection).toEqual({ kind: "older_than", days: 7 });
+    await expect(dialog.getByTestId("verify-status")).toHaveText("The audit log still verifies.");
+    await dialog.getByRole("button", { name: "Done" }).click();
+    await expect(dialog).toHaveCount(0);
+  });
+
+  test("archive mode sends the chosen folder and reports its path", async ({ app, page }) => {
+    const dialog = await openCleanup(app, page);
+    await dialog.getByRole("radio", { name: /Archive/ }).check();
+    await dialog.getByRole("button", { name: "Choose folder…" }).click();
+    await expect(dialog.getByTestId("archive-dir")).toHaveText("/home/user/archives");
+    await dialog.getByRole("button", { name: /^Archive \d+ runs? \(/ }).click();
+    await app.waitForIpc("ai_prune");
+    const [call] = (await app.ipcCalls("ai_prune")) as { req: { mode: string; archive_dir: string } }[];
+    expect(call.req).toMatchObject({ mode: "archive", archive_dir: "/home/user/archives" });
+    await expect(dialog.getByTestId("archive-path")).toHaveText("/home/user/archives");
+    await dialog.getByRole("button", { name: "Show in folder" }).click();
+    await app.waitForIpc("ai_reveal_path");
+    const [reveal] = (await app.ipcCalls("ai_reveal_path")) as { path: string }[];
+    expect(reveal.path).toBe("/home/user/archives/manifest.json");
+  });
+
+  test("wipe needs the word wipe and always targets all runs", async ({ app, page }) => {
+    const dialog = await openCleanup(app, page);
+    await dialog.getByRole("radio", { name: /Wipe everything/ }).check();
+    const confirm = dialog.getByRole("button", { name: "Wipe all AI data" });
+    await expect(confirm).toBeDisabled();
+    await dialog.getByLabel("Type wipe to confirm").fill("wip");
+    await expect(confirm).toBeDisabled();
+    await dialog.getByLabel("Type wipe to confirm").fill("wipe");
+    await expect(confirm).toBeEnabled();
+    await confirm.click();
+    await app.waitForIpc("ai_prune");
+    const [call] = (await app.ipcCalls("ai_prune")) as { req: { mode: string; selection: unknown } }[];
+    expect(call.req).toMatchObject({ mode: "wipe", selection: { kind: "all" } });
+  });
+
+  test("backups checkbox warns that undo points are lost; Escape closes", async ({ app, page }) => {
+    const dialog = await openCleanup(app, page);
+    await expect(dialog.getByText("Undo points are lost")).toBeVisible();
+    await dialog.getByRole("checkbox", { name: "Change backups" }).uncheck();
+    await expect(dialog.getByText("Undo points are lost")).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    expect(await app.ipcCalls("ai_prune")).toEqual([]);
+  });
+
+  test("per-run Delete preselects that run and refreshes the list after", async ({ app, page }) => {
+    await seedReports(page);
+    await openReports(app, page);
+    await app.waitForIpc("ai_reports");
+    await page.getByRole("button", { name: "Delete…" }).click();
+    const dialog = page.getByRole("dialog", { name: "Clean up AI data" });
+    await expect(dialog.getByRole("radio", { name: /Selected runs/ })).toBeChecked();
+    await dialog.getByRole("button", { name: /^Delete 1 run \(/ }).click();
+    await app.waitForIpc("ai_prune");
+    const [call] = (await app.ipcCalls("ai_prune")) as { req: { selection: { kind: string; ids: string[] } } }[];
+    expect(call.req.selection.kind).toBe("runs");
+    expect(call.req.selection.ids).toHaveLength(1);
+    const before = (await app.ipcCalls("ai_reports")).length;
+    await dialog.getByRole("button", { name: "Done" }).click();
+    await expect.poll(async () => (await app.ipcCalls("ai_reports")).length).toBeGreaterThan(before - 1);
+  });
+
+  test("has no serious accessibility violations", async ({ app, page }) => {
+    const dialog = await openCleanup(app, page);
+    await expect(dialog.getByTestId("plan-summary")).toBeVisible();
+    const results = await new AxeBuilder({ page }).include('[role="dialog"]').analyze();
+    expect(results.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ") + " " + n.any[0]?.message).join("; ")}`)).toEqual([]);
   });
 });
