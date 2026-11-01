@@ -32,8 +32,9 @@
     TeamsStatus,
   } from "$lib/types";
   import { predictionReason } from "$lib/utils/prediction";
-  import { GLOBAL_SHORTCUTS, HOST_SHORTCUTS, MOD, VIEW_ORDER, viewDigit, type Shortcut } from "$lib/shortcuts";
-  import { VIEW_META, viewEnabled } from "$lib/viewMeta";
+  import { AI_REPORTS_DIGIT, GLOBAL_SHORTCUTS, HOST_SHORTCUTS, MOD, VIEW_ORDER, viewDigit, type Shortcut } from "$lib/shortcuts";
+  import { AI_REPORTS_META, VIEW_META, viewEnabled } from "$lib/viewMeta";
+  import { showAiReports } from "$lib/stores/ai.svelte";
   import { SETTINGS_SECTIONS, requestSettingsSection } from "$lib/stores/settingsNav.svelte";
   import { requestTeamFocus } from "$lib/stores/attention.svelte";
   import { requestFilesHost } from "$lib/stores/filesHost.svelte";
@@ -262,6 +263,21 @@
       keys: item.tab === "settings" ? keysOf(GLOBAL_SHORTCUTS, "settings") : item.key ? [item.key] : undefined,
       action: () => run(item.tab === "keys" ? onOpenKeys : () => onSelectTab(item.tab)),
     }));
+
+    navItems.splice(
+      navItems.findIndex((n) => n.id === "nav-ai") + 1,
+      0,
+      {
+        id: "nav-ai-reports",
+        title: AI_REPORTS_META.label,
+        subtitle: "Past agent runs: what each did, step by step",
+        keywords: "ai report reports agent runs audit history download",
+        category: "Navigation",
+        icon: AI_REPORTS_META.icon,
+        keys: [AI_REPORTS_DIGIT],
+        action: () => run(() => (showAiReports(), onSelectTab("ai"))),
+      },
+    );
 
     const teamItems = teamVerbs();
 

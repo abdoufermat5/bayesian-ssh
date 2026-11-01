@@ -25,6 +25,10 @@
     return [{ id: `view-${tab}`, label: VIEW_META[tab].label, combos: [[digit]], scope: "global" as const }];
   });
 
+  // "AI reports" is part of the AI view, not a tab: list it with the views.
+  const aiReports = GLOBAL_SHORTCUTS.find((s) => s.id === "ai-reports");
+  if (aiReports) viewRows.push(aiReports);
+
   type Section = { title: string; note?: string; items: Shortcut[] };
 
   const general = GLOBAL_SHORTCUTS.filter((s) => s.id === "palette" || s.id === "palette-terminal" || s.id === "settings");

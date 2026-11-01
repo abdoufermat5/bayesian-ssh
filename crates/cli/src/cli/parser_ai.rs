@@ -36,6 +36,8 @@ pub enum AiCommands {
     Token(AiArgsToken),
     /// Follow what agents do, live, and answer approval requests
     Watch(AiArgsWatch),
+    /// Delete or archive old runs: log entries, recordings, change backups, run records
+    Prune(AiArgsPrune),
 }
 
 #[derive(Args, Debug)]
@@ -270,4 +272,43 @@ pub struct AiArgsWatch {
     /// One event per line as JSON; no prompts, no raw mode
     #[arg(long)]
     pub json: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct AiArgsPrune {
+    /// Runs that ended more than this long ago: 30d, 12h or 2w (days, rounded up)
+    #[arg(long, value_name = "AGE")]
+    pub older_than: Option<String>,
+    /// This run, id or unique prefix (repeatable)
+    #[arg(long = "run", value_name = "ID")]
+    pub run: Vec<String>,
+    /// Every run that has ended
+    #[arg(long)]
+    pub all: bool,
+    /// Copy everything to DIR before removing it (default: <ai dir>/archive/<timestamp>)
+    #[arg(long, value_name = "DIR", num_args = 0..=1)]
+    pub archive: Option<Option<std::path::PathBuf>>,
+    /// Reset the audit chain and remove every AI artifact (needs --all and no active run)
+    #[arg(long)]
+    pub wipe: bool,
+    /// Leave the recordings alone
+    #[arg(long)]
+    pub keep_recordings: bool,
+    /// Leave the change backups alone (they are the undo points)
+    #[arg(long)]
+    pub keep_backups: bool,
+    /// Leave the runs database alone
+    #[arg(long)]
+    pub keep_runs_db: bool,
+    /// Show what would be removed, change nothing
+    #[arg(long)]
+    pub dry_run: bool,
+    /// Don't ask for confirmation
+    #[arg(short = 'y', long)]
+    pub yes: bool,
+    #[arg(long)]
+    pub json: bool,
+    /// Print how much space the AI data takes and exit
+    #[arg(long)]
+    pub stats: bool,
 }

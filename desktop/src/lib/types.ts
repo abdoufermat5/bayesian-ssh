@@ -654,6 +654,10 @@ export interface AiReportSummary {
   calls: number;
   denials: number;
   changes: number;
+  /** Added by the desktop for searching and filtering the list. */
+  on_behalf_of?: string | null;
+  hosts?: string[];
+  approvals?: number;
 }
 
 export interface AiReportCall {
@@ -772,4 +776,71 @@ export interface AiSettingsView {
   trusted_tag_sources: string[];
   /** The `config.json` these policies were read from. */
   config_path: string;
+}
+
+// AI cleanup
+
+export type AiPruneSelection =
+  | { kind: "older_than"; days: number }
+  | { kind: "runs"; ids: string[] }
+  | { kind: "all" };
+
+export type AiPruneMode = "delete" | "archive" | "wipe";
+
+export interface AiPruneWhat {
+  audit: boolean;
+  recordings: boolean;
+  /** Change backups: the undo points are lost. */
+  backups: boolean;
+  runs_db: boolean;
+}
+
+/** `ai_prune_plan(req)` / `ai_prune(req)` argument. */
+export interface AiPruneRequest {
+  selection: AiPruneSelection;
+  mode: AiPruneMode;
+  what: AiPruneWhat;
+  /** Archive destination; null = `<ai dir>/archive/<stamp>/`. */
+  archive_dir: string | null;
+}
+
+export interface AiPrunedRun {
+  run_id: string;
+  client: string | null;
+  started: string | null;
+  ended: string | null;
+  entries: number;
+  recordings: number;
+  backup_bytes: number;
+}
+
+export interface AiPrunePlan {
+  runs: AiPrunedRun[];
+  /** Active runs that matched but are skipped. */
+  skipped_active: string[];
+  entries: number;
+  recordings: number;
+  bytes: number;
+  log_bytes_before: number;
+  mode: AiPruneMode;
+  archive_dir: string | null;
+}
+
+export interface AiPruneOutcome {
+  plan: AiPrunePlan;
+  log_bytes_after: number;
+  archive_dir: string | null;
+  /** The audit chain verified after the prune. */
+  verify_ok: boolean;
+}
+
+/** `ai_storage()`: AI data on disk. */
+export interface AiStorage {
+  log_bytes: number;
+  recordings_bytes: number;
+  backups_bytes: number;
+  runs_db_bytes: number;
+  archives_bytes: number;
+  runs: number;
+  oldest: string | null;
 }

@@ -187,7 +187,14 @@ pub fn run() {
             commands::ai::api::ai_settings,
             commands::ai::api::ai_reports,
             commands::ai::api::ai_report,
-            commands::ai::api::ai_report_export
+            commands::ai::api::ai_report_export,
+            commands::ai::api::ai_report_view_html,
+            commands::ai::api::ai_open_path,
+            commands::ai::api::ai_reveal_path,
+            commands::ai::api::ai_storage,
+            commands::ai::api::ai_prune_plan,
+            commands::ai::api::ai_prune,
+            commands::ai::api::ai_pick_archive_dir
         ])
         .run(context)
         .expect("error while running tauri application");

@@ -43,6 +43,9 @@ export const VIEW_ORDER: AppTab[] = [
   "ai",
 ];
 
+/** The AI reports have no tab of their own (they are part of "ai"); digit 9 opens them. */
+export const AI_REPORTS_DIGIT = "9";
+
 export function viewDigit(tab: AppTab): string | null {
   const i = VIEW_ORDER.indexOf(tab);
   return i === -1 ? null : String(i + 1);
@@ -63,6 +66,7 @@ export const GLOBAL_SHORTCUTS: Shortcut[] = [
   { id: "settings", label: "Settings", combos: [[MOD, ","]], scope: "anywhere" },
   { id: "help", label: "Keyboard shortcuts", combos: [["?"], ["F1"], [MOD, "/"]], scope: "anywhere" },
   { id: "filter", label: "Focus filter", combos: [["/"]], scope: "global" },
+  { id: "ai-reports", label: "AI reports", combos: [["9"]], scope: "global" },
   { id: "new-host", label: "New host", combos: [["N"], [MOD, "N"]], scope: "global", cli: "bssh add" },
 ];
 

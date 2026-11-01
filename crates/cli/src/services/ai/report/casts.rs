@@ -5,7 +5,8 @@ use crate::services::ai::types::ExecResult;
 use crate::services::recording::{Recorder, recordings_dir};
 use std::path::PathBuf;
 
-fn safe_part(s: &str) -> String {
+/// The file-name form of a run or call id.
+pub fn safe_part(s: &str) -> String {
     s.chars()
         .map(|c| {
             if c.is_ascii_alphanumeric() || c == '-' || c == '_' {

@@ -1,26 +1,35 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import { ChevronDown, Bot, Download, FileText, OctagonX, Play, RefreshCw } from "lucide-svelte";
-  import type { AiReport, AiReportFormat, AiReportSummary, AiRun } from "$lib/types";
+  import { ChevronDown, Bot, Download, ExternalLink, FileText, FolderOpen, OctagonX, Play, Printer, RefreshCw, Search, Trash2, X } from "lucide-svelte";
+  import type { AiPruneOutcome, AiReport, AiReportFormat, AiReportSummary, AiRun } from "$lib/types";
   import {
+    clearAiReportTarget,
     getAiEvents,
+    getAiMode,
     getAiRun,
     getAiRuns,
     openApproval,
+    pendingAiReportTarget,
     pendingApprovals,
     resumeAiRun,
     revokeAiGrant,
+    setAiMode,
+    showAiReports,
     stopAiRun,
   } from "$lib/stores/ai.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
   import RunReport from "./ai/RunReport.svelte";
+  import CleanupDialog from "./ai/CleanupDialog.svelte";
   import { formatDateTime, formatRelative } from "$lib/utils/timezone";
   import {
     buildTimeline,
     decisionLabel,
+    filterReports,
     formatClock,
     outcomeText,
+    REPORT_FILTERS,
+    type ReportFilter,
     redactionSummary,
     shortId,
     stepHosts,
@@ -37,7 +46,8 @@
   let now = $state(Date.now());
   let stopping = $state(false);
   let resuming = $state(false);
-  let mode = $state<"live" | "reports">("live");
+  // Shared with the sidebar's "AI reports" entry, the palette and the 9 key.
+  const mode = $derived(getAiMode());
 
   let reports = $state.raw<AiReportSummary[]>([]);
   let reportsLoading = $state(false);
@@ -49,7 +59,14 @@
   let reportError = $state<string | null>(null);
   let downloadMenuOpen = $state(false);
   let exporting = $state(false);
+  let viewingHtml = $state(false);
+  /** The report file just saved: offered to open or show in the folder. */
+  let savedFile = $state<{ path: string; runId: string } | null>(null);
+  let reportQuery = $state("");
+  let reportFilter = $state<ReportFilter>("all");
   let listRequest = 0;
+  /** Cleanup dialog: closed (null), or open with an optional preselected run. */
+  let cleanup = $state<{ runId: string | null } | null>(null);
 
   const FORMATS: { id: AiReportFormat; label: string }[] = [
     { id: "txt", label: "Text (.txt)" },
@@ -61,6 +78,8 @@
 
   const runs = $derived(getAiRuns());
   const liveIds = $derived(new Set(runs.filter((r) => r.connected && r.ended === null).map((r) => r.run_id)));
+  const shownReports = $derived(filterReports(reports, reportQuery, reportFilter));
+  const filtering = $derived(reportQuery.trim() !== "" || reportFilter !== "all");
   const reportRunId = $derived(reportId ?? reports[0]?.run_id ?? null);
   const shownReport = $derived(reportRunId ? (reportCache[reportRunId] ?? null) : null);
   const reportLoading = $derived(reportRunId !== null && reportLoadingId === reportRunId);
@@ -82,16 +101,29 @@
     if (id) untrack(() => void loadReport(id));
   });
 
+  // Entering the reports (toggle, sidebar, key, palette) loads the list.
+  $effect(() => {
+    if (mode === "reports") untrack(() => void loadReports());
+  });
+
+  // A deep link (openReport, or another view) picks the run to show.
+  $effect(() => {
+    const target = pendingAiReportTarget();
+    if (!target) return;
+    reportId = target;
+    reportQuery = "";
+    reportFilter = "all";
+    clearAiReportTarget();
+  });
+
   function setMode(next: "live" | "reports") {
     if (next === mode) return;
-    mode = next;
     downloadMenuOpen = false;
-    if (next === "reports") void loadReports();
+    setAiMode(next);
   }
 
   function openReport(runId: string) {
-    reportId = runId;
-    setMode("reports");
+    showAiReports(runId);
   }
 
   async function loadReports() {
@@ -136,6 +168,11 @@
     if (current && current === reportRunId) await loadReport(current, true);
   }
 
+  function onPruned(_outcome: AiPruneOutcome) {
+    reportId = null;
+    void refreshReports();
+  }
+
   async function download(format: AiReportFormat) {
     downloadMenuOpen = false;
     const runId = reportRunId;
@@ -143,11 +180,34 @@
     exporting = true;
     try {
       const path = await invoke<string | null>("ai_report_export", { runId, format });
-      if (path) notify(`Report saved to ${path}`, "success");
+      if (path) savedFile = { path, runId };
     } catch (err) {
       notify(`Could not save the report: ${err}`, "error");
     } finally {
       exporting = false;
+    }
+  }
+
+  async function viewHtml() {
+    const runId = reportRunId;
+    if (!runId) return;
+    viewingHtml = true;
+    try {
+      await invoke<string>("ai_report_view_html", { runId });
+      notify("Opened in your browser. Use its Print command to print or save as PDF.", "success");
+    } catch (err) {
+      notify(`Could not open the report: ${err}`, "error");
+    } finally {
+      viewingHtml = false;
+    }
+  }
+
+  async function filePath(command: "ai_open_path" | "ai_reveal_path") {
+    if (!savedFile) return;
+    try {
+      await invoke(command, { path: savedFile.path });
+    } catch (err) {
+      notify(`${command === "ai_open_path" ? "Could not open" : "Could not show"} the file: ${err}`, "error");
     }
   }
 
@@ -207,6 +267,16 @@
 </script>
 
 {#snippet reportActions()}
+  <button
+    type="button"
+    class="btn btn-secondary"
+    disabled={viewingHtml || reportRunId === null}
+    title="Open this report as a web page in your browser, ready to print"
+    onclick={viewHtml}
+  >
+    {#if viewingHtml}<span class="spinner size-3" aria-hidden="true"></span>{:else}<Printer size={14} />{/if}
+    View / Print
+  </button>
   <div class="relative">
     <button
       type="button"
@@ -231,6 +301,10 @@
       </div>
     {/if}
   </div>
+  <button type="button" class="btn btn-secondary" disabled={reportRunId === null} onclick={() => (cleanup = { runId: reportRunId })}>
+    <Trash2 size={14} />
+    Delete…
+  </button>
 {/snippet}
 
 <svelte:window onkeydown={onWindowKeydown} />
@@ -241,7 +315,7 @@
       <h1 class="view-title">AI agents</h1>
       <span class="text-sm tabular-nums text-muted">
         {#if mode === "reports"}
-          {reports.length} {reports.length === 1 ? "run" : "runs"} in the audit log
+          {#if filtering}{shownReports.length} of {/if}{reports.length} {reports.length === 1 ? "run" : "runs"} in the audit log
         {:else}
           {runs.length} {runs.length === 1 ? "run" : "runs"}
         {/if}
@@ -272,6 +346,10 @@
           Refresh
         </button>
       {/if}
+      <button type="button" class="btn btn-ghost" onclick={() => (cleanup = { runId: null })}>
+        <Trash2 size={14} />
+        Clean up…
+      </button>
       {#if waiting.length > 0}
         <button type="button" class="btn btn-primary" onclick={() => openApproval()}>
           Review {waiting.length} {waiting.length === 1 ? "approval" : "approvals"}
@@ -279,6 +357,39 @@
       {/if}
     </div>
   </header>
+
+  {#if mode === "reports" && reports.length > 0}
+    <div class="view-toolbar flex-wrap gap-2">
+      <label class="search-box w-64 lg:w-80">
+        <Search size={14} class="shrink-0" />
+        <input
+          type="text"
+          placeholder="Search agent, run id, user or host"
+          bind:value={reportQuery}
+          spellcheck="false"
+          autocomplete="off"
+          aria-label="Search reports"
+        />
+        {#if reportQuery}
+          <button type="button" class="btn-icon btn-icon-sm -mr-1" onclick={() => (reportQuery = "")} aria-label="Clear search">
+            <X size={13} />
+          </button>
+        {/if}
+      </label>
+      <div class="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter reports">
+        {#each REPORT_FILTERS as chip (chip.id)}
+          <button
+            type="button"
+            class="chip {reportFilter === chip.id ? 'chip-active' : ''}"
+            aria-pressed={reportFilter === chip.id}
+            onclick={() => (reportFilter = chip.id)}
+          >
+            {chip.label}
+          </button>
+        {/each}
+      </div>
+    </div>
+  {/if}
 
   <div class="view-body">
     {#if mode === "reports"}
@@ -313,13 +424,37 @@
       {:else if reports.length === 0}
         <div class="empty-state h-full">
           <div class="empty-state-icon"><FileText size={18} /></div>
-          <div class="empty-state-title">No runs in the audit log yet</div>
-          <p class="empty-state-desc">Runs appear here once an agent works through bssh.</p>
+          <div class="empty-state-title">No agent runs recorded yet</div>
+          <p class="empty-state-desc">
+            A report is written for every run of an AI agent that works through bssh, built from the signed
+            audit log. Set an agent up with <span class="mono">bssh ai install claude-code</span> (or codex,
+            cursor, vscode, claude-desktop, omp), restart it, and its runs show up here with everything it
+            did, step by step, ready to download or print.
+          </p>
+          <div class="empty-state-action">
+            <button type="button" class="btn btn-secondary" onclick={() => setMode("live")}>
+              <Bot size={14} />
+              See live runs
+            </button>
+          </div>
         </div>
       {:else}
         <div class="grid items-start gap-4 lg:grid-cols-[minmax(260px,340px)_minmax(0,1fr)]">
           <ul class="m-0 flex list-none flex-col gap-2 p-0" aria-label="Past runs">
-            {#each reports as item (item.run_id)}
+            {#if shownReports.length === 0}
+              <li class="type-meta px-1 py-2">
+                No run matches.
+                <button
+                  type="button"
+                  class="link"
+                  onclick={() => {
+                    reportQuery = "";
+                    reportFilter = "all";
+                  }}>Clear the filters</button
+                >
+              </li>
+            {/if}
+            {#each shownReports as item (item.run_id)}
               {@const isSelected = reportRunId === item.run_id}
               <li>
                 <button
@@ -351,7 +486,15 @@
                     {#if item.changes > 0}
                       <span class="tabular-nums">{item.changes} {item.changes === 1 ? "change" : "changes"}</span>
                     {/if}
+                    {#if (item.approvals ?? 0) > 0}
+                      <span class="tabular-nums">{item.approvals} {item.approvals === 1 ? "approval" : "approvals"}</span>
+                    {/if}
                   </span>
+                  {#if item.on_behalf_of || (item.hosts && item.hosts.length > 0)}
+                    <span class="mt-1 block truncate text-xs text-muted">
+                      {#if item.on_behalf_of}for {item.on_behalf_of}{/if}{#if item.on_behalf_of && item.hosts?.length}{" · "}{/if}{#if item.hosts?.length}{item.hosts.join(", ")}{/if}
+                    </span>
+                  {/if}
                 </button>
               </li>
             {/each}
@@ -362,6 +505,27 @@
               <div class="alert alert-error" role="alert">
                 <div class="alert-title">Could not refresh the list</div>
                 <p class="m-0 text-xs">{reportsError}</p>
+              </div>
+            {/if}
+            {#if savedFile}
+              <div class="alert alert-success flex flex-wrap items-center gap-x-3 gap-y-2" role="status">
+                <div class="min-w-0 flex-1">
+                  <div class="alert-title">Report saved</div>
+                  <p class="m-0 break-all text-xs">Report saved to {savedFile.path}</p>
+                </div>
+                <div class="flex items-center gap-2">
+                  <button type="button" class="btn btn-secondary btn-sm" onclick={() => filePath("ai_open_path")}>
+                    <ExternalLink size={13} />
+                    Open
+                  </button>
+                  <button type="button" class="btn btn-secondary btn-sm" onclick={() => filePath("ai_reveal_path")}>
+                    <FolderOpen size={13} />
+                    Show in folder
+                  </button>
+                  <button type="button" class="btn-icon btn-icon-sm" onclick={() => (savedFile = null)} aria-label="Dismiss">
+                    <X size={13} />
+                  </button>
+                </div>
               </div>
             {/if}
             {#if shownReport}
@@ -390,6 +554,12 @@
           vscode, claude-desktop, omp), then restart it. Runs appear here while it works through
           bssh.
         </p>
+        <div class="empty-state-action">
+          <button type="button" class="btn btn-secondary" onclick={() => setMode("reports")}>
+            <FileText size={14} />
+            Browse past reports
+          </button>
+        </div>
       </div>
     {:else}
       <div class="grid items-start gap-4 lg:grid-cols-[minmax(260px,340px)_minmax(0,1fr)]">
@@ -420,6 +590,17 @@
                   <span class="tabular-nums">{run.calls} {run.calls === 1 ? "call" : "calls"}</span>
                 </span>
               </button>
+              {#if run.ended !== null}
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm mt-1"
+                  aria-label="Open the report of {run.client || 'this run'}, {shortId(run.run_id)}"
+                  onclick={() => openReport(run.run_id)}
+                >
+                  <FileText size={13} />
+                  Open report
+                </button>
+              {/if}
             </li>
           {/each}
         </ul>
@@ -605,3 +786,7 @@
     {/if}
   </div>
 </div>
+
+{#if cleanup}
+  <CleanupDialog {timezone} initialRunId={cleanup.runId} onClose={() => (cleanup = null)} onDone={onPruned} />
+{/if}

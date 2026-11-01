@@ -27,6 +27,10 @@
  *   window.__MOCK_AI_SETTINGS - what `ai_settings` returns.
  *   window.__MOCK_AI_REPORTS - past runs `ai_reports` returns (default none).
  *   window.__MOCK_AI_REPORT  - `{ [runId]: RunReport }` for `ai_report`.
+ *   window.__MOCK_AI_VIEW_FAIL - truthy: `ai_report_view_html` fails.
+ *   window.__MOCK_AI_STORAGE - what `ai_storage` returns.
+ *   window.__MOCK_AI_PRUNE_PLAN - what `ai_prune_plan` / `ai_prune` report as the plan.
+ *   window.__MOCK_AI_ARCHIVE_DIR - what `ai_pick_archive_dir` returns; null = cancelled.
  *   window.__MOCK_AI_SAVE_DIR - where `ai_report_export` "saves"; null = cancelled.
  *   window.__UPLOAD_DELAY   - ms delay per upload progress step (default 20).
  *   window.__UPLOAD_SCP_HOSTS  - host names that report `viaScp` (default
@@ -519,9 +523,73 @@
     },
     ai_report_export: (a) => {
       const dir = window.__MOCK_AI_SAVE_DIR === undefined ? "/home/user/Downloads" : window.__MOCK_AI_SAVE_DIR;
-      return dir === null ? null : `${dir}/bssh-run-${String(a.runId).slice(0, 8)}.${a.format}`;
+      if (dir === null) return null;
+      const path = `${dir}/bssh-run-${String(a.runId).slice(0, 8)}.${a.format}`;
+      (window.__MOCK_AI_SAVED = window.__MOCK_AI_SAVED || []).push(path);
+      return path;
     },
+    ai_report_view_html: (a) => {
+      if (window.__MOCK_AI_VIEW_FAIL) throw "could not open the report: no browser";
+      const path = `/home/user/.cache/bssh/ai-reports/${String(a.runId).slice(0, 8)}.html`;
+      (window.__MOCK_AI_SAVED = window.__MOCK_AI_SAVED || []).push(path);
+      return path;
+    },
+    // Like the backend: only files the app wrote in this session.
+    ai_open_path: (a) => {
+      if (!(window.__MOCK_AI_SAVED || []).includes(a.path)) throw "Only report files saved by this app can be opened";
+      return null;
+    },
+    ai_reveal_path: (a) => {
+      if (!(window.__MOCK_AI_SAVED || []).includes(a.path)) throw "Only report files saved by this app can be opened";
+      return null;
+    },
+    ai_storage: () =>
+      window.__MOCK_AI_STORAGE || {
+        log_bytes: 48200,
+        recordings_bytes: 1500000,
+        backups_bytes: 250000,
+        runs_db_bytes: 20480,
+        archives_bytes: 0,
+        runs: 2,
+        oldest: iso(60 * 24 * 40),
+      },
+    ai_prune_plan: (a) => mockPrunePlan(a.req),
+    ai_prune: (a) => {
+      const archive_dir =
+        a.req.mode === "archive" ? a.req.archive_dir || "/home/user/.bssh/ai/archive/20261101-120000" : null;
+      // Like the backend: the archive's manifest may be revealed.
+      if (archive_dir) (window.__MOCK_AI_SAVED = window.__MOCK_AI_SAVED || []).push(`${archive_dir}/manifest.json`);
+      return { plan: mockPrunePlan(a.req), log_bytes_after: 1200, archive_dir, verify_ok: window.__MOCK_AI_VERIFY_OK !== false };
+    },
+    ai_pick_archive_dir: () => (window.__MOCK_AI_ARCHIVE_DIR === undefined ? "/home/user/archives" : window.__MOCK_AI_ARCHIVE_DIR),
   };
+
+  function mockPrunePlan(req) {
+    const base = window.__MOCK_AI_PRUNE_PLAN || {};
+    const all = (window.__MOCK_AI_REPORTS || []).filter((r) => r.ended);
+    let picked = all;
+    if (req.selection.kind === "runs") picked = all.filter((r) => req.selection.ids.includes(r.run_id));
+    const runs = picked.map((r) => ({
+      run_id: r.run_id,
+      client: r.client,
+      started: r.started,
+      ended: r.ended,
+      entries: 6,
+      recordings: 1,
+      backup_bytes: 1024,
+    }));
+    return {
+      runs,
+      skipped_active: [],
+      entries: runs.length * 6,
+      recordings: runs.length,
+      bytes: runs.length * 4096,
+      log_bytes_before: 48200,
+      mode: req.mode,
+      archive_dir: req.mode === "archive" ? req.archive_dir : null,
+      ...base,
+    };
+  }
 
   const sessionChannels = new Map();
 

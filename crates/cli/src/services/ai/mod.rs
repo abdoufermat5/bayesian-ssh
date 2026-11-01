@@ -26,6 +26,7 @@ pub mod jail;
 // Audit, reports, client install
 pub mod audit;
 pub mod install;
+pub mod prune;
 pub mod report;
 pub mod report_doc;
 // The look shared by every AI surface

@@ -4,6 +4,7 @@ import type {
   AiApprovalRequest,
   AiDecision,
   AiRedaction,
+  AiReportSummary,
   AiRiskTag,
   AiStep,
   AiStoredEvent,
@@ -301,4 +302,40 @@ export function argString(args: unknown, key: string): string | null {
 export function argStrings(args: unknown, key: string): string[] {
   const v = argField(args, key);
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+}
+
+// ---------------------------------------------------------------- reports list
+
+export type ReportFilter = "all" | "changes" | "denials" | "approvals";
+
+export const REPORT_FILTERS: { id: ReportFilter; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "changes", label: "With changes" },
+  { id: "denials", label: "With denials" },
+  { id: "approvals", label: "With approvals" },
+];
+
+/** Whether a run matches the chip. */
+export function reportMatchesFilter(r: AiReportSummary, filter: ReportFilter): boolean {
+  switch (filter) {
+    case "all":
+      return true;
+    case "changes":
+      return r.changes > 0;
+    case "denials":
+      return r.denials > 0;
+    case "approvals":
+      return (r.approvals ?? 0) > 0;
+  }
+}
+
+/** Runs matching every word of `query` (client, run id, user, host, policy) and the chip. */
+export function filterReports(reports: AiReportSummary[], query: string, filter: ReportFilter): AiReportSummary[] {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  return reports.filter((r) => {
+    if (!reportMatchesFilter(r, filter)) return false;
+    if (words.length === 0) return true;
+    const hay = [r.run_id, r.client, r.on_behalf_of, r.policy, ...(r.hosts ?? [])].join("\n").toLowerCase();
+    return words.every((w) => hay.includes(w));
+  });
 }
