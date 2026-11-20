@@ -3,75 +3,73 @@ import { invoke, Channel } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Terminal } from "@xterm/xterm";
-import { FitAddon } from "@xterm/addon-fit";
 import type { SearchAddon } from "@xterm/addon-search";
-import type { Connection, DesktopSettings } from "$lib/types";
+import type { Connection } from "$lib/types";
 import { ensureKerberosForConnection } from "$lib/stores/kerberos.svelte";
 import { notify } from "$lib/stores/notifications.svelte";
-import { getCurrentXtermTheme } from "$lib/utils/theme";
 import {
   createXtermSession,
   safeWrite,
   syncPtySize,
   waitForTerminalFont,
   type PtyChunk,
-  type XtermSessionHandle,
 } from "$lib/utils/terminal-xterm";
 import { snapshotTerminal } from "$lib/utils/terminal-snapshot";
+import {
+  containsPane,
+  insertPane,
+  paneIds,
+  removePane,
+  setSplitRatio,
+  type SplitNode,
+  type SplitSide,
+} from "$lib/utils/split-layout";
+import {
+  groupAtDrop,
+  groupContiguous,
+  nextTabGroupColor,
+  type TabGroup,
+} from "$lib/utils/tab-groups";
 import {
   requestAttentionIfUnfocused,
   setWindowProgress,
   type ProgressState,
 } from "$lib/utils/terminal-signals";
-type SettingsGetter = () => DesktopSettings | undefined;
-let _settingsGetter: SettingsGetter | null = null;
-
-export function registerSettingsGetter(getter: SettingsGetter) {
-  _settingsGetter = getter;
-}
-
-export function getTerminalSettings(): DesktopSettings | undefined {
-  return _settingsGetter?.();
-}
-
-export const DEFAULT_TERMINAL_FONT_FAMILY =
-  "JetBrains Mono, Fira Code, Cascadia Code, Ubuntu Mono, DejaVu Sans Mono, Liberation Mono, Consolas, monospace";
-
-export function buildTerminalOptions(settings?: DesktopSettings): Record<string, unknown> {
-  const s = settings ?? _settingsGetter?.();
-  return {
-    cursorBlink: s?.terminal_cursor_blink ?? true,
-    cursorStyle: (s?.terminal_cursor_style ?? "block") as "block" | "bar" | "underline" | undefined,
-    fontFamily: s?.terminal_font_family || DEFAULT_TERMINAL_FONT_FAMILY,
-    fontSize: s?.terminal_font_size ?? 13,
-    lineHeight: s?.terminal_line_height ?? 1.18,
-    scrollback: s?.terminal_scrollback ?? 10000,
-    // Smooth scrolling animates every wheel tick and costs frames under load.
-    smoothScrollDuration: 0,
-    fontWeight: "normal",
-    theme: getCurrentXtermTheme(),
-    allowProposedApi: true,
-  };
-}
+import { buildTerminalOptions } from "$lib/utils/terminal-options";
+import {
+  describeConnectFailure,
+  parsePendingChangeError,
+  stripTerminalControls,
+  type ConnectFailure,
+} from "$lib/utils/connect-failure";
+import {
+  createRuntime,
+  disposeRuntime,
+  flushRuntime,
+  MAX_PENDING_OUTPUT_BYTES,
+  remeasureFonts,
+  runtimes,
+  scheduleFit,
+  setBlinkSuspended,
+} from "$lib/stores/terminal-runtime";
+import {
+  getTerminalFontSize,
+  initThemeSyncForTerminals,
+  resetTerminalFontSize,
+  updateTerminalFontSize,
+} from "$lib/stores/terminal-appearance.svelte";
+import {
+  addGroup,
+  deleteGroup,
+  expandTabGroup,
+  findGroup,
+  getTabGroups,
+  groupForHost,
+  rememberHost,
+  setGroupCollapsed,
+} from "$lib/stores/tab-groups.svelte";
 
 export type TerminalTabStatus = "connecting" | "connected" | "exited" | "error";
-
-/** Why a connection attempt ended, in plain words, plus ssh's own last lines. */
-export interface ConnectFailure {
-  title: string;
-  hint: string;
-  detail: string;
-}
-
-/** Prefix spawn_pty uses for a team-sync route change waiting for confirmation. */
-const PENDING_CHANGE_PREFIX = "connection-change-pending:";
-
-/** A team-sync route change the desktop must show before connecting. */
-interface PendingChangeError {
-  name: string;
-  detected_at: string;
-  changes: string[];
-}
 
 export interface PendingChangePrompt {
   tabId: string;
@@ -82,16 +80,6 @@ export interface PendingChangePrompt {
 
 /** Route change waiting for the user; renders `ConnectionChangeModal`. */
 let pendingChange = $state<PendingChangePrompt | null>(null);
-
-function parsePendingChangeError(e: unknown): PendingChangeError | null {
-  const message = String(e);
-  if (!message.startsWith(PENDING_CHANGE_PREFIX)) return null;
-  try {
-    return JSON.parse(message.slice(PENDING_CHANGE_PREFIX.length)) as PendingChangeError;
-  } catch {
-    return null;
-  }
-}
 
 /** ssh exits with 255 for its own errors; one that ends this soon never connected. */
 const SSH_ERROR_EXIT = 255;
@@ -107,6 +95,8 @@ export interface TerminalTab {
   status: TerminalTabStatus;
   /** Host this tab connects to; absent for re-attached sessions. */
   readonly conn: Connection | undefined;
+  /** Tab group this tab belongs to, if any. */
+  readonly groupId: string | null;
   /** When the current connection attempt started (ms since epoch). */
   connectStartedAt: number;
   /** Set when status is "error". */
@@ -121,24 +111,6 @@ export interface TerminalTab {
   progress: { state: ProgressState; value: number } | null;
 }
 
-/** Non-reactive per-tab runtime: xterm objects, buffers and cleanups. */
-interface TabRuntime {
-  session?: XtermSessionHandle;
-  term?: Terminal;
-  fitAddon?: FitAddon;
-  searchAddon?: SearchAddon;
-  /** Output received while the tab is hidden or still being created. */
-  pending: Array<{ data: string; bytes: number }>;
-  pendingBytes: number;
-  fitRaf: number | null;
-  /** Cursor blink turned off while the Terminals view is hidden. */
-  blinkSuspended: boolean;
-  /** Plain-text tail of ssh's output, kept to explain a failed connect. */
-  recentOutput: string;
-}
-
-const runtimes = new Map<string, TabRuntime>();
-
 class TabState implements TerminalTab {
   readonly id: string;
   readonly name: string;
@@ -152,6 +124,7 @@ class TabState implements TerminalTab {
   remoteTitle = $state<string | null>(null);
   bell = $state(false);
   progress = $state<{ state: ProgressState; value: number } | null>(null);
+  groupId = $state<string | null>(null);
 
   constructor(id: string, name: string, connectionName: string, status: TerminalTabStatus, conn?: Connection) {
     this.id = id;
@@ -189,70 +162,18 @@ interface ReattachSessionPayload {
   buffered_output: string;
 }
 
-let terminalFontSize = $state(13);
-/** Size from Settings; zoom changes `terminalFontSize` and, below, the settings object. */
-let configuredFontSize: number | null = null;
-let themeSyncInitialized = false;
-
-export function initThemeSyncForTerminals() {
-  if (themeSyncInitialized || typeof window === "undefined") return;
-  themeSyncInitialized = true;
-
-  const observer = new MutationObserver(() => {
-    applyThemeToAllTerminals();
-  });
-  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
-}
-
-export function applyThemeToAllTerminals(settings?: DesktopSettings) {
-  const currentTheme = getCurrentXtermTheme();
-  if (settings?.terminal_font_size) {
-    // Keep keyboard/wheel zoom relative to the saved size, not the default.
-    terminalFontSize = settings.terminal_font_size;
-    configuredFontSize = settings.terminal_font_size;
-  }
-  for (const rt of runtimes.values()) {
-    const term = rt.term;
-    if (!term) continue;
-    term.options.theme = currentTheme;
-    if (settings?.terminal_font_family) term.options.fontFamily = settings.terminal_font_family;
-    if (settings?.terminal_font_size) term.options.fontSize = settings.terminal_font_size;
-    if (settings?.terminal_line_height) term.options.lineHeight = settings.terminal_line_height;
-    if (settings?.terminal_cursor_style) term.options.cursorStyle = settings.terminal_cursor_style;
-    // While hidden, blink stays off; the saved value is restored on show.
-    if (settings?.terminal_cursor_blink !== undefined && !rt.blinkSuspended) {
-      term.options.cursorBlink = settings.terminal_cursor_blink;
-    }
-    if (settings?.terminal_scrollback) term.options.scrollback = settings.terminal_scrollback;
-  }
-  fitActiveTerminal();
-}
-
-export function getTerminalFontSize(): number {
-  return terminalFontSize;
-}
-
-export function updateTerminalFontSize(newSize: number) {
-  terminalFontSize = Math.max(8, Math.min(32, newSize));
-  const settings = getTerminalSettings();
-  configuredFontSize ??= settings?.terminal_font_size ?? 13;
-  if (settings && settings.terminal_font_size !== terminalFontSize) {
-    settings.terminal_font_size = terminalFontSize;
-  }
-  for (const [id, rt] of runtimes) {
-    if (!rt.term) continue;
-    rt.term.options.fontSize = terminalFontSize;
-    // Hidden tabs are skipped by scheduleFit and refit when activated.
-    scheduleFit(id);
-  }
-}
-
 /** Metadata only; replaced wholesale on add/remove. */
 let tabs = $state.raw<TabState[]>([]);
 let detachedSessions = $state<DetachedSession[]>([]);
 let popoutSessions = $state<PopoutSession[]>([]);
 let activeSessionCount = $state(0);
 let activeTabId = $state<string | null>(null);
+/** Split layouts; each shows two or more tabs side by side. */
+let splits = $state.raw<SplitNode[]>([]);
+/** Tabs whose terminal is on screen: the active tab's split, or the active tab alone. */
+let shownIds: string[] = [];
+/** Group of a session while it runs in the background or in its own window. */
+const awayGroups = new Map<string, string>();
 let listenersReady = false;
 let listenersInFlight: Promise<void> | null = null;
 let unlistenExit: UnlistenFn | null = null;
@@ -280,16 +201,28 @@ function findDetachedSession(sessionId: string): DetachedSession | undefined {
   return detachedSessions.find((s) => s.id === sessionId);
 }
 
-/** Cap on output buffered for a hidden tab before it is handed to xterm. */
-const MAX_PENDING_OUTPUT_BYTES = 256 * 1024;
+function splitOf(tabId: string | null): SplitNode | undefined {
+  return tabId ? splits.find((root) => containsPane(root, tabId)) : undefined;
+}
 
-function flushRuntime(rt: TabRuntime) {
-  if (!rt.session || rt.pending.length === 0) return;
-  const chunks = rt.pending;
-  rt.pending = [];
-  rt.pendingBytes = 0;
-  for (const chunk of chunks) {
-    rt.session.write(chunk.data, chunk.bytes);
+/** Show the terminals now on screen and release the renderers of the rest. */
+function updateShownTerminals() {
+  const root = splitOf(activeTabId);
+  const next = root ? paneIds(root) : activeTabId ? [activeTabId] : [];
+  for (const id of shownIds) {
+    if (!next.includes(id)) runtimes.get(id)?.session?.setVisible(false);
+  }
+  shownIds = next;
+  if (terminalsVisible) revealShownTerminals();
+}
+
+function revealShownTerminals() {
+  for (const id of shownIds) {
+    const rt = runtimes.get(id);
+    if (!rt) continue;
+    rt.session?.setVisible(true);
+    flushRuntime(rt);
+    scheduleFit(id);
   }
 }
 
@@ -301,12 +234,8 @@ export function flushPendingTabOutput(tab: Pick<TerminalTab, "id">) {
 export function setActiveTab(tabId: string | null) {
   if (activeTabId === tabId) return;
 
-  if (activeTabId) {
-    const oldRt = runtimes.get(activeTabId);
-    oldRt?.session?.setVisible(false);
-  }
-
   activeTabId = tabId;
+  updateShownTerminals();
   if (!tabId) {
     void setWindowProgress(0, 0);
     return;
@@ -315,6 +244,7 @@ export function setActiveTab(tabId: string | null) {
   const tab = findTab(tabId);
   if (tab) {
     tab.bell = false;
+    if (tab.groupId) expandTabGroup(tab.groupId);
     if (tab.progress) {
       void setWindowProgress(tab.progress.state, tab.progress.value);
     } else {
@@ -323,41 +253,13 @@ export function setActiveTab(tabId: string | null) {
   }
 
   const rt = runtimes.get(tabId);
-  if (!rt) return;
-
-  if (terminalsVisible) {
-    rt.session?.setVisible(true);
-  }
-
-  flushRuntime(rt);
-  if (rt.term) {
-    requestAnimationFrame(() => {
-      scheduleFit(tabId);
-      rt.term?.focus();
-    });
+  if (rt?.term) {
+    requestAnimationFrame(() => rt.term?.focus());
   }
 }
 
 /** False while another view covers the Terminals panel. */
 let terminalsVisible = false;
-
-function desiredCursorBlink(): boolean {
-  return getTerminalSettings()?.terminal_cursor_blink ?? true;
-}
-
-function setBlinkSuspended(rt: TabRuntime, suspend: boolean) {
-  const term = rt.term;
-  if (!term) return;
-  if (suspend) {
-    if (!rt.blinkSuspended && term.options.cursorBlink) {
-      term.options.cursorBlink = false;
-      rt.blinkSuspended = true;
-    }
-  } else if (rt.blinkSuspended) {
-    term.options.cursorBlink = desiredCursorBlink();
-    rt.blinkSuspended = false;
-  }
-}
 
 /** Pause rendering output into xterm (and cursor blink) while the Terminals
  *  view is hidden; buffered output is flushed into the active tab on show. */
@@ -370,13 +272,7 @@ export function setTerminalsVisible(visible: boolean) {
       rt.session?.setVisible(false);
     }
   }
-  if (!visible || !activeTabId) return;
-  const rt = runtimes.get(activeTabId);
-  if (rt) {
-    rt.session?.setVisible(true);
-    flushRuntime(rt);
-    scheduleFit(activeTabId);
-  }
+  if (visible) revealShownTerminals();
 }
 
 function deliverPtyOutput(sessionId: string, data: string, bytes: number) {
@@ -430,73 +326,6 @@ export function closeTerminalSearch(tabId?: string) {
   if (tab) tab.showSearch = false;
 }
 
-function isContainerVisible(container: HTMLElement | null | undefined): boolean {
-  if (!container) return false;
-  // display:none (hidden tab/view) or detached from the document → skip.
-  return container.isConnected && container.offsetParent !== null;
-}
-
-/**
- * Fit a tab's terminal at most once per animation frame. `fit()` only
- * resizes when cols/rows change, and the PTY is told via `term.onResize`,
- * so unchanged layouts never reach the backend.
- */
-function scheduleFit(tabId: string) {
-  const rt = runtimes.get(tabId);
-  if (!rt?.term || !rt.fitAddon || rt.fitRaf !== null) return;
-  rt.fitRaf = requestAnimationFrame(() => {
-    rt.fitRaf = null;
-    const term = rt.term;
-    if (!term || !rt.fitAddon || !isContainerVisible(term.element?.parentElement)) return;
-    try {
-      rt.fitAddon.fit();
-    } catch {
-      // Container may not have dimensions yet.
-    }
-  });
-}
-
-function createRuntime(tabId: string): TabRuntime {
-  const existing = runtimes.get(tabId);
-  if (existing) return existing;
-  const rt: TabRuntime = {
-    pending: [],
-    pendingBytes: 0,
-    fitRaf: null,
-    blinkSuspended: false,
-    recentOutput: "",
-  };
-  runtimes.set(tabId, rt);
-  return rt;
-}
-
-function disposeRuntime(tabId: string) {
-  const rt = runtimes.get(tabId);
-  if (!rt) return;
-  runtimes.delete(tabId);
-  if (rt.fitRaf !== null) cancelAnimationFrame(rt.fitRaf);
-  for (const chunk of rt.pending) {
-    if (chunk.bytes > 0) {
-      invoke("ack_pty", { sessionId: tabId, bytes: chunk.bytes }).catch(() => {});
-    }
-  }
-  rt.pending = [];
-  rt.pendingBytes = 0;
-  rt.session?.dispose();
-}
-
-/** Re-measure open terminals when the font finished loading after timeout. */
-function remeasureFonts() {
-  for (const [id, rt] of runtimes) {
-    const term = rt.term;
-    if (!term) continue;
-    const family = term.options.fontFamily;
-    term.options.fontFamily = "monospace";
-    term.options.fontFamily = family;
-    scheduleFit(id);
-  }
-}
-
 async function openTerminalInstance(
   tabId: string,
   container: HTMLElement,
@@ -523,7 +352,7 @@ async function openTerminalInstance(
     },
     onShortcut: runTerminalShortcut,
     onZoom: (delta) => {
-      updateTerminalFontSize(terminalFontSize + delta);
+      updateTerminalFontSize(getTerminalFontSize() + delta);
     },
     signals: {
       onTitle: (title) => {
@@ -532,7 +361,7 @@ async function openTerminalInstance(
         }
       },
       onBell: () => {
-        const isTabActive = tabId === activeTabId && terminalsVisible;
+        const isTabActive = shownIds.includes(tabId) && terminalsVisible;
         getCurrentWindow().isFocused().then((isFocused) => {
           if (tab && (!isTabActive || !isFocused)) {
             tab.bell = true;
@@ -560,7 +389,7 @@ async function openTerminalInstance(
   rt.fitAddon = session.fitAddon;
   rt.searchAddon = session.searchAddon;
 
-  const isVisible = tabId === activeTabId && terminalsVisible;
+  const isVisible = shownIds.includes(tabId) && terminalsVisible;
   session.setVisible(isVisible);
 
   if (!terminalsVisible) setBlinkSuspended(rt, true);
@@ -630,6 +459,9 @@ async function mountReattachedSession(info: ReattachSessionPayload): Promise<voi
   }
 
   const tab = new TabState(info.session_id, info.connection_name, info.connection_name, "connected");
+  const groupId = awayGroups.get(info.session_id);
+  awayGroups.delete(info.session_id);
+  if (findGroup(groupId ?? null)) tab.groupId = groupId!;
   const term = await mountTerminalTab(tab, { replay: info.buffered_output });
   if (!term) return;
 
@@ -648,19 +480,36 @@ function removeDetachedSession(sessionId: string) {
   detachedSessions = detachedSessions.filter((s) => s.id !== sessionId);
 }
 
+/** Take a tab out of its split; a split left with one pane dissolves. */
+function leaveSplit(tabId: string) {
+  splits = splits.flatMap((root) => {
+    if (!containsPane(root, tabId)) return [root];
+    const rest = removePane(root, tabId);
+    return rest?.kind === "split" ? [rest] : [];
+  });
+}
+
 function cleanupTabUi(tabId: string) {
   disposeRuntime(tabId);
+  const root = splitOf(tabId);
+  const panes = root ? paneIds(root) : [];
+  const at = panes.indexOf(tabId);
+  const paneNeighbour = panes[at + 1] ?? panes[at - 1];
+  leaveSplit(tabId);
+  shownIds = shownIds.filter((id) => id !== tabId);
   if (findTab(tabId)) tabs = tabs.filter((t) => t.id !== tabId);
 
   if (activeTabId === tabId) {
-    setActiveTab(tabs.length > 0 ? tabs[0].id : null);
+    setActiveTab(paneNeighbour ?? (tabs.length > 0 ? tabs[0].id : null));
+  } else {
+    updateShownTerminals();
   }
 }
 
 /** Re-fit the active terminal — e.g. when switching back to the Terminals
  *  view. Hidden tabs are fitted when they become active. */
 export function fitActiveTerminal() {
-  if (activeTabId) scheduleFit(activeTabId);
+  for (const id of shownIds) scheduleFit(id);
 }
 
 /** Focus the active terminal tab's xterm instance. */
@@ -723,11 +572,13 @@ export async function initTerminalListeners(onHistoryChanged?: HistoryCallback) 
       exitCodes.delete(sessionId);
 
       if (findDetachedSession(sessionId)) {
+        awayGroups.delete(sessionId);
         removeDetachedSession(sessionId);
         return;
       }
 
       if (popoutSessions.some((s) => s.id === sessionId)) {
+        awayGroups.delete(sessionId);
         removePopoutSession(sessionId);
         return;
       }
@@ -837,15 +688,29 @@ async function waitForTerminalContainer(tabId: string): Promise<HTMLElement | nu
   return null;
 }
 
+/** New tabs go after the last tab of their group, or at the end. */
+function withTabPlaced(tab: TabState): TabState[] {
+  let at = tabs.length;
+  if (tab.groupId) {
+    tabs.forEach((t, i) => {
+      if (t.groupId === tab.groupId) at = i + 1;
+    });
+  }
+  return [...tabs.slice(0, at), tab, ...tabs.slice(at)];
+}
+
 async function mountTerminalTab(
   tab: TabState,
-  options?: { banner?: string; replay?: string },
+  options?: { banner?: string; replay?: string; split?: { targetId: string; side: SplitSide } },
 ): Promise<Terminal | null> {
   // The runtime exists before the xterm instance so output arriving during
   // creation is buffered rather than dropped.
   createRuntime(tab.id);
-  tabs = [...tabs, tab];
-  activeTabId = tab.id;
+  tabs = withTabPlaced(tab);
+  if (options?.split && findTab(options.split.targetId)) {
+    placeInSplit(tab.id, options.split.targetId, options.split.side);
+  }
+  setActiveTab(tab.id);
 
   const container = await waitForTerminalContainer(tab.id);
   if (!container) {
@@ -854,80 +719,6 @@ async function mountTerminalTab(
   }
 
   return openTerminalInstance(tab.id, container, options);
-}
-
-const ANSI_PATTERN = new RegExp(
-  String.raw`\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]`,
-  "g",
-);
-
-function stripTerminalControls(data: string): string {
-  return data.replace(ANSI_PATTERN, "").replace(/\r/g, "");
-}
-
-/** Plain-words explanation of the last ssh output; the raw lines stay as detail. */
-function describeConnectFailure(output: string): ConnectFailure {
-  const detail = output
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .slice(-6)
-    .join("\n");
-  const has = (re: RegExp) => re.test(detail);
-  if (has(/REMOTE HOST IDENTIFICATION HAS CHANGED/i)) {
-    return {
-      title: "The host's identity changed",
-      hint: "Its host key no longer matches the one saved earlier. Don't connect until you know why: it can mean a reinstall, or someone in the middle.",
-      detail,
-    };
-  }
-  if (has(/host key verification failed/i)) {
-    return {
-      title: "The host key wasn't accepted",
-      hint: "ssh couldn't verify this host's key. Check it with the host's owner, then add it to known_hosts.",
-      detail,
-    };
-  }
-  if (has(/permission denied|too many authentication failures|no supported authentication/i)) {
-    return {
-      title: "The host rejected your credentials",
-      hint: "Check the user name and the key or password. Edit the host to change them.",
-      detail,
-    };
-  }
-  if (has(/could not resolve hostname|name or service not known|nodename nor servname/i)) {
-    return {
-      title: "That host name can't be found",
-      hint: "Check the address for typos, and that your network or VPN is up.",
-      detail,
-    };
-  }
-  if (has(/connection refused/i)) {
-    return {
-      title: "The host refused the connection",
-      hint: "Nothing accepted the connection on that port. Check the port, and that the SSH service is running.",
-      detail,
-    };
-  }
-  if (has(/timed out|no route to host|network is unreachable/i)) {
-    return {
-      title: "The host didn't answer",
-      hint: "It may be offline, firewalled, or only reachable through a VPN or bastion.",
-      detail,
-    };
-  }
-  if (has(/connection closed|connection reset|broken pipe|kex_exchange_identification/i)) {
-    return {
-      title: "The host closed the connection",
-      hint: "It hung up before login finished. A firewall, a connection limit or a bastion setting may be the cause.",
-      detail,
-    };
-  }
-  return {
-    title: "ssh couldn't connect",
-    hint: detail ? "ssh reported:" : "ssh stopped without saying why.",
-    detail,
-  };
 }
 
 function failConnect(tab: TabState, failure: ConnectFailure) {
@@ -1013,12 +804,19 @@ export function dismissPendingChange(): void {
   pendingChange = null;
 }
 
+export interface ConnectOptions {
+  /** Always start a new session, even when one to this host is open. */
+  newTab?: boolean;
+  /** Open the new session beside the active tab, on this side. Implies `newTab`. */
+  split?: SplitSide;
+}
+
 /**
  * Connect to a host. Without `newTab`, a tab already open (or connecting) to
  * the same host is brought forward instead of starting a second session.
  */
-export async function connectSSH(conn: Connection, options: { newTab?: boolean } = {}): Promise<void> {
-  if (!options.newTab) {
+export async function connectSSH(conn: Connection, options: ConnectOptions = {}): Promise<void> {
+  if (!options.newTab && !options.split) {
     const open = tabs.find((t) => t.conn?.id === conn.id && (t.status === "connected" || t.status === "connecting"));
     if (open) {
       setActiveTab(open.id);
@@ -1032,8 +830,15 @@ export async function connectSSH(conn: Connection, options: { newTab?: boolean }
 
   const tabId = crypto.randomUUID().replace(/-/g, "").slice(0, 12);
   const newTab = new TabState(tabId, conn.name, conn.name, "connecting", conn);
+  // A host remembered by a group opens in it.
+  newTab.groupId = groupForHost(conn.id);
+  if (newTab.groupId) expandTabGroup(newTab.groupId);
 
-  const term = await mountTerminalTab(newTab);
+  const target = options.split ? activeTabId : null;
+  const term = await mountTerminalTab(
+    newTab,
+    target && options.split ? { split: { targetId: target, side: options.split } } : undefined,
+  );
   // Closed before the terminal finished mounting.
   if (!term) return;
 
@@ -1074,10 +879,12 @@ export async function reopenClosedTab(): Promise<void> {
   await connectSSH(conn, { newTab: true });
 }
 
+/** Next/previous tab, skipping tabs hidden in a collapsed group. */
 function cycleTab(step: 1 | -1) {
-  if (tabs.length < 2) return;
-  const index = tabs.findIndex((t) => t.id === activeTabId);
-  const next = tabs[(index + step + tabs.length) % tabs.length];
+  const reachable = tabs.filter((t) => t.id === activeTabId || !findGroup(t.groupId)?.collapsed);
+  if (reachable.length < 2) return;
+  const index = reachable.findIndex((t) => t.id === activeTabId);
+  const next = reachable[(index + step + reachable.length) % reachable.length];
   setActiveTab(next.id);
 }
 
@@ -1100,13 +907,13 @@ export function runTerminalShortcut(id: string): boolean {
       void reopenClosedTab();
       return true;
     case "term-zoom-in":
-      updateTerminalFontSize(terminalFontSize + 1);
+      updateTerminalFontSize(getTerminalFontSize() + 1);
       return true;
     case "term-zoom-out":
-      updateTerminalFontSize(terminalFontSize - 1);
+      updateTerminalFontSize(getTerminalFontSize() - 1);
       return true;
     case "term-zoom-reset":
-      updateTerminalFontSize(configuredFontSize ?? 13);
+      resetTerminalFontSize();
       return true;
     case "term-cancel": {
       const tab = activeTabId ? findTab(activeTabId) : undefined;
@@ -1135,6 +942,7 @@ export async function detachTab(tabId: string): Promise<void> {
     return;
   }
 
+  if (tab.groupId) awayGroups.set(tab.id, tab.groupId);
   cleanupTabUi(tabId);
 
   detachedSessions = [
@@ -1163,6 +971,7 @@ export async function popOutTab(tabId: string): Promise<void> {
     notify(`Failed to open terminal window: ${String(e)}`, "error");
     return;
   }
+  if (tab.groupId) awayGroups.set(tab.id, tab.groupId);
   cleanupTabUi(tabId);
   notify(`"${tab.name}" opened in a separate window — session continues`, "info");
   await syncPopoutSessions();
@@ -1247,6 +1056,7 @@ export async function terminatePopoutSession(sessionId: string): Promise<void> {
   } catch {
     // Session may already be closed.
   }
+  awayGroups.delete(sessionId);
   removePopoutSession(sessionId);
   await syncActiveSessionCount();
 }
@@ -1257,6 +1067,7 @@ export async function terminateDetachedSession(sessionId: string): Promise<void>
   } catch {
     // Session may already be closed.
   }
+  awayGroups.delete(sessionId);
   removeDetachedSession(sessionId);
   await syncActiveSessionCount();
 }
@@ -1282,11 +1093,159 @@ export async function closeAllTabs(): Promise<number> {
   const count = await invoke<number>("close_all_ptys");
   for (const id of [...runtimes.keys()]) disposeRuntime(id);
   tabs = [];
+  splits = [];
+  shownIds = [];
+  awayGroups.clear();
   detachedSessions = [];
   popoutSessions = [];
   activeTabId = null;
   activeSessionCount = 0;
   return count;
+}
+
+// ---- Split screen ------------------------------------------------------
+
+function placeInSplit(tabId: string, targetTabId: string, side: SplitSide) {
+  leaveSplit(tabId);
+  const root = splitOf(targetTabId);
+  const next = insertPane(root ?? { kind: "pane", tabId: targetTabId }, targetTabId, tabId, side);
+  splits = root ? splits.map((r) => (r === root ? next : r)) : [...splits, next];
+}
+
+/** Show `tabId` beside `targetTabId`, on `side` of it, and focus it. */
+export function splitTab(tabId: string, targetTabId: string, side: SplitSide) {
+  if (tabId === targetTabId || !findTab(tabId) || !findTab(targetTabId)) return;
+  placeInSplit(tabId, targetTabId, side);
+  if (activeTabId !== tabId) setActiveTab(tabId);
+  else updateShownTerminals();
+}
+
+/** Take a tab out of its split; it keeps running as a normal tab. */
+export function unsplitTab(tabId: string) {
+  if (!splitOf(tabId)) return;
+  leaveSplit(tabId);
+  updateShownTerminals();
+}
+
+export function resizeSplit(splitId: string, ratio: number) {
+  splits = splits.map((root) => setSplitRatio(root, splitId, ratio));
+}
+
+// ---- Tab groups --------------------------------------------------------
+
+
+
+
+function assignGroup(tab: TabState, groupId: string | null) {
+  const previous = tab.groupId;
+  if (previous === groupId) return;
+  tab.groupId = groupId;
+  const connId = tab.conn?.id;
+  if (!connId) return;
+  if (groupId) {
+    rememberHost(connId, groupId);
+  } else if (!tabs.some((t) => t !== tab && t.groupId === previous && t.conn?.id === connId)) {
+    rememberHost(connId, null);
+  }
+}
+
+/** Set a tab's group and move it right after the tabs of `anchorGroupId`. */
+function regroupTab(tab: TabState, groupId: string | null, anchorGroupId: string) {
+  assignGroup(tab, groupId);
+  const rest = tabs.filter((t) => t !== tab);
+  let at = tabs.indexOf(tab);
+  rest.forEach((t, i) => {
+    if (t.groupId === anchorGroupId) at = i + 1;
+  });
+  tabs = groupContiguous([...rest.slice(0, at), tab, ...rest.slice(at)]);
+}
+
+/** Start a group with this tab. Returns the new group's id. */
+export function createTabGroup(tabId: string, name = ""): string | undefined {
+  if (!findTab(tabId)) return undefined;
+  const group: TabGroup = {
+    id: crypto.randomUUID(),
+    name: name.trim(),
+    color: nextTabGroupColor(getTabGroups()),
+    collapsed: false,
+    hosts: [],
+  };
+  addGroup(group);
+  addTabToGroup(tabId, group.id);
+  return group.id;
+}
+
+export function addTabToGroup(tabId: string, groupId: string) {
+  const tab = findTab(tabId);
+  if (!tab || !findGroup(groupId) || tab.groupId === groupId) return;
+  regroupTab(tab, groupId, groupId);
+  expandTabGroup(groupId);
+}
+
+export function removeTabFromGroup(tabId: string) {
+  const tab = findTab(tabId);
+  if (!tab?.groupId) return;
+  regroupTab(tab, null, tab.groupId);
+}
+
+/**
+ * Move a tab before `beforeTabId` (to the end when null). Dropped inside a
+ * group it joins it; dropped outside its own group it leaves it.
+ */
+export function moveTab(tabId: string, beforeTabId: string | null) {
+  const tab = findTab(tabId);
+  if (!tab || tabId === beforeTabId) return;
+  const rest = tabs.filter((t) => t !== tab);
+  let at = beforeTabId ? rest.findIndex((t) => t.id === beforeTabId) : rest.length;
+  if (at < 0) at = rest.length;
+  assignGroup(tab, groupAtDrop(tab.groupId, rest[at - 1], rest[at]));
+  tabs = groupContiguous([...rest.slice(0, at), tab, ...rest.slice(at)]);
+}
+
+/** Collapsing the active tab's group moves to the nearest tab still in view. */
+export function toggleTabGroupCollapsed(groupId: string) {
+  const group = findGroup(groupId);
+  if (!group) return;
+  setGroupCollapsed(groupId, !group.collapsed);
+  if (group.collapsed) return;
+  const active = findTab(activeTabId ?? "");
+  if (active?.groupId !== groupId) return;
+  const at = tabs.indexOf(active);
+  const inView = (t: TabState) => !findGroup(t.groupId)?.collapsed;
+  const next = tabs.slice(at + 1).find(inView) ?? tabs.slice(0, at).reverse().find(inView);
+  if (next) setActiveTab(next.id);
+}
+
+/** Dissolve a group: its tabs stay open, the group and its hosts are forgotten. */
+export function ungroupTabGroup(groupId: string) {
+  for (const tab of tabs) {
+    if (tab.groupId === groupId) tab.groupId = null;
+  }
+  for (const [sessionId, id] of awayGroups) {
+    if (id === groupId) awayGroups.delete(sessionId);
+  }
+  deleteGroup(groupId);
+}
+
+/** Close every session of a group. The group keeps its hosts for later. */
+export async function closeTabGroup(groupId: string): Promise<void> {
+  for (const tab of tabs.filter((t) => t.groupId === groupId)) {
+    await disconnectTab(tab.id);
+  }
+}
+
+/** Connect to every host a group remembers, each in a new tab of the group. */
+export async function openTabGroup(groupId: string, connections: readonly Connection[]): Promise<void> {
+  const group = findGroup(groupId);
+  if (!group) return;
+  const hosts = connections.filter((c) => group.hosts.includes(c.id));
+  if (hosts.length === 0) {
+    notify(`No saved host is left in "${group.name || "this group"}"`, "info");
+    return;
+  }
+  for (const conn of hosts) {
+    await connectSSH(conn, { newTab: true });
+  }
 }
 
 export function getTerminalState() {
@@ -1302,6 +1261,18 @@ export function getTerminalState() {
     },
     get activeTabId() {
       return activeTabId;
+    },
+    /** Tab groups, open or remembered, in creation order. */
+    get groups(): readonly TabGroup[] {
+      return getTabGroups();
+    },
+    /** Split holding the active tab, when it is shown beside others. */
+    get activeSplit(): SplitNode | undefined {
+      return splitOf(activeTabId);
+    },
+    /** Every split layout, including those of tabs not in view. */
+    get splits(): readonly SplitNode[] {
+      return splits;
     },
     /** Metadata of the active tab, if any. */
     get activeTab(): TerminalTab | undefined {

@@ -5,7 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { DesktopSettings } from "$lib/types";
 import { getCurrentXtermTheme } from "$lib/utils/theme";
 import { isTerminalFocused } from "$lib/utils/terminal-focus";
-import { buildTerminalOptions } from "$lib/stores/terminal.svelte";
+import { buildTerminalOptions } from "$lib/utils/terminal-options";
 import {
   createXtermSession,
   safeWrite,

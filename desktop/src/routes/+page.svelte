@@ -47,8 +47,6 @@
     focusPopoutSession,
     terminateDetachedSession,
     terminatePopoutSession,
-    updateTerminalFontSize,
-    getTerminalFontSize,
   } from "$lib/stores/terminal.svelte";
   import { isTerminalPaletteKey } from "$lib/utils/terminal-xterm";
   import {
@@ -330,10 +328,9 @@
         <div class="view" class:hidden={appState.activeTab !== "terminals"}>
           <TerminalsView
             connections={appState.allConnections}
-            bind:searchQuery={appState.searchQuery}
             onCloseAll={appState.requestCloseAllSessions}
             onManageSessions={appState.openSessionManager}
-            onConnect={(conn) => appState.handleConnect(conn, { newTab: true })}
+            onConnect={(conn, options) => appState.handleConnect(conn, { newTab: true, ...options })}
           />
         </div>
       {/if}

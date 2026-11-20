@@ -1,8 +1,8 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import {
     AppWindow,
-    ChevronDown,
-    ChevronUp,
+    Columns2,
     Download,
     Eraser,
     Layers,
@@ -11,136 +11,113 @@
     MoreHorizontal,
     OctagonX,
     Plus,
+    Rows2,
     Search,
-    TerminalSquare,
-    TriangleAlert,
     Unlink,
-    X,
   } from "lucide-svelte";
   import type { Connection } from "$lib/types";
   import { notify } from "$lib/stores/notifications.svelte";
-  import { formatRelative } from "$lib/utils/timezone";
   import { downloadTerminalScrollback, terminalShortcutId } from "$lib/utils/terminal-xterm";
-  import { HOST_SHORTCUTS, TERMINAL_SHORTCUTS } from "$lib/shortcuts";
-  import { appState } from "$lib/stores/appState.svelte";
-  import { tabPopOutDrag } from "$lib/actions/tabPopOutDrag";
+  import type { TabDragHandlers } from "$lib/actions/tabDrag";
+  import { tabBarReattachDrop } from "$lib/actions/tabBarReattachDrop";
+  import GroupMenu from "$lib/components/terminal/GroupMenu.svelte";
+  import HostLauncher from "$lib/components/terminal/HostLauncher.svelte";
+  import SplitDividers from "$lib/components/terminal/SplitDividers.svelte";
+  import StripTab from "$lib/components/terminal/StripTab.svelte";
+  import TabMenu from "$lib/components/terminal/TabMenu.svelte";
+  import TerminalPane from "$lib/components/terminal/TerminalPane.svelte";
+  import TerminalsEmptyState from "$lib/components/terminal/TerminalsEmptyState.svelte";
   import {
-    encodeSessionDrag,
-    SESSION_DRAG_MIME,
-    type SessionDragPayload,
-    tabBarReattachDrop,
-  } from "$lib/actions/tabBarReattachDrop";
+    activateAwaySession,
+    bringBackSession,
+    endAwayDrag,
+    listAwaySessions,
+    startAwayDrag,
+  } from "$lib/components/terminal/away-sessions";
   import {
-    closeTerminalSearch,
+    cssPercent,
+    dropZone,
+    layoutBoxes,
+    paneAt,
+    paneIds,
+    zoneRect,
+    type Rect,
+    type SplitSide,
+  } from "$lib/utils/split-layout";
+  import { tabGroupColorVar, tabGroupLabel, type TabGroup } from "$lib/utils/tab-groups";
+  import { getTerminalFontSize, updateTerminalFontSize } from "$lib/stores/terminal-appearance.svelte";
+  import {
+    addTabToGroup,
     detachTab,
-    disconnectTab,
-    dockPopoutSession,
-    focusPopoutSession,
-    getTerminalFontSize,
     getTerminalState,
+    moveTab,
+    openTabGroup,
     popOutTab,
-    cancelConnect,
-    reattachSession,
-    retryConnect,
     runTerminalShortcut,
+    splitTab,
+    toggleTabGroupCollapsed,
     toggleTerminalSearch,
-    updateTerminalFontSize,
+    type ConnectOptions,
     type TerminalTab,
-    type TerminalTabStatus,
   } from "$lib/stores/terminal.svelte";
 
   interface Props {
     connections: Connection[];
-    searchQuery?: string;
     onCloseAll: () => void;
     onManageSessions: () => void;
-    onConnect: (conn: Connection) => void | Promise<void>;
+    onConnect: (conn: Connection, options?: Pick<ConnectOptions, "split">) => void | Promise<void>;
   }
 
-  let {
-    connections,
-    searchQuery = $bindable(""),
-    onCloseAll,
-    onManageSessions,
-    onConnect,
-  }: Props = $props();
+  let { connections, onCloseAll, onManageSessions, onConnect }: Props = $props();
 
   const terminalState = getTerminalState();
   const activeTab = $derived(terminalState.activeTab);
 
-  let tabSearchQueries = $state<Record<string, string>>({});
   let showLauncher = $state(false);
-  let launcherQuery = $state("");
-  let launcherIndex = $state(0);
+  /** Side of the active tab a launcher connection opens on; null opens a plain tab. */
+  let launcherSplit = $state<SplitSide | null>(null);
   let showMoreMenu = $state(false);
   let tabStrip = $state<HTMLDivElement | null>(null);
+  let stripBar = $state<HTMLDivElement | null>(null);
+  let surfaceArea = $state<HTMLDivElement | null>(null);
+  let tabMenu = $state<{ tabId: string; x: number; y: number } | null>(null);
+  let groupMenu = $state<{ groupId: string; x: number; y: number } | null>(null);
+  /** Element to refocus when a tab or group menu closes. */
+  let menuOpener: HTMLElement | null = null;
 
-  const CANCEL_KEY = TERMINAL_SHORTCUTS.find((s) => s.id === "term-cancel")?.combos[0].join("+") ?? "Esc";
-  const CONNECT_CLI = HOST_SHORTCUTS.find((s) => s.id === "host-connect")?.cli ?? "bssh connect <host>";
+  type DropTarget =
+    | { kind: "strip"; beforeTabId: string | null; markerX: number }
+    | { kind: "group"; groupId: string }
+    | { kind: "pane"; tabId: string; side: SplitSide | "center"; rect: Rect }
+    | { kind: "away" };
+  let drag = $state<{ tabId: string; target: DropTarget } | null>(null);
 
-  // Ticks once a second while a connection is in progress, for the elapsed time.
-  let now = $state(Date.now());
-  const anyConnecting = $derived(terminalState.tabs.some((t) => t.status === "connecting"));
-  $effect(() => {
-    if (!anyConnecting) return;
-    now = Date.now();
-    const timer = setInterval(() => (now = Date.now()), 1000);
-    return () => clearInterval(timer);
+  const awaySessions = $derived(listAwaySessions());
+  const groupsById = $derived(new Map(terminalState.groups.map((g) => [g.id, g])));
+
+  type StripItem =
+    | { kind: "tab"; tab: TerminalTab; group: TabGroup | undefined }
+    | { kind: "group"; group: TabGroup; count: number };
+
+  /** Tabs in order, each group's tabs preceded by its chip; collapsed groups show only the chip. */
+  const stripItems = $derived.by((): StripItem[] => {
+    const items: StripItem[] = [];
+    let current: string | null = null;
+    for (const tab of terminalState.tabs) {
+      const group = tab.groupId ? groupsById.get(tab.groupId) : undefined;
+      if (group && group.id !== current) {
+        const count = terminalState.tabs.filter((t) => t.groupId === group.id).length;
+        items.push({ kind: "group", group, count });
+      }
+      current = group?.id ?? null;
+      if (!group?.collapsed) items.push({ kind: "tab", tab, group });
+    }
+    return items;
   });
 
-  function elapsed(tab: TerminalTab): string {
-    const seconds = Math.max(0, Math.floor((now - tab.connectStartedAt) / 1000));
-    return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
-  }
-
-  function targetOf(tab: TerminalTab): string {
-    const c = tab.conn;
-    return c ? hostLine(c) : tab.name;
-  }
-
-  function editHost(tab: TerminalTab) {
-    const conn = connections.find((c) => c.name === tab.connectionName) ?? tab.conn;
-    if (conn) appState.openEditModal(conn);
-  }
-
-  function focusOnShow(node: HTMLElement) {
-    requestAnimationFrame(() => node.focus());
-  }
-
-  const awaySessions = $derived.by((): SessionDragPayload[] => [
-    ...terminalState.popoutSessions.map((session) => ({
-      sessionId: session.id,
-      kind: "popout" as const,
-      name: session.name,
-    })),
-    ...terminalState.detachedSessions.map((session) => ({
-      sessionId: session.id,
-      kind: "detached" as const,
-      name: session.name,
-    })),
-  ]);
-
-  /** Most recently used hosts first; never-used hosts keep their ranking. */
-  const recentHosts = $derived.by(() => {
-    const used = connections
-      .filter((c) => c.last_used)
-      .sort((a, b) => Date.parse(b.last_used!) - Date.parse(a.last_used!));
-    const rest = connections.filter((c) => !c.last_used);
-    return [...used, ...rest].slice(0, 6);
-  });
-
-  const launcherResults = $derived.by(() => {
-    const q = launcherQuery.trim().toLowerCase();
-    if (!q) return connections.slice(0, 8);
-    return connections
-      .filter(
-        (c) =>
-          c.name.toLowerCase().includes(q) ||
-          c.host.toLowerCase().includes(q) ||
-          c.user.toLowerCase().includes(q),
-      )
-      .slice(0, 30);
-  });
+  const splitLayout = $derived(terminalState.activeSplit ? layoutBoxes(terminalState.activeSplit) : null);
+  const paneRects = $derived(new Map(splitLayout?.panes.map((p) => [p.tabId, p.rect]) ?? []));
+  const splitTabIds = $derived(new Set(terminalState.splits.flatMap(paneIds)));
 
   // Keep the active tab visible in an overflowing strip.
   $effect(() => {
@@ -151,41 +128,12 @@
       ?.scrollIntoView({ block: "nearest", inline: "nearest" });
   });
 
-  function statusDot(status: TerminalTabStatus): string {
-    switch (status) {
-      case "connected":
-        return "status-dot-success";
-      case "connecting":
-        return "status-dot-warning";
-      case "error":
-        return "status-dot-error";
-      default:
-        return "status-dot-offline";
-    }
-  }
+  // ---- Launcher and toolbar menu ------------------------------------------
 
-  function statusLabel(status: TerminalTabStatus): string {
-    switch (status) {
-      case "connected":
-        return "Connected";
-      case "connecting":
-        return "Connecting";
-      case "error":
-        return "Failed to connect";
-      default:
-        return "Disconnected";
-    }
-  }
-
-  function hostLine(conn: Connection): string {
-    return `${conn.user}@${conn.host}${conn.port !== 22 ? `:${conn.port}` : ""}`;
-  }
-
-  function openLauncher() {
+  function openLauncher(split: SplitSide | null = null) {
     showMoreMenu = false;
-    launcherQuery = "";
-    launcherIndex = 0;
-    showLauncher = !showLauncher;
+    showLauncher = !(showLauncher && launcherSplit === split);
+    launcherSplit = split;
   }
 
   function closeMenus() {
@@ -194,53 +142,27 @@
   }
 
   async function handleConnect(conn: Connection) {
+    const split = launcherSplit;
     closeMenus();
     try {
-      await onConnect(conn);
+      await onConnect(conn, split ? { split } : undefined);
     } catch (e: unknown) {
       notify(String(e), "error");
     }
   }
 
-  function handleLauncherKeydown(e: KeyboardEvent) {
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      launcherIndex = Math.min(launcherIndex + 1, launcherResults.length - 1);
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      launcherIndex = Math.max(launcherIndex - 1, 0);
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      const conn = launcherResults[launcherIndex];
-      if (conn) void handleConnect(conn);
-    }
-  }
-
-  async function handleDropReattach(payload: SessionDragPayload) {
+  async function handleOpenGroup(groupId: string) {
+    closeMenus();
     try {
-      if (payload.kind === "popout") {
-        await dockPopoutSession(payload.sessionId);
-      } else {
-        await reattachSession(payload.sessionId);
-      }
+      await openTabGroup(groupId, connections);
     } catch (e: unknown) {
       notify(String(e), "error");
     }
   }
 
-  function activateAway(session: SessionDragPayload) {
-    if (session.kind === "popout") void focusPopoutSession(session.sessionId);
-    else void handleDropReattach(session);
-  }
-
-  function handleAwayDragStart(event: DragEvent, payload: SessionDragPayload) {
-    event.dataTransfer?.setData(SESSION_DRAG_MIME, encodeSessionDrag(payload));
-    if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
-    (event.currentTarget as HTMLElement).classList.add("away-chip-dragging");
-  }
-
-  function handleAwayDragEnd(event: DragEvent) {
-    (event.currentTarget as HTMLElement).classList.remove("away-chip-dragging");
+  function runMenuAction(action: () => void | Promise<void>) {
+    showMoreMenu = false;
+    void action();
   }
 
   /** Vertical wheel scrolls the overflowing tab strip sideways. */
@@ -253,35 +175,6 @@
     };
     node.addEventListener("wheel", onWheel, { passive: false });
     return { destroy: () => node.removeEventListener("wheel", onWheel) };
-  }
-
-  function zoomTerminal(delta: number) {
-    updateTerminalFontSize(getTerminalFontSize() + delta);
-  }
-
-  function runSearch(tab: TerminalTab, backwards = false) {
-    const query = tabSearchQueries[tab.id] ?? "";
-    if (!query) return;
-    if (backwards) tab.searchAddon?.findPrevious(query);
-    else tab.searchAddon?.findNext(query);
-  }
-
-  function closeSearch(tab: TerminalTab) {
-    tab.searchAddon?.clearDecorations();
-    closeTerminalSearch(tab.id);
-    tab.term?.focus();
-  }
-
-  function runMenuAction(action: () => void | Promise<void>) {
-    showMoreMenu = false;
-    void action();
-  }
-
-  function focusOnMount(node: HTMLInputElement) {
-    requestAnimationFrame(() => {
-      node.focus();
-      node.select();
-    });
   }
 
   function handleWindowKeydown(e: KeyboardEvent) {
@@ -300,43 +193,118 @@
     if (id === "term-cancel" && target instanceof HTMLInputElement) return;
     if (runTerminalShortcut(id)) e.preventDefault();
   }
+
+  // ---- Tab and group menus ------------------------------------------------
+
+  /** Menu position: the pointer for a right-click, below the element for a key. */
+  function menuPoint(e: MouseEvent | KeyboardEvent): { x: number; y: number } {
+    if (e instanceof MouseEvent && e.type === "contextmenu") return { x: e.clientX, y: e.clientY };
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    return { x: rect.left, y: rect.bottom + 4 };
+  }
+
+  function openTabMenu(e: MouseEvent | KeyboardEvent, tabId: string) {
+    e.preventDefault();
+    closeMenus();
+    groupMenu = null;
+    menuOpener = e.currentTarget as HTMLElement;
+    tabMenu = { tabId, ...menuPoint(e) };
+  }
+
+  function openGroupMenu(e: MouseEvent | KeyboardEvent, groupId: string) {
+    e.preventDefault();
+    closeMenus();
+    tabMenu = null;
+    menuOpener = e.currentTarget as HTMLElement;
+    groupMenu = { groupId, ...menuPoint(e) };
+  }
+
+  function closeFloatingMenu() {
+    tabMenu = null;
+    groupMenu = null;
+    menuOpener?.focus();
+    menuOpener = null;
+  }
+
+  /** A group just started from the tab menu: open its editor where the menu was. */
+  async function editNewGroup(groupId: string, at: { x: number; y: number }) {
+    await tick();
+    menuOpener = tabStrip?.querySelector<HTMLElement>(`[data-group-id="${groupId}"]`) ?? null;
+    groupMenu = { groupId, ...at };
+  }
+
+  // ---- Dragging tabs ------------------------------------------------------
+
+  function inside(rect: DOMRect, x: number, y: number): boolean {
+    return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+  }
+
+  function dropTargetAt(tabId: string, x: number, y: number): DropTarget {
+    const bar = stripBar?.getBoundingClientRect();
+    if (bar && inside(bar, x, y)) {
+      const chip = document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-group-id]");
+      if (chip?.dataset.groupId) return { kind: "group", groupId: chip.dataset.groupId };
+      const others = Array.from(tabStrip?.querySelectorAll<HTMLElement>("[data-tab-id]") ?? []).filter(
+        (el) => el.dataset.tabId !== tabId,
+      );
+      const before = others.find((el) => {
+        const r = el.getBoundingClientRect();
+        return x < r.left + r.width / 2;
+      });
+      const edge = before
+        ? before.getBoundingClientRect().left
+        : (others.at(-1)?.getBoundingClientRect().right ?? bar.left);
+      return { kind: "strip", beforeTabId: before?.dataset.tabId ?? null, markerX: edge - bar.left - 1 };
+    }
+
+    const area = surfaceArea?.getBoundingClientRect();
+    if (!area || !inside(area, x, y)) return { kind: "away" };
+    const fx = (x - area.left) / area.width;
+    const fy = (y - area.top) / area.height;
+    const pane = (splitLayout && paneAt(splitLayout.panes, fx, fy)) ?? {
+      tabId: terminalState.activeTabId ?? tabId,
+      rect: { x: 0, y: 0, w: 1, h: 1 },
+    };
+    // A pane can't be split against itself: the middle is the only target there.
+    const side =
+      pane.tabId === tabId ? "center" : dropZone((fx - pane.rect.x) / pane.rect.w, (fy - pane.rect.y) / pane.rect.h);
+    return { kind: "pane", tabId: pane.tabId, side, rect: zoneRect(pane.rect, side) };
+  }
+
+  async function applyDrop(tabId: string, target: DropTarget) {
+    try {
+      if (target.kind === "strip") moveTab(tabId, target.beforeTabId);
+      else if (target.kind === "group") addTabToGroup(tabId, target.groupId);
+      else if (target.kind === "pane" && target.side !== "center") splitTab(tabId, target.tabId, target.side);
+      else await popOutTab(tabId);
+    } catch (e: unknown) {
+      notify(String(e), "error");
+    }
+  }
+
+  function dragHandlers(tabId: string): TabDragHandlers {
+    return {
+      move: (x, y) => {
+        drag = { tabId, target: dropTargetAt(tabId, x, y) };
+      },
+      drop: async (x, y) => {
+        const target = dropTargetAt(tabId, x, y);
+        drag = null;
+        await applyDrop(tabId, target);
+      },
+      cancel: () => {
+        drag = null;
+      },
+    };
+  }
+
+  function popsOut(tabId: string): boolean {
+    const target = drag?.tabId === tabId ? drag.target : null;
+    return target?.kind === "away" || (target?.kind === "pane" && target.side === "center");
+  }
 </script>
 
 <svelte:window onkeydown={handleWindowKeydown} />
-
-{#snippet recentHostList()}
-  <div class="mt-5 w-full max-w-md text-left">
-    <div class="section-label mb-2 px-1">Recent hosts</div>
-    <div class="panel overflow-hidden">
-      {#each recentHosts as conn, i (conn.id)}
-        <button
-          type="button"
-          class="group flex h-11 w-full cursor-pointer items-center gap-3 px-3 text-left transition-colors duration-fast hover:bg-surface-hover {i > 0 ? 'border-t border-border-subtle' : ''}"
-          title="Connect to {conn.name}"
-          onclick={() => handleConnect(conn)}
-        >
-          <TerminalSquare size={14} class="shrink-0 text-muted group-hover:text-primary" />
-          <div class="flex min-w-0 flex-1 flex-col">
-            <span class="truncate text-sm text-primary">{conn.name}</span>
-            <span class="mono truncate text-muted">{hostLine(conn)}</span>
-          </div>
-          <span class="shrink-0 text-xs text-muted group-hover:hidden">
-            {conn.last_used ? formatRelative(conn.last_used) : "Never used"}
-          </span>
-          <span class="hidden shrink-0 text-xs text-accent group-hover:inline">Connect</span>
-        </button>
-      {/each}
-    </div>
-  </div>
-{/snippet}
-
-{#snippet awayIcon(kind: SessionDragPayload["kind"])}
-  {#if kind === "popout"}
-    <AppWindow size={14} class="shrink-0" />
-  {:else}
-    <Unlink size={14} class="shrink-0" />
-  {/if}
-{/snippet}
 
 {#if terminalState.tabs.length > 0}
   <div data-terminals-view class="flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-surface-terminal">
@@ -345,8 +313,9 @@
     <h1 class="sr-only">Terminals</h1>
     <!-- Tab strip + active-session toolbar -->
     <div
+      bind:this={stripBar}
       class="relative z-20 flex h-10 shrink-0 select-none items-center gap-1 border-b border-border bg-surface px-2"
-      use:tabBarReattachDrop={handleDropReattach}
+      use:tabBarReattachDrop={bringBackSession}
     >
       <div
         bind:this={tabStrip}
@@ -356,80 +325,45 @@
         tabindex="-1"
         use:horizontalWheel
       >
-        {#each terminalState.tabs as tab (tab.id)}
-          {@const isActive = terminalState.activeTabId === tab.id}
-          {@const tabLabel = tab.remoteTitle?.trim() ? tab.remoteTitle : tab.name}
-          {@const tooltipTitle = tab.remoteTitle?.trim() && tab.remoteTitle.trim() !== tab.name
-            ? `${tab.name} — ${tab.remoteTitle.trim()}`
-            : tab.name}
-          <div
-            data-tab-id={tab.id}
-            class="group relative flex h-7 max-w-48 shrink-0 cursor-pointer items-center gap-2 overflow-hidden rounded-md pl-2.5 pr-1 text-xs transition-colors duration-fast
-              {isActive ? 'bg-surface-active text-primary' : 'text-muted hover:bg-surface-hover hover:text-primary'}"
-            use:tabPopOutDrag={tab.id}
-            onclick={() => (terminalState.activeTabId = tab.id)}
-            onauxclick={(e) => {
-              if (e.button === 1) {
-                e.preventDefault();
-                void disconnectTab(tab.id);
-              }
-            }}
-            onkeydown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                terminalState.activeTabId = tab.id;
-              }
-            }}
-            role="tab"
-            tabindex="0"
-            aria-selected={isActive}
-            title="{tooltipTitle} · {statusLabel(tab.status)} — drag out to open in a window"
-          >
-            <span class="status-dot status-dot-sm {statusDot(tab.status)}" aria-hidden="true"></span>
-            <span class="min-w-0 truncate font-medium">{tabLabel}</span>
-            {#if tab.bell}
-              <span
-                class="status-dot status-dot-sm status-dot-warning shrink-0"
-                role="status"
-                aria-label="Bell"
-              ></span>
-            {/if}
+        {#each stripItems as item (item.kind === "tab" ? item.tab.id : `group:${item.group.id}`)}
+          {#if item.kind === "group"}
+            {@const group = item.group}
+            {@const label = tabGroupLabel(group)}
             <button
               type="button"
-              class="inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-muted transition-colors duration-fast hover:bg-surface-hover hover:text-primary focus-visible:opacity-100
-                {isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}"
-              aria-label="Close {tab.name}"
-              title="Close session"
-              onclick={(e) => {
-                e.stopPropagation();
-                void disconnectTab(tab.id);
+              data-group-id={group.id}
+              class="tab-group-chip flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-primary"
+              class:tab-group-chip-target={drag?.target.kind === "group" && drag.target.groupId === group.id}
+              style:--group-color={tabGroupColorVar(group.color)}
+              aria-expanded={!group.collapsed}
+              aria-label="{label}, {item.count} {item.count === 1 ? 'session' : 'sessions'}"
+              title="{label} — click to {group.collapsed ? 'expand' : 'collapse'}, right-click to edit"
+              onclick={() => toggleTabGroupCollapsed(group.id)}
+              oncontextmenu={(e) => openGroupMenu(e, group.id)}
+              onkeydown={(e) => {
+                if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) openGroupMenu(e, group.id);
               }}
             >
-              <X size={14} />
+              {#if group.name.trim()}
+                <span class="max-w-32 truncate">{group.name.trim()}</span>
+              {:else}
+                <span class="tab-group-dot" aria-hidden="true"></span>
+              {/if}
+              {#if group.collapsed}
+                <span class="tabular-nums text-secondary">{item.count}</span>
+              {/if}
             </button>
-            {#if tab.progress && tab.progress.state !== 0}
-              <div
-                class="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-border/40"
-                aria-hidden="true"
-              >
-                {#if tab.progress.state === 3}
-                  <div
-                    class="tab-progress-indeterminate h-full w-1/3 rounded-full bg-accent motion-reduce:animate-none"
-                  ></div>
-                {:else}
-                  {@const pState = tab.progress.state}
-                  {@const pRawVal = tab.progress.value}
-                  {@const pVal = Number.isFinite(pRawVal) ? pRawVal : 0}
-                  {@const pWidth = (pState === 2 || pState === 4) && pVal <= 0 ? 100 : Math.max(0, Math.min(100, pVal))}
-                  {@const pColor = pState === 2 ? 'bg-error' : pState === 4 ? 'bg-warning' : 'bg-accent'}
-                  <div
-                    class="h-full transition-[width] duration-base motion-reduce:transition-none {pColor}"
-                    style:width="{pWidth}%"
-                  ></div>
-                {/if}
-              </div>
-            {/if}
-          </div>
+          {:else}
+            <StripTab
+              tab={item.tab}
+              group={item.group}
+              active={terminalState.activeTabId === item.tab.id}
+              inSplit={splitTabIds.has(item.tab.id)}
+              poppingOut={popsOut(item.tab.id)}
+              drag={dragHandlers(item.tab.id)}
+              onMenu={(e) => openTabMenu(e, item.tab.id)}
+            />
+          {/if}
         {/each}
 
         {#if awaySessions.length > 0}
@@ -441,17 +375,21 @@
               title={session.kind === "popout"
                 ? `${session.name} — in its own window. Click to focus, drag here to dock.`
                 : `${session.name} — running in the background. Click to reattach.`}
-              ondragstart={(event) => handleAwayDragStart(event, session)}
-              ondragend={handleAwayDragEnd}
-              onclick={() => activateAway(session)}
-              ondblclick={() => void handleDropReattach(session)}
+              ondragstart={(event) => startAwayDrag(event, session)}
+              ondragend={endAwayDrag}
+              onclick={() => activateAwaySession(session)}
+              ondblclick={() => void bringBackSession(session)}
               onkeydown={(e) => {
-                if (e.key === "Enter") activateAway(session);
+                if (e.key === "Enter") activateAwaySession(session);
               }}
               role="button"
               tabindex="0"
             >
-              {@render awayIcon(session.kind)}
+              {#if session.kind === "popout"}
+                <AppWindow size={14} class="shrink-0" />
+              {:else}
+                <Unlink size={14} class="shrink-0" />
+              {/if}
               <span class="max-w-32 truncate">{session.name}</span>
               <button
                 type="button"
@@ -460,7 +398,7 @@
                 title={session.kind === "popout" ? "Dock to this window" : "Reattach"}
                 onclick={(e) => {
                   e.stopPropagation();
-                  void handleDropReattach(session);
+                  void bringBackSession(session);
                 }}
               >
                 <Link2 size={14} />
@@ -469,51 +407,30 @@
           {/each}
         {/if}
       </div>
+      {#if drag && drag.target.kind === "strip"}
+        <div
+          class="pointer-events-none absolute bottom-1.5 top-1.5 z-30 w-0.5 rounded-full bg-accent"
+          style:left="{drag.target.markerX}px"
+          aria-hidden="true"
+        ></div>
+      {/if}
 
       <div class="relative shrink-0">
         <button
           type="button"
-          class="btn-icon {showLauncher ? 'bg-surface-hover text-primary' : ''}"
+          class="btn-icon {showLauncher && !launcherSplit ? 'bg-surface-hover text-primary' : ''}"
           aria-label="New session"
-          aria-expanded={showLauncher}
+          aria-expanded={showLauncher && !launcherSplit}
           title="New session"
-          onclick={openLauncher}
+          onclick={() => openLauncher()}
         >
           <Plus size={14} />
         </button>
         {#if showLauncher}
           <div class="fixed inset-0 z-40" role="presentation" onclick={closeMenus}></div>
-          <div class="popover absolute left-0 top-full mt-1 flex w-72 flex-col gap-1">
-            <div class="search-box h-8">
-              <Search size={14} class="shrink-0" />
-              <input
-                type="text"
-                placeholder="Connect to host…"
-                aria-label="Filter hosts"
-                bind:value={launcherQuery}
-                oninput={() => (launcherIndex = 0)}
-                onkeydown={handleLauncherKeydown}
-                use:focusOnMount
-              />
-            </div>
-            <div class="flex max-h-72 flex-col overflow-y-auto" role="listbox" aria-label="Hosts">
-              {#each launcherResults as conn, i (conn.id)}
-                <button
-                  type="button"
-                  class="menu-item h-auto flex-col items-start gap-0 py-1.5 {i === launcherIndex ? 'menu-item-active' : ''}"
-                  role="option"
-                  aria-selected={i === launcherIndex}
-                  onmouseenter={() => (launcherIndex = i)}
-                  onclick={() => handleConnect(conn)}
-                >
-                  <span class="w-full truncate text-sm text-primary">{conn.name}</span>
-                  <span class="mono w-full truncate text-muted">{hostLine(conn)}</span>
-                </button>
-              {:else}
-                <p class="px-2 py-3 text-center text-xs text-muted">No matching hosts</p>
-              {/each}
-            </div>
-          </div>
+          {#key launcherSplit}
+            <HostLauncher {connections} split={launcherSplit} onConnect={handleConnect} onOpenGroup={handleOpenGroup} />
+          {/key}
         {/if}
       </div>
 
@@ -531,13 +448,34 @@
           <Search size={14} />
         </button>
 
+        <button
+          type="button"
+          class="btn-icon {showLauncher && launcherSplit === 'right' ? 'bg-surface-hover text-primary' : ''}"
+          aria-label="Split right"
+          aria-expanded={showLauncher && launcherSplit === "right"}
+          title="Open a session to the right"
+          onclick={() => openLauncher("right")}
+        >
+          <Columns2 size={14} />
+        </button>
+        <button
+          type="button"
+          class="btn-icon {showLauncher && launcherSplit === 'bottom' ? 'bg-surface-hover text-primary' : ''}"
+          aria-label="Split down"
+          aria-expanded={showLauncher && launcherSplit === "bottom"}
+          title="Open a session below"
+          onclick={() => openLauncher("bottom")}
+        >
+          <Rows2 size={14} />
+        </button>
+
         <div class="flex h-7 shrink-0 items-center rounded-md border border-border" role="group" aria-label="Font size">
           <button
             type="button"
             class="btn-icon btn-icon-sm"
             aria-label="Decrease font size"
             title="Smaller text (Ctrl −)"
-            onclick={() => zoomTerminal(-1)}
+            onclick={() => updateTerminalFontSize(getTerminalFontSize() - 1)}
           >
             <Minus size={14} />
           </button>
@@ -547,7 +485,7 @@
             class="btn-icon btn-icon-sm"
             aria-label="Increase font size"
             title="Larger text (Ctrl +)"
-            onclick={() => zoomTerminal(1)}
+            onclick={() => updateTerminalFontSize(getTerminalFontSize() + 1)}
           >
             <Plus size={14} />
           </button>
@@ -655,208 +593,61 @@
     </div>
 
     <!-- Terminal surfaces; inactive tabs stay mounted with display:none. -->
-    <div class="relative min-h-0 flex-1 overflow-hidden bg-surface-terminal">
+    <div bind:this={surfaceArea} class="relative min-h-0 flex-1 overflow-hidden bg-surface-terminal">
       {#each terminalState.tabs as tab (tab.id)}
-        <div
-          class="absolute inset-0 box-border overflow-hidden p-2"
-          class:hidden={terminalState.activeTabId !== tab.id}
-          role="tabpanel"
-          aria-label={tab.remoteTitle ?? tab.name}
-        >
-          {#if tab.showSearch}
-            <div class="popover absolute right-4 top-2 z-10 flex items-center gap-0.5">
-              <Search size={14} class="ml-1.5 shrink-0 text-muted" />
-              <input
-                type="text"
-                placeholder="Find in scrollback"
-                aria-label="Find in scrollback"
-                class="h-7 w-52 min-w-0 bg-transparent px-1.5 text-sm text-primary outline-none placeholder:text-muted"
-                bind:value={tabSearchQueries[tab.id]}
-                use:focusOnMount
-                oninput={() => runSearch(tab)}
-                onkeydown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    runSearch(tab, e.shiftKey);
-                  } else if (e.key === "Escape") {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    closeSearch(tab);
-                  }
-                }}
-              />
-              <button
-                type="button"
-                class="btn-icon btn-icon-sm"
-                aria-label="Previous match"
-                title="Previous match (Shift+Enter)"
-                onclick={() => runSearch(tab, true)}
-              >
-                <ChevronUp size={14} />
-              </button>
-              <button
-                type="button"
-                class="btn-icon btn-icon-sm"
-                aria-label="Next match"
-                title="Next match (Enter)"
-                onclick={() => runSearch(tab)}
-              >
-                <ChevronDown size={14} />
-              </button>
-              <span class="mx-0.5 h-4 w-px bg-border" aria-hidden="true"></span>
-              <button
-                type="button"
-                class="btn-icon btn-icon-sm"
-                aria-label="Close search"
-                title="Close (Esc)"
-                onclick={() => closeSearch(tab)}
-              >
-                <X size={14} />
-              </button>
-            </div>
-          {/if}
-
-          <div class="flex h-full w-full flex-col">
-            {#if tab.status === "connecting"}
-              <div
-                class="mb-2 flex shrink-0 items-center gap-2 rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-secondary"
-                role="status"
-              >
-                <span class="spinner size-3" aria-hidden="true"></span>
-                <span class="min-w-0 flex-1 truncate">
-                  Connecting to {targetOf(tab)}{tab.conn?.bastion ? ` via ${tab.conn.bastion}` : ""}…
-                  <span class="tabular-nums text-muted">{elapsed(tab)}</span>
-                </span>
-                <button type="button" class="btn btn-ghost btn-sm" onclick={() => cancelConnect(tab.id)}>
-                  Cancel
-                  <kbd class="kbd">{CANCEL_KEY}</kbd>
-                </button>
-              </div>
-            {/if}
-            <div id="terminal-{tab.id}" class="min-h-0 w-full flex-1"></div>
-          </div>
-
-          {#if tab.status === "error" && tab.failure}
-            <div class="absolute inset-0 z-10 flex items-center justify-center overflow-y-auto bg-surface-terminal p-6">
-              <div class="panel flex w-full max-w-lg flex-col gap-4 p-5" role="alert">
-                <div class="flex items-start gap-3">
-                  <TriangleAlert size={18} class="mt-0.5 shrink-0 text-error" aria-hidden="true" />
-                  <div class="flex min-w-0 flex-col gap-1">
-                    <h2 class="m-0 text-base font-semibold text-primary">
-                      {tab.failure.title}
-                    </h2>
-                    <p class="m-0 text-sm text-secondary">
-                      Couldn't connect to {targetOf(tab)}. {tab.failure.hint}
-                    </p>
-                  </div>
-                </div>
-                {#if tab.failure.detail}
-                  <pre
-                    class="m-0 max-h-40 select-text overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-surface p-2.5 font-mono text-xs text-secondary">{tab.failure.detail}</pre>
-                {/if}
-                <div class="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    class="btn btn-primary"
-                    onclick={() => retryConnect(tab.id)}
-                    use:focusOnShow
-                  >
-                    Retry
-                  </button>
-                  <button type="button" class="btn" onclick={() => editHost(tab)} disabled={!tab.conn}>
-                    Edit host
-                  </button>
-                  <button type="button" class="btn btn-ghost ml-auto" onclick={() => disconnectTab(tab.id)}>
-                    Close tab
-                  </button>
-                </div>
-                <p class="m-0 text-xs text-muted">
-                  CLI: <code class="select-text">{CONNECT_CLI.replace("<host>", tab.connectionName)}</code>
-                </p>
-              </div>
-            </div>
-          {/if}
-        </div>
+        <TerminalPane
+          {tab}
+          rect={paneRects.get(tab.id)}
+          active={terminalState.activeTabId === tab.id}
+          {connections}
+        />
       {/each}
-    </div>
-  </div>
-{:else}
-  <header class="view-header">
-    <div class="flex min-w-0 items-baseline gap-2.5">
-      <h1 class="view-title">Terminals</h1>
-      <span class="text-sm tabular-nums text-muted">
-        {awaySessions.length > 0 ? `${awaySessions.length} away` : "No open sessions"}
-      </span>
-    </div>
-    {#if awaySessions.length > 0}
-      <div class="view-actions">
-        <button type="button" class="btn btn-ghost" onclick={onManageSessions}>
-          <Layers size={14} />
-          Manage sessions
-        </button>
-      </div>
-    {/if}
-  </header>
 
-  <div class="view-body flex flex-col" use:tabBarReattachDrop={handleDropReattach}>
-    <div class="empty-state my-auto">
-      {#if awaySessions.length > 0}
-        <div class="empty-state-icon"><Layers size={16} /></div>
-        <p class="empty-state-title">
-          {awaySessions.length === 1 ? "1 session is" : `${awaySessions.length} sessions are`} running elsewhere
-        </p>
-        <p class="empty-state-desc">Reattach a session to bring it back into this window, or drag it here.</p>
+      {#if splitLayout}
+        <SplitDividers dividers={splitLayout.dividers} area={surfaceArea} />
+      {/if}
 
-        <div class="panel mt-5 w-full max-w-md overflow-hidden text-left" role="list">
-          {#each awaySessions as session, i (session.sessionId)}
-            <div
-              class="flex h-11 items-center gap-3 px-3 {i > 0 ? 'border-t border-border-subtle' : ''}"
-              draggable="true"
-              role="listitem"
-              ondragstart={(event) => handleAwayDragStart(event, session)}
-              ondragend={handleAwayDragEnd}
-            >
-              <span class="text-muted">{@render awayIcon(session.kind)}</span>
-              <div class="flex min-w-0 flex-1 flex-col">
-                <span class="truncate text-sm text-primary">{session.name}</span>
-                <span class="text-xs text-muted">
-                  {session.kind === "popout" ? "In its own window" : "Running in the background"}
-                </span>
-              </div>
-              {#if session.kind === "popout"}
-                <button
-                  type="button"
-                  class="btn btn-ghost btn-sm"
-                  onclick={() => void focusPopoutSession(session.sessionId)}
-                >
-                  Focus
-                </button>
-              {/if}
-              <button
-                type="button"
-                class="btn btn-secondary btn-sm"
-                onclick={() => void handleDropReattach(session)}
-              >
-                <Link2 size={14} />
-                {session.kind === "popout" ? "Dock" : "Reattach"}
-              </button>
-            </div>
-          {/each}
+      {#if drag && drag.target.kind === "pane"}
+        {@const zone = drag.target}
+        <div
+          class="split-drop-zone pointer-events-none absolute z-30 flex items-center justify-center rounded-md"
+          style:left={cssPercent(zone.rect.x)}
+          style:top={cssPercent(zone.rect.y)}
+          style:width={cssPercent(zone.rect.w)}
+          style:height={cssPercent(zone.rect.h)}
+          aria-hidden="true"
+        >
+          <span class="rounded-md border border-border-floating bg-surface-raised px-2 py-1 text-xs text-primary shadow-md">
+            {zone.side === "center" ? "Open in new window" : `Split ${zone.side}`}
+          </span>
         </div>
-        {#if recentHosts.length > 0}{@render recentHostList()}{/if}
-      {:else}
-        <div class="empty-state-icon"><TerminalSquare size={16} /></div>
-        <p class="empty-state-title">No open sessions</p>
-        <p class="empty-state-desc">
-          {recentHosts.length > 0
-            ? "Pick a host to open an SSH session."
-            : "Add a host in Hosts, then connect to it here."}
-        </p>
-
-        {#if recentHosts.length > 0}{@render recentHostList()}{/if}
       {/if}
     </div>
   </div>
+{:else}
+  <TerminalsEmptyState {connections} {onManageSessions} onConnect={handleConnect} />
+{/if}
+
+{#if tabMenu}
+  {@const menuTab = terminalState.tabs.find((t) => t.id === tabMenu?.tabId)}
+  {#if menuTab}
+    <TabMenu
+      tab={menuTab}
+      x={tabMenu.x}
+      y={tabMenu.y}
+      inSplit={splitTabIds.has(menuTab.id)}
+      onClose={closeFloatingMenu}
+      onSplitNew={(side) => openLauncher(side)}
+      onGroupCreated={(groupId, at) => void editNewGroup(groupId, at)}
+    />
+  {/if}
+{/if}
+
+{#if groupMenu}
+  {@const group = groupsById.get(groupMenu.groupId)}
+  {#if group}
+    <GroupMenu {group} x={groupMenu.x} y={groupMenu.y} onClose={closeFloatingMenu} />
+  {/if}
 {/if}
 
 <style>
@@ -866,24 +657,30 @@
     outline: 1px dashed color-mix(in srgb, var(--color-accent) 60%, transparent);
     outline-offset: -3px;
   }
-  /* Tab being dragged far enough to pop out on release. */
+  /* Tab dragged where releasing opens it in its own window. */
   :global(.tab-dragging-out) {
     opacity: 0.55;
     outline: 1px dashed var(--color-accent);
     outline-offset: -1px;
   }
-  :global(.away-chip-dragging) {
-    opacity: 0.5;
+  :global(.tab-dragging) {
     cursor: grabbing;
   }
-  .tab-progress-indeterminate {
-    animation: loader-slide 1.2s var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1)) infinite;
+  .tab-group-chip {
+    background: color-mix(in srgb, var(--group-color) 22%, var(--color-surface));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--group-color) 45%, transparent);
+    transition: background-color var(--transition-duration-fast);
   }
-  @media (prefers-reduced-motion: reduce) {
-    .tab-progress-indeterminate {
-      animation: none !important;
-      width: 100% !important;
-      opacity: 0.6;
-    }
+  .tab-group-chip:hover {
+    background: color-mix(in srgb, var(--group-color) 32%, var(--color-surface));
+  }
+  .tab-group-chip-target {
+    outline: 1px dashed var(--color-accent);
+    outline-offset: 1px;
+  }
+  .split-drop-zone {
+    background: var(--color-accent-muted);
+    outline: 2px dashed color-mix(in srgb, var(--color-accent) 70%, transparent);
+    outline-offset: -2px;
   }
 </style>

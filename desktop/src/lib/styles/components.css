@@ -718,6 +718,24 @@
       @apply px-4;
     }
   }
+
+  /* ================================================================
+     TERMINAL TABS
+     Group colour dot (set --group-color to a tab-groups colour) and a
+     session chip being dragged back into the window.
+     ================================================================ */
+  .tab-group-dot {
+    display: inline-block;
+    width: 0.5rem;
+    height: 0.5rem;
+    flex-shrink: 0;
+    border-radius: 9999px;
+    background: var(--group-color);
+  }
+  .away-chip-dragging {
+    opacity: 0.5;
+    cursor: grabbing;
+  }
 }
 
 /* ---- Utilities ---------------------------------------------------- */

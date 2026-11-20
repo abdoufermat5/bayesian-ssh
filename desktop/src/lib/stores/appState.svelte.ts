@@ -19,9 +19,9 @@ import { viewEnabled } from "$lib/viewMeta";
 import { showAiReports } from "$lib/stores/ai.svelte";
 import { copyTextWithFallback, setTerminalSmartCopy } from "$lib/utils/terminal-xterm";
 import {
-  applyThemeToAllTerminals,
   closeAllTabs,
   connectSSH,
+  type ConnectOptions,
   dockPopoutSession,
   fitActiveTerminal,
   focusActiveTerminal,
@@ -33,10 +33,13 @@ import {
   terminateAllDetachedSessions,
   terminateDetachedSession,
   terminatePopoutSession,
-  updateTerminalFontSize,
-  getTerminalFontSize,
-  registerSettingsGetter,
 } from "$lib/stores/terminal.svelte";
+import {
+  applyThemeToAllTerminals,
+  getTerminalFontSize,
+  updateTerminalFontSize,
+} from "$lib/stores/terminal-appearance.svelte";
+import { registerSettingsGetter } from "$lib/utils/terminal-options";
 import {
   acquireKerberosTicket,
   closeKerberosModal,
@@ -834,7 +837,7 @@ export class AppStateStore {
     });
   }
 
-  handleConnect = async (conn: Connection, options: { newTab?: boolean } = {}) => {
+  handleConnect = async (conn: Connection, options: ConnectOptions = {}) => {
     this.activeTab = "terminals";
     await tick();
     try {

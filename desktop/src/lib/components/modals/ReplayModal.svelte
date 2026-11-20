@@ -4,7 +4,7 @@
   import { FitAddon } from "@xterm/addon-fit";
   import { FastForward, Pause, Play, RotateCcw, X } from "lucide-svelte";
   import ModalShell from "$lib/components/ui/ModalShell.svelte";
-  import { buildTerminalOptions } from "$lib/stores/terminal.svelte";
+  import { buildTerminalOptions } from "$lib/utils/terminal-options";
   import {
     attachXtermAddons,
     attachXtermKeyHandler,
