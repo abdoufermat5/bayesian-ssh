@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Desktop: terminal tab groups.** Right-click a tab (or press Shift+F10) and **Add to new group**: the group gets a name, one of seven colours and a chip in the tab strip; its tabs stay next to each other with a coloured underline. Click the chip to collapse the group to one chip (Ctrl+Tab skips its tabs), right-click it to rename, recolour, ungroup or close its sessions. A group remembers its hosts across restarts: a new session to one of them joins it again, and the **New session** launcher lists saved groups with no open session under **Open <group>**, which connects to each of their hosts.
+- **Desktop: split screen.** **Split right** and **Split down** in the terminal toolbar (or in a tab's menu) open a session beside the current one; a tab's menu can also show an open tab right of or below the current one. Splits nest, the divider drags (or moves with the arrow keys, double-click evens it out), clicking a pane focuses its tab, and the pane header's button takes a session back out of the split without closing it. A split left with one pane goes back to a single terminal.
+- **Desktop: drag tabs.** Drag a tab along the strip to reorder it; dropped inside a group it joins it, dropped onto a group chip it moves into that group, dropped outside its own group it leaves it. Dragged onto the edge of a terminal pane it splits that pane; dropped in the middle or outside the strip it opens in its own window, as before. Esc cancels a drag. **Move left** and **Move right** in the tab menu do the same from the keyboard.
+
 ## [2.15.2] - 2026-11-01
 
 ### Added

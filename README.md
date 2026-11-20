@@ -27,7 +27,7 @@ with your team, end-to-end encrypted.
     <td width="50%" valign="top">
       <img src="assets/icon-terminal.svg" width="28" height="28" align="left" alt="">
       &nbsp;<strong>Command line and desktop</strong><br>
-      &nbsp;The same hosts in <code>bssh</code> and in the desktop app: terminal tabs, file transfer, a command palette.
+      &nbsp;The same hosts in <code>bssh</code> and in the desktop app: terminal tabs with groups and split screen, file transfer, a command palette.
     </td>
   </tr>
   <tr>
