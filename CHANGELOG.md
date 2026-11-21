@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.16.2] - 2026-11-21
+
+### Added
+- **Desktop: file operations in Files.** Create a folder, rename, delete (with a confirmation naming the file or folder) and download remote entries, copy the remote path, and switch between list and grid layouts.
+- **Desktop: copy a public key.** Each key in **Keys** has a button that copies its `.pub` contents; the scan reads only the public half.
+- **Desktop: AI agents settings.** **Settings → AI agents** edits the global AI settings (who approves, request expiry, output recording, hiding secrets from the agent, trusted tag sources) and the policies: hosts and tags in scope, readable, writable and never-accessible paths, blocked commands, calls per minute, changes per run, run time limit, pause after denials, and the tags or host globs that need in-client (T1) or two-person (T3) approval. Policies can be created, edited and deleted, and MCP clients installed from the same page, including the Claude Code PreToolUse guard hook.
+
+### Changed
+- **Desktop: cool-neutral theme.** The Light and Dark themes move to cool neutral surfaces with an indigo accent, replacing the amber of 2.16.0. The select control was rebuilt.
+- **Desktop: safer dialogs and view fixes.** The upload dialog can't be closed while an upload runs, the paste confirmation is an alert dialog (Ctrl/⌘+Enter pastes), and layout and wording fixes land across Console, History, Security check, Teams, AI, onboarding, the host dialog, batch run and Settings.
+- **Desktop: sidebar.** Items no longer print their digit shortcut; it stays in the tooltip and the shortcuts sheet (`?`).
+- **CLI: grouped, colored help.** `bssh --help` lists commands by area (connections; remote execution, transfers and tunnels; sessions; inventory and backup; teams, organizations and AI; security and setup), and `list`, `history`, `stats`, `why`, `ping`, `audit`, `doctor`, `key`, `close`, `transfer`, `predict` and `teams members` share one terminal output style.
+- **CLI: clearer errors.** Errors print as `error:` with each cause on a `caused by:` line and a `hint:` when one applies, with new hints for non-interactive runs, refused connections, unreachable hosts, changed host keys and expired Kerberos tickets.
+
 ## [2.16.1] - 2026-11-21
 
 ### Security
