@@ -39,7 +39,24 @@ pub struct RunSummary {
     pub pause_reason: Option<String>,
 }
 
-/// `ai_settings`: the read-only part of `config.ai`.
+/// One AI client's MCP configuration state on this machine.
+#[derive(Debug, Clone, Serialize)]
+pub struct AiClientStatus {
+    pub id: String,
+    pub label: String,
+    pub config_path: String,
+    pub present: bool,
+    pub configured: bool,
+}
+
+/// Outcome of installing or removing `bssh` in an AI client's config.
+#[derive(Debug, Serialize)]
+pub struct AiClientInstallResult {
+    pub report: String,
+    pub settings: AiSettingsView,
+}
+
+/// `ai_settings`: full configurable view of `config.ai` plus defaults and client status.
 #[derive(Debug, Serialize)]
 pub struct AiSettingsView {
     pub policies: BTreeMap<String, Policy>,
@@ -48,4 +65,12 @@ pub struct AiSettingsView {
     pub trusted_tag_sources: Vec<String>,
     /// The `config.json` these policies were read from, so the page can name it.
     pub config_path: String,
+    /// Validation warnings per policy name (e.g. empty scope or unknown fields).
+    pub warnings: BTreeMap<String, Vec<String>>,
+    /// Built-in defaults for `observe`, `operate`, and `oncall`.
+    pub profile_defaults: BTreeMap<String, Policy>,
+    /// Configured inventory source names that may be marked as trusted tag sources.
+    pub available_sources: Vec<String>,
+    /// Supported AI clients and whether `bssh` is already configured in each.
+    pub clients: Vec<AiClientStatus>,
 }

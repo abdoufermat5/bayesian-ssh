@@ -516,12 +516,95 @@
     ai_decide: () => null,
     ai_stop: () => null,
     ai_revoke_grant: () => null,
-    ai_settings: () =>
-      window.__MOCK_AI_SETTINGS || {
-        policies: {},
-        record_output: true,
-        approval_timeout_secs: 300,
-      },
+    ai_settings: () => {
+      if (!window.__MOCK_AI_STATE) {
+        const seed = window.__MOCK_AI_SETTINGS || {};
+        window.__MOCK_AI_STATE = {
+          policies: JSON.parse(JSON.stringify(seed.policies || {})),
+          record_output: seed.record_output !== undefined ? seed.record_output : true,
+          approval_timeout_secs: seed.approval_timeout_secs !== undefined ? seed.approval_timeout_secs : 300,
+          trusted_tag_sources: [...(seed.trusted_tag_sources || [])],
+          config_path: seed.config_path || "/home/me/.config/bayesian-ssh/envs/default/config.json",
+          warnings: seed.warnings || {},
+          available_sources: seed.available_sources || ["aws-prod", "ansible"],
+          clients: seed.clients || [
+            { id: "claude-code", label: "Claude Code", config_path: "/home/me/.claude.json", present: true, configured: false },
+            { id: "cursor", label: "Cursor", config_path: "/home/me/.cursor/mcp.json", present: true, configured: true },
+            { id: "codex", label: "Codex", config_path: "/home/me/.codex/config.toml", present: false, configured: false },
+          ],
+          profile_defaults: seed.profile_defaults || {
+            observe: {
+              profile: "observe",
+              scope: { tags: [], hosts: [] },
+              approval: { default: "out-of-band", in_client: [], two_person: [], two_person_hosts: [] },
+              read_paths: ["/var/log/**", "/etc/**", "/srv/**"],
+              write_paths: [],
+              deny_paths: ["/etc/shadow", "**/*.key"],
+              deny: ["rm -rf /", "mkfs *"],
+              budgets: { calls_per_min: 30, changes_per_run: 0, run_ttl: "2h", max_denials_per_min: 5 },
+              redact: { vault_secrets: true, patterns: "default" },
+            },
+            operate: {
+              profile: "operate",
+              scope: { tags: [], hosts: [] },
+              approval: { default: "out-of-band", in_client: [], two_person: [], two_person_hosts: [] },
+              read_paths: ["/var/log/**", "/etc/**", "/srv/**"],
+              write_paths: [],
+              deny_paths: ["/etc/shadow", "**/*.key"],
+              deny: ["rm -rf /", "mkfs *"],
+              budgets: { calls_per_min: 30, changes_per_run: 10, run_ttl: "2h", max_denials_per_min: 5 },
+              redact: { vault_secrets: true, patterns: "default" },
+            },
+            oncall: {
+              profile: "oncall",
+              scope: { tags: [], hosts: [] },
+              approval: { default: "out-of-band", in_client: [], two_person: [], two_person_hosts: [] },
+              read_paths: ["/var/log/**", "/etc/**", "/srv/**"],
+              write_paths: [],
+              deny_paths: ["/etc/shadow", "**/*.key"],
+              deny: ["rm -rf /", "mkfs *"],
+              budgets: { calls_per_min: 60, changes_per_run: 20, run_ttl: "4h", max_denials_per_min: 5 },
+              redact: { vault_secrets: true, patterns: "default" },
+            },
+          },
+        };
+      }
+      return JSON.parse(JSON.stringify(window.__MOCK_AI_STATE));
+    },
+    ai_save_global_settings: (a) => {
+      const s = handlers.ai_settings();
+      s.approval_timeout_secs = a.approvalTimeoutSecs;
+      s.record_output = a.recordOutput;
+      s.trusted_tag_sources = [...(a.trustedTagSources || [])];
+      window.__MOCK_AI_STATE = s;
+      return JSON.parse(JSON.stringify(s));
+    },
+    ai_save_policy: (a) => {
+      const s = handlers.ai_settings();
+      if (a.originalName && a.originalName !== a.name) {
+        delete s.policies[a.originalName];
+      }
+      s.policies[a.name] = JSON.parse(JSON.stringify(a.policy));
+      window.__MOCK_AI_STATE = s;
+      return JSON.parse(JSON.stringify(s));
+    },
+    ai_delete_policy: (a) => {
+      const s = handlers.ai_settings();
+      delete s.policies[a.name];
+      window.__MOCK_AI_STATE = s;
+      return JSON.parse(JSON.stringify(s));
+    },
+    ai_install_client: (a) => {
+      const s = handlers.ai_settings();
+      for (const c of s.clients) {
+        if (c.id === a.client) c.configured = !a.uninstall;
+      }
+      window.__MOCK_AI_STATE = s;
+      return {
+        report: `${a.client}: ${a.uninstall ? "removed bssh" : `installed policy '${a.policyName}'`}`,
+        settings: JSON.parse(JSON.stringify(s)),
+      };
+    },
     ai_reports: () => window.__MOCK_AI_REPORTS || [],
     ai_report: (a) => {
       const r = (window.__MOCK_AI_REPORT || {})[a && a.runId];

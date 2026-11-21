@@ -736,7 +736,7 @@ test.describe("AI run reports", () => {
 });
 
 test.describe("AI settings", () => {
-  test("shows the policies read-only", async ({ app, page }) => {
+  test("configures global settings, edits and deletes policies, and installs MCP clients", async ({ app, page }) => {
     await seed(page, {
       settings: {
         approval_timeout_secs: 300,
@@ -767,23 +767,93 @@ test.describe("AI settings", () => {
     await page.locator('nav[aria-label="Settings sections"]').getByRole("button", { name: "AI agents", exact: true }).click();
 
     const policy = page.getByRole("region", { name: "Policy default" });
-    await expect(policy.getByText("Operate: changes need approval")).toBeVisible();
-    await expect(policy.getByText("staging", { exact: true }).first()).toBeVisible();
-    await expect(policy.getByText("prod-db")).toBeVisible();
+    await expect(policy.getByText(/Operate · Changes need approval/)).toBeVisible();
+    await expect(policy.getByText("#staging", { exact: true })).toBeVisible();
+    await expect(policy.getByText(/2-person: prod-db/)).toBeVisible();
     await expect(policy.getByText("/etc/shadow")).toBeVisible();
     await expect(policy.getByText("rm -rf /")).toBeVisible();
-    await expect(policy.getByText("2h")).toBeVisible();
-    await expect(page.getByText("5 min")).toBeVisible();
-    // Read-only: nothing to edit.
-    await expect(policy.getByRole("textbox")).toHaveCount(0);
-    await expect(policy.getByRole("checkbox")).toHaveCount(0);
+    await expect(policy.getByText(/TTL 2h/)).toBeVisible();
+
+    // Update global settings (preset timeout + toggle record output + trust source).
+    await page.getByRole("button", { name: "10 min", exact: true }).click();
+    await app.waitForIpc("ai_save_global_settings");
+    expect((await app.ipcCalls("ai_save_global_settings")).at(-1)).toMatchObject({
+      approvalTimeoutSecs: 600,
+      recordOutput: true,
+    });
+
+    await page.getByRole("checkbox", { name: /Record agent output/ }).uncheck();
+    await app.waitForIpc("ai_save_global_settings", 2);
+    expect((await app.ipcCalls("ai_save_global_settings")).at(-1)).toMatchObject({
+      recordOutput: false,
+    });
+
+    await page.getByRole("button", { name: "aws-prod", exact: true }).click();
+    await app.waitForIpc("ai_save_global_settings", 3);
+    expect((await app.ipcCalls("ai_save_global_settings")).at(-1)).toMatchObject({
+      trustedTagSources: ["aws-prod"],
+    });
+
+    // Edit existing policy via modal.
+    await policy.getByRole("button", { name: "Edit policy default" }).click();
+    const editDialog = page.getByRole("dialog", { name: "Edit policy: default" });
+    await expect(editDialog).toBeVisible();
+    await editDialog.getByRole("tab", { name: /Budgets & safety/ }).click();
+    await editDialog.getByRole("button", { name: "4h", exact: true }).click();
+    await editDialog.getByRole("button", { name: "Save policy" }).click();
+    await app.waitForIpc("ai_save_policy");
+    expect((await app.ipcCalls("ai_save_policy")).at(-1)).toMatchObject({
+      name: "default",
+      originalName: "default",
+      policy: { budgets: { run_ttl: "4h" } },
+    });
+    await expect(editDialog).toHaveCount(0);
+    await expect(policy.getByText(/TTL 4h/)).toBeVisible();
+
+    // Install MCP client.
+    const claudeRow = page.locator(".setting-row").filter({ hasText: "Claude Code" });
+    await claudeRow.getByRole("button", { name: "Install" }).click();
+    await app.waitForIpc("ai_install_client");
+    expect((await app.ipcCalls("ai_install_client")).at(-1)).toMatchObject({
+      client: "claude-code",
+      policyName: "default",
+      guard: true,
+      uninstall: false,
+    });
+    await expect(claudeRow.getByText("Configured")).toBeVisible();
+
+    // Delete policy with confirmation.
+    await policy.getByRole("button", { name: "Delete policy default" }).click();
+    const delDialog = page.getByRole("alertdialog", { name: "Delete policy" });
+    await expect(delDialog).toBeVisible();
+    await delDialog.getByRole("button", { name: "Delete policy" }).click();
+    await app.waitForIpc("ai_delete_policy");
+    await expect(page.getByText("No custom policy defined")).toBeVisible();
   });
 
-  test("explains an empty policy list", async ({ app, page }) => {
+  test("creates a new policy from the empty state and passes accessibility checks", async ({ app, page }) => {
     await app.gotoApp();
     await app.nav("Settings");
     await page.locator('nav[aria-label="Settings sections"]').getByRole("button", { name: "AI agents", exact: true }).click();
-    await expect(page.getByText("No policy defined")).toBeVisible();
+    await expect(page.getByText("No custom policy defined")).toBeVisible();
+
+    // Accessibility check on AI settings page.
+    const pageAxe = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+    expect(pageAxe.violations.filter((v) => v.impact === "serious" || v.impact === "critical")).toEqual([]);
+
+    // Create a new Operate policy.
+    await page.getByRole("button", { name: "Create Operate policy" }).click();
+    const dialog = page.getByRole("dialog", { name: "New AI policy" });
+    await expect(dialog).toBeVisible();
+
+    // Accessibility check on the open policy editor modal.
+    const modalAxe = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+    expect(modalAxe.violations.filter((v) => v.impact === "serious" || v.impact === "critical")).toEqual([]);
+
+    await dialog.getByRole("button", { name: "Create policy" }).click();
+    await app.waitForIpc("ai_save_policy");
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByRole("region", { name: "Policy default" })).toBeVisible();
   });
 });
 

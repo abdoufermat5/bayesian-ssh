@@ -63,7 +63,7 @@
     privacy: "What the app keeps about your sessions, and how much it logs.",
     appearance: "Theme, density and how dates are displayed.",
     sources: "Sync hosts from SSH configs, Ansible, Tailscale, AWS or GCP.",
-    ai: "The policies that limit what AI agents may do on your hosts. Read-only here.",
+    ai: "Configure AI agent policies, approval defaults, trusted tag sources, and MCP client integrations.",
     updates: "This installation's version, update channel and release checks.",
   };
 

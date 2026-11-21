@@ -768,7 +768,20 @@ export interface AiPolicy {
   redact: { vault_secrets: boolean; patterns: string };
 }
 
-/** `ai_settings()`: the read-only part of `config.ai`. */
+export interface AiClientStatus {
+  id: string;
+  label: string;
+  config_path: string;
+  present: boolean;
+  configured: boolean;
+}
+
+export interface AiClientInstallResult {
+  report: string;
+  settings: AiSettingsView;
+}
+
+/** `ai_settings()`: configurable view of `config.ai`, built-in defaults and detected clients. */
 export interface AiSettingsView {
   policies: Record<string, AiPolicy>;
   record_output: boolean;
@@ -777,6 +790,14 @@ export interface AiSettingsView {
   trusted_tag_sources: string[];
   /** The `config.json` these policies were read from. */
   config_path: string;
+  /** Validation warnings per policy name. */
+  warnings?: Record<string, string[]>;
+  /** Built-in profile defaults (`observe`, `operate`, `oncall`). */
+  profile_defaults?: Record<string, AiPolicy>;
+  /** Configured inventory source names available to trust. */
+  available_sources?: string[];
+  /** Supported AI clients detected on this machine. */
+  clients?: AiClientStatus[];
 }
 
 // AI cleanup
