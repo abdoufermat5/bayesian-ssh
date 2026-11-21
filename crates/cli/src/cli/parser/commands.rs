@@ -12,14 +12,17 @@ use clap::Subcommand;
 #[derive(Subcommand)]
 pub enum Commands {
     /// Connect to a saved server (supports fuzzy name matching)
-    #[command(long_about = "Open an SSH session to a saved connection.\n\n\
+    #[command(
+        display_order = 101,
+        long_about = "Open an SSH session to a saved connection.\n\n\
             The target is matched by name, alias, or hostname using fuzzy search.\n\
             Bayesian scoring ranks the best match from your usage history.\n\
             Override any stored setting with the optional flags below.\n\n\
             Examples:\n\
               bssh connect web-prod\n\
               bssh connect db01 -u admin -p 2222\n\
-              bssh connect backend -k true -b bastion.corp")]
+              bssh connect backend -k true -b bastion.corp"
+    )]
     Connect {
         /// Connection name, alias, or hostname (fuzzy-matched)
         target: String,
@@ -53,13 +56,16 @@ pub enum Commands {
     },
 
     /// Save a new SSH connection
-    #[command(long_about = "Add a new named connection to the database.\n\n\
+    #[command(
+        display_order = 104,
+        long_about = "Add a new named connection to the database.\n\n\
             The name is used as a friendly identifier for connect, upload, exec, etc.\n\
             Tags let you group related connections (e.g. --tags prod --tags eu-west).\n\n\
             Examples:\n\
               bssh add web-prod web.example.com -u deploy\n\
               bssh add db01 10.0.1.5 -p 2222 -k true -b bastion.corp\n\
-              bssh add staging app.staging.internal -t staging -t backend")]
+              bssh add staging app.staging.internal -t staging -t backend"
+    )]
     Add {
         /// Friendly name for this connection (must be unique)
         name: String,
@@ -99,6 +105,7 @@ pub enum Commands {
 
     /// List saved connections (filterable by tag or recency)
     #[command(
+        display_order = 102,
         long_about = "Display all saved connections in the active environment.\n\n\
             Connections are ranked by Bayesian score (most-used first).\n\
             Use --tag to filter by group, --recent for recently used, --detailed for full info.\n\n\
@@ -120,6 +127,7 @@ pub enum Commands {
     },
 
     /// Remove a saved connection (single or bulk by tag)
+    #[command(display_order = 106)]
     Remove {
         /// Connection name, alias, or ID to delete
         target: Option<String>,
@@ -132,6 +140,7 @@ pub enum Commands {
     },
 
     /// Show full details of a saved connection
+    #[command(display_order = 103)]
     Show {
         /// Connection name, alias, or ID
         target: String,
@@ -139,6 +148,7 @@ pub enum Commands {
 
     /// Accept the route changes a team sync made to a connection
     #[command(
+        display_order = 110,
         long_about = "A team member can edit a shared connection. When a sync changes its host, \
             port, user, bastion or Kerberos setting, bssh ignores the new route until you confirm it \
             (agent forwarding also stays off).\n\n\
@@ -152,12 +162,15 @@ pub enum Commands {
     },
 
     /// Edit one or more settings of an existing connection
-    #[command(long_about = "Modify fields on a saved connection.\n\n\
+    #[command(
+        display_order = 105,
+        long_about = "Modify fields on a saved connection.\n\n\
             Only the fields you pass are updated; everything else stays unchanged.\n\n\
             Examples:\n\
               bssh edit web-prod --user deploy --port 2222\n\
               bssh edit db01 --bastion new-bastion.corp\n\
-              bssh edit staging --add-tags canary --remove-tags legacy")]
+              bssh edit staging --add-tags canary --remove-tags legacy"
+    )]
     Edit {
         /// Connection name, alias, or ID to edit
         target: String,
@@ -203,14 +216,17 @@ pub enum Commands {
     },
 
     /// View or update global application settings
-    #[command(long_about = "Read or modify bssh global defaults.\n\n\
+    #[command(
+        display_order = 605,
+        long_about = "Read or modify bssh global defaults.\n\n\
             Run with no flags to print current settings.\n\
             Pass one or more flags to update values.\n\n\
             Examples:\n\
               bssh config\n\
               bssh config --default-user deploy --use-kerberos true\n\
               bssh config --search-mode bayesian\n\
-              bssh config --clear-bastion")]
+              bssh config --clear-bastion"
+    )]
     Config {
         /// Default SSH username for new connections
         #[arg(long, value_name = "USER")]
@@ -255,9 +271,11 @@ pub enum Commands {
     },
 
     /// Show usage statistics (total connections, sessions, top hosts)
+    #[command(display_order = 303)]
     Stats,
 
     /// Audit security configuration, host keys, key permissions, and connection health
+    #[command(display_order = 603)]
     Audit {
         /// Automatically repair overly permissive file and directory permissions
         #[arg(short = 'f', long)]
@@ -265,6 +283,7 @@ pub enum Commands {
     },
 
     /// Manage SSH keys (list, generate, copy public keys to remote servers)
+    #[command(display_order = 604)]
     Key {
         #[command(subcommand)]
         command: KeyCommands,
@@ -272,6 +291,7 @@ pub enum Commands {
 
     /// Export connections to a file or stdout
     #[command(
+        display_order = 403,
         long_about = "Serialize saved connections to JSON, TOML, or OpenSSH config format.\n\n\
             Writes to stdout by default; use -o to write to a file.\n\n\
             Examples:\n\
@@ -295,6 +315,7 @@ pub enum Commands {
     },
 
     /// Backup the connection database to a file
+    #[command(display_order = 404)]
     Backup {
         /// Destination path (default: ENV_DIR/backups/backup-TIMESTAMP.db); must not already exist
         #[arg(short = 'o', long, value_name = "FILE")]
@@ -302,15 +323,19 @@ pub enum Commands {
     },
 
     /// Diagnose local bssh configuration, database, and SSH prerequisites
-    #[command(long_about = "Run local health checks for bssh.\n\n\
+    #[command(
+        display_order = 602,
+        long_about = "Run local health checks for bssh.\n\n\
             Verifies the active configuration, database initialization, SSH client availability,\n\
             optional SSH config path, ssh-agent environment, and Kerberos helper commands.\n\n\
             Examples:\n\
               bssh doctor\n\
-              bssh --env staging doctor")]
+              bssh --env staging doctor"
+    )]
     Doctor,
 
     /// Restore the connection database from a previous backup
+    #[command(display_order = 405)]
     Restore {
         /// Path to the backup file to restore
         file: String,
@@ -321,6 +346,7 @@ pub enum Commands {
 
     /// Clone an existing connection under a new name
     #[command(
+        display_order = 107,
         long_about = "Create a copy of a saved connection with a different name.\n\
             All settings (host, port, bastion, tags, etc.) are preserved.\n\n\
             Example:\n\
@@ -335,6 +361,7 @@ pub enum Commands {
 
     /// Test SSH reachability of a saved connection (single or multi-host)
     #[command(
+        display_order = 601,
         long_about = "Attempt a TCP connect (and optional SSH handshake) to verify hosts are reachable.\n\
             Supports single host, all hosts (--all), or filtering by tag (-g/--tag).\n\n\
             Examples:\n\
@@ -357,6 +384,7 @@ pub enum Commands {
     },
 
     /// List tag groups, or show connections in a specific group
+    #[command(display_order = 109)]
     Groups {
         /// Tag name to filter by (omit to list all groups)
         group_name: Option<String>,
@@ -364,6 +392,7 @@ pub enum Commands {
 
     /// Import SSH hosts from an OpenSSH config file or encrypted JSON backup
     #[command(
+        display_order = 402,
         long_about = "Parse an OpenSSH config file or encrypted JSON backup and import each host as a connection.\n\
             Defaults to ~/.ssh/config when --file is omitted.\n\n\
             Imported keys: HostName, User, Port, IdentityFile, ProxyJump and ProxyCommand\n\
@@ -389,6 +418,7 @@ pub enum Commands {
 
     /// Manage inventory sources (add, list, sync, remove)
     #[command(
+        display_order = 401,
         long_about = "Configure inventories that connections can be discovered from.\n\n\
             A source remembers how to find hosts (SSH config, Ansible, Tailscale, AWS, GCP).\n\
             Adding a source does not import anything: run `bssh source sync <NAME>` to\n\
@@ -407,6 +437,7 @@ pub enum Commands {
 
     /// Share connections with your team through an end-to-end encrypted vault
     #[command(
+        display_order = 501,
         long_about = "bssh Teams: shared connections, encrypted on your devices.\n\n\
             The sync server stores only ciphertext. Team connections appear in\n\
             `bssh list` and `bssh connect` like any other host, and connecting to one\n\
@@ -431,6 +462,7 @@ pub enum Commands {
 
     /// Manage organizations: owners, teams, billing
     #[command(
+        display_order = 502,
         long_about = "An organization owns teams and, on servers with billing, their\n\
             subscription and seats. Seats are counted per organization: someone in\n\
             several of its teams takes one seat, and a pending invite holds one.\n\n\
@@ -451,6 +483,7 @@ pub enum Commands {
 
     /// Let AI agents operate servers safely (MCP proxy with policy, approvals and audit)
     #[command(
+        display_order = 503,
         long_about = "bssh AI: your agent gets your servers, not your keys.\n\n\
             `bssh ai mcp` is an MCP server for Claude Code, Codex, Cursor and other agents.\n\
             Every call is parsed, checked against a policy, run in a read-only jail or\n\
@@ -468,18 +501,22 @@ pub enum Commands {
     },
 
     /// Manage multi-environment profiles (separate connection databases)
+    #[command(display_order = 606)]
     Env {
         #[command(subcommand)]
         command: EnvCommands,
     },
 
     /// Generate shell completion script for bash, zsh, fish, or powershell
-    #[command(long_about = "Print a completion script to stdout.\n\
+    #[command(
+        display_order = 608,
+        long_about = "Print a completion script to stdout.\n\
             Source or install it for your shell to enable tab-completion.\n\n\
             Examples:\n\
               bssh completions bash > ~/.local/share/bash-completion/completions/bssh\n\
               bssh completions zsh > ~/.zfunc/_bssh\n\
-              bssh completions fish > ~/.config/fish/completions/bssh.fish")]
+              bssh completions fish > ~/.config/fish/completions/bssh.fish"
+    )]
     Completions {
         /// Target shell
         #[arg(value_enum)]
@@ -487,12 +524,15 @@ pub enum Commands {
     },
 
     /// Show past SSH session history (timestamps, durations, exit codes)
-    #[command(long_about = "Display a log of past SSH sessions.\n\
+    #[command(
+        display_order = 301,
+        long_about = "Display a log of past SSH sessions.\n\
             Includes connection name, start time, duration, and exit status.\n\n\
             Examples:\n\
               bssh history\n\
               bssh history -c web-prod -n 50\n\
-              bssh history --days 7 --failed")]
+              bssh history --days 7 --failed"
+    )]
     History {
         /// Show only sessions for this connection name
         #[arg(short = 'c', long, value_name = "NAME")]
@@ -513,6 +553,7 @@ pub enum Commands {
 
     /// Replay a recorded SSH session in the terminal
     #[command(
+        display_order = 302,
         long_about = "Play back a recorded asciicast v2 session in the terminal.\n\
             Find session IDs with `bssh history` or `bssh history --grep <text>`.\n\n\
             Examples:\n\
@@ -532,6 +573,7 @@ pub enum Commands {
 
     /// Launch the Tauri desktop GUI (runs detached in the background)
     #[command(
+        display_order = 607,
         alias = "gui",
         long_about = "Launch the bayesian-ssh desktop GUI application in the background (detached from terminal)."
     )]
@@ -539,6 +581,7 @@ pub enum Commands {
 
     /// Run a command on remote host(s) and print output locally
     #[command(
+        display_order = 201,
         alias = "run",
         long_about = "Execute a one-off command over SSH without opening an interactive shell.\n\
             Supports single host, all hosts (--all), or filtering by tag (-t/--tag).\n\
@@ -575,6 +618,7 @@ pub enum Commands {
 
     /// Upload a file or directory to one or many remote hosts in parallel
     #[command(
+        display_order = 202,
         override_usage = "bssh upload [OPTIONS] [TARGETS] <LOCAL> <REMOTE>",
         long_about = "Transfer a local file or directory to one or more hosts, in parallel.\n\
             Uses SFTP for native connections and falls back to SCP automatically\n\
@@ -616,6 +660,7 @@ pub enum Commands {
 
     /// Download a file or directory from a remote host (SFTP or SCP fallback)
     #[command(
+        display_order = 203,
         long_about = "Transfer a remote file or directory to the local machine.\n\
             Uses SFTP for native connections and falls back to SCP automatically\n\
             when connecting through an interactive bastion.\n\n\
@@ -639,6 +684,7 @@ pub enum Commands {
 
     /// Forward a local port to a remote address through an SSH tunnel
     #[command(
+        display_order = 204,
         alias = "tunnel",
         long_about = "Create an SSH local port-forward (-L style).\n\
             Traffic to the local bind address is tunneled to the remote target.\n\n\
@@ -658,6 +704,7 @@ pub enum Commands {
 
     /// Start a SOCKS5 dynamic proxy through an SSH connection
     #[command(
+        display_order = 205,
         alias = "socks",
         long_about = "Open an SSH dynamic port-forward (-D style) acting as a local SOCKS5 proxy.\n\
             Point your browser or application to the local port to route traffic through the remote host.\n\n\
@@ -678,6 +725,7 @@ pub enum Commands {
 
     /// Create, remove, or list short aliases for connections
     #[command(
+        display_order = 108,
         long_about = "Aliases let you refer to connections by shorter names.\n\n\
             Examples:\n\
               bssh alias add wp web-prod\n\
@@ -691,6 +739,7 @@ pub enum Commands {
 
     /// Close active SSH sessions or clean up stale ones
     #[command(
+        display_order = 206,
         alias = "kill",
         long_about = "Terminate running SSH sessions started by bssh.\n\
             With no arguments, lists currently active sessions.\n\n\
@@ -715,6 +764,7 @@ pub enum Commands {
 
     /// Explain the predictive ranking score of a connection in the current context
     #[command(
+        display_order = 304,
         long_about = "Break down the Bayesian ranking score of a saved connection factor by factor.\n\
             Shows frequency prior, recency, success rate, and context likelihood ratios\n\
             (repository, hour of day, and previous connection).\n\n\

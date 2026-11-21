@@ -1,8 +1,8 @@
-use crate::cli::utils::{format_duration, truncate_display};
+use crate::cli::utils::format_duration;
 use crate::config::AppConfig;
 use crate::services::SshService;
+use crate::ui::{Glyph, KvList, Style, Table, Tone, heading};
 use anyhow::Result;
-use std::borrow::Cow;
 use tracing::info;
 
 pub async fn execute(
@@ -16,6 +16,7 @@ pub async fn execute(
         tag, recent, detailed
     );
 
+    let style = Style::terminal();
     let ssh_service = SshService::new(config.clone())?;
     let connections = ssh_service.list_connections(tag.as_deref(), recent).await?;
     let source_names: std::collections::HashMap<_, _> = crate::database::Database::new(&config)?
@@ -25,120 +26,150 @@ pub async fn execute(
         .collect();
 
     if connections.is_empty() {
-        println!("📭 No connections found.");
+        println!("{} No connections found.", style.mark(Glyph::Dot));
         if tag.is_some() {
-            println!("   Try without --tag filter or use 'bssh add' to create connections.");
+            println!(
+                "  {}",
+                style.paint(
+                    Tone::Dim,
+                    "Try without --tag filter or use 'bssh add' to create connections."
+                )
+            );
         }
         return Ok(());
     }
 
-    // Header
-    let filter_info = match (&tag, recent) {
-        (Some(t), true) => format!(" (tag: {}, recent only)", t),
-        (Some(t), false) => format!(" (tag: {})", t),
-        (None, true) => " (recent only)".to_string(),
-        (None, false) => String::new(),
+    let dot = style.glyph(Glyph::Dot);
+    let meta = match (&tag, recent) {
+        (Some(t), true) => format!("{} {dot} tag: {t}, recent", connections.len()),
+        (Some(t), false) => format!("{} {dot} tag: {t}", connections.len()),
+        (None, true) => format!("{} {dot} recent", connections.len()),
+        (None, false) => format!("{}", connections.len()),
     };
 
-    println!("\n🔗 Connections{}", filter_info);
-    println!("{}", "═".repeat(70));
+    println!("{}", heading(&style, "Connections", Some(&meta)));
 
     if detailed {
         for conn in &connections {
-            // Connection header
-            let status_icons = format!(
-                "{}{}",
-                if conn.use_kerberos { "🔐" } else { "" },
-                if conn.bastion.is_some() { "🔗" } else { "" }
-            );
+            let mut badges = Vec::new();
+            if conn.use_kerberos {
+                badges.push(style.paint(Tone::Info, "krb5"));
+            }
+            if conn.bastion.is_some() {
+                badges.push(style.paint(Tone::Info, "jump"));
+            }
+            if conn.stale_since.is_some() {
+                badges.push(style.paint(Tone::Warn, "stale"));
+            }
 
-            println!("\n┌─ {} {}", conn.name, status_icons);
-            println!("│  {}@{}:{}", conn.user, conn.host, conn.port);
+            if badges.is_empty() {
+                println!("\n{}", style.paint(Tone::Strong, &conn.name));
+            } else {
+                println!(
+                    "\n{} {}",
+                    style.paint(Tone::Strong, &conn.name),
+                    badges.join(" ")
+                );
+            }
+
+            let mut kv = KvList::new();
+            kv.push("address", format!("{}@{}:{}", conn.user, conn.host, conn.port));
 
             if let Some(bastion) = &conn.bastion {
-                println!(
-                    "│  via {}@{}",
-                    conn.bastion_user.as_deref().unwrap_or(&conn.user),
-                    bastion
+                kv.push(
+                    "jump",
+                    format!(
+                        "{}@{}",
+                        conn.bastion_user.as_deref().unwrap_or(&conn.user),
+                        bastion
+                    ),
                 );
             }
 
             if let Some(key) = &conn.key_path {
-                println!("│  key: {}", key);
+                kv.push("key", key.clone());
             }
 
             if !conn.tags.is_empty() {
-                println!("│  tags: {}", conn.tags.join(", "));
+                kv.push("tags", style.paint(Tone::Dim, &conn.tags.join(", ")));
             }
 
             if let Some(source) = conn.source_id.and_then(|id| source_names.get(&id)) {
-                println!("│  source: {}", source);
+                kv.push("source", style.paint(Tone::Dim, source));
             }
 
             if let Some(stale_since) = conn.stale_since {
-                println!("│  stale since: {}", format_duration(stale_since));
+                kv.push(
+                    "stale since",
+                    style.paint(Tone::Warn, &format_duration(stale_since)),
+                );
             }
 
             if let Some(last_used) = conn.last_used {
-                println!("│  last: {}", format_duration(last_used));
+                kv.push(
+                    "last used",
+                    style.paint(Tone::Dim, &format_duration(last_used)),
+                );
             }
 
-            println!("└─ id: {}", conn.id);
+            kv.push("id", style.paint(Tone::Dim, &conn.id.to_string()));
+            println!("{}", kv.render(&style).trim_end_matches('\n'));
         }
     } else {
-        // Table header
-        println!(
-            "{:<3} {:<20} {:<25} {:<8} INFO",
-            "#", "NAME", "HOST", "PORT"
-        );
-        println!("{}", "─".repeat(70));
+        let mut table = Table::new(&["#", "NAME", "TARGET", "PORT", "INFO"])
+            .align_right(0)
+            .align_right(3);
 
         for (i, conn) in connections.iter().enumerate() {
-            let icons = format!(
-                "{}{}",
-                if conn.use_kerberos { "🔐" } else { "  " },
-                if conn.bastion.is_some() { "🔗" } else { "  " }
-            );
-
-            let last_used = conn.last_used.map(format_duration).unwrap_or_default();
-
-            let tags = if !conn.tags.is_empty() {
-                format!("[{}]", conn.tags.join(","))
-            } else {
-                String::new()
-            };
-
-            let info = format!("{} {} {}", icons, last_used, tags)
-                .trim()
-                .to_string();
-            let info = match conn.source_id.and_then(|id| source_names.get(&id)) {
-                Some(source) => format!("[{}] {}", source, info),
-                None => info,
-            };
-            let name: Cow<'_, str> = if conn.stale_since.is_some() {
-                Cow::Owned(format!("{} (stale)", truncate_display(&conn.name, 11)))
-            } else {
-                Cow::Borrowed(conn.name.as_str())
-            };
-
-            println!(
-                "{:<3} {:<20} {:<25} {:<8} {}",
-                i + 1,
-                truncate_display(&name, 19),
+            let name_cell = if conn.stale_since.is_some() {
                 format!(
-                    "{}@{}",
-                    truncate_display(&conn.user, 8),
-                    truncate_display(&conn.host, 15)
-                ),
-                conn.port,
-                info
-            );
+                    "{} {}",
+                    style.paint(Tone::Strong, &conn.name),
+                    style.paint(Tone::Warn, "(stale)")
+                )
+            } else {
+                style.paint(Tone::Strong, &conn.name)
+            };
+
+            let target_cell = format!("{}@{}", conn.user, conn.host);
+            let port_cell = style.paint(Tone::Dim, &conn.port.to_string());
+
+            let mut info_parts = Vec::new();
+            if conn.use_kerberos {
+                info_parts.push(style.paint(Tone::Info, "krb5"));
+            }
+            if conn.bastion.is_some() {
+                info_parts.push(style.paint(Tone::Info, "jump"));
+            }
+            if let Some(source) = conn.source_id.and_then(|id| source_names.get(&id)) {
+                info_parts.push(style.paint(Tone::Dim, &format!("[{source}]")));
+            }
+            if let Some(last_used) = conn.last_used {
+                info_parts.push(style.paint(Tone::Dim, &format_duration(last_used)));
+            }
+            if !conn.tags.is_empty() {
+                info_parts.push(style.paint(Tone::Dim, &format!("[{}]", conn.tags.join(","))));
+            }
+
+            table.row(vec![
+                style.paint(Tone::Dim, &(i + 1).to_string()),
+                name_cell,
+                target_cell,
+                port_cell,
+                info_parts.join(" "),
+            ]);
         }
+
+        println!("{}", table.render(&style).trim_end_matches('\n'));
     }
 
-    println!("{}", "─".repeat(70));
-    println!("Total: {} connection(s)", connections.len());
-    println!();
+    println!(
+        "\n{}",
+        style.paint(
+            Tone::Dim,
+            &format!("Total: {} connection(s)", connections.len())
+        )
+    );
 
     Ok(())
 }

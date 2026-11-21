@@ -23,7 +23,9 @@ fn command_failure_prints_actionable_error_when_database_file_is_missing() {
     assert!(!output.status.success());
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("Error:"));
+    assert!(stderr.contains("error:"));
     assert!(stderr.contains("Database file does not exist"));
-    assert!(stderr.contains("Suggestion:"));
+    assert!(stderr.contains("hint:"));
+    // Regression check: error should only be printed once (no duplicate tracing::error! line).
+    assert_eq!(stderr.matches("Database file does not exist").count(), 1);
 }

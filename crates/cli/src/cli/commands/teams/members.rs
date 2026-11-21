@@ -7,6 +7,7 @@ use crate::cli::utils::confirm;
 use crate::config::AppConfig;
 use crate::services::teams::TeamsStore;
 use crate::services::teams::session::{self, Session};
+use crate::ui::{Glyph, Style, Table, Tone, heading};
 use anyhow::Result;
 use bssh_teams_proto::api::Role;
 
@@ -21,37 +22,81 @@ pub(super) struct MemberRef<'a> {
 /// # Errors
 /// Fails when the team cannot be resolved or the member list cannot be fetched.
 pub(super) async fn members(store: &TeamsStore, config: &AppConfig, team: &str) -> Result<()> {
+    let style = Style::terminal();
     let db = store.database();
     let (team_id, source) = session::resolve_team(db, team)?;
     let s = Session::open(store, config, &passphrase(Passphrase::Existing)?)?;
     let members = s.members(team_id).await?;
-    println!("👥 {} ({} member(s))", source.name, members.len());
+
+    let meta = format!("{} member(s)", members.len());
+    println!("{}", heading(&style, &source.name, Some(&meta)));
+
+    let mut table = Table::new(&["MEMBER", "ROLE", "DEVICE", "FINGERPRINT", "DEVICE ID", "STATUS"]);
     for m in members {
-        let role = match m.role {
-            Role::Admin => "admin",
-            Role::Member => "member",
+        let role_badge = match m.role {
+            Role::Admin => style.paint(Tone::Info, "admin"),
+            Role::Member => style.paint(Tone::Dim, "member"),
         };
-        println!("  {} [{role}]", m.email);
-        for d in &m.devices {
-            println!("{}", device_line(d));
+        if m.devices.is_empty() {
+            table.row(vec![
+                style.paint(Tone::Strong, &m.email),
+                role_badge,
+                style.paint(Tone::Dim, "-"),
+                style.paint(Tone::Dim, "-"),
+                style.paint(Tone::Dim, "-"),
+                style.paint(Tone::Dim, "no devices"),
+            ]);
+        } else {
+            for (idx, d) in m.devices.iter().enumerate() {
+                let email_cell = if idx == 0 {
+                    style.paint(Tone::Strong, &m.email)
+                } else {
+                    String::new()
+                };
+                let role_cell = if idx == 0 {
+                    role_badge.clone()
+                } else {
+                    String::new()
+                };
+                let fp = crate::services::teams::crypto::fingerprint(&d.ed25519_public);
+                let status_cell = match d.revoked_at {
+                    Some(at) => style.paint(Tone::Warn, &format!("revoked {}", at.format("%Y-%m-%d"))),
+                    None => style.paint(Tone::Ok, "active"),
+                };
+                table.row(vec![
+                    email_cell,
+                    role_cell,
+                    d.name.clone(),
+                    style.paint(Tone::Dim, &fp),
+                    style.paint(Tone::Dim, &d.device_id.to_string()),
+                    status_cell,
+                ]);
+            }
         }
     }
+    if !table.is_empty() {
+        println!("{}", table.render(&style).trim_end_matches('\n'));
+    }
+
     if let Some(invites) = s.invites(team_id).await?.filter(|i| !i.is_empty()) {
-        println!();
-        println!(
-            "✉️  Pending invites ({}), each holding a seat:",
-            invites.len()
-        );
+        let dot = style.glyph(Glyph::Dot);
+        let inv_meta = format!("{} {dot} each holding a seat", invites.len());
+        println!("\n{}", heading(&style, "Pending Invites", Some(&inv_meta)));
+
+        let mut inv_table = Table::new(&["EMAIL", "EXPIRES"]);
         for i in &invites {
-            println!(
-                "  {:<32} expires {}",
-                i.email,
-                i.expires_at.format("%Y-%m-%d")
-            );
+            inv_table.row(vec![
+                style.paint(Tone::Strong, &i.email),
+                style.paint(Tone::Dim, &i.expires_at.format("%Y-%m-%d").to_string()),
+            ]);
         }
+        println!("{}", inv_table.render(&style).trim_end_matches('\n'));
         println!(
-            "   Revoke one: `bssh teams uninvite {} <email>`",
-            source.name
+            "\n{}",
+            style.paint(
+                Tone::Dim,
+                &format!("Revoke one: `bssh teams uninvite {} <email>`", source.name)
+            )
         );
     }
     Ok(())
@@ -68,22 +113,36 @@ pub(super) async fn remove(
     config: &AppConfig,
     member: MemberRef<'_>,
 ) -> Result<()> {
+    let style = Style::terminal();
     let db = store.database();
     let (team_id, source) = session::resolve_team(db, member.team)?;
     let s = Session::open(store, config, &passphrase(Passphrase::Existing)?)?;
     let preview = s.remove_preview(team_id, member.email).await?;
     if !preview.blocking.is_empty() {
         println!(
-            "⚠️  These devices were never approved on this machine, so the team key can't be \
-             rotated yet:"
+            "{} These devices were never approved on this machine, so the team key can't be \
+             rotated yet:",
+            style.mark(Glyph::Ask)
         );
+        let mut table = Table::new(&["EMAIL", "DEVICE", "FINGERPRINT"]);
         for d in &preview.blocking {
-            println!("   {} {} ({})", d.email, d.name, d.fingerprint);
+            table.row(vec![
+                d.email.clone(),
+                d.name.clone(),
+                style.paint(Tone::Dim, &d.fingerprint),
+            ]);
         }
+        println!("{}", table.render(&style));
         println!(
-            "   {} is still removed; nobody can push until you approve them \
-             (`bssh teams grant {}`) and sync.",
-            member.email, source.name
+            "  {}",
+            style.paint(
+                Tone::Dim,
+                &format!(
+                    "{} is still removed; nobody can push until you approve them \
+                     (`bssh teams grant {}`) and sync.",
+                    member.email, source.name
+                )
+            )
         );
     }
     if !confirm(
@@ -93,31 +152,24 @@ pub(super) async fn remove(
         ),
         false,
     )? {
-        println!("Cancelled.");
+        println!("{}", style.paint(Tone::Dim, "Cancelled."));
         return Ok(());
     }
     let sync = s.remove(team_id, member.email).await?;
-    println!("✅ Removed {} from '{}'.", member.email, source.name);
+    println!(
+        "{} Removed {} from '{}'.",
+        style.mark(Glyph::Ok),
+        style.paint(Tone::Strong, member.email),
+        source.name
+    );
     print_sync(&source.name, &sync);
     println!(
-        "   They can no longer sync, and nothing written from now on is readable by them.\n   \
-         They may still have copies of what they already synced: rotate any credentials that matter."
+        "  {}",
+        style.paint(
+            Tone::Dim,
+            "They can no longer sync, and nothing written from now on is readable by them.\n  \
+             They may still have copies of what they already synced: rotate any credentials that matter."
+        )
     );
     Ok(())
-}
-
-/// One device in `bssh teams members`: name, fingerprint and id (the argument
-/// of `bssh teams device revoke`). Revoked devices stay listed, marked, since
-/// they still count as authors of what they wrote.
-fn device_line(d: &bssh_teams_proto::api::DeviceInfo) -> String {
-    let mut line = format!(
-        "      {:<20} {}  {}",
-        d.name,
-        crate::services::teams::crypto::fingerprint(&d.ed25519_public),
-        d.device_id
-    );
-    if let Some(at) = d.revoked_at {
-        line.push_str(&format!("  revoked {}", at.format("%Y-%m-%d")));
-    }
-    line
 }

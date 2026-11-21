@@ -1,8 +1,9 @@
 //! Close command implementation - manage active sessions
 
-use crate::cli::utils::{confirm, format_elapsed, truncate_display};
+use crate::cli::utils::{confirm, format_elapsed};
 use crate::config::AppConfig;
 use crate::database::{ActiveSession, Database, live_pid};
+use crate::ui::{Glyph, Style, Table, Tone, heading};
 use anyhow::Result;
 use nix::sys::signal::{Signal, kill};
 
@@ -51,19 +52,20 @@ pub async fn execute(
 
 /// List all active sessions
 fn list_active_sessions(db: &Database) -> Result<()> {
+    let style = Style::terminal();
     let sessions = db.active_sessions()?;
 
     if sessions.is_empty() {
-        println!("📋 No active sessions.");
+        println!("{} No active sessions.", style.mark(Glyph::Dot));
         return Ok(());
     }
 
-    println!("📋 Active Sessions\n");
-    println!(
-        "{:<20} {:<10} {:<25} DURATION",
-        "CONNECTION", "PID", "STARTED"
-    );
-    println!("{}", "─".repeat(70));
+    let meta = format!("{}", sessions.len());
+    println!("{}", heading(&style, "Active Sessions", Some(&meta)));
+
+    let mut table = Table::new(&["CONNECTION", "PID", "STARTED", "DURATION", "STATUS"])
+        .align_right(1)
+        .align_right(3);
 
     for ActiveSession {
         connection: conn_name,
@@ -81,36 +83,61 @@ fn list_active_sessions(db: &Database) -> Result<()> {
         // Check if process is actually running
         let status = if let Some(p) = pid {
             if live_pid(*p).is_some() {
-                "🟢"
+                format!(
+                    "{} {}",
+                    style.paint(Tone::Ok, style.glyph(Glyph::Running)),
+                    style.paint(Tone::Ok, "active")
+                )
             } else {
-                "⚠️ stale"
+                format!(
+                    "{} {}",
+                    style.mark(Glyph::Ask),
+                    style.paint(Tone::Warn, "stale")
+                )
             }
         } else {
-            "❓"
+            format!(
+                "{} {}",
+                style.mark(Glyph::Idle),
+                style.paint(Tone::Dim, "unknown")
+            )
         };
 
-        println!(
-            "{:<20} {:<10} {:<25} {} {}",
-            truncate_display(conn_name, 19),
-            pid_str,
-            started_at.format("%Y-%m-%d %H:%M:%S"),
+        table.row(vec![
+            style.paint(Tone::Strong, conn_name),
+            style.paint(Tone::Dim, &pid_str),
+            style.paint(
+                Tone::Dim,
+                &started_at.format("%Y-%m-%d %H:%M:%S").to_string(),
+            ),
             duration_str,
-            status
-        );
+            status,
+        ]);
     }
 
-    println!("\n💡 Use 'bssh close <connection>' to close a session");
-    println!("   Use 'bssh close --cleanup' to remove stale sessions");
+    println!("{}", table.render(&style));
+    println!(
+        "\n{}",
+        style.paint(
+            Tone::Dim,
+            "Use 'bssh close <connection>' to close a session, or 'bssh close --cleanup' for stale ones."
+        )
+    );
 
     Ok(())
 }
 
 /// Close a specific session
 fn close_session(db: &Database, target: &str, confirmation: Confirmation) -> Result<()> {
+    let style = Style::terminal();
     let sessions = db.active_sessions_for_connection(target)?;
 
     if sessions.is_empty() {
-        println!("❌ No active sessions found for '{}'", target);
+        println!(
+            "{} No active sessions found for '{}'.",
+            style.mark(Glyph::Bad),
+            target
+        );
         return Ok(());
     }
 
@@ -129,24 +156,36 @@ fn close_session(db: &Database, target: &str, confirmation: Confirmation) -> Res
                         true,
                     )?
                 {
-                    println!("Skipped.");
+                    println!("{}", style.paint(Tone::Dim, "Skipped."));
                     continue;
                 }
 
                 match kill(target, Signal::SIGTERM) {
                     Ok(_) => {
-                        println!("✅ Sent SIGTERM to session '{}' (PID {})", conn_name, p);
+                        println!(
+                            "{} Sent SIGTERM to session '{}' (PID {}).",
+                            style.mark(Glyph::Ok),
+                            style.paint(Tone::Strong, &conn_name),
+                            p
+                        );
                         db.mark_session_terminated(&session_id, -15)?; // SIGTERM = 15
                     }
                     Err(e) => {
-                        println!("❌ Failed to kill PID {}: {}", p, e);
+                        println!(
+                            "{} Failed to kill PID {}: {}",
+                            style.mark(Glyph::Bad),
+                            p,
+                            e
+                        );
                     }
                 }
             } else {
                 // Process not running, just update the record
                 println!(
-                    "⚠️  Session '{}' (PID {}) is stale, cleaning up...",
-                    conn_name, p
+                    "{} Session '{}' (PID {}) is stale, cleaning up...",
+                    style.mark(Glyph::Ask),
+                    style.paint(Tone::Strong, &conn_name),
+                    p
                 );
                 db.mark_session_terminated(&session_id, -1)?;
             }
@@ -161,10 +200,14 @@ fn close_session(db: &Database, target: &str, confirmation: Confirmation) -> Res
 
 /// Close all active sessions
 fn close_all_sessions(db: &Database, confirmation: Confirmation) -> Result<()> {
+    let style = Style::terminal();
     let sessions = db.active_sessions()?;
 
     if sessions.is_empty() {
-        println!("📋 No active sessions to close.");
+        println!(
+            "{} No active sessions to close.",
+            style.mark(Glyph::Dot)
+        );
         return Ok(());
     }
 
@@ -174,7 +217,7 @@ fn close_all_sessions(db: &Database, confirmation: Confirmation) -> Result<()> {
             false,
         )?
     {
-        println!("Cancelled.");
+        println!("{}", style.paint(Tone::Dim, "Cancelled."));
         return Ok(());
     }
 
@@ -197,8 +240,10 @@ fn close_all_sessions(db: &Database, confirmation: Confirmation) -> Result<()> {
     db.mark_all_sessions_terminated()?;
 
     println!(
-        "✅ Closed {} sessions, cleaned {} stale records",
-        closed, cleaned
+        "{} Closed {} session(s), cleaned {} stale record(s).",
+        style.mark(Glyph::Ok),
+        closed,
+        cleaned
     );
 
     Ok(())
@@ -206,18 +251,32 @@ fn close_all_sessions(db: &Database, confirmation: Confirmation) -> Result<()> {
 
 /// Clean up stale sessions (PIDs no longer running)
 fn cleanup_stale_sessions(db: &Database, config: &AppConfig) -> Result<()> {
+    let style = Style::terminal();
     let cleaned = db.close_stale_sessions()?;
     for (conn_name, pid) in &cleaned {
         match pid {
-            Some(p) => println!("🧹 Cleaned stale session: {} (PID {})", conn_name, p),
-            None => println!("🧹 Cleaned stale session: {}", conn_name),
+            Some(p) => println!(
+                "{} Cleaned stale session: {} {}",
+                style.mark(Glyph::Ok),
+                style.paint(Tone::Strong, conn_name),
+                style.paint(Tone::Dim, &format!("(PID {p})"))
+            ),
+            None => println!(
+                "{} Cleaned stale session: {}",
+                style.mark(Glyph::Ok),
+                style.paint(Tone::Strong, conn_name)
+            ),
         }
     }
 
     if cleaned.is_empty() {
-        println!("✨ No stale sessions found.");
+        println!("{} No stale sessions found.", style.mark(Glyph::Ok));
     } else {
-        println!("\n✅ Cleaned {} stale session(s)", cleaned.len());
+        println!(
+            "\n{} Cleaned {} stale session(s).",
+            style.mark(Glyph::Ok),
+            cleaned.len()
+        );
     }
 
     if config.recording.retention_days > 0 {
@@ -231,7 +290,8 @@ fn cleanup_stale_sessions(db: &Database, config: &AppConfig) -> Result<()> {
         }
         if !pruned.is_empty() {
             println!(
-                "🗑️  Pruned {} expired recording(s) (older than {} days)",
+                "{} Pruned {} expired recording(s) (older than {} days).",
+                style.mark(Glyph::Ok),
                 pruned.len(),
                 config.recording.retention_days
             );

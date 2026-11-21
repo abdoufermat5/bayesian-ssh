@@ -1,9 +1,10 @@
 //! History command implementation - display session history with stats
 
-use crate::cli::utils::{format_elapsed, truncate_display};
+use crate::cli::utils::format_elapsed;
 use crate::config::AppConfig;
 use crate::database::Database;
 use crate::models::{SessionHistoryEntry, SessionStatus};
+use crate::ui::{Glyph, Style, Table, Tone, heading, truncate};
 use anyhow::Result;
 use chrono::Duration;
 
@@ -16,6 +17,7 @@ pub async fn execute(
     grep: Option<String>,
     config: AppConfig,
 ) -> Result<()> {
+    let style = Style::terminal();
     let db = Database::new(&config)?;
 
     // Sessions whose process is gone would otherwise be listed as active.
@@ -24,15 +26,18 @@ pub async fn execute(
     if let Some(query) = grep {
         let hits = db.search_session_text(&query, connection.as_deref(), days, limit)?;
         if hits.is_empty() {
-            println!("📋 No recorded session output matched {:?}.", query);
+            println!(
+                "{} No recorded session output matched {:?}.",
+                style.mark(Glyph::Dot),
+                query
+            );
             return Ok(());
         }
 
-        println!(
-            "{:<20} {:<20} {:<10} SNIPPET",
-            "CONNECTION", "STARTED", "SESSION"
-        );
-        println!("{}", "─".repeat(88));
+        let meta = format!("{} match(es)", hits.len());
+        println!("{}", heading(&style, "Session Search", Some(&meta)));
+
+        let mut table = Table::new(&["CONNECTION", "STARTED", "SESSION", "SNIPPET"]);
         for hit in &hits {
             let short_id: String = hit.session_id.chars().take(8).collect();
             let snippet_line = hit
@@ -41,15 +46,17 @@ pub async fn execute(
                 .split_whitespace()
                 .collect::<Vec<_>>()
                 .join(" ");
-            println!(
-                "{:<20} {:<20} {:<10} {}",
-                truncate_display(&hit.connection_name, 19),
-                hit.started_at.format("%Y-%m-%d %H:%M:%S"),
-                short_id,
-                snippet_line
-            );
+            table.row(vec![
+                style.paint(Tone::Strong, &hit.connection_name),
+                style.paint(
+                    Tone::Dim,
+                    &hit.started_at.format("%Y-%m-%d %H:%M:%S").to_string(),
+                ),
+                style.paint(Tone::Dim, &short_id),
+                snippet_line,
+            ]);
         }
-        println!();
+        println!("{}", table.render(&style));
         return Ok(());
     }
 
@@ -57,9 +64,18 @@ pub async fn execute(
     let sessions = db.session_history(connection.as_deref(), limit, days, show_failed)?;
 
     if sessions.is_empty() {
-        println!("📋 No session history found.");
+        println!(
+            "{} No session history found.",
+            style.mark(Glyph::Dot)
+        );
         if connection.is_some() {
-            println!("   Try without the connection filter to see all history.");
+            println!(
+                "  {}",
+                style.paint(
+                    Tone::Dim,
+                    "Try without the connection filter to see all history."
+                )
+            );
         }
         return Ok(());
     }
@@ -67,59 +83,59 @@ pub async fn execute(
     // Calculate statistics
     let stats = calculate_stats(&sessions);
 
-    // Print header
-    println!("📋 Session History\n");
-    println!("{}", "─".repeat(88));
-
-    // Print statistics summary
-    println!(
-        "📊 Summary: {} sessions | ✅ {} successful ({:.1}%) | ❌ {} failed | ⏱️  Avg duration: {}",
+    let dot = style.glyph(Glyph::Dot);
+    let summary = format!(
+        "{} sessions {dot} {} ok ({:.1}%) {dot} {} failed {dot} avg {}",
         stats.total,
         stats.successful,
         stats.success_rate * 100.0,
         stats.failed,
         format_elapsed(stats.avg_duration)
     );
-    println!("{}", "─".repeat(88));
-    println!();
 
-    // Print session entries
-    println!(
-        "{:<10} {:<20} {:<20} {:<12} {:<15} EXIT CODE",
-        "SESSION", "CONNECTION", "STARTED", "DURATION", "STATUS"
-    );
-    println!("{}", "─".repeat(88));
+    println!("{}", heading(&style, "Session History", Some(&summary)));
+
+    let mut table = Table::new(&["SESSION", "CONNECTION", "STARTED", "DURATION", "STATUS", "EXIT"])
+        .align_right(3)
+        .align_right(5);
 
     for session in &sessions {
         let short_id: String = session.session_id.chars().take(8).collect();
-        let rec_marker = if session.recording_path.is_some() {
-            "●"
+        let session_cell = if session.recording_path.is_some() {
+            format!(
+                "{} {}",
+                style.paint(Tone::Dim, &short_id),
+                style.mark(Glyph::Running)
+            )
         } else {
-            " "
+            style.paint(Tone::Dim, &short_id)
         };
-        let status_str = format_status(&session.status);
-        let duration_str = session
+
+        let status_cell = format_status(&style, &session.status);
+        let duration_cell = session
             .duration
             .map(format_elapsed)
-            .unwrap_or_else(|| "ongoing".to_string());
-        let exit_str = session
-            .exit_code
-            .map(|c| c.to_string())
-            .unwrap_or_else(|| "-".to_string());
+            .unwrap_or_else(|| style.paint(Tone::Info, "ongoing"));
+        let exit_cell = match session.exit_code {
+            Some(0) => style.paint(Tone::Ok, "0"),
+            Some(c) => style.paint(Tone::Bad, &c.to_string()),
+            None => style.paint(Tone::Dim, "-"),
+        };
 
-        println!(
-            "{:<8} {} {:<20} {:<20} {:<12} {:<15} {}",
-            short_id,
-            rec_marker,
-            truncate_display(&session.connection_name, 19),
-            session.started_at.format("%Y-%m-%d %H:%M:%S"),
-            duration_str,
-            status_str,
-            exit_str
-        );
+        table.row(vec![
+            session_cell,
+            style.paint(Tone::Strong, &session.connection_name),
+            style.paint(
+                Tone::Dim,
+                &session.started_at.format("%Y-%m-%d %H:%M:%S").to_string(),
+            ),
+            duration_cell,
+            status_cell,
+            exit_cell,
+        ]);
     }
 
-    println!();
+    println!("{}", table.render(&style));
     Ok(())
 }
 
@@ -174,12 +190,32 @@ fn calculate_stats(sessions: &[SessionHistoryEntry]) -> SessionStats {
     }
 }
 
-fn format_status(status: &SessionStatus) -> String {
+fn format_status(style: &Style, status: &SessionStatus) -> String {
     match status {
-        SessionStatus::Starting => "⏳ starting".to_string(),
-        SessionStatus::Active => "🟢 active".to_string(),
-        SessionStatus::Disconnected => "🔌 disconnected".to_string(),
-        SessionStatus::Terminated => "✅ terminated".to_string(),
-        SessionStatus::Error(e) => format!("❌ error: {}", truncate_display(e, 20)),
+        SessionStatus::Starting => format!(
+            "{} {}",
+            style.paint(Tone::Info, style.glyph(Glyph::Waiting)),
+            style.paint(Tone::Info, "starting")
+        ),
+        SessionStatus::Active => format!(
+            "{} {}",
+            style.paint(Tone::Ok, style.glyph(Glyph::Running)),
+            style.paint(Tone::Ok, "active")
+        ),
+        SessionStatus::Disconnected => format!(
+            "{} {}",
+            style.paint(Tone::Warn, style.glyph(Glyph::Idle)),
+            style.paint(Tone::Warn, "disconnected")
+        ),
+        SessionStatus::Terminated => format!(
+            "{} {}",
+            style.mark(Glyph::Ok),
+            style.paint(Tone::Ok, "terminated")
+        ),
+        SessionStatus::Error(e) => format!(
+            "{} {}",
+            style.mark(Glyph::Bad),
+            style.paint(Tone::Bad, &format!("error: {}", truncate(e, 24)))
+        ),
     }
 }

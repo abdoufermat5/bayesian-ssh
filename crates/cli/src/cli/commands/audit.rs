@@ -2,6 +2,7 @@
 
 use crate::config::{AppConfig, HostKeyPolicy};
 use crate::database::Database;
+use crate::ui::{Glyph, KvList, Style, Tone, heading};
 use anyhow::Result;
 use chrono::Utc;
 use std::fs;
@@ -23,11 +24,17 @@ pub struct AuditFinding {
 }
 
 pub async fn execute(fix: bool, config: AppConfig) -> Result<()> {
+    let style = Style::terminal();
+
     if fix {
-        println!("🔧 Automatically fixing overly permissive file and directory permissions...");
+        println!(
+            "{} Fixing overly permissive file and directory permissions...",
+            style.mark(Glyph::Running)
+        );
         let repaired = fix_permissions(&config)?;
         println!(
-            "✅ Successfully repaired permissions for {} item(s).\n",
+            "{} Repaired permissions for {} item(s).\n",
+            style.mark(Glyph::Ok),
             repaired
         );
     }
@@ -36,10 +43,8 @@ pub async fn execute(fix: bool, config: AppConfig) -> Result<()> {
     let database = Database::new(&config)?;
     let connections = database.list_connections(None, false)?;
 
-    println!("==================================================");
-    println!("        Bayesian SSH Security Audit Report        ");
-    println!("==================================================");
-    println!("Environment: {}\n", config.environment);
+    let meta = format!("env: {}", config.environment);
+    println!("{}", heading(&style, "Security Audit Report", Some(&meta)));
 
     // 1. Audit Transport Security Settings
     if config.transport.host_key_policy() == HostKeyPolicy::Off {
@@ -172,32 +177,64 @@ pub async fn execute(fix: bool, config: AppConfig) -> Result<()> {
     }
     score = score.max(0);
 
-    let (grade, color_label) = match score {
-        90..=100 => ("A+", "EXCELLENT"),
-        80..=89 => ("A", "GOOD"),
-        70..=79 => ("B", "MODERATE"),
-        60..=69 => ("C", "NEEDS IMPROVEMENT"),
-        _ => ("F", "CRITICAL RISK"),
+    let (grade, color_label, score_tone) = match score {
+        90..=100 => ("A+", "EXCELLENT", Tone::Ok),
+        80..=89 => ("A", "GOOD", Tone::Ok),
+        70..=79 => ("B", "MODERATE", Tone::Warn),
+        60..=69 => ("C", "NEEDS IMPROVEMENT", Tone::Warn),
+        _ => ("F", "CRITICAL RISK", Tone::Bad),
     };
 
-    println!(
-        "Security Score: {}/100 (Grade: {}, Rating: {})\n",
-        score, grade, color_label
+    let dot = style.glyph(Glyph::Dot);
+    let mut summary = KvList::new();
+    summary.push(
+        "Score",
+        style.paint(
+            score_tone,
+            &format!("{score}/100 (Grade {grade} {dot} {color_label})"),
+        ),
     );
-    println!("Audit Breakdown (Total Findings: {})\n", findings.len());
+    summary.push("Findings", findings.len().to_string());
+    println!("{}", summary.render(&style).trim_end_matches('\n'));
 
     if findings.is_empty() {
-        println!("No security issues found! Your SSH environment is cleanly configured.");
+        println!(
+            "\n{} No security issues found. Your SSH environment is cleanly configured.",
+            style.mark(Glyph::Ok)
+        );
     } else {
         for (idx, finding) in findings.iter().enumerate() {
-            let sev_str = match finding.severity {
-                AuditSeverity::Critical => "[CRITICAL]",
-                AuditSeverity::Warning => "[WARNING]",
-                AuditSeverity::Info => "[INFO]",
+            let (mark, badge) = match finding.severity {
+                AuditSeverity::Critical => (
+                    style.mark(Glyph::Bad),
+                    style.paint(Tone::Bad, "CRITICAL"),
+                ),
+                AuditSeverity::Warning => (
+                    style.mark(Glyph::Ask),
+                    style.paint(Tone::Warn, "WARNING"),
+                ),
+                AuditSeverity::Info => (
+                    style.paint(Tone::Info, style.glyph(Glyph::Dot)),
+                    style.paint(Tone::Info, "INFO"),
+                ),
             };
-            println!("{}. {} {}", idx + 1, sev_str, finding.title);
-            println!("   Description: {}", finding.description);
-            println!("   Remediation: {}\n", finding.remediation);
+            println!(
+                "\n{}. {} [{}] {}",
+                style.paint(Tone::Dim, &(idx + 1).to_string()),
+                mark,
+                badge,
+                style.paint(Tone::Strong, &finding.title)
+            );
+            println!(
+                "   {} {}",
+                style.paint(Tone::Dim, "Description:"),
+                finding.description
+            );
+            println!(
+                "   {} {}",
+                style.paint(Tone::Dim, "Remediation:"),
+                style.paint(Tone::Info, &finding.remediation)
+            );
         }
     }
 

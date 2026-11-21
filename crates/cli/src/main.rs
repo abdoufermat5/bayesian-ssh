@@ -1,5 +1,5 @@
 use clap::Parser;
-use tracing::{error, info};
+use tracing::{debug, info};
 use tracing_subscriber::filter::LevelFilter;
 
 use bayesian_ssh::cli::{Cli, Commands};
@@ -28,7 +28,13 @@ async fn main() -> anyhow::Result<()> {
     let is_completions = matches!(&cli.command, Some(Commands::Completions { .. }));
 
     // Load configuration first (before initializing logging)
-    let config = AppConfig::load(cli.env.clone())?;
+    let config = match AppConfig::load(cli.env.clone()) {
+        Ok(config) => config,
+        Err(e) => {
+            errors::report_cli_error(&e);
+            std::process::exit(1);
+        }
+    };
 
     let env_prefix = format!("[{}] ", config.environment);
 
@@ -60,9 +66,12 @@ async fn main() -> anyhow::Result<()> {
 
     // Execute CLI command
     if let Err(e) = cli.execute(config).await {
+        if e.downcast_ref::<errors::SilentExit>().is_some() {
+            std::process::exit(1);
+        }
         errors::report_cli_error(&e);
         if !is_completions {
-            error!("Error executing command: {}", e);
+            debug!("Error executing command: {e:?}");
         }
         std::process::exit(1);
     }

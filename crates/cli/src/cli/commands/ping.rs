@@ -1,7 +1,9 @@
 use crate::cli::utils::{MAX_PARALLEL_HOSTS, resolve_connection};
 use crate::config::AppConfig;
+use crate::errors::SilentExit;
 use crate::models::Connection;
 use crate::services::SshService;
+use crate::ui::{Glyph, Style, Table, Tone, heading};
 use anyhow::{Result, bail};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -16,6 +18,7 @@ pub async fn execute(
     timeout: Option<u64>,
     config: AppConfig,
 ) -> Result<()> {
+    let style = Style::terminal();
     let ssh_service = SshService::new(config.clone())?;
     let timeout_secs = timeout.unwrap_or(5);
 
@@ -30,7 +33,10 @@ pub async fn execute(
     };
 
     if targets.is_empty() {
-        println!("No connections matching criteria.");
+        println!(
+            "{} No connections matching criteria.",
+            style.mark(Glyph::Dot)
+        );
         return Ok(());
     }
 
@@ -43,8 +49,10 @@ pub async fn execute(
     if targets.len() == 1 {
         let connection = &targets[0];
         println!(
-            "Testing connectivity to '{}' ({})...",
-            connection.name, connection.host
+            "{} Testing connectivity to {} ({})...",
+            style.mark(Glyph::Running),
+            style.paint(Tone::Strong, &connection.name),
+            style.paint(Tone::Dim, &connection.host)
         );
         let probe = ping_single_host(
             connection,
@@ -52,29 +60,33 @@ pub async fn execute(
             config.auth.agent_socket.as_deref(),
         )
         .await;
+        let latency = format_latency(probe.elapsed);
         if probe.reachable {
             println!(
-                "✅ SSH ping to '{}' successful! (took {:.2?})",
-                connection.name, probe.elapsed
+                "{} {} reachable {}",
+                style.mark(Glyph::Ok),
+                style.paint(Tone::Strong, &connection.name),
+                style.paint(Tone::Dim, &format!("({latency})"))
             );
             return Ok(());
         }
         println!(
-            "❌ SSH ping to '{}' failed. (took {:.2?})",
-            connection.name, probe.elapsed
+            "{} {} unreachable {}",
+            style.mark(Glyph::Bad),
+            style.paint(Tone::Strong, &connection.name),
+            style.paint(Tone::Dim, &format!("({latency})"))
         );
         if !probe.stderr.is_empty() {
-            println!("Error output:\n{}", probe.stderr.trim());
+            println!("  {}", style.paint(Tone::Dim, probe.stderr.trim()));
         }
-        bail!("'{}' is unreachable", connection.name);
+        return Err(anyhow::Error::new(SilentExit));
     }
 
-    println!(
-        "Testing parallel connectivity for {} host(s)... (timeout: {}s)\n",
-        targets.len(),
-        timeout_secs
-    );
     let total = targets.len();
+    let dot = style.glyph(Glyph::Dot);
+    let meta = format!("{total} host(s) {dot} timeout {timeout_secs}s");
+    println!("{}", heading(&style, "SSH Ping", Some(&meta)));
+
     let semaphore = Arc::new(Semaphore::new(MAX_PARALLEL_HOSTS));
     let mut set = JoinSet::new();
 
@@ -89,42 +101,74 @@ pub async fn execute(
         });
     }
 
-    let mut successful_count = 0;
-
+    let mut results = Vec::with_capacity(total);
     while let Some(res) = set.join_next().await {
-        let Ok((conn, success, duration)) = res else {
-            continue; // counted as unreachable via `total`
-        };
-        if success {
-            successful_count += 1;
-            println!(
-                "  ✅ {:<20} {:<25} {:>8.2?}",
-                conn.name,
-                format!("({}:{})", conn.host, conn.port),
-                duration
-            );
-        } else {
-            println!(
-                "  ❌ {:<20} {:<25} {:>8.2?} (FAILED)",
-                conn.name,
-                format!("({}:{})", conn.host, conn.port),
-                duration
-            );
+        if let Ok(entry) = res {
+            results.push(entry);
         }
     }
+    results.sort_by(|a, b| a.0.name.cmp(&b.0.name));
 
-    println!(
-        "\nPing Summary: {}/{} hosts reachable.",
-        successful_count, total
-    );
-    if successful_count < total {
-        bail!(
-            "{} of {} host(s) unreachable",
-            total - successful_count,
-            total
-        );
+    let mut successful_count = 0;
+    let mut table = Table::new(&["STATUS", "NAME", "ENDPOINT", "LATENCY"]).align_right(3);
+
+    for (conn, success, duration) in &results {
+        let latency = format_latency(*duration);
+        let endpoint = style.paint(Tone::Dim, &format!("{}:{}", conn.host, conn.port));
+        let (status, latency_cell) = if *success {
+            successful_count += 1;
+            (
+                format!(
+                    "{} {}",
+                    style.mark(Glyph::Ok),
+                    style.paint(Tone::Ok, "ok")
+                ),
+                latency,
+            )
+        } else {
+            (
+                format!(
+                    "{} {}",
+                    style.mark(Glyph::Bad),
+                    style.paint(Tone::Bad, "failed")
+                ),
+                style.paint(Tone::Dim, &latency),
+            )
+        };
+
+        table.row(vec![
+            status,
+            style.paint(Tone::Strong, &conn.name),
+            endpoint,
+            latency_cell,
+        ]);
     }
-    Ok(())
+
+    println!("{}", table.render(&style));
+
+    if successful_count == total {
+        println!(
+            "\n{} {successful_count}/{total} hosts reachable.",
+            style.mark(Glyph::Ok)
+        );
+        Ok(())
+    } else {
+        println!(
+            "\n{} {successful_count}/{total} hosts reachable ({} failed).",
+            style.mark(Glyph::Bad),
+            total - successful_count
+        );
+        Err(anyhow::Error::new(SilentExit))
+    }
+}
+
+fn format_latency(duration: Duration) -> String {
+    let ms = duration.as_secs_f64() * 1000.0;
+    if ms >= 1000.0 {
+        format!("{:.2} s", duration.as_secs_f64())
+    } else {
+        format!("{ms:.1} ms")
+    }
 }
 
 /// Build the `ssh` argv for a non-interactive reachability probe.

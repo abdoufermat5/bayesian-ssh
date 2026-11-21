@@ -1,10 +1,13 @@
 use crate::config::AppConfig;
 use crate::database::Database;
-use anyhow::{Result, anyhow};
+use crate::errors::SilentExit;
+use crate::ui::{Glyph, Style, Tone, heading};
+use anyhow::Result;
 use std::env;
 use std::path::PathBuf;
 
 pub async fn execute(config: AppConfig) -> Result<()> {
+    let style = Style::terminal();
     let checks = [
         check_configuration(&config),
         check_database(&config),
@@ -14,12 +17,11 @@ pub async fn execute(config: AppConfig) -> Result<()> {
         check_kerberos(&config),
     ];
 
-    println!("bssh doctor");
-    println!("Environment: {}", config.environment);
-    println!();
+    let meta = format!("env: {}", config.environment);
+    println!("{}", heading(&style, "bssh doctor", Some(&meta)));
 
     for check in &checks {
-        print_check(check);
+        print_check(&style, check);
     }
 
     let failed_count = checks
@@ -29,11 +31,17 @@ pub async fn execute(config: AppConfig) -> Result<()> {
 
     println!();
     if failed_count == 0 {
-        println!("Summary: no blocking problems found.");
+        println!(
+            "{} Summary: no blocking problems found.",
+            style.mark(Glyph::Ok)
+        );
         Ok(())
     } else {
-        println!("Summary: {failed_count} blocking problem(s) found.");
-        Err(anyhow!("doctor found {failed_count} failed check(s)"))
+        println!(
+            "{} Summary: {failed_count} blocking problem(s) found.",
+            style.mark(Glyph::Bad)
+        );
+        Err(anyhow::Error::new(SilentExit))
     }
 }
 
@@ -86,17 +94,26 @@ fn failed(
     }
 }
 
-fn print_check(check: &HealthCheck) {
-    let status = match check.status {
-        CheckStatus::Ok => "OK",
-        CheckStatus::Warn => "WARN",
-        CheckStatus::Failed => "FAILED",
+fn print_check(style: &Style, check: &HealthCheck) {
+    let (mark, badge) = match check.status {
+        CheckStatus::Ok => (style.mark(Glyph::Ok), style.paint(Tone::Ok, "OK")),
+        CheckStatus::Warn => (style.mark(Glyph::Ask), style.paint(Tone::Warn, "WARN")),
+        CheckStatus::Failed => (style.mark(Glyph::Bad), style.paint(Tone::Bad, "FAILED")),
     };
 
-    println!("[{status}] {}", check.label);
-    println!("  {}", check.detail);
+    println!(
+        "{} [{}] {}",
+        mark,
+        badge,
+        style.paint(Tone::Strong, check.label)
+    );
+    println!("    {}", style.paint(Tone::Dim, &check.detail));
     if let Some(suggestion) = &check.suggestion {
-        println!("  Suggestion: {suggestion}");
+        println!(
+            "    {} {}",
+            style.paint(Tone::Warn, "Suggestion:"),
+            suggestion
+        );
     }
 }
 

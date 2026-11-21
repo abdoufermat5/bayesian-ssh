@@ -3,11 +3,13 @@ use crate::cli::utils::fuzzy_select_connection;
 use crate::config::AppConfig;
 use crate::database::{Database, RankContext};
 use crate::services::{ConnectOverrides, SshService};
+use crate::ui::{Glyph, Style, Table, Tone, heading};
 use anyhow::Result;
 use clap::CommandFactory;
 use std::io::{self, IsTerminal, Write};
 
 pub async fn execute(config: AppConfig) -> Result<()> {
+    let style = Style::terminal();
     let db = Database::new(&config)?;
     let ctx = if config.prediction.enabled {
         RankContext::current(&db, &config)
@@ -27,46 +29,34 @@ pub async fn execute(config: AppConfig) -> Result<()> {
         .and_then(|id| db.connection(&id.to_string()).ok().flatten())
         .map(|c| c.name);
 
-    let name_width = predictions
-        .iter()
-        .map(|p| p.connection.name.chars().count())
-        .max()
-        .unwrap_or(8)
-        .max(8);
-    let addr_width = predictions
-        .iter()
-        .map(|p| {
-            format!("{}@{}", p.connection.user, p.connection.host)
-                .chars()
-                .count()
-        })
-        .max()
-        .unwrap_or(12)
-        .max(12);
+    println!("{}", heading(&style, "Suggested Connections", None));
 
-    println!("Suggested connections");
+    let mut table = Table::new(&["#", "NAME", "TARGET", "REASON"]).align_right(0);
     for (i, pred) in predictions.iter().enumerate() {
         let addr = format!("{}@{}", pred.connection.user, pred.connection.host);
         let reason = pred.format_reason(&ctx, prev_name.as_deref());
-        println!(
-            " {}. {:<name_w$}  {:<addr_w$}  · {}",
-            i + 1,
-            pred.connection.name,
-            addr,
-            reason,
-            name_w = name_width,
-            addr_w = addr_width,
-        );
+        table.row(vec![
+            style.paint(Tone::Info, &(i + 1).to_string()),
+            style.paint(Tone::Strong, &pred.connection.name),
+            style.paint(Tone::Dim, &addr),
+            style.paint(Tone::Dim, &reason),
+        ]);
     }
+    println!("{}", table.render(&style).trim_end_matches('\n'));
 
     if !io::stdin().is_terminal() {
         return Ok(());
     }
 
     let ssh_service = SshService::new(config.clone())?;
+    let dot = style.glyph(Glyph::Dot);
+    let prompt = style.paint(
+        Tone::Dim,
+        &format!("Enter = 1 {dot} number {dot} text to search {dot} q to quit: "),
+    );
 
     loop {
-        print!("Enter = 1 · number · text to search · q to quit: ");
+        print!("{prompt}");
         io::stdout().flush()?;
 
         let mut line = String::new();
@@ -116,7 +106,8 @@ pub async fn execute(config: AppConfig) -> Result<()> {
                     .await;
             }
             println!(
-                "❌ Invalid selection. Enter 1-{}, search text, or 'q' to quit.",
+                "{} Invalid selection. Enter 1-{}, search text, or 'q' to quit.",
+                style.mark(Glyph::Bad),
                 predictions.len()
             );
             continue;

@@ -11,12 +11,14 @@ use uuid::Uuid;
 
 use crate::cli::utils::{format_bytes, format_elapsed, resolve_connection};
 use crate::config::AppConfig;
+use crate::errors::SilentExit;
 use crate::models::Connection;
 use crate::services::upload::{
     HostUploadResult, UploadEvent, UploadEventFn, UploadRequest, local_basename, local_stats,
     resolve_remote_path, upload_to_hosts,
 };
 use crate::services::{SshService, TransferService};
+use crate::ui::{Glyph, KvList, Style, Table, Tone, heading};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Pure argument parsing (unit-tested)
@@ -136,6 +138,7 @@ pub fn validate_upload_flags(options: &UploadOptions, host_count: usize) -> Resu
 // ─────────────────────────────────────────────────────────────────────────────
 
 pub async fn execute_upload(command: UploadCommand, config: AppConfig) -> Result<()> {
+    let style = Style::terminal();
     let UploadCommand {
         positional,
         selector,
@@ -146,7 +149,10 @@ pub async fn execute_upload(command: UploadCommand, config: AppConfig) -> Result
     let ssh_service = SshService::new(config.clone())?;
     let targets = resolve_targets(&ssh_service, &plan, &selector, &config).await?;
     if targets.is_empty() {
-        println!("No connections matching criteria.");
+        println!(
+            "{} No connections matching criteria.",
+            style.mark(Glyph::Dot)
+        );
         return Ok(());
     }
     validate_upload_flags(&options, targets.len())?;
@@ -170,18 +176,35 @@ pub async fn execute_upload(command: UploadCommand, config: AppConfig) -> Result
             local_is_dir,
             false,
         );
-        println!("🔍 [DRY-RUN PREVIEW]");
+        let host_meta = format!("{} host(s)", targets.len());
         println!(
-            "Upload {} ({}) → {} on {} host(s):",
-            plan.local.display(),
-            format_bytes(size_bytes),
-            resolved,
-            targets.len()
+            "{}",
+            heading(&style, "Upload Dry-Run Preview", Some(&host_meta))
         );
+        let mut kv = KvList::new();
+        kv.push(
+            "Source",
+            format!(
+                "{} {}",
+                plan.local.display(),
+                style.paint(Tone::Dim, &format!("({})", format_bytes(size_bytes)))
+            ),
+        );
+        kv.push("Destination", style.paint(Tone::Info, &resolved));
+        println!("{}", kv.render(&style));
+
+        let mut table = Table::new(&["NAME", "TARGET"]);
         for conn in &targets {
-            println!("  - {} ({}@{})", conn.name, conn.user, conn.host);
+            table.row(vec![
+                style.paint(Tone::Strong, &conn.name),
+                style.paint(Tone::Dim, &format!("{}@{}", conn.user, conn.host)),
+            ]);
         }
-        println!("\nDry-run complete. No files were transferred.");
+        println!("\n{}", table.render(&style));
+        println!(
+            "\n{}",
+            style.paint(Tone::Dim, "Dry-run complete. No files were transferred.")
+        );
         return Ok(());
     }
 
@@ -190,10 +213,12 @@ pub async fn execute_upload(command: UploadCommand, config: AppConfig) -> Result
     }
 
     println!(
-        "Uploading {} ({}) → {} on {} host(s)",
-        local_basename(&plan.local),
-        format_bytes(size_bytes),
-        plan.remote,
+        "{} Uploading {} ({}) {} {} on {} host(s)",
+        style.mark(Glyph::Running),
+        style.paint(Tone::Strong, &local_basename(&plan.local)),
+        style.paint(Tone::Dim, &format_bytes(size_bytes)),
+        style.glyph(Glyph::Arrow),
+        style.paint(Tone::Info, &plan.remote),
         targets.len()
     );
 
@@ -267,16 +292,17 @@ pub async fn execute_upload(command: UploadCommand, config: AppConfig) -> Result
     let results =
         upload_to_hosts(&config, targets, request, options.parallel.max(1), on_event).await?;
 
-    print_summary(&results);
+    print_summary(&style, &results);
 
     let failed = results.iter().filter(|r| !r.ok).count();
     if failed > 0 {
-        bail!("upload failed on {failed} of {} host(s)", results.len());
+        return Err(anyhow::Error::new(SilentExit));
     }
     Ok(())
 }
 
 fn finish_bar(bar: &ProgressBar, result: &HostUploadResult) {
+    let style = Style::stderr();
     let via = if result.via_scp { " (via SCP)" } else { "" };
     if result.via_scp {
         // SCP reports no byte progress: drop the empty `0 B/0 B` bar so the
@@ -286,20 +312,27 @@ fn finish_bar(bar: &ProgressBar, result: &HostUploadResult) {
         );
     }
     if result.ok {
-        bar.finish_with_message(format!("✔ {}{via}", format_bytes(result.bytes)));
+        bar.finish_with_message(format!(
+            "{} {}{via}",
+            style.mark(Glyph::Ok),
+            format_bytes(result.bytes)
+        ));
     } else {
         bar.abandon_with_message(format!(
-            "✖ {}",
+            "{} {}",
+            style.mark(Glyph::Bad),
             result.error.as_deref().unwrap_or("upload failed")
         ));
     }
 }
 
 fn host_line(result: &HostUploadResult) -> String {
+    let style = Style::stderr();
     let via = if result.via_scp { " via SCP" } else { "" };
     if result.ok {
         format!(
-            "✔ {} ({}): {} in {}{via}",
+            "{} {} ({}): {} in {}{via}",
+            style.mark(Glyph::Ok),
             result.name,
             result.host,
             format_bytes(result.bytes),
@@ -307,7 +340,8 @@ fn host_line(result: &HostUploadResult) -> String {
         )
     } else {
         format!(
-            "✖ {} ({}): {}",
+            "{} {} ({}): {}",
+            style.mark(Glyph::Bad),
             result.name,
             result.host,
             result.error.as_deref().unwrap_or("upload failed")
@@ -315,30 +349,53 @@ fn host_line(result: &HostUploadResult) -> String {
     }
 }
 
-fn print_summary(results: &[HostUploadResult]) {
-    println!();
-    println!("Upload summary:");
+fn print_summary(style: &Style, results: &[HostUploadResult]) {
+    let ok = results.iter().filter(|r| r.ok).count();
+    let total = results.len();
+    let meta = format!("{ok}/{total} hosts");
+    println!("\n{}", heading(style, "Upload Summary", Some(&meta)));
+
+    let mut table = Table::new(&["STATUS", "NAME", "HOST", "DETAIL"]);
     for r in results {
         if r.ok {
-            println!(
-                "  ✔ {:<18} {:<26} {} in {}{}",
-                r.name,
-                r.host,
-                format_bytes(r.bytes),
-                format_elapsed(chrono::Duration::milliseconds(r.elapsed_ms as i64)),
-                if r.via_scp { " (via SCP)" } else { "" },
-            );
+            let via = if r.via_scp { " (via SCP)" } else { "" };
+            table.row(vec![
+                format!("{} {}", style.mark(Glyph::Ok), style.paint(Tone::Ok, "ok")),
+                style.paint(Tone::Strong, &r.name),
+                style.paint(Tone::Dim, &r.host),
+                format!(
+                    "{} in {}{via}",
+                    format_bytes(r.bytes),
+                    format_elapsed(chrono::Duration::milliseconds(r.elapsed_ms as i64)),
+                ),
+            ]);
         } else {
-            println!(
-                "  ✖ {:<18} {:<26} {}",
-                r.name,
-                r.host,
-                r.error.as_deref().unwrap_or("upload failed"),
-            );
+            table.row(vec![
+                format!(
+                    "{} {}",
+                    style.mark(Glyph::Bad),
+                    style.paint(Tone::Bad, "failed")
+                ),
+                style.paint(Tone::Strong, &r.name),
+                style.paint(Tone::Dim, &r.host),
+                style.paint(Tone::Bad, r.error.as_deref().unwrap_or("upload failed")),
+            ]);
         }
     }
-    let ok = results.iter().filter(|r| r.ok).count();
-    println!("\nUploaded to {ok}/{} hosts", results.len());
+    println!("{}", table.render(style));
+
+    if ok == total {
+        println!(
+            "\n{} Uploaded to {ok}/{total} host(s).",
+            style.mark(Glyph::Ok)
+        );
+    } else {
+        println!(
+            "\n{} Uploaded to {ok}/{total} host(s) ({} failed).",
+            style.mark(Glyph::Bad),
+            total - ok
+        );
+    }
 }
 
 /// Resolve the requested targets into connections, deduplicated by id.
@@ -391,6 +448,8 @@ pub struct DownloadArgs {
 }
 
 pub async fn execute_download(args: DownloadArgs, config: AppConfig) -> Result<()> {
+    let style = Style::terminal();
+    let err_style = Style::stderr();
     let DownloadArgs {
         target,
         remote,
@@ -402,6 +461,7 @@ pub async fn execute_download(args: DownloadArgs, config: AppConfig) -> Result<(
     ssh_service.confirm_pending_change(&connection)?;
 
     let transfer = TransferService::new(config)?;
+    let arrow = style.glyph(Glyph::Arrow);
 
     // When SFTP is unavailable (e.g. interactive bastion + Kerberos), use SCP.
     if !transfer.has_sftp(&connection) {
@@ -410,9 +470,11 @@ pub async fn execute_download(args: DownloadArgs, config: AppConfig) -> Result<(
             .scp_download(&connection, &remote, &local, recursive)
             .await?;
         println!(
-            "✔ Downloaded {}:{remote} → {} (via SCP)",
+            "{} Downloaded {}:{remote} {arrow} {} {}",
+            style.mark(Glyph::Ok),
             connection.host,
-            local.display()
+            local.display(),
+            style.paint(Tone::Dim, "(via SCP)")
         );
         return Ok(());
     }
@@ -430,12 +492,17 @@ pub async fn execute_download(args: DownloadArgs, config: AppConfig) -> Result<(
         let (files, bytes) = transfer
             .download_recursive(&connection, &remote, &local, Some(&progress))
             .await?;
-        bar.finish_with_message(format!("✔ {files} files, {}", format_bytes(bytes)));
+        bar.finish_with_message(format!(
+            "{} {files} files, {}",
+            err_style.mark(Glyph::Ok),
+            format_bytes(bytes)
+        ));
         println!(
-            "✔ Downloaded {}:{remote} → {} ({files} files, {})",
+            "{} Downloaded {}:{remote} {arrow} {} {}",
+            style.mark(Glyph::Ok),
             connection.host,
             local.display(),
-            format_bytes(bytes)
+            style.paint(Tone::Dim, &format!("({files} files, {})", format_bytes(bytes)))
         );
     } else {
         let bar = progress_bar(BarStyle::Sized);
@@ -452,13 +519,18 @@ pub async fn execute_download(args: DownloadArgs, config: AppConfig) -> Result<(
         let read = transfer
             .download(&connection, &remote, &local, Some(progress))
             .await?;
-        bar.finish_with_message(format!("✔ {}", format_bytes(read)));
+        bar.finish_with_message(format!(
+            "{} {}",
+            err_style.mark(Glyph::Ok),
+            format_bytes(read)
+        ));
         info!("download complete: {read} bytes");
         println!(
-            "✔ Downloaded {}:{remote} → {} ({})",
+            "{} Downloaded {}:{remote} {arrow} {} {}",
+            style.mark(Glyph::Ok),
             connection.host,
             local.display(),
-            format_bytes(read)
+            style.paint(Tone::Dim, &format!("({})", format_bytes(read)))
         );
     }
     Ok(())

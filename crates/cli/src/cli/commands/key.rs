@@ -2,6 +2,7 @@
 
 use crate::config::AppConfig;
 use crate::database::Database;
+use crate::ui::{Glyph, KvList, Style, Table, Tone, heading};
 use anyhow::{Result, anyhow};
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -10,38 +11,43 @@ use std::path::PathBuf;
 use std::process::Command;
 
 pub async fn execute_list() -> Result<()> {
+    let style = Style::terminal();
     let ssh_dir = dirs::home_dir()
         .ok_or_else(|| anyhow!("Could not resolve home directory"))?
         .join(".ssh");
 
-    println!("SSH Key Inventory (~/.ssh/)");
-    println!("--------------------------------------------------");
+    println!("{}", heading(&style, "SSH Key Inventory", Some("~/.ssh/")));
 
     if !ssh_dir.exists() {
-        println!("No ~/.ssh directory found.");
+        println!(
+            "{} No ~/.ssh directory found.",
+            style.mark(Glyph::Dot)
+        );
         return Ok(());
     }
 
-    let entries = fs::read_dir(&ssh_dir)?;
-    let mut found_keys = 0;
+    let mut pub_paths: Vec<PathBuf> = fs::read_dir(&ssh_dir)?
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.is_file() && path.extension().is_some_and(|ext| ext == "pub"))
+        .collect();
+    pub_paths.sort();
 
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-        let Some(ext) = path.extension() else {
-            continue;
-        };
-        if ext != "pub" {
-            continue;
-        }
+    if pub_paths.is_empty() {
+        println!(
+            "{} No public SSH key files (*.pub) found in ~/.ssh/",
+            style.mark(Glyph::Dot)
+        );
+        return Ok(());
+    }
 
-        found_keys += 1;
+    let mut table = Table::new(&["KEY", "TYPE", "FINGERPRINT", "PERMS", "COMMENT"]);
+
+    for path in &pub_paths {
         let priv_path = path.with_extension("");
         let filename = path.file_stem().unwrap_or_default().to_string_lossy();
 
-        let key_content = fs::read_to_string(&path).unwrap_or_default();
+        let key_content = fs::read_to_string(path).unwrap_or_default();
         let parts: Vec<&str> = key_content.split_whitespace().collect();
         let key_type = parts.first().copied().unwrap_or("unknown");
         let comment = parts.get(2).copied().unwrap_or("");
@@ -68,34 +74,40 @@ pub async fn execute_list() -> Result<()> {
             if let Ok(meta) = fs::metadata(&priv_path) {
                 let mode = meta.permissions().mode() & 0o777;
                 if mode & 0o077 == 0 {
-                    format!("{:04o} (SECURE)", mode)
+                    format!(
+                        "{} {}",
+                        style.mark(Glyph::Ok),
+                        style.paint(Tone::Ok, &format!("{mode:04o} secure"))
+                    )
                 } else {
-                    format!("{:04o} (WARNING: insecure perms)", mode)
+                    format!(
+                        "{} {}",
+                        style.mark(Glyph::Ask),
+                        style.paint(Tone::Warn, &format!("{mode:04o} insecure"))
+                    )
                 }
             } else {
-                "UNKNOWN".to_string()
+                style.paint(Tone::Dim, "unknown")
             }
         } else {
-            "PUBLIC_ONLY".to_string()
+            style.paint(Tone::Dim, "public only")
         };
 
-        println!("Key: {}", filename);
-        println!("  Type:        {}", key_type);
-        println!("  Fingerprint: {}", fingerprint);
-        println!("  Comment:     {}", comment);
-        println!("  Private Key: {}", priv_path.display());
-        println!("  Permission:  {}", priv_perm);
-        println!();
+        table.row(vec![
+            style.paint(Tone::Strong, &filename),
+            key_type.to_string(),
+            style.paint(Tone::Dim, &fingerprint),
+            priv_perm,
+            style.paint(Tone::Dim, comment),
+        ]);
     }
 
-    if found_keys == 0 {
-        println!("No public SSH key files (*.pub) found in ~/.ssh/");
-    }
-
+    println!("{}", table.render(&style));
     Ok(())
 }
 
 pub async fn execute_generate(name: String, key_type: Option<String>) -> Result<()> {
+    let style = Style::terminal();
     let ssh_dir = dirs::home_dir()
         .ok_or_else(|| anyhow!("Could not resolve home directory"))?
         .join(".ssh");
@@ -122,7 +134,12 @@ pub async fn execute_generate(name: String, key_type: Option<String>) -> Result<
     }
 
     let kt = key_type.unwrap_or_else(|| "ed25519".to_string());
-    println!("Generating {} keypair at {}...", kt, key_path.display());
+    println!(
+        "{} Generating {} keypair at {}...",
+        style.mark(Glyph::Running),
+        style.paint(Tone::Strong, &kt),
+        key_path.display()
+    );
 
     let status = Command::new("ssh-keygen")
         .arg("-t")
@@ -145,14 +162,17 @@ pub async fn execute_generate(name: String, key_type: Option<String>) -> Result<
         let _ = fs::set_permissions(&pub_key_path, perms);
     }
 
-    println!("Keypair generated successfully!");
-    println!("Private key: {}", key_path.display());
-    println!("Public key:  {}.pub", key_path.display());
+    println!("{} Keypair generated.", style.mark(Glyph::Ok));
+    let mut kv = KvList::new();
+    kv.push("Private key", key_path.display().to_string());
+    kv.push("Public key", format!("{}.pub", key_path.display()));
+    println!("{}", kv.render(&style));
 
     Ok(())
 }
 
 pub async fn execute_copy(config: AppConfig, target: String, key: Option<String>) -> Result<()> {
+    let style = Style::terminal();
     let database = Database::new(&config)?;
     let conn = database
         .connection_or_alias(&target)?
@@ -191,7 +211,8 @@ pub async fn execute_copy(config: AppConfig, target: String, key: Option<String>
 
     let pub_key_content = fs::read_to_string(&pub_key_path)?.trim().to_string();
     println!(
-        "Copying public key ({}) to {}@{}...",
+        "{} Copying public key ({}) to {}@{}...",
+        style.mark(Glyph::Running),
         pub_key_path.display(),
         conn.user,
         conn.host
@@ -222,7 +243,10 @@ pub async fn execute_copy(config: AppConfig, target: String, key: Option<String>
     let status = cmd.status()?;
 
     if status.success() {
-        println!("Public key successfully copied to remote authorized_keys!");
+        println!(
+            "{} Public key copied to remote authorized_keys.",
+            style.mark(Glyph::Ok)
+        );
         Ok(())
     } else {
         Err(anyhow!(
