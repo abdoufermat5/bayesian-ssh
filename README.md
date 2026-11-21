@@ -99,3 +99,7 @@ Pull requests are welcome; open an issue first for anything large. Release notes
 ## License
 
 MIT, see [LICENSE](LICENSE).
+
+## Author
+
+[Abdou Yaya Sadiakhou](https://abdoufermat.dev)
