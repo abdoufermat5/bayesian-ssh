@@ -214,12 +214,6 @@ pub struct RemoteEntry {
 }
 
 /// SFTP session abstraction. Subprocess transport returns `Unsupported`.
-// `#[async_trait]` marks the boxed future `#[must_use]`; the `Result` output is
-// already `#[must_use]`, so clippy counts the attribute twice.
-#[expect(
-    clippy::double_must_use,
-    reason = "async_trait boxed future is #[must_use] and Result is #[must_use]"
-)]
 #[async_trait]
 pub trait SftpSession: Send + Sync {
     async fn list(&self, path: &str) -> Result<Vec<RemoteEntry>, TransportError>;
@@ -248,10 +242,6 @@ pub trait SftpSession: Send + Sync {
 }
 
 /// Top-level SSH transport.
-#[expect(
-    clippy::double_must_use,
-    reason = "async_trait boxed future is #[must_use] and Result is #[must_use]"
-)]
 #[async_trait]
 pub trait SshTransport: Send + Sync {
     async fn open_shell(&self, conn: &Connection, io: PtyIo)

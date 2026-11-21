@@ -12,10 +12,6 @@ use tokio::sync::{broadcast, oneshot};
 
 /// Asks the human through the agent's own client (MCP elicitation, tier T1).
 /// Implemented by the MCP layer; `Ok(None)` = the client can't elicit.
-#[expect(
-    clippy::double_must_use,
-    reason = "`#[async_trait]` expands the async method into a must_use boxed future that also carries its own must_use; the duplicate comes from the macro"
-)]
 #[async_trait]
 pub trait Elicitor: Send + Sync {
     async fn confirm(&self, req: &ApprovalRequest) -> anyhow::Result<Option<bool>>;

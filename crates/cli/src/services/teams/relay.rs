@@ -71,10 +71,6 @@ pub struct RelayDecisionPayload {
 }
 
 /// Wire access to the relay. [`TeamsClient`] is the production impl.
-#[expect(
-    clippy::double_must_use,
-    reason = "async_trait boxes the future, which is itself must_use, on a Result-returning method"
-)]
 #[async_trait]
 pub trait RelayTransport: Send + Sync {
     async fn post_relay(&self, team_id: Uuid, msg: &RelayMessage) -> ClientResult<RelayAck>;

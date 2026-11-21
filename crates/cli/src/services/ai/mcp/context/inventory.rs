@@ -9,10 +9,6 @@ use async_trait::async_trait;
 use std::sync::Arc;
 
 /// Where the inventory comes from (the bssh database). A trait so tests use a fixed list.
-#[expect(
-    clippy::double_must_use,
-    reason = "async_trait expands each method into a must_use boxed future and clippy flags the macro output"
-)]
 #[async_trait]
 pub trait HostSource: Send + Sync {
     async fn list(&self) -> Result<Vec<Connection>>;
