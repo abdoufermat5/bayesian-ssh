@@ -140,7 +140,7 @@ impl Database {
         let like_pattern = format!("%{}%", escaped);
 
         let mut stmt = self.conn.prepare(&sql)?;
-        let mut rows = stmt.query(params![like_pattern, limit])?;
+        let mut rows = stmt.query(params![like_pattern, limit as i64])?;
 
         let mut connections = Vec::new();
         while let Some(row) = rows.next()? {
@@ -181,7 +181,7 @@ impl Database {
                    ORDER BY c.last_used DESC NULLS LAST, c.name ASC
                    LIMIT ?";
         let mut stmt = self.conn.prepare(sql)?;
-        let mut rows = stmt.query(params![query, limit])?;
+        let mut rows = stmt.query(params![query, limit as i64])?;
         let mut connections = Vec::new();
         while let Some(row) = rows.next()? {
             connections.push(self.row_to_connection(row)?);
@@ -227,11 +227,7 @@ impl Database {
             }
         }
 
-        if matches_prefix_and_number(&query, name) {
-            return true;
-        }
-
-        false
+        matches_prefix_and_number(&query, name)
     }
 }
 
