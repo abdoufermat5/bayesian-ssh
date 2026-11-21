@@ -17,7 +17,9 @@ use tracing::{debug, info, warn};
 use crate::config::AppConfig;
 use crate::models::Connection;
 use crate::services::transport::scp_impl;
-use crate::services::transport::{TransportKind, pick_kind};
+use crate::services::transport::{
+    ExecOptions, RusshTransport, SshTransport, TransportError, TransportKind, pick_kind,
+};
 
 const CHUNK_SIZE: usize = 256 * 1024; // 256 KiB
 const CHANNEL_CAP: usize = 16; // outstanding chunks in flight
@@ -205,14 +207,31 @@ impl TransferService {
         // caller can still be surprised).
         reject_traversal(remote_path).map_err(|e| anyhow::anyhow!("invalid remote path: {e}"))?;
 
+        let sftp = self.open_sftp(connection).await?;
+        self.download_on(sftp, connection, remote_path, local_path, progress)
+            .await
+    }
+
+    /// Download over an already-open SFTP session.
+    ///
+    /// Takes ownership of `sftp` so the reader can be driven concurrently on a
+    /// background task while chunks stream to the sibling temp file.
+    pub(crate) async fn download_on(
+        &self,
+        sftp: Box<dyn crate::services::transport::types::SftpSession>,
+        connection: &Connection,
+        remote_path: &str,
+        local_path: &Path,
+        progress: Option<ProgressFn>,
+    ) -> Result<u64> {
+        reject_traversal(remote_path).map_err(|e| anyhow::anyhow!("invalid remote path: {e}"))?;
+
         info!(
             "download {}:{} → {}",
             connection.host,
             remote_path,
             local_path.display(),
         );
-
-        let sftp = self.open_sftp(connection).await?;
 
         // Stat the remote file first so we can report total size.
         let remote_size = sftp.stat(remote_path).await.ok().map(|e| e.size);
@@ -621,6 +640,18 @@ impl TransferService {
         })
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))
+    }
+
+    /// Open a native SFTP session with non-interactive / timeout limits
+    /// (for GUI callers that have no TTY for interactive auth prompts).
+    pub(crate) async fn open_sftp_limited(
+        &self,
+        connection: &Connection,
+        opts: &ExecOptions,
+    ) -> std::result::Result<Box<dyn crate::services::transport::types::SftpSession>, TransportError>
+    {
+        let native = RusshTransport::new(self.config.clone());
+        native.open_sftp_limited(connection, opts).await
     }
 }
 

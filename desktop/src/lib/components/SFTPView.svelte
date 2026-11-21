@@ -4,6 +4,7 @@
     Check,
     ChevronRight,
     Copy,
+    Download,
     Eye,
     EyeOff,
     File,
@@ -12,6 +13,7 @@
     FileSymlink,
     FileText,
     Folder,
+    FolderPlus,
     HardDrive,
     Image,
     LayoutGrid,
@@ -19,6 +21,7 @@
     Pencil,
     RefreshCw,
     Search,
+    Trash2,
     Upload,
     X,
   } from "lucide-svelte";
@@ -26,6 +29,7 @@
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import type { Connection, UploadFinishedPayload } from "$lib/types";
   import CustomSelect from "$lib/components/ui/CustomSelect.svelte";
+  import ModalShell from "$lib/components/ui/ModalShell.svelte";
   import { appState } from "$lib/stores/appState.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
   import { pendingFilesHost, takeFilesHost } from "$lib/stores/filesHost.svelte";
@@ -56,10 +60,29 @@
   let viewMode = $state<"list" | "grid">("list");
   let showHidden = $state<boolean>(appState.settings.sftp_show_hidden_files !== false);
   let entries = $state.raw<RemoteFileEntry[]>([]);
+  let selectedPath = $state<string | null>(null);
   let isConnected = $state<boolean>(false);
   let loading = $state<boolean>(false);
   let errorMsg = $state<string | null>(null);
   let copiedPath = $state<string | null>(null);
+  let downloadingPaths = $state<Record<string, boolean>>({});
+
+  // New folder modal
+  let showNewFolderModal = $state(false);
+  let newFolderName = $state("");
+  let newFolderError = $state<string | null>(null);
+  let creatingFolder = $state(false);
+
+  // Rename modal
+  let renameTarget = $state<RemoteFileEntry | null>(null);
+  let renameValue = $state("");
+  let renameError = $state<string | null>(null);
+  let renaming = $state(false);
+
+  // Delete confirmation modal
+  let deleteTarget = $state<RemoteFileEntry | null>(null);
+  let deleting = $state(false);
+
   // Bumped per listing request (and on host switch / disconnect) so a slow
   // response for an older path or another host never overwrites newer state.
   let loadSeq = 0;
@@ -71,18 +94,20 @@
     return connections.length > 0 ? connections[0] : null;
   });
 
-  // "Browse files" on a host (Hosts list, palette) preselects it.
+  // "Browse files" on a host (Hosts list, palette) preselects it and connects immediately.
   $effect(() => {
-    if (!pendingFilesHost()) return;
-    const id = takeFilesHost();
-    if (id && connections.some((c) => c.id === id)) selectedConnectionId = id;
-  });
-
-  // "Browse files" on a host (Hosts list, palette) preselects it.
-  $effect(() => {
-    if (!pendingFilesHost()) return;
-    const id = takeFilesHost();
-    if (id && connections.some((c) => c.id === id)) selectedConnectionId = id;
+    const pendingId = pendingFilesHost();
+    if (!pendingId) return;
+    const conn = connections.find((c) => c.id === pendingId);
+    if (!conn) {
+      if (connections.length > 0) takeFilesHost();
+      return;
+    }
+    takeFilesHost();
+    selectedConnectionId = conn.id;
+    selectedPath = null;
+    entries = [];
+    loadDirectory(currentPath, conn);
   });
 
   const hostOptions = $derived(
@@ -112,6 +137,25 @@
     rest.pop();
     if (rest.length === 0) return root;
     return root === "/" ? "/" + rest.join("/") : `${root}/${rest.join("/")}`;
+  }
+
+  function joinRemotePath(dir: string, name: string): string {
+    if (dir === "/") return `/${name}`;
+    return `${dir.replace(/\/+$/, "")}/${name}`;
+  }
+
+  function siblingPath(entryPath: string, newName: string): string {
+    const parent = parentOf(entryPath);
+    return joinRemotePath(parent ?? currentPath, newName);
+  }
+
+  function validateEntryName(raw: string): string | null {
+    const trimmed = raw.trim();
+    if (!trimmed) return "Name is required";
+    if (trimmed.includes("/") || trimmed.includes("..")) {
+      return 'Name cannot contain "/" or ".."';
+    }
+    return null;
   }
 
   const pathBreadcrumbs = $derived.by(() => {
@@ -157,20 +201,22 @@
     return { dirs, files, totalSize };
   });
 
-  async function loadDirectory(path: string) {
-    if (!selectedConnection) return;
+  async function loadDirectory(path: string, connectionOverride?: Connection | null) {
+    const conn = connectionOverride ?? selectedConnection;
+    if (!conn) return;
     const seq = ++loadSeq;
     loading = true;
     errorMsg = null;
     editingPath = false;
     try {
       const res = await invoke<RemoteFileEntry[]>("list_remote_directory", {
-        connectionName: selectedConnection.name,
+        connectionName: conn.name,
         remotePath: path,
       });
       if (seq !== loadSeq) return;
       entries = res;
       currentPath = path;
+      selectedPath = null;
       isConnected = true;
     } catch (err: unknown) {
       if (seq !== loadSeq) return;
@@ -186,6 +232,7 @@
     loading = false;
     isConnected = false;
     editingPath = false;
+    selectedPath = null;
     entries = [];
   }
 
@@ -239,11 +286,12 @@
     if (parent !== null) loadDirectory(parent);
   }
 
-  function handleEntryClick(entry: RemoteFileEntry) {
+  function handleEntryClick(entry: RemoteFileEntry, e?: MouseEvent) {
+    e?.stopPropagation();
     if (entry.is_dir) {
       loadDirectory(entry.path);
     } else {
-      copyPath(entry.path);
+      selectedPath = entry.path;
     }
   }
 
@@ -254,6 +302,125 @@
     setTimeout(() => {
       if (copiedPath === p) copiedPath = null;
     }, 2000);
+  }
+
+  async function handleDownload(entry: RemoteFileEntry) {
+    if (!selectedConnection || entry.is_dir || downloadingPaths[entry.path]) return;
+    try {
+      const localPath = await invoke<string | null>("save_remote_file", {
+        defaultName: entry.name,
+      });
+      if (!localPath) return;
+      downloadingPaths = { ...downloadingPaths, [entry.path]: true };
+      await invoke<number>("download_remote_file", {
+        connectionName: selectedConnection.name,
+        remotePath: entry.path,
+        localPath,
+      });
+      notify(`Downloaded ${entry.name}`, "success");
+    } catch (err) {
+      notify(`Download failed: ${err}`, "error");
+    } finally {
+      const next = { ...downloadingPaths };
+      delete next[entry.path];
+      downloadingPaths = next;
+    }
+  }
+
+  function openNewFolderModal() {
+    newFolderName = "";
+    newFolderError = null;
+    showNewFolderModal = true;
+  }
+
+  async function handleCreateFolder(e?: SubmitEvent) {
+    e?.preventDefault();
+    if (!selectedConnection || creatingFolder) return;
+    const err = validateEntryName(newFolderName);
+    if (err) {
+      newFolderError = err;
+      return;
+    }
+    const name = newFolderName.trim();
+    creatingFolder = true;
+    newFolderError = null;
+    try {
+      await invoke("create_remote_directory", {
+        connectionName: selectedConnection.name,
+        remotePath: joinRemotePath(currentPath, name),
+      });
+      showNewFolderModal = false;
+      notify(`Created folder ${name}`, "success");
+      await loadDirectory(currentPath);
+    } catch (err) {
+      newFolderError = String(err);
+      notify(`Failed to create folder: ${err}`, "error");
+    } finally {
+      creatingFolder = false;
+    }
+  }
+
+  function openRenameModal(entry: RemoteFileEntry) {
+    renameTarget = entry;
+    renameValue = entry.name;
+    renameError = null;
+  }
+
+  async function handleRename(e?: SubmitEvent) {
+    e?.preventDefault();
+    if (!selectedConnection || !renameTarget || renaming) return;
+    const err = validateEntryName(renameValue);
+    if (err) {
+      renameError = err;
+      return;
+    }
+    const newName = renameValue.trim();
+    if (newName === renameTarget.name) {
+      renameTarget = null;
+      return;
+    }
+    renaming = true;
+    renameError = null;
+    try {
+      await invoke("rename_remote_entry", {
+        connectionName: selectedConnection.name,
+        fromPath: renameTarget.path,
+        toPath: siblingPath(renameTarget.path, newName),
+      });
+      renameTarget = null;
+      notify(`Renamed to ${newName}`, "success");
+      await loadDirectory(currentPath);
+    } catch (err) {
+      renameError = String(err);
+      notify(`Rename failed: ${err}`, "error");
+    } finally {
+      renaming = false;
+    }
+  }
+
+  function openDeleteModal(entry: RemoteFileEntry) {
+    deleteTarget = entry;
+  }
+
+  async function handleDelete() {
+    if (!selectedConnection || !deleteTarget || deleting) return;
+    const target = deleteTarget;
+    deleting = true;
+    try {
+      await invoke("delete_remote_entry", {
+        connectionName: selectedConnection.name,
+        remotePath: target.path,
+        isDir: target.is_dir,
+      });
+      if (selectedPath === target.path) selectedPath = null;
+      deleteTarget = null;
+      notify(`Deleted ${target.name}`, "success");
+      await loadDirectory(currentPath);
+    } catch (err) {
+      notify(`Delete failed: ${err}`, "error");
+    } finally {
+      deleting = false;
+    }
   }
 
   function formatBytes(bytes: number): string {
@@ -286,23 +453,73 @@
   }
 </script>
 
-{#snippet copyButton(entry: RemoteFileEntry)}
-  <button
-    type="button"
-    class="btn-icon btn-icon-sm"
-    onclick={(e) => {
-      e.stopPropagation();
-      copyPath(entry.path);
-    }}
-    aria-label="Copy remote path"
-    title="Copy remote path"
-  >
-    {#if copiedPath === entry.path}
-      <Check size={14} class="text-success" />
-    {:else}
-      <Copy size={14} />
+{#snippet entryActions(entry: RemoteFileEntry)}
+  {@const isDownloading = Boolean(downloadingPaths[entry.path])}
+  <div class="row-actions shrink-0 {isDownloading ? '!opacity-100' : ''}">
+    {#if !entry.is_dir}
+      <button
+        type="button"
+        class="btn-icon btn-icon-sm"
+        disabled={isDownloading}
+        onclick={(e) => {
+          e.stopPropagation();
+          handleDownload(entry);
+        }}
+        ondblclick={(e) => e.stopPropagation()}
+        aria-label="Download {entry.name}"
+        title={isDownloading ? `Downloading ${entry.name}…` : "Download"}
+      >
+        {#if isDownloading}
+          <span class="spinner size-3"></span>
+        {:else}
+          <Download size={14} />
+        {/if}
+      </button>
     {/if}
-  </button>
+    <button
+      type="button"
+      class="btn-icon btn-icon-sm"
+      onclick={(e) => {
+        e.stopPropagation();
+        copyPath(entry.path);
+      }}
+      ondblclick={(e) => e.stopPropagation()}
+      aria-label="Copy remote path"
+      title="Copy remote path"
+    >
+      {#if copiedPath === entry.path}
+        <Check size={14} class="text-success" />
+      {:else}
+        <Copy size={14} />
+      {/if}
+    </button>
+    <button
+      type="button"
+      class="btn-icon btn-icon-sm"
+      onclick={(e) => {
+        e.stopPropagation();
+        openRenameModal(entry);
+      }}
+      ondblclick={(e) => e.stopPropagation()}
+      aria-label="Rename {entry.name}"
+      title="Rename"
+    >
+      <Pencil size={14} />
+    </button>
+    <button
+      type="button"
+      class="btn-icon btn-icon-sm btn-icon-danger"
+      onclick={(e) => {
+        e.stopPropagation();
+        openDeleteModal(entry);
+      }}
+      ondblclick={(e) => e.stopPropagation()}
+      aria-label="Delete {entry.name}"
+      title="Delete"
+    >
+      <Trash2 size={14} />
+    </button>
+  </div>
 {/snippet}
 
 <div class="view select-none">
@@ -327,9 +544,17 @@
           placeholder="No hosts"
           disabled={connections.length === 0}
           onChange={(val) => {
+            const wasConnected = isConnected;
             selectedConnectionId = val;
-            resetSession();
+            selectedPath = null;
             errorMsg = null;
+            const nextConn = connections.find((c) => c.id === val) ?? null;
+            if (wasConnected && nextConn) {
+              entries = [];
+              loadDirectory(currentPath, nextConn);
+            } else {
+              resetSession();
+            }
           }}
         />
       </div>
@@ -356,7 +581,7 @@
   </header>
 
   {#if isConnected}
-    <div class="view-toolbar flex-nowrap">
+    <div class="view-toolbar pt-3 pb-2">
       <button
         type="button"
         class="btn-icon"
@@ -367,30 +592,10 @@
       >
         <ArrowUp size={14} />
       </button>
-      <button
-        type="button"
-        class="btn-icon"
-        onclick={() => loadDirectory(currentPath)}
-        disabled={loading}
-        aria-label="Refresh"
-        title="Refresh"
-      >
-        <RefreshCw size={14} class={loading ? "animate-spin" : ""} />
-      </button>
-      <button
-        type="button"
-        class="btn btn-secondary btn-sm shrink-0"
-        disabled={!selectedConnection}
-        title="Upload files to this host"
-        onclick={() => onOpenUpload(selectedConnection?.id ?? null, currentPath)}
-      >
-        <Upload size={14} />
-        Upload
-      </button>
 
       {#if editingPath}
         <form
-          class="flex min-w-0 flex-1"
+          class="flex min-w-[200px] flex-1 items-center gap-1"
           onsubmit={(event) => {
             event.preventDefault();
             goToPath();
@@ -410,12 +615,20 @@
                 editingPath = false;
               }
             }}
-            onblur={() => (editingPath = false)}
           />
+          <button
+            type="button"
+            class="btn-icon shrink-0"
+            onclick={() => (editingPath = false)}
+            aria-label="Cancel path edit"
+            title="Cancel"
+          >
+            <X size={14} />
+          </button>
         </form>
       {:else}
         <div
-          class="flex h-8 min-w-0 flex-1 items-center gap-0.5 rounded-md border border-border bg-surface-input pl-1 pr-0.5"
+          class="flex h-8 min-w-[200px] flex-1 items-center gap-0.5 rounded-md border border-border-control bg-surface-input pl-1 pr-0.5 transition-colors duration-fast hover:border-border-strong"
         >
           <nav class="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto scrollbar-none" aria-label="Path">
             {#each pathBreadcrumbs as crumb, i (crumb.path)}
@@ -443,7 +656,73 @@
         </div>
       {/if}
 
-      <div class="segmented" role="group" aria-label="Layout">
+      <button
+        type="button"
+        class="btn-icon"
+        onclick={() => loadDirectory(currentPath)}
+        disabled={loading}
+        aria-label="Refresh"
+        title="Refresh"
+      >
+        <RefreshCw size={14} class={loading ? "animate-spin" : ""} />
+      </button>
+
+      <button
+        type="button"
+        class="btn btn-secondary btn-sm shrink-0"
+        disabled={!selectedConnection || loading}
+        title="Create a new folder in {currentPath}"
+        onclick={openNewFolderModal}
+      >
+        <FolderPlus size={14} />
+        New folder
+      </button>
+
+      <button
+        type="button"
+        class="btn btn-secondary btn-sm shrink-0"
+        disabled={!selectedConnection}
+        title="Upload files to this host"
+        onclick={() => onOpenUpload(selectedConnection?.id ?? null, currentPath)}
+      >
+        <Upload size={14} />
+        Upload
+      </button>
+
+      <label class="search-box w-44 shrink-0">
+        <Search size={14} class="shrink-0" />
+        <input
+          type="text"
+          placeholder="Filter files"
+          bind:value={filterQuery}
+          spellcheck="false"
+          autocomplete="off"
+        />
+        {#if filterQuery}
+          <button
+            type="button"
+            class="btn-icon btn-icon-sm -mr-1"
+            onclick={() => (filterQuery = "")}
+            aria-label="Clear filter"
+          >
+            <X size={14} />
+          </button>
+        {/if}
+      </label>
+
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm shrink-0"
+        onclick={() => (showHidden = !showHidden)}
+        aria-pressed={showHidden}
+        title={showHidden ? "Hide dotfiles" : "Show dotfiles"}
+      >
+        {#if showHidden}<Eye size={14} />{:else}<EyeOff size={14} />{/if}
+        Hidden files
+        {#if !showHidden && hiddenCount > 0}<span class="count">{hiddenCount}</span>{/if}
+      </button>
+
+      <div class="segmented shrink-0" role="group" aria-label="Layout">
         <button
           type="button"
           class="segmented-item {viewMode === 'list' ? 'segmented-item-active' : ''}"
@@ -467,52 +746,25 @@
       </div>
     </div>
 
-    <div class="view-toolbar">
-      <label class="search-box w-56">
-        <Search size={14} class="shrink-0" />
-        <input
-          type="text"
-          placeholder="Filter files"
-          bind:value={filterQuery}
-          spellcheck="false"
-          autocomplete="off"
-        />
-        {#if filterQuery}
-          <button
-            type="button"
-            class="btn-icon btn-icon-sm -mr-1"
-            onclick={() => (filterQuery = "")}
-            aria-label="Clear filter"
-          >
-            <X size={14} />
-          </button>
-        {/if}
-      </label>
-
-      <div class="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto scrollbar-none" role="group" aria-label="Go to">
-        {#each quickBookmarks as bm (bm.path)}
-          <button
-            type="button"
-            class="chip {currentPath === bm.path ? 'chip-active' : ''}"
-            onclick={() => loadDirectory(bm.path)}
-            title={bm.path}
-          >
-            {bm.label}
-          </button>
-        {/each}
-      </div>
-
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm"
-        onclick={() => (showHidden = !showHidden)}
-        aria-pressed={showHidden}
-        title={showHidden ? "Hide dotfiles" : "Show dotfiles"}
-      >
-        {#if showHidden}<Eye size={14} />{:else}<EyeOff size={14} />{/if}
-        Hidden files
-        {#if !showHidden && hiddenCount > 0}<span class="count">{hiddenCount}</span>{/if}
-      </button>
+    <div
+      class="flex shrink-0 items-center gap-1 overflow-x-auto px-6 pb-2.5 scrollbar-none"
+      role="group"
+      aria-label="Go to"
+    >
+      {#each quickBookmarks as bm (bm.path)}
+        {@const active = currentPath === bm.path}
+        <button
+          type="button"
+          class="inline-flex h-6 shrink-0 cursor-pointer items-center rounded-sm px-2 font-mono text-2xs transition-colors duration-fast {active
+            ? 'bg-surface-active font-medium text-primary'
+            : 'text-muted hover:bg-surface-hover hover:text-primary'}"
+          onclick={() => loadDirectory(bm.path)}
+          aria-current={active ? "location" : undefined}
+          title="{bm.label} ({bm.path})"
+        >
+          {bm.path}
+        </button>
+      {/each}
     </div>
   {/if}
 
@@ -545,7 +797,7 @@
               <th class="w-[96px] text-right">Size</th>
               <th class="hidden w-[148px] md:table-cell">Modified</th>
               <th class="hidden w-[120px] sm:table-cell">Permissions</th>
-              <th class="w-[56px]"><span class="sr-only">Actions</span></th>
+              <th class="w-[128px]"><span class="sr-only">Actions</span></th>
             </tr>
           </thead>
           <tbody>
@@ -628,19 +880,27 @@
               <th class="w-[96px] text-right">Size</th>
               <th class="hidden w-[148px] md:table-cell">Modified</th>
               <th class="hidden w-[120px] sm:table-cell">Permissions</th>
-              <th class="w-[56px]"><span class="sr-only">Actions</span></th>
+              <th class="w-[128px]"><span class="sr-only">Actions</span></th>
             </tr>
           </thead>
           <tbody>
             {#each filteredEntries as entry (entry.path)}
               {@const Icon = getFileIcon(entry)}
-              <tr class="cursor-default" ondblclick={() => entry.is_dir && loadDirectory(entry.path)}>
+              {@const selected = selectedPath === entry.path}
+              <tr
+                class="cursor-default"
+                class:is-selected={selected}
+                data-selected={selected ? "true" : undefined}
+                onclick={() => (selectedPath = entry.path)}
+                ondblclick={() => entry.is_dir && loadDirectory(entry.path)}
+              >
                 <td>
                   <button
                     type="button"
                     class="flex w-full min-w-0 cursor-pointer items-center gap-2.5 text-left"
-                    onclick={() => handleEntryClick(entry)}
-                    title={entry.is_dir ? `Open ${entry.name}` : `Copy path of ${entry.name}`}
+                    onclick={(e) => handleEntryClick(entry, e)}
+                    ondblclick={(e) => e.stopPropagation()}
+                    title={entry.is_dir ? `Open ${entry.name}` : entry.name}
                   >
                     <Icon size={14} class="shrink-0 {entry.is_dir ? 'text-secondary' : 'text-muted'}" />
                     <span class="truncate {entry.is_dir ? 'font-medium text-primary' : 'text-primary'}">{entry.name}</span>
@@ -651,9 +911,7 @@
                 </td>
                 <td class="hidden truncate text-xs text-muted tabular-nums md:table-cell">{entry.modified || "—"}</td>
                 <td class="hidden truncate font-mono text-xs text-muted sm:table-cell">{entry.permissions || "—"}</td>
-                <td>
-                  <div class="row-actions">{@render copyButton(entry)}</div>
-                </td>
+                <td>{@render entryActions(entry)}</td>
               </tr>
             {/each}
           </tbody>
@@ -663,12 +921,16 @@
       <div class="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
         {#each filteredEntries as entry (entry.path)}
           {@const Icon = getFileIcon(entry)}
-          <div class="card card-interactive group flex min-w-0 items-center gap-1 py-2 pl-3 pr-1.5">
+          {@const selected = selectedPath === entry.path}
+          <div
+            class="card card-interactive group flex min-w-0 items-center gap-1 py-2 pl-3 pr-1.5 {selected ? 'card-selected' : ''}"
+          >
             <button
               type="button"
               class="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 text-left"
-              onclick={() => handleEntryClick(entry)}
-              title={entry.is_dir ? `Open ${entry.name}` : `Copy path of ${entry.name}`}
+              onclick={(e) => handleEntryClick(entry, e)}
+              ondblclick={(e) => e.stopPropagation()}
+              title={entry.is_dir ? `Open ${entry.name}` : entry.name}
             >
               <Icon size={16} class="shrink-0 {entry.is_dir ? 'text-secondary' : 'text-muted'}" />
               <span class="flex min-w-0 flex-col">
@@ -678,7 +940,7 @@
                 </span>
               </span>
             </button>
-            <div class="row-actions">{@render copyButton(entry)}</div>
+            {@render entryActions(entry)}
           </div>
         {/each}
       </div>
@@ -697,3 +959,197 @@
     </footer>
   {/if}
 </div>
+
+{#if showNewFolderModal}
+  <ModalShell
+    open={true}
+    title="New folder"
+    onClose={() => !creatingFolder && (showNewFolderModal = false)}
+    width="sm"
+  >
+    <form class="flex min-h-0 flex-1 flex-col" onsubmit={handleCreateFolder}>
+      <div class="modal-header">
+        <div class="min-w-0">
+          <h2 class="modal-title">New folder</h2>
+          <p class="modal-subtitle truncate font-mono" title={currentPath}>{currentPath}</p>
+        </div>
+        <button
+          type="button"
+          class="modal-close"
+          disabled={creatingFolder}
+          onclick={() => (showNewFolderModal = false)}
+          aria-label="Close"
+        >
+          <X size={16} />
+        </button>
+      </div>
+
+      <div class="modal-body flex flex-col gap-3">
+        <div class="field">
+          <label for="sftp-new-folder-name" class="field-label">Folder name</label>
+          <input
+            id="sftp-new-folder-name"
+            type="text"
+            class="input input-mono {newFolderError ? 'input-invalid' : ''}"
+            bind:value={newFolderName}
+            oninput={() => (newFolderError = null)}
+            placeholder="releases"
+            spellcheck="false"
+            autocomplete="off"
+            disabled={creatingFolder}
+            data-autofocus
+          />
+          {#if newFolderError}
+            <span class="field-error">{newFolderError}</span>
+          {:else}
+            <span class="field-hint truncate">
+              Will create <span class="font-mono">{joinRemotePath(currentPath, newFolderName.trim() || "…")}</span>
+            </span>
+          {/if}
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          disabled={creatingFolder}
+          onclick={() => (showNewFolderModal = false)}
+        >
+          Cancel
+        </button>
+        <button type="submit" class="btn btn-primary" disabled={creatingFolder || !newFolderName.trim()}>
+          {#if creatingFolder}
+            <span class="spinner size-3"></span>
+            Creating…
+          {:else}
+            Create folder
+          {/if}
+        </button>
+      </div>
+    </form>
+  </ModalShell>
+{/if}
+
+{#if renameTarget}
+  <ModalShell
+    open={true}
+    title="Rename {renameTarget.is_dir ? 'folder' : 'file'}"
+    onClose={() => !renaming && (renameTarget = null)}
+    width="sm"
+  >
+    <form class="flex min-h-0 flex-1 flex-col" onsubmit={handleRename}>
+      <div class="modal-header">
+        <div class="min-w-0">
+          <h2 class="modal-title">Rename {renameTarget.is_dir ? "folder" : "file"}</h2>
+          <p class="modal-subtitle truncate font-mono" title={renameTarget.path}>{renameTarget.path}</p>
+        </div>
+        <button
+          type="button"
+          class="modal-close"
+          disabled={renaming}
+          onclick={() => (renameTarget = null)}
+          aria-label="Close"
+        >
+          <X size={16} />
+        </button>
+      </div>
+
+      <div class="modal-body flex flex-col gap-3">
+        <div class="field">
+          <label for="sftp-rename-input" class="field-label">New name</label>
+          <input
+            id="sftp-rename-input"
+            type="text"
+            class="input input-mono {renameError ? 'input-invalid' : ''}"
+            bind:value={renameValue}
+            oninput={() => (renameError = null)}
+            spellcheck="false"
+            autocomplete="off"
+            disabled={renaming}
+            data-autofocus
+          />
+          {#if renameError}
+            <span class="field-error">{renameError}</span>
+          {:else}
+            <span class="field-hint truncate">
+              New path: <span class="font-mono">{siblingPath(renameTarget.path, renameValue.trim() || "…")}</span>
+            </span>
+          {/if}
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          disabled={renaming}
+          onclick={() => (renameTarget = null)}
+        >
+          Cancel
+        </button>
+        <button type="submit" class="btn btn-primary" disabled={renaming || !renameValue.trim()}>
+          {#if renaming}
+            <span class="spinner size-3"></span>
+            Renaming…
+          {:else}
+            Rename
+          {/if}
+        </button>
+      </div>
+    </form>
+  </ModalShell>
+{/if}
+
+{#if deleteTarget}
+  <ModalShell
+    open={true}
+    title="Delete {deleteTarget.is_dir ? 'folder' : 'file'}?"
+    onClose={() => !deleting && (deleteTarget = null)}
+    width="sm"
+  >
+    <div class="modal-header">
+      <h2 class="modal-title break-words">Delete {deleteTarget.is_dir ? "folder" : "file"}?</h2>
+      <button
+        type="button"
+        class="modal-close"
+        disabled={deleting}
+        onclick={() => (deleteTarget = null)}
+        aria-label="Close"
+      >
+        <X size={16} />
+      </button>
+    </div>
+
+    <div class="modal-body flex flex-col gap-2.5">
+      <div class="code-block max-h-40 whitespace-pre-wrap break-all">{deleteTarget.path}</div>
+      <p class="m-0 text-xs leading-relaxed text-muted">
+        {#if deleteTarget.is_dir}
+          Folders must be empty to be deleted. This can't be undone.
+        {:else}
+          This permanently deletes the remote file and can't be undone.
+        {/if}
+      </p>
+    </div>
+
+    <div class="modal-footer">
+      <button
+        type="button"
+        class="btn btn-secondary"
+        disabled={deleting}
+        onclick={() => (deleteTarget = null)}
+        data-autofocus
+      >
+        Cancel
+      </button>
+      <button type="button" class="btn btn-danger" disabled={deleting} onclick={handleDelete}>
+        {#if deleting}
+          <span class="spinner size-3"></span>
+          Deleting…
+        {:else}
+          Delete
+        {/if}
+      </button>
+    </div>
+  </ModalShell>
+{/if}

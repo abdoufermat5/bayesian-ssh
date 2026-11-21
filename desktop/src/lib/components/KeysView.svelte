@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import { Check, Copy, KeyRound, Plus, RefreshCw, Send, ShieldAlert, X } from "lucide-svelte";
+  import { Check, Copy, KeyRound, Plus, RefreshCw, Send, ShieldAlert, Wrench, X } from "lucide-svelte";
   import type { Connection, SshKeyInfo } from "$lib/types";
   import CustomSelect from "$lib/components/ui/CustomSelect.svelte";
   import ModalShell from "$lib/components/ui/ModalShell.svelte";
@@ -23,6 +23,7 @@
 
   let keys = $state.raw<SshKeyInfo[]>([]);
   let loading = $state(true);
+  let fixing = $state(false);
   let copiedText = $state<string | null>(null);
 
   // Generate key dialog
@@ -114,6 +115,24 @@
     }
   }
 
+  async function fixPermissions() {
+    fixing = true;
+    try {
+      const repaired = await invoke<number>("fix_security_permissions");
+      notify(
+        repaired > 0
+          ? `Fixed permissions on ${repaired} ${repaired === 1 ? "file" : "files"}`
+          : "Permissions were already correct",
+        "success",
+      );
+      await loadKeys();
+    } catch (err) {
+      notify(`Failed to fix permissions: ${err}`, "error");
+    } finally {
+      fixing = false;
+    }
+  }
+
   function copyToClipboard(text: string, what: string) {
     copyTextWithFallback(text);
     copiedText = text;
@@ -148,10 +167,12 @@
       >
         <RefreshCw size={14} class={loading ? "animate-spin" : ""} />
       </button>
-      <button type="button" class="btn btn-primary" onclick={openGenerate}>
-        <Plus size={15} />
-        Generate key
-      </button>
+      {#if loading || keys.length > 0}
+        <button type="button" class="btn btn-primary" onclick={openGenerate}>
+          <Plus size={15} />
+          Generate key
+        </button>
+      {/if}
     </div>
   </header>
 
@@ -206,6 +227,21 @@
               </button>
             </div>
           </div>
+          <button
+            type="button"
+            class="btn btn-secondary btn-sm shrink-0 self-start"
+            onclick={fixPermissions}
+            disabled={fixing || loading}
+            title="Set secure permissions (600) on private keys in ~/.ssh"
+          >
+            {#if fixing}
+              <span class="spinner size-3"></span>
+              Fixing…
+            {:else}
+              <Wrench size={13} />
+              Fix permissions
+            {/if}
+          </button>
         </div>
       {/if}
 
@@ -213,18 +249,18 @@
         <table class="data-table table-fixed">
           <thead>
             <tr>
-              <th class="w-[34%]">Key</th>
-              <th class="w-[112px]">Type</th>
+              <th class="w-[32%]">Key</th>
+              <th class="w-[108px]">Type</th>
               <th>Fingerprint</th>
-              <th class="w-[112px]">Permissions</th>
-              <th class="w-[112px]"><span class="sr-only">Actions</span></th>
+              <th class="w-[108px]">Permissions</th>
+              <th class="w-[144px]"><span class="sr-only">Actions</span></th>
             </tr>
           </thead>
           <tbody>
             {#each keys as key (key.public_key_path)}
               {@const path = key.private_key_path ?? key.public_key_path}
-              <tr style="height: var(--row-height, 40px)">
-                <td class="py-2">
+              <tr style="min-height: var(--row-height, 40px)">
+                <td class="h-auto py-2">
                   <div class="flex min-w-0 flex-col gap-0.5">
                     <div class="flex min-w-0 items-baseline gap-2">
                       <span class="truncate font-medium text-primary" title={key.name}>{key.name}</span>
@@ -244,10 +280,10 @@
                     </span>
                   </div>
                 </td>
-                <td>
+                <td class="h-auto py-2">
                   <span class="badge badge-neutral badge-mono">{key.key_type}</span>
                 </td>
-                <td>
+                <td class="h-auto py-2">
                   <div class="flex min-w-0 items-center gap-1">
                     <span class="truncate font-mono text-xs text-secondary select-text" title={key.fingerprint}>
                       {key.fingerprint}
@@ -263,7 +299,7 @@
                     </button>
                   </div>
                 </td>
-                <td>
+                <td class="h-auto py-2">
                   {#if key.is_secure}
                     <span class="badge badge-success badge-mono" title="Private key is only readable by you">
                       {key.private_key_permission}
@@ -278,8 +314,23 @@
                     </span>
                   {/if}
                 </td>
-                <td>
-                  <div class="flex justify-end">
+                <td class="h-auto py-2">
+                  <div class="flex items-center justify-end gap-1.5">
+                    {#if key.public_key}
+                      <button
+                        type="button"
+                        class="btn-icon btn-icon-sm"
+                        onclick={() => copyToClipboard(key.public_key!, "public key")}
+                        aria-label="Copy public key of {key.name}"
+                        title="Copy public key (.pub)"
+                      >
+                        {#if copiedText === key.public_key}
+                          <Check size={13} class="text-success" />
+                        {:else}
+                          <Copy size={13} />
+                        {/if}
+                      </button>
+                    {/if}
                     <button
                       type="button"
                       class="btn btn-secondary btn-sm"

@@ -11,11 +11,19 @@ use crate::config::AppConfig;
 use crate::database::Database;
 use crate::models::Connection;
 use crate::services::auth::SSH_AUTH_SOCK;
+use crate::services::transfer::TransferService;
 use crate::services::transport::subprocess_impl::{
     HopOptions, jump_proxy_command, ssh_strict_host_key_value,
 };
+use crate::services::transport::{ExecOptions, SshTransport, SubprocessTransport, TransportError};
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 use std::process::{Command, Output};
+use std::time::Duration;
+
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+const OP_TIMEOUT: Duration = Duration::from_secs(30);
+const OP_MAX_OUTPUT_BYTES: usize = 64 * 1024;
 
 /// A remote directory entry surfaced to callers (serde round-trips to the
 /// desktop frontend unchanged).
@@ -390,6 +398,109 @@ fn parse_sftp_output(output: &Output, path: &str) -> Result<Vec<RemoteFileEntry>
     Ok(entries)
 }
 
+/// Validate a remote path before passing it to SFTP or a remote shell command.
+///
+/// Rejects empty/whitespace-only paths, NUL bytes (`\0`), and newlines
+/// (`\r`/`\n`). When `allow_root` is `false`, also rejects `/`, `~`, `.`, `..`,
+/// and any path ending in `/.` or `/..` (with or without trailing slashes).
+pub fn validate_remote_path(path: &str, allow_root: bool) -> Result<&str, String> {
+    if path.contains(['\0', '\r', '\n']) {
+        return Err("Remote path contains invalid control characters.".to_string());
+    }
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err("Remote path cannot be empty.".to_string());
+    }
+    if !allow_root {
+        let normalized = trimmed.trim_end_matches('/');
+        if normalized.is_empty()
+            || matches!(normalized, "~" | "." | "..")
+            || normalized.ends_with("/.")
+            || normalized.ends_with("/..")
+        {
+            return Err(format!("Refusing to operate on protected path '{trimmed}'."));
+        }
+    }
+    Ok(trimmed)
+}
+
+/// Resolve a connection by name from the database, refusing any host with an
+/// unconfirmed team-sync redirect.
+fn resolve_connection(config: &AppConfig, connection_name: &str) -> Result<Connection, String> {
+    let db = Database::new(config).map_err(|e| e.to_string())?;
+    let conn = db
+        .connection(connection_name)
+        .map_err(|e| format!("Database error: {e}"))?
+        .ok_or_else(|| format!("Connection '{connection_name}' not found."))?;
+    if conn.pending_change.is_some() {
+        // Same refusal as the terminal: no connection to a redirected host
+        // until the team-sync change is confirmed.
+        return Err(crate::services::pending::refusal(&conn));
+    }
+    Ok(conn)
+}
+
+fn gui_exec_options(timeout: Duration) -> ExecOptions {
+    ExecOptions {
+        timeout: Some(timeout),
+        max_output_bytes: Some(OP_MAX_OUTPUT_BYTES),
+        connect_timeout: Some(CONNECT_TIMEOUT),
+        non_interactive: true,
+        cert_auth: None,
+        control_dir: None,
+    }
+}
+
+/// Single-quote a remote path for POSIX `sh` execution while preserving leading
+/// `~/` home-directory expansion when present.
+fn quote_remote_path(path: &str) -> String {
+    if let Some(rest) = path.strip_prefix("~/") {
+        let escaped = rest.replace('\'', "'\"'\"'");
+        format!("~/'{escaped}'")
+    } else {
+        let escaped = path.replace('\'', "'\"'\"'");
+        format!("'{escaped}'")
+    }
+}
+
+async fn run_subprocess_op(
+    config: &AppConfig,
+    conn: &Connection,
+    remote_cmd: &str,
+) -> Result<(), String> {
+    let sub = SubprocessTransport::new(config.clone());
+    let opts = gui_exec_options(OP_TIMEOUT);
+    let out = sub
+        .exec_limited(conn, remote_cmd, &opts)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if out.timed_out {
+        return Err("Remote operation timed out.".to_string());
+    }
+    if out.exit_code == Some(0) {
+        return Ok(());
+    }
+
+    let stderr = strip_ansi(&String::from_utf8_lossy(&out.stderr))
+        .trim()
+        .to_string();
+    let stdout = strip_ansi(&String::from_utf8_lossy(&out.stdout))
+        .trim()
+        .to_string();
+    let detail = if !stderr.is_empty() {
+        stderr
+    } else if !stdout.is_empty() {
+        stdout
+    } else {
+        format!(
+            "Remote command failed (exit code {}).",
+            out.exit_code.map_or_else(|| "unknown".into(), |c| c.to_string())
+        )
+    };
+    Err(detail)
+}
+
 /// List a remote directory for a stored connection.
 ///
 /// Thin DB glue shared with the desktop GUI command; behavior (return shape,
@@ -403,16 +514,7 @@ pub fn list_remote_directory(
     connection_name: &str,
     remote_path: &str,
 ) -> Result<Vec<RemoteFileEntry>, String> {
-    let db = Database::new(config).map_err(|e| e.to_string())?;
-    let conn = db
-        .connection(connection_name)
-        .map_err(|e| format!("Database error: {e}"))?
-        .ok_or_else(|| format!("Connection '{connection_name}' not found."))?;
-    if conn.pending_change.is_some() {
-        // Same refusal as the terminal: no connection to a redirected host
-        // until the team-sync change is confirmed.
-        return Err(crate::services::pending::refusal(&conn));
-    }
+    let conn = resolve_connection(config, connection_name)?;
 
     let path = if remote_path.trim().is_empty() {
         ".".to_string()
@@ -438,6 +540,155 @@ pub fn list_remote_directory(
     };
 
     parse_sftp_output(&output, &path)
+}
+
+/// Download a single remote file to `local_path`, returning bytes written.
+///
+/// Uses native SFTP when available for the connection (falling back to SCP if
+/// the native transport requests fallback or SFTP is unavailable).
+pub async fn download_remote_file(
+    config: &AppConfig,
+    connection_name: &str,
+    remote_path: &str,
+    local_path: &Path,
+) -> Result<u64, String> {
+    let path = validate_remote_path(remote_path, false)?;
+    let conn = resolve_connection(config, connection_name)?;
+    let transfer = TransferService::new(config.clone()).map_err(|e| e.to_string())?;
+
+    if transfer.has_sftp(&conn) {
+        let opts = gui_exec_options(OP_TIMEOUT);
+        match transfer.open_sftp_limited(&conn, &opts).await {
+            Ok(sftp) => {
+                return transfer
+                    .download_on(sftp, &conn, path, local_path, None)
+                    .await
+                    .map_err(|e| e.to_string());
+            }
+            Err(TransportError::Fallback(_)) => {
+                // Fall through to SCP below.
+            }
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+
+    transfer
+        .scp_download(&conn, path, local_path, false)
+        .await
+        .map_err(|e| e.to_string())?;
+    let bytes = tokio::fs::metadata(local_path)
+        .await
+        .map(|m| m.len())
+        .unwrap_or(0);
+    Ok(bytes)
+}
+
+/// Create a remote directory.
+///
+/// Uses native `SftpSession::mkdir` when SFTP is available, falling back to
+/// `mkdir -p -- '<escaped>'` over subprocess `ssh` (supporting direct, jump
+/// host, and interactive Kerberos+bastion sessions).
+pub async fn create_remote_directory(
+    config: &AppConfig,
+    connection_name: &str,
+    remote_path: &str,
+) -> Result<(), String> {
+    let path = validate_remote_path(remote_path, false)?;
+    let conn = resolve_connection(config, connection_name)?;
+    let transfer = TransferService::new(config.clone()).map_err(|e| e.to_string())?;
+
+    if transfer.has_sftp(&conn) {
+        let opts = gui_exec_options(OP_TIMEOUT);
+        match transfer.open_sftp_limited(&conn, &opts).await {
+            Ok(sftp) => {
+                return tokio::time::timeout(OP_TIMEOUT, sftp.mkdir(path, 0o755))
+                    .await
+                    .map_err(|_| "Remote mkdir timed out.".to_string())?
+                    .map_err(|e| e.to_string());
+            }
+            Err(TransportError::Fallback(_)) => {}
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+
+    let cmd = format!("mkdir -p -- {}", quote_remote_path(path));
+    run_subprocess_op(config, &conn, &cmd).await
+}
+
+/// Rename or move a remote file or directory.
+///
+/// Uses native `SftpSession::rename` when SFTP is available, falling back to
+/// `mv -- '<from>' '<to>'` over subprocess `ssh`.
+pub async fn rename_remote_entry(
+    config: &AppConfig,
+    connection_name: &str,
+    from_path: &str,
+    to_path: &str,
+) -> Result<(), String> {
+    let from = validate_remote_path(from_path, false)?;
+    let to = validate_remote_path(to_path, false)?;
+    if from == to {
+        return Ok(());
+    }
+    let conn = resolve_connection(config, connection_name)?;
+    let transfer = TransferService::new(config.clone()).map_err(|e| e.to_string())?;
+
+    if transfer.has_sftp(&conn) {
+        let opts = gui_exec_options(OP_TIMEOUT);
+        match transfer.open_sftp_limited(&conn, &opts).await {
+            Ok(sftp) => {
+                return tokio::time::timeout(OP_TIMEOUT, sftp.rename(from, to))
+                    .await
+                    .map_err(|_| "Remote rename timed out.".to_string())?
+                    .map_err(|e| e.to_string());
+            }
+            Err(TransportError::Fallback(_)) => {}
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+
+    let cmd = format!(
+        "mv -- {} {}",
+        quote_remote_path(from),
+        quote_remote_path(to)
+    );
+    run_subprocess_op(config, &conn, &cmd).await
+}
+
+/// Delete a remote file or empty directory (strictly non-recursive).
+///
+/// Uses native `SftpSession::remove` when SFTP is available, falling back to
+/// `rmdir -- '<path>'` when `is_dir` is `true` or `rm -- '<path>'` otherwise.
+pub async fn delete_remote_entry(
+    config: &AppConfig,
+    connection_name: &str,
+    remote_path: &str,
+    is_dir: bool,
+) -> Result<(), String> {
+    let path = validate_remote_path(remote_path, false)?;
+    let conn = resolve_connection(config, connection_name)?;
+    let transfer = TransferService::new(config.clone()).map_err(|e| e.to_string())?;
+
+    if transfer.has_sftp(&conn) {
+        let opts = gui_exec_options(OP_TIMEOUT);
+        match transfer.open_sftp_limited(&conn, &opts).await {
+            Ok(sftp) => {
+                return tokio::time::timeout(OP_TIMEOUT, sftp.remove(path))
+                    .await
+                    .map_err(|_| "Remote delete timed out.".to_string())?
+                    .map_err(|e| e.to_string());
+            }
+            Err(TransportError::Fallback(_)) => {}
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+
+    let cmd = if is_dir {
+        format!("rmdir -- {}", quote_remote_path(path))
+    } else {
+        format!("rm -- {}", quote_remote_path(path))
+    };
+    run_subprocess_op(config, &conn, &cmd).await
 }
 
 #[cfg(test)]
@@ -518,5 +769,72 @@ mod tests {
         assert_eq!(entries[0].name, "notes.md");
         assert_eq!(entries[0].modified, "Oct 1 12:00");
         assert_eq!(entries[0].path, "/home/me/notes.md");
+    }
+
+    #[test]
+    fn validate_remote_path_rejects_dangerous_and_malformed_inputs() {
+        use super::validate_remote_path;
+
+        for bad in [
+            "",
+            "   ",
+            "\t",
+            "/tmp/a\0b",
+            "/tmp/a\nb",
+            "/tmp/a\rb",
+            "/tmp/a\n",
+            "/",
+            "///",
+            "~",
+            "~/",
+            ".",
+            "./",
+            "..",
+            "../",
+            "/var/www/.",
+            "/var/www/./",
+            "/var/www/..",
+            "/var/www/../",
+        ] {
+            assert!(
+                validate_remote_path(bad, false).is_err(),
+                "expected Err for {bad:?}"
+            );
+        }
+
+        // Root is allowed only when `allow_root` is true, while control chars
+        // and empty paths remain rejected.
+        assert_eq!(validate_remote_path("/", true), Ok("/"));
+        assert!(validate_remote_path("", true).is_err());
+        assert!(validate_remote_path("/\0", true).is_err());
+        assert!(validate_remote_path("/\n", true).is_err());
+    }
+
+    #[test]
+    fn validate_remote_path_accepts_normal_paths() {
+        use super::validate_remote_path;
+
+        for good in [
+            "/var/www/app.log",
+            "~/notes.txt",
+            "/tmp/my file.txt",
+            "/tmp/.env",
+            "/tmp/..hidden",
+            "relative/file.tar.gz",
+        ] {
+            assert_eq!(validate_remote_path(good, false), Ok(good));
+        }
+    }
+
+    #[test]
+    fn quote_remote_path_escapes_single_quotes_and_preserves_tilde() {
+        use super::quote_remote_path;
+
+        assert_eq!(quote_remote_path("/tmp/my file.txt"), "'/tmp/my file.txt'");
+        assert_eq!(
+            quote_remote_path("/tmp/it's;rm -rf /"),
+            "'/tmp/it'\"'\"'s;rm -rf /'"
+        );
+        assert_eq!(quote_remote_path("~/my 'notes'.txt"), "~/'my '\"'\"'notes'\"'\"'.txt'");
     }
 }

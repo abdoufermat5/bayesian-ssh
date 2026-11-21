@@ -125,3 +125,33 @@ pub fn pick_backup_file(window: tauri::WebviewWindow) -> Result<Option<String>, 
 
     Ok(file.map(|p| p.to_string_lossy().to_string()))
 }
+
+#[tauri::command]
+pub fn save_remote_file(
+    window: tauri::WebviewWindow,
+    default_name: String,
+) -> Result<Option<String>, CommandError> {
+    let file_name = std::path::Path::new(default_name.trim())
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("download");
+
+    let mut dialog = rfd::FileDialog::new()
+        .set_title("Save Remote File")
+        .set_file_name(file_name)
+        .set_parent(&window);
+
+    if let Some(dir) = dirs::download_dir()
+        .filter(|p| p.exists())
+        .or_else(dirs::home_dir)
+    {
+        dialog = dialog.set_directory(dir);
+    }
+
+    let _ = window.minimize();
+    let file = dialog.save_file();
+    let _ = window.unminimize();
+    let _ = window.set_focus();
+
+    Ok(file.map(|p| p.to_string_lossy().to_string()))
+}

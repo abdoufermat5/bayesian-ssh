@@ -165,6 +165,7 @@ export interface SshKeyInfo {
   fingerprint: string;
   comment: string;
   public_key_path: string;
+  public_key?: string;
   private_key_path?: string;
   private_key_permission: string;
   is_secure: boolean;

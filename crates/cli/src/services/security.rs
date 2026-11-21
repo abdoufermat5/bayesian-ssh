@@ -19,6 +19,7 @@ pub struct SshKeyInfo {
     pub key_type: String,
     pub fingerprint: String,
     pub comment: String,
+    pub public_key: String,
     pub public_key_path: String,
     pub private_key_path: Option<String>,
     pub private_key_permission: String,
@@ -30,13 +31,16 @@ pub fn scan_ssh_keys() -> Result<Vec<SshKeyInfo>, String> {
     let ssh_dir = dirs::home_dir()
         .ok_or_else(|| "Could not resolve home directory".to_string())?
         .join(".ssh");
+    scan_ssh_keys_in(&ssh_dir)
+}
 
+fn scan_ssh_keys_in(ssh_dir: &Path) -> Result<Vec<SshKeyInfo>, String> {
     if !ssh_dir.exists() {
         return Ok(Vec::new());
     }
 
     let mut keys = Vec::new();
-    let entries = fs::read_dir(&ssh_dir).map_err(|e| e.to_string())?;
+    let entries = fs::read_dir(ssh_dir).map_err(|e| e.to_string())?;
 
     for entry in entries.flatten() {
         let path = entry.path();
@@ -52,6 +56,7 @@ pub fn scan_ssh_keys() -> Result<Vec<SshKeyInfo>, String> {
                 .to_string();
 
             let key_content = fs::read_to_string(&path).unwrap_or_default();
+            let public_key = key_content.trim().to_string();
             let parts: Vec<&str> = key_content.split_whitespace().collect();
             let key_type = parts.first().copied().unwrap_or("unknown").to_string();
             let comment = parts.get(2).copied().unwrap_or("").to_string();
@@ -92,6 +97,7 @@ pub fn scan_ssh_keys() -> Result<Vec<SshKeyInfo>, String> {
                 key_type,
                 fingerprint,
                 comment,
+                public_key,
                 public_key_path: path.display().to_string(),
                 private_key_path: priv_key_str,
                 private_key_permission: priv_perm,
@@ -328,5 +334,33 @@ mod tests {
     fn unknown_policy_is_not_reported_as_off() {
         // `load` already rewrites this to `strict`; the report must agree.
         assert!(host_key_finding(&with_policy("bogus")).is_none());
+    }
+
+    #[test]
+    fn scan_ssh_keys_populates_trimmed_public_key_without_reading_private_key() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let raw_pub = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMockKeyDataForUnitTest1234567890AAA user@host";
+        std::fs::write(dir.path().join("id_test.pub"), format!("  {raw_pub}\n\n"))
+            .expect("write pub");
+        let priv_path = dir.path().join("id_test");
+        std::fs::write(&priv_path, "-----BEGIN OPENSSH PRIVATE KEY-----\nSECRET\n")
+            .expect("write priv");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&priv_path, std::fs::Permissions::from_mode(0o600))
+                .expect("chmod");
+        }
+
+        let keys = super::scan_ssh_keys_in(dir.path()).expect("scan");
+        assert_eq!(keys.len(), 1);
+        let key = &keys[0];
+        assert_eq!(key.name, "id_test");
+        assert_eq!(key.key_type, "ssh-ed25519");
+        assert_eq!(key.comment, "user@host");
+        assert_eq!(key.public_key, raw_pub);
+        assert!(!key.public_key.contains("PRIVATE KEY"));
+        assert!(key.fingerprint.starts_with("SHA256:"));
+        assert!(key.is_secure);
     }
 }
