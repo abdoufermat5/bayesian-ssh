@@ -9,14 +9,38 @@ export type AppDensity = (typeof APP_DENSITIES)[number];
 
 /** The themes users can pick, in display order; onboarding and Appearance both read this. */
 export const THEME_OPTIONS: { id: AppTheme; label: string; desc: string }[] = [
-  { id: "light", label: "Light", desc: "Warm paper surfaces, amber accent" },
-  { id: "dark", label: "Dark", desc: "Warm carbon surfaces, amber accent" },
+  { id: "light", label: "Light", desc: "Crisp cool neutral surfaces, indigo accent" },
+  { id: "dark", label: "Dark", desc: "Obsidian dark surfaces, indigo accent" },
   { id: "system", label: "Match system", desc: "Light or Dark, following your system" },
 ];
 
+export const THEME_SWATCHES: Record<
+  "light" | "dark",
+  { chrome: string; surface: string; panel: string; border: string; text: string; muted: string; accent: string }
+> = {
+  dark: {
+    chrome: "#09090b",
+    surface: "#0e0f12",
+    panel: "#14161b",
+    border: "#22252e",
+    text: "#f2f4f8",
+    muted: "#969db0",
+    accent: "#818cf8",
+  },
+  light: {
+    chrome: "#e9ecf1",
+    surface: "#f1f3f6",
+    panel: "#fafafa",
+    border: "#d5dae3",
+    text: "#111318",
+    muted: "#525a6b",
+    accent: "#4f46e5",
+  },
+};
+
 const THEME_WINDOW_BG: Record<ConcreteTheme, string> = {
-  dark: "#0d0c0a",
-  light: "#e6e1d6",
+  dark: "#09090b",
+  light: "#e9ecf1",
 };
 
 /** Themes from earlier versions, and what they became. */
@@ -149,27 +173,27 @@ export interface XtermTheme {
 /** The terminal palette of the active theme (the --term-* tokens); Dark when unstyled. */
 export function getCurrentXtermTheme(): XtermTheme {
   const fallback: XtermTheme = {
-    background: "#0d0c0a",
-    foreground: "#ddd6c8",
-    cursor: "#f0a030",
-    cursorAccent: "#0d0c0a",
-    black: "#2c2924",
-    red: "#e8685c",
-    green: "#8fbf7a",
-    yellow: "#d9b45a",
-    blue: "#7fa6d0",
-    magenta: "#c08fc0",
-    cyan: "#6fb3ad",
-    white: "#c9c1b2",
-    brightBlack: "#6f685d",
-    brightRed: "#f2837a",
-    brightGreen: "#a8d493",
-    brightYellow: "#ecd07a",
-    brightBlue: "#9dbde0",
-    brightMagenta: "#d7aed7",
-    brightCyan: "#8ccbc4",
-    brightWhite: "#f2ecdf",
-    selectionBackground: "rgba(240, 160, 48, 0.28)",
+    background: "#0a0b0e",
+    foreground: "#e2e6f0",
+    cursor: "#818cf8",
+    cursorAccent: "#0a0b0e",
+    black: "#232630",
+    red: "#f87171",
+    green: "#5ad48a",
+    yellow: "#eab308",
+    blue: "#60a5fa",
+    magenta: "#c084fc",
+    cyan: "#22d3ee",
+    white: "#cbd5e1",
+    brightBlack: "#646c80",
+    brightRed: "#fca5a5",
+    brightGreen: "#86efac",
+    brightYellow: "#fde047",
+    brightBlue: "#93c5fd",
+    brightMagenta: "#d8b4fe",
+    brightCyan: "#67e8f9",
+    brightWhite: "#f8fafc",
+    selectionBackground: "rgba(129, 140, 248, 0.28)",
   };
 
   if (typeof window === "undefined") {

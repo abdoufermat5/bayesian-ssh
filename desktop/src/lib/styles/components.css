@@ -16,12 +16,12 @@
     @apply inline-flex h-8 shrink-0 cursor-pointer select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-transparent px-3 text-sm font-medium leading-none transition-colors duration-fast disabled:cursor-not-allowed;
   }
   /* Filled with accent-strong so on-accent text meets 4.5:1 in every theme.
-     No shadow on the fill: the amber plane is the signal. */
+     No shadow on the fill: the indigo plane is the signal. */
   .btn-primary {
     @apply bg-accent-strong text-on-accent hover:bg-accent-strong-hover;
   }
   .btn-secondary {
-    @apply border-border-control bg-transparent text-primary hover:border-border-strong hover:bg-surface-hover;
+    @apply border-border-hover bg-panel text-primary hover:border-border-strong hover:bg-surface-hover;
   }
   .btn-ghost {
     @apply bg-transparent text-secondary hover:bg-surface-hover hover:text-primary;
@@ -167,10 +167,9 @@
     @apply inline-flex h-5 shrink-0 select-none items-center rounded-xs bg-surface-active px-1.5 font-mono text-2xs uppercase tracking-[0.04em] text-secondary;
   }
 
-  /* Mono keycap: 1 px control edge plus a hairline bottom shadow. */
+  /* Quiet mono keycap. */
   .kbd {
-    @apply inline-flex h-[18px] min-w-[18px] select-none items-center justify-center rounded-xs border border-border-control bg-surface-input px-1 font-mono text-2xs font-medium leading-none text-secondary;
-    box-shadow: 0 1px 0 var(--color-border-strong);
+    @apply inline-flex h-[18px] min-w-[18px] select-none items-center justify-center rounded-xs border border-border-strong/70 bg-surface-active/60 px-1 font-mono text-2xs font-medium leading-none text-secondary;
   }
 
   .status-dot {
@@ -197,7 +196,7 @@
   }
 
   /* ---- Patch-bay jack --------------------------------------------
-     A 10 px round jack per host row: hollow ring when idle, amber when
+     A 10 px round jack per host row: hollow ring when idle, accent when
      a session to that host is live, error fill when it failed. State is
      never color alone — always pair with a title or sr-only text. The
      only motion is the connecting state's opacity breathe. */
@@ -224,16 +223,16 @@
   /* ================================================================
      TEXT HELPERS
      ================================================================ */
-  /* Type contract (tokens.css "Type scale"): title 22 display, section 14, body 13,
+  /* Type contract (tokens.css "Type scale"): title 18 sans, section 14, body 13,
      meta 12, caption 11. Each size has one job; never pick one ad hoc. */
   .type-title {
-    font-family: var(--font-display);
-    font-stretch: 75%;
+    font-family: var(--font-sans);
+    font-stretch: normal;
     font-size: var(--type-title);
     line-height: var(--type-title-lh);
     font-weight: var(--type-title-weight);
     letter-spacing: var(--type-title-tracking);
-    text-transform: uppercase;
+    text-transform: none;
     @apply text-primary;
   }
   .type-section {
@@ -264,18 +263,18 @@
     line-height: var(--type-section-lh);
     font-weight: var(--type-section-weight);
   }
-  /* Instrument-panel eyebrow: condensed uppercase display type. Titles,
-     sidebar sections, table headers and settings group titles share it. */
+  /* Eyebrow label: normal-width uppercase IBM Plex Sans. Sidebar sections,
+     table headers and settings group titles share it. */
   .eyebrow,
   .section-label,
   .nav-section-label,
   .settings-eyebrow {
-    font-family: var(--font-display);
-    font-stretch: 75%;
+    font-family: var(--font-sans);
+    font-stretch: normal;
     font-size: var(--type-caption);
     line-height: var(--type-caption-lh);
     font-weight: 500;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
     @apply select-none text-muted;
   }
@@ -312,15 +311,9 @@
   .app-shell {
     @apply flex h-[100dvh] w-full min-h-0 flex-col overflow-hidden bg-chrome;
   }
-  /* Static grain: one inline SVG noise tile at ≤ 3 % opacity on the chrome
-     only. The texture is baked into the data URI, so no runtime filter. */
-  .titlebar,
-  .sidebar {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
-  }
   .titlebar {
     @apply relative z-50 grid h-[var(--titlebar-h)] shrink-0 select-none items-center bg-chrome pl-3;
-    grid-template-columns: 1fr minmax(0, 420px) 1fr;
+    grid-template-columns: 1fr minmax(0, 440px) 1fr;
   }
   .sidebar {
     @apply flex min-h-0 shrink-0 select-none flex-col bg-chrome;
@@ -362,13 +355,13 @@
   }
   .view-title {
     @apply m-0 flex min-w-0 items-center gap-2 truncate text-primary;
-    font-family: var(--font-display);
-    font-stretch: 75%;
+    font-family: var(--font-sans);
+    font-stretch: normal;
     font-size: var(--type-title);
     line-height: var(--type-title-lh);
     font-weight: var(--type-title-weight);
     letter-spacing: var(--type-title-tracking);
-    text-transform: uppercase;
+    text-transform: none;
   }
   /* Counts in the header are machine values: mono, tabular, muted. */
   .view-count {
@@ -384,10 +377,17 @@
     @apply flex shrink-0 items-center gap-2;
   }
   .view-toolbar {
+    @apply flex shrink-0 flex-wrap items-center gap-2 px-6 pb-3 pt-3;
+  }
+  .view-subbar {
     @apply flex shrink-0 flex-wrap items-center gap-2 px-6 pb-3;
   }
   .view-body {
-    @apply min-h-0 flex-1 overflow-auto px-6 pb-6;
+    @apply min-h-0 flex-1 overflow-auto px-6 pb-6 pt-4;
+  }
+  .view-toolbar + .view-body,
+  .view-subbar + .view-body {
+    @apply pt-0;
   }
 
   /* ================================================================
@@ -440,12 +440,12 @@
   }
   .data-table thead th {
     @apply sticky top-0 z-[1] h-9 select-none border-b border-border bg-panel px-3 text-left text-muted;
-    font-family: var(--font-display);
-    font-stretch: 75%;
+    font-family: var(--font-sans);
+    font-stretch: normal;
     font-size: var(--type-caption);
     line-height: var(--type-caption-lh);
     font-weight: 500;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
   }
   .data-table tbody tr {
@@ -501,11 +501,11 @@
   }
 
   .chip {
-    @apply inline-flex h-7 shrink-0 cursor-pointer select-none items-center gap-1 whitespace-nowrap rounded-full border border-border-control px-2.5 text-xs text-secondary transition-colors duration-fast hover:border-border-strong hover:text-primary;
+    @apply inline-flex h-7 shrink-0 cursor-pointer select-none items-center gap-1 whitespace-nowrap rounded-full border border-border bg-surface-hover/60 px-2.5 text-xs text-secondary transition-colors duration-fast hover:border-border-strong hover:text-primary;
   }
   /* Active filter: tint + accent border + check mark (never color alone). */
   .chip-active {
-    @apply border-accent bg-accent/12 font-medium text-accent hover:border-accent hover:text-accent;
+    @apply border-accent/60 bg-accent/12 font-medium text-accent hover:border-accent hover:text-accent;
   }
   .chip-active::before {
     /* Empty alt text: a visual cue only; aria-pressed already says "pressed". */
@@ -573,6 +573,9 @@
   }
   .alert-title {
     @apply font-semibold text-primary;
+  }
+  .alert-body {
+    @apply flex min-w-0 flex-1 flex-col gap-1;
   }
 
   /* ================================================================
@@ -653,13 +656,13 @@
   }
   .modal-title {
     @apply m-0 text-primary;
-    font-family: var(--font-display);
-    font-stretch: 75%;
-    font-size: var(--text-lg);
-    line-height: 1.25;
+    font-family: var(--font-sans);
+    font-stretch: normal;
+    font-size: 0.9375rem;
+    line-height: 1.25rem;
     font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+    letter-spacing: -0.02em;
+    text-transform: none;
   }
   .modal-subtitle {
     @apply m-0 mt-1 text-xs leading-snug text-muted;
@@ -711,11 +714,6 @@
     font-size: var(--type-body);
     line-height: var(--type-body-lh);
   }
-  /* Panels render their own title block for historical reasons; the header
-     already names the section, so it is hidden (and leaves the a11y tree). */
-  .settings-page > div:has(> .settings-heading) {
-    display: none;
-  }
   .settings-heading {
     @apply m-0 text-primary;
     font-size: var(--type-section);
@@ -732,8 +730,8 @@
   }
   .settings-group-title {
     @apply m-0 mb-2 text-muted;
-    font-family: var(--font-display);
-    font-stretch: 75%;
+    font-family: var(--font-sans);
+    font-stretch: normal;
     font-size: var(--text-xs);
     line-height: var(--text-xs--line-height);
     font-weight: 600;

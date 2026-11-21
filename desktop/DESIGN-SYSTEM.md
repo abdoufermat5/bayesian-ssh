@@ -18,16 +18,14 @@ the same offline.
 
 ## Principles
 
-- **Industrial instrument panel.** Warm carbon (dark) or paper (light) surfaces, hairline rules,
-  tight radii, dense real data. No gradients, glow, glassmorphism, decorative icon tiles or
-  colored shadows. The one texture is a static SVG grain data-URI on the title bar and sidebar
-  (≤ 3 % opacity, no runtime filter).
-- **One signal accent: phosphor amber.** It marks the primary action, focus, selection, links and
-  a live session, nothing else. `warning` is a separate caution yellow. Labels and badges stay
-  neutral; their icon or text says what they are.
-- **Hosts are a patch bay.** Each host row carries a round jack lamp that lights amber while a
-  session to that host is live; a failed session fills it with `error`. Never encode the state in
-  color alone — the lamp is paired with a `title` or sr-only text.
+- **Clean precision workbench.** Cool obsidian/graphite (dark) or crisp cool neutral (light)
+  surfaces, hairline rules, modern radii (`4px`–`12px`), dense real data. No gradients, glow,
+  glassmorphism, grain textures, decorative icon tiles or colored shadows.
+- **One signal accent: indigo.** It marks the primary action, focus, selection, links and a live
+  session, nothing else. Labels and badges stay neutral; their icon or text says what they are.
+- **Hosts are a patch bay.** Each host row carries a round jack lamp that lights accent indigo
+  while a session to that host is live; a failed session fills it with `error`. Never encode the
+  state in color alone — the lamp is paired with a `title` or sr-only text.
 - **One title per screen.** The view header is the page header; there is no global top bar
   repeating it.
 - **One primary action per view or modal.** Everything else is secondary or ghost.
@@ -44,18 +42,18 @@ the same offline.
 ## Layout
 
 ```
-┌ titlebar (bg-chrome + grain, 38px): brand · command bar (Ctrl/⌘K) · help · window buttons ┐
-├ sidebar (bg-chrome + grain, 224px / 56px collapsed) ┬ workspace (bg-surface, rounded top-left) ┤
-│ profile switcher                                    │ Console                                 │
-│ OPERATE  Console 1 · Files 2 · AI agents 3          │   host list (home), or                  │
-│ SECURE   Keys 4 · Security check 5 · Teams 6        │   pinned Hosts tab + session tabs,      │
-│ REVIEW   History 7 · AI reports 8                   │   terminal panes stay mounted           │
-│ … agent / Kerberos status · Settings                │ .view-header · toolbar · body           │
-└─────────────────────────────────────────────────────┴─────────────────────────────────────────┘
+┌ titlebar (bg-chrome, 38px): brand · command bar (Ctrl/⌘K) · help · window buttons   ┐
+├ sidebar (bg-chrome, 224px / 56px collapsed) ┬ workspace (bg-surface, rounded top-left) ┤
+│ profile switcher                            │ Console                                 │
+│ OPERATE  Console 1 · Files 2 · AI agents 3  │   host list (home), or                  │
+│ SECURE   Keys 4 · Security check 5 · Teams 6│   pinned Hosts tab + session tabs,      │
+│ REVIEW   History 7 · AI reports 8           │   terminal panes stay mounted           │
+│ … agent / Kerberos status · Settings        │ .view-header · toolbar · body           │
+└─────────────────────────────────────────────┴─────────────────────────────────────────┘
 ```
 
 The title bar holds the brand wordmark (display font, uppercase "BAYESIAN SSH") and, centred, a
-command bar (up to 420 px): mono placeholder `› Jump to host, view or action`, keycaps on the
+command bar (up to 440 px): mono placeholder `› Jump to host, view or action`, keycaps on the
 right, `aria-label="Jump to…"`.
 
 Every top-level view uses exactly this skeleton:
@@ -77,8 +75,10 @@ Every top-level view uses exactly this skeleton:
 </div>
 ```
 
-`.view-header` carries a 1 px bottom hairline (`border`), the title is display font uppercase at
-22 px, and the count is a zero-padded mono number in `muted`.
+`.view-header` carries a 1 px bottom hairline (`border`), the title is sentence-case IBM Plex Sans
+at 18 px (`-0.02em`), and the count is a zero-padded mono number in `muted`. `.view-toolbar` adds
+top breathing room (`pt-3`), `.view-body` defaults to `pt-4`, and `.view-toolbar + .view-body` or
+`.view-subbar + .view-body` collapses the body's top padding to `0`.
 
 ### Console
 
@@ -129,7 +129,7 @@ theme preview swatches in Appearance settings.
 
 | Token | Role |
 | --- | --- |
-| `chrome` | Title bar and sidebar: the frame around the workspace (carries the static grain) |
+| `chrome` | Title bar and sidebar: the frame around the workspace |
 | `surface` | Workspace / view background |
 | `panel` | Cards, tables, settings groups |
 | `surface-card` / `surface-elevated` | Aliases of `panel` / `surface-raised` |
@@ -139,33 +139,33 @@ theme preview swatches in Appearance settings.
 | `selected` | Tint for the selected row or palette item; always paired with a 2 px `accent` left rail |
 | `hover-on-floating` | Hover fill for items inside floating layers (they are lighter than `surface-hover`) |
 | `surface-terminal` | xterm background |
-| `border` / `border-subtle` / `border-hover` / `border-strong` | Decorative hairlines (panels, dividers, table rules, view-header rule), from quietest to strongest. Not for controls |
-| `border-control` | Boundary of inputs, selects, secondary buttons, chips, switch off-track, checkboxes. ≥ 3:1 on the surface behind it |
+| `border` / `border-subtle` / `border-hover` / `border-strong` | Decorative hairlines (panels, dividers, table rules, view-header rule), from quietest to strongest. Not for form controls |
+| `border-control` | Boundary of inputs, selects, switch off-track, checkboxes. ≥ 3:1 on the surface behind it |
 | `border-floating` | Edge of floating layers (`.popover`, `.modal-panel`, `.toast`, command palette) |
 | `border-focus` | Focused control border and focus ring |
 | `primary` / `secondary` / `muted` / `faint` | Text, from content down to disabled/decorative |
-| `accent` / `accent-hover` / `accent-muted` / `on-accent` | Amber signal: primary action, selection, focus, links; text on amber fills |
+| `accent` / `accent-hover` / `accent-muted` / `on-accent` | Indigo signal: primary action, selection, focus, links; white text on indigo fills |
 | `accent-strong` / `accent-strong-hover` | Primary button fill / hover fill. Hover is a real token, not `brightness()`, so it stays ≥ 4.5:1 with `on-accent` |
 | `danger-strong` / `danger-strong-hover` / `on-danger` | Danger button fill / hover / text (≥ 4.5:1). `error`/`danger` are the lighter red for text and icons |
 | `disabled-fg` | Text of disabled controls: ≥ 3:1 yet dimmer than `muted` |
-| `success` / `warning` / `error` (`running`, `danger` aliases) | State only: never decoration. `warning` is caution yellow, distinct from the amber accent |
+| `success` / `warning` / `error` (`running`, `danger` aliases) | State only: never decoration |
 | `overlay` | Modal backdrop |
 
-**Color policy.** One accent, phosphor amber, in every theme. It marks the primary action, focus,
-selection, links and "live", nothing else. The primary button is an amber plane with dark
-`on-accent` text (no shadow, no gradient). `warning` is a caution yellow reserved for warnings, so
-it never reads as a second accent. Labels and badges (team, role, source, counts) are neutral;
-their icon or text says what they are. `success` / `warning` / `error` mark state only. The only
-multicolor surface is the terminal, whose ANSI palette is program output; it is warmed to sit with
-the UI.
+**Color policy.** One accent, indigo, in every theme. It marks the primary action, focus,
+selection, links and "live", nothing else. The primary button is a solid indigo fill with white
+`on-accent` text (no shadow, no gradient). Labels and badges (team, role, source, counts) are
+neutral; their icon or text says what they are. `success` / `warning` / `error` mark state only.
+The only multicolor surface is the terminal, whose Ghostty-inspired ANSI palette represents program
+output.
 
-The `@theme` block is the Carbon (dark) theme. `html.theme-light` (Paper) overrides it. Each theme
-also defines the xterm palette (`--term-*`, `--selection-bg`) that `lib/utils/theme.ts` reads.
+The `@theme` block is the cool obsidian Dark theme. `html.theme-light` overrides it with crisp cool
+neutrals. Each theme also defines the xterm palette (`--term-*`, `--selection-bg`) that
+`lib/utils/theme.ts` reads.
 
 | Theme id (persisted) | Name in UI | Character |
 | --- | --- | --- |
-| `dark` | Dark | Carbon: warm near-black chrome `#0d0c0a`, panels `#181714`, amber accent `#f0a030`, primary buttons amber with dark text (default) |
-| `light` | Light | Paper: warm paper chrome `#e6e1d6`, panels `#faf8f3`, dark amber `#8f4c00` for text and links, primary buttons `#e8962a` with dark text |
+| `dark` | Dark | Cool obsidian chrome `#09090b`, surface `#0e0f12`, panels `#14161b`, indigo accent `#818cf8`, primary buttons `#5e6ad2` with white text (default) |
+| `light` | Light | Cool neutral chrome `#e9ecf1`, surface `#f1f3f6`, panels `#fafafa`, indigo accent and primary buttons `#4f46e5` with white text |
 | `system` | Match system | Resolves to `light` or `dark` from `prefers-color-scheme` and follows changes live; `<html data-theme="system" data-resolved-theme="…">` |
 
 `THEME_OPTIONS` in `lib/utils/theme.ts` is the one list of pickable themes (onboarding, Appearance
@@ -211,30 +211,31 @@ committing.
   fields and use `cursor-not-allowed`. They are not dimmed with opacity. Disabled buttons keep
   pointer events so a `title` can explain why.
 - `.tag` is a static label (square filled rectangle, mono caption, no border). `.chip` is an
-  interactive filter (pill, `border-control`, 28 px high; `.chip-active` adds accent border, tint
-  and a ✓). Don't use one for the other.
-- Lamps are 10 px round jacks: `.lamp` is hollow (idle), `.lamp-live` is filled amber,
+  interactive filter (pill, subtle fill and border, 28 px high; `.chip-active` adds accent border,
+  tint and a ✓). Don't use one for the other.
+- Lamps are 10 px round jacks: `.lamp` is hollow (idle), `.lamp-live` is filled accent indigo,
   `.lamp-connecting` pulses opacity, `.lamp-error` is filled `error`. Always pair with a `title` or
   sr-only text; never color alone.
 - Class-based hit areas are ≥ 24 px: `.btn-icon-sm` is 24 px, `.switch` and `.checkbox` extend
   their hit box with a transparent `::before`.
 
-**Type.** Display is **Archivo** (`--font-display`, Tailwind `font-display`), loaded with the
-width (`wdth`) axis and used condensed at `font-stretch: 75%`. Body is **IBM Plex Sans**
-(`--font-sans`). **JetBrains Mono** (`--font-mono`) is for every machine value — addresses, paths,
-counts, keys — and the terminals reference it by name. Display type is uppercase: view titles and
-modal titles use 0.04 em tracking, `.settings-group-title` 0.06 em, and `.eyebrow` with the section
-labels and table header cells that share its look uses 11 px with 0.08 em.
+**Type.** UI text, view titles, modal titles and section eyebrows all use **IBM Plex Sans**
+(`--font-sans`) at normal width (`font-stretch: normal`). **Archivo** (`--font-display`) is
+reserved for the brand wordmark. **JetBrains Mono** (`--font-mono`) is for every machine value —
+addresses, paths, counts, keys — and the terminals reference it by name. View titles (18 px/24 px)
+and modal titles (15 px/20 px) are sentence case with `-0.02em` tracking and weight 600. Eyebrows,
+sidebar section labels, table header cells and `.settings-group-title` use normal-width uppercase
+IBM Plex Sans with `0.06em` tracking.
 
 **Type scale.** Five sizes as `--type-*` tokens and classes, each with one job: `.type-title`
-22 px/600 display for view titles (`.view-title`) · `.type-section` and `.section-heading`
+18 px/600 sans for view titles (`.view-title`) · `.type-section` and `.section-heading`
 14 px/600 for section headings · `.type-body` 13 px for body/default · `.type-meta` 12 px muted for
 meta · `.type-caption` 11 px/500 for badges, kbd and eyebrows. Weights are 400/500/600 only.
 Arbitrary sizes in markup (`text-[10px]`) are not allowed; `.lamp-count` is the one fixed 10 px
 primitive. Use `tabular-nums` (or `.tabular`) for numbers that line up.
 
-**Radius:** `xs` 2 px · `sm` 2 px · `md` 3 px for controls · `lg` 4 px for cards and tables · `xl`
-6 px for modals · `2xl` 8 px.
+**Radius:** `xs` 3 px · `sm` 4 px · `md` 6 px for controls · `lg` 8 px for cards and tables · `xl`
+10 px for modals · `2xl` 12 px.
 
 **Layout:** `--titlebar-h` 38px · `--header-h` 52px · `--sidebar-w` 224px /
 `--sidebar-w-collapsed` 56px.
@@ -245,24 +246,24 @@ primitive. Use `tabular-nums` (or `.tabular`) for numbers that line up.
 
 | Group | Classes | Notes |
 | --- | --- | --- |
-| Buttons | `.btn` + `-primary` `-secondary` `-ghost` `-danger` `-danger-ghost`; `.btn-sm` (28px) `.btn-lg` (36px); `.btn-icon` `.btn-icon-sm` `.btn-icon-danger` | Default height 32px. Primary is amber with dark `on-accent` text, no shadow; secondary is transparent with a `border-control` edge. Icon buttons need `aria-label`. |
+| Buttons | `.btn` + `-primary` `-secondary` `-ghost` `-danger` `-danger-ghost`; `.btn-sm` (28px) `.btn-lg` (36px); `.btn-icon` `.btn-icon-sm` `.btn-icon-danger` | Default height 32px. Primary is solid indigo with white `on-accent` text, no shadow; secondary sits on `panel` with a subtle `border-hover` edge. Icon buttons need `aria-label`. |
 | Inputs | `.input` `.input-mono` `.input-invalid`, `textarea.input`; `.search-box > input` | Focus shows the `border-focus` border plus an accent-muted ring |
 | Fields | `.field` `.field-label` `.field-hint` `.field-error` | Validation messages sit inline under the control |
 | Toggles | `input.switch` (on/off settings), `input.checkbox` (selection) | Native checkboxes, restyled |
-| Select | `CustomSelect` component (`label`, `size="sm"\|"md"`) | Keyboard navigable listbox |
-| Badges | `.badge` + `-neutral` `-accent` `-success` `-warning` `-error`, `.badge-mono`; `.count`; `.tag` (static label); `.kbd` | Badges are 20 px, square (2 px radius), never pills. `.count` is square mono; `.tag` is a square mono caption; `.kbd` is a mono keycap with a `border-control` edge and a 1 px bottom shadow |
+| Select | `CustomSelect` component (`label`, `size="sm"\|"md"`, `searchable`, `searchPlaceholder`) | Viewport-aware fixed-position keyboard navigable listbox with optional search filter |
+| Badges | `.badge` + `-neutral` `-accent` `-success` `-warning` `-error`, `.badge-mono`; `.count`; `.tag` (static label); `.kbd` | Badges are 20 px, tight radius (`3px`), never pills. `.count` is square mono; `.tag` is a square mono caption; `.kbd` is a quiet mono keycap |
 | Lamps | `.lamp` + `-live` `-connecting` `-error`, `.lamp-count` | 10 px round jack; `.lamp-count` is the optional mono session count beside it. Pair with text/title |
 | Status | `.status-dot` + `-success` `-warning` `-error` `-offline` `-running`, `-sm`, `.status-dot-live` | |
-| Text | `.eyebrow`, `.section-label`, `.nav-section-label`, `.settings-eyebrow`; `.link`, `.mono`, `.code-block`, `.view-count` | Eyebrows share the display, 11 px, uppercase, 0.08 em look |
+| Text | `.eyebrow`, `.section-label`, `.nav-section-label`, `.settings-eyebrow`; `.link`, `.mono`, `.code-block`, `.view-count` | Eyebrows use normal-width IBM Plex Sans, 11 px, uppercase, `0.06em` |
 | Diff | `.diff` > `.diff-line` + `-add` `-del` `-hunk` (`DiffView` component) | The +/- prefix carries the meaning, the tint only supports it. Make the `.diff` region focusable so long lines scroll by keyboard |
 | Containers | `.panel` (+ `-header` `-title` `-body`), `.card` `.card-interactive` `.card-selected`, `.stat` (+ `-label` `-value`), `.divider` | |
 | Tables | `.table-wrap > table.data-table`; `tr.is-selected`; `.row-actions` | Header cells are eyebrow style; row separators are `border-subtle` hairlines; the selected row keeps the accent rail. Actions are revealed on row hover, selection and focus |
 | Navigation | `.segmented` `.segmented-item(-active)`, `.chip(-active)`, `.tabs` `.tab(-active)` | |
 | Menus | `.popover`, `.menu-item(-active)(-danger)`, `.menu-separator` | |
-| Feedback | `.alert` + `-error` `-warning` `-success` `-info`, `.alert-title`; `.toast`; `.skeleton`; `.spinner` | |
+| Feedback | `.alert` + `-error` `-warning` `-success` `-info`, `.alert-title`, `.alert-body`; `.toast`; `.skeleton`; `.spinner` | Use `.alert-body` for multi-line alerts |
 | Empty states | `.empty-state` `-icon` `-title` `-desc` `-action` | One sentence of description, at most two actions |
-| Modal | `ModalShell` component → `.modal-overlay` `.modal-panel`; `.modal-header` `.modal-title` `.modal-subtitle` `.modal-close` `.modal-body` `.modal-footer` | Title in display uppercase; footer: secondary, then primary, right-aligned |
-| Settings | `.settings-shell` `.settings-sidebar` `.settings-nav-item(-active)` `.settings-content` `.settings-page` `.settings-heading` `.settings-desc` `.settings-group` `.settings-group-title` `.setting-row` `.setting-row-main` `.setting-title` `.setting-meta` `.setting-control` `.system-value` | Group titles are uppercase display; rows inside a group are separated automatically |
+| Modal | `ModalShell` component → `.modal-overlay` `.modal-panel`; `.modal-header` `.modal-title` `.modal-subtitle` `.modal-close` `.modal-body` `.modal-footer` | Sentence-case sans title (`15px`/20px); footer: secondary, then primary, right-aligned |
+| Settings | `.settings-shell` `.settings-sidebar` `.settings-nav-item(-active)` `.settings-content` `.settings-page` `.settings-heading` `.settings-desc` `.settings-group` `.settings-group-title` `.setting-row` `.setting-row-main` `.setting-title` `.setting-meta` `.setting-control` `.system-value` | Group titles are uppercase sans (`0.06em`); rows inside a group are separated automatically |
 
 If a pattern repeats in markup, it belongs in `components.css`; don't add a local variant.
 

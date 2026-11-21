@@ -26,6 +26,8 @@
     overlayClass?: string;
     /** Inline styles for the fixed overlay. */
     overlayStyle?: string;
+    /** ARIA dialog role ("alertdialog" for destructive/safety confirmations). */
+    role?: "dialog" | "alertdialog";
     children: Snippet;
   }
 
@@ -40,6 +42,7 @@
     panelStyle = "",
     overlayClass = "",
     overlayStyle = "",
+    role = "dialog",
     children,
   }: Props = $props();
 
@@ -167,7 +170,7 @@
       bind:this={panelRef}
       class="modal-panel outline-none {WIDTH_CLASSES[width]} {panelClass}"
       style={panelStyle}
-      role="dialog"
+      {role}
       aria-modal="true"
       aria-label={title ?? undefined}
       tabindex="-1"
