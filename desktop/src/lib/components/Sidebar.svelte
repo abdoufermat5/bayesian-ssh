@@ -267,8 +267,6 @@
                 <span class="count ml-auto bg-warning/15 text-warning" aria-hidden="true">{item.attention}</span>
               {:else if item.badge}
                 <span class="count ml-auto {active ? 'bg-accent/15 text-accent' : ''}">{item.badge}</span>
-              {:else if item.key}
-                <span class="mono ml-auto w-4 text-center text-xs text-muted" aria-hidden="true">{item.key}</span>
               {/if}
             {:else if item.attention}
               <span class="absolute right-1.5 top-1.5 size-2 rounded-full bg-warning ring-2 ring-chrome" aria-hidden="true"></span>

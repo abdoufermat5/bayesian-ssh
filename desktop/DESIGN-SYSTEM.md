@@ -107,10 +107,10 @@ height). Reuse that approach for any list that can reach hundreds of rows.
 
 ### Sidebar
 
-Three sections, each label an `.eyebrow`; the digits run 1–8 down the list (`VIEW_ORDER`,
-`AI_REPORTS_DIGIT = "8"`). Each nav item ends with its digit as a right-aligned mono hint; a badge
-or attention count takes its place when present, and the button carries the digit in its `title`
-plus `aria-keyshortcuts`.
+Three sections, each label an `.eyebrow`. The digit shortcuts run 1–8 down the list (`VIEW_ORDER`,
+`AI_REPORTS_DIGIT = "8"`) but are not printed on the items: the button's `title` and
+`aria-keyshortcuts` carry them, and the shortcuts sheet (`?`) lists them. Only a badge or attention
+count sits at the right edge.
 
 - **Operate:** Console (1, badge = live session count), Files (2, if enabled), AI agents (3)
 - **Secure:** Keys (4), Security check (5), Teams (6)
@@ -283,7 +283,7 @@ If a pattern repeats in markup, it belongs in `components.css`; don't add a loca
 - Every interactive element is a real `<button type="button">`, link or input, and gets the global
   `:focus-visible` ring.
 - Icon-only buttons have `aria-label`. Toggles and segmented controls expose `aria-pressed` /
-  `aria-checked`. Sidebar digits are visual hints; the item's `title` names the shortcut.
+  `aria-checked`. Sidebar items name their digit shortcut in `title` and `aria-keyshortcuts`.
 - Modals trap focus, close on Escape and restore focus on close (`ModalShell`).
 - Never encode meaning in color alone: status dots and host lamps carry a `title` or sr-only text,
   and badges carry text.

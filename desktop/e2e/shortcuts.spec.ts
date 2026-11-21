@@ -31,7 +31,7 @@ test.describe("global shortcuts", () => {
     await expect(page.locator(".workspace h1")).toHaveText("Settings");
   });
 
-  test("sidebar items show the same digit as the shortcut", async ({ app, page }) => {
+  test("sidebar items expose their digit shortcut", async ({ app, page }) => {
     await app.gotoApp();
     await expect(page.locator('.sidebar [aria-label="Console"]')).toHaveAttribute("aria-keyshortcuts", "1");
     await expect(page.locator('.sidebar [aria-label="Keys"]')).toHaveAttribute("aria-keyshortcuts", "4");
