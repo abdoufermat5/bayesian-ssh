@@ -205,14 +205,12 @@ pub async fn execute(fix: bool, config: AppConfig) -> Result<()> {
     } else {
         for (idx, finding) in findings.iter().enumerate() {
             let (mark, badge) = match finding.severity {
-                AuditSeverity::Critical => (
-                    style.mark(Glyph::Bad),
-                    style.paint(Tone::Bad, "CRITICAL"),
-                ),
-                AuditSeverity::Warning => (
-                    style.mark(Glyph::Ask),
-                    style.paint(Tone::Warn, "WARNING"),
-                ),
+                AuditSeverity::Critical => {
+                    (style.mark(Glyph::Bad), style.paint(Tone::Bad, "CRITICAL"))
+                }
+                AuditSeverity::Warning => {
+                    (style.mark(Glyph::Ask), style.paint(Tone::Warn, "WARNING"))
+                }
                 AuditSeverity::Info => (
                     style.paint(Tone::Info, style.glyph(Glyph::Dot)),
                     style.paint(Tone::Info, "INFO"),

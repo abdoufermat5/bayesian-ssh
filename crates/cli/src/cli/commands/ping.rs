@@ -118,11 +118,7 @@ pub async fn execute(
         let (status, latency_cell) = if *success {
             successful_count += 1;
             (
-                format!(
-                    "{} {}",
-                    style.mark(Glyph::Ok),
-                    style.paint(Tone::Ok, "ok")
-                ),
+                format!("{} {}", style.mark(Glyph::Ok), style.paint(Tone::Ok, "ok")),
                 latency,
             )
         } else {

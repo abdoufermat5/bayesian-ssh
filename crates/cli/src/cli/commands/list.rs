@@ -73,7 +73,10 @@ pub async fn execute(
             }
 
             let mut kv = KvList::new();
-            kv.push("address", format!("{}@{}:{}", conn.user, conn.host, conn.port));
+            kv.push(
+                "address",
+                format!("{}@{}:{}", conn.user, conn.host, conn.port),
+            );
 
             if let Some(bastion) = &conn.bastion {
                 kv.push(

@@ -18,7 +18,9 @@ use tauri_plugin_opener::OpenerExt;
 use super::files::{self, ReportFiles};
 use super::hub::AiHub;
 use super::sink::TauriSink;
-use super::types::{AiClientInstallResult, AiClientStatus, AiSettingsView, RunSummary, StoredEvent};
+use super::types::{
+    AiClientInstallResult, AiClientStatus, AiSettingsView, RunSummary, StoredEvent,
+};
 use crate::commands::CommandError;
 
 /// Starts the discovery task and manages the hub as Tauri state.
@@ -350,7 +352,8 @@ pub fn ai_install_client(
 ) -> Result<AiClientInstallResult, CommandError> {
     let client = Client::parse(&client)?;
     let config = AppConfig::load(None)?;
-    let home = dirs::home_dir().ok_or_else(|| CommandError::from("Cannot find your home directory."))?;
+    let home =
+        dirs::home_dir().ok_or_else(|| CommandError::from("Cannot find your home directory."))?;
     let ai_dir = bayesian_ssh::services::ai::ai_dir(&config);
 
     let policy_trimmed = policy_name.trim();
@@ -370,7 +373,8 @@ pub fn ai_install_client(
     };
 
     let mut known_hosts = Vec::new();
-    if guard && !uninstall
+    if guard
+        && !uninstall
         && let Ok(db) = Database::new(&config)
         && let Ok(conns) = db.list_connections(None, false)
     {
@@ -633,7 +637,10 @@ mod tests {
         let mut p = sample_policy();
         p.scope.tags = vec![" staging ".into(), "staging".into(), "dev".into()];
         apply_policy_save(&mut cfg, "default", None, p).expect("create default");
-        assert_eq!(cfg.ai.policies["default"].scope.tags, vec!["staging", "dev"]);
+        assert_eq!(
+            cfg.ai.policies["default"].scope.tags,
+            vec!["staging", "dev"]
+        );
 
         // Creating a duplicate name without original_name fails.
         assert!(apply_policy_save(&mut cfg, "default", None, sample_policy()).is_err());

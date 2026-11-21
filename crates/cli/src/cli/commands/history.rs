@@ -64,10 +64,7 @@ pub async fn execute(
     let sessions = db.session_history(connection.as_deref(), limit, days, show_failed)?;
 
     if sessions.is_empty() {
-        println!(
-            "{} No session history found.",
-            style.mark(Glyph::Dot)
-        );
+        println!("{} No session history found.", style.mark(Glyph::Dot));
         if connection.is_some() {
             println!(
                 "  {}",
@@ -95,9 +92,16 @@ pub async fn execute(
 
     println!("{}", heading(&style, "Session History", Some(&summary)));
 
-    let mut table = Table::new(&["SESSION", "CONNECTION", "STARTED", "DURATION", "STATUS", "EXIT"])
-        .align_right(3)
-        .align_right(5);
+    let mut table = Table::new(&[
+        "SESSION",
+        "CONNECTION",
+        "STARTED",
+        "DURATION",
+        "STATUS",
+        "EXIT",
+    ])
+    .align_right(3)
+    .align_right(5);
 
     for session in &sessions {
         let short_id: String = session.session_id.chars().take(8).collect();

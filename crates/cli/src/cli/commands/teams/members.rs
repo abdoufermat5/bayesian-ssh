@@ -31,7 +31,14 @@ pub(super) async fn members(store: &TeamsStore, config: &AppConfig, team: &str) 
     let meta = format!("{} member(s)", members.len());
     println!("{}", heading(&style, &source.name, Some(&meta)));
 
-    let mut table = Table::new(&["MEMBER", "ROLE", "DEVICE", "FINGERPRINT", "DEVICE ID", "STATUS"]);
+    let mut table = Table::new(&[
+        "MEMBER",
+        "ROLE",
+        "DEVICE",
+        "FINGERPRINT",
+        "DEVICE ID",
+        "STATUS",
+    ]);
     for m in members {
         let role_badge = match m.role {
             Role::Admin => style.paint(Tone::Info, "admin"),
@@ -60,7 +67,9 @@ pub(super) async fn members(store: &TeamsStore, config: &AppConfig, team: &str) 
                 };
                 let fp = crate::services::teams::crypto::fingerprint(&d.ed25519_public);
                 let status_cell = match d.revoked_at {
-                    Some(at) => style.paint(Tone::Warn, &format!("revoked {}", at.format("%Y-%m-%d"))),
+                    Some(at) => {
+                        style.paint(Tone::Warn, &format!("revoked {}", at.format("%Y-%m-%d")))
+                    }
                     None => style.paint(Tone::Ok, "active"),
                 };
                 table.row(vec![

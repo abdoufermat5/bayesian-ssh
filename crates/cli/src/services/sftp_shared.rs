@@ -418,7 +418,9 @@ pub fn validate_remote_path(path: &str, allow_root: bool) -> Result<&str, String
             || normalized.ends_with("/.")
             || normalized.ends_with("/..")
         {
-            return Err(format!("Refusing to operate on protected path '{trimmed}'."));
+            return Err(format!(
+                "Refusing to operate on protected path '{trimmed}'."
+            ));
         }
     }
     Ok(trimmed)
@@ -495,7 +497,8 @@ async fn run_subprocess_op(
     } else {
         format!(
             "Remote command failed (exit code {}).",
-            out.exit_code.map_or_else(|| "unknown".into(), |c| c.to_string())
+            out.exit_code
+                .map_or_else(|| "unknown".into(), |c| c.to_string())
         )
     };
     Err(detail)
@@ -835,6 +838,9 @@ mod tests {
             quote_remote_path("/tmp/it's;rm -rf /"),
             "'/tmp/it'\"'\"'s;rm -rf /'"
         );
-        assert_eq!(quote_remote_path("~/my 'notes'.txt"), "~/'my '\"'\"'notes'\"'\"'.txt'");
+        assert_eq!(
+            quote_remote_path("~/my 'notes'.txt"),
+            "~/'my '\"'\"'notes'\"'\"'.txt'"
+        );
     }
 }

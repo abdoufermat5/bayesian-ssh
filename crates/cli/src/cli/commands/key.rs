@@ -19,10 +19,7 @@ pub async fn execute_list() -> Result<()> {
     println!("{}", heading(&style, "SSH Key Inventory", Some("~/.ssh/")));
 
     if !ssh_dir.exists() {
-        println!(
-            "{} No ~/.ssh directory found.",
-            style.mark(Glyph::Dot)
-        );
+        println!("{} No ~/.ssh directory found.", style.mark(Glyph::Dot));
         return Ok(());
     }
 

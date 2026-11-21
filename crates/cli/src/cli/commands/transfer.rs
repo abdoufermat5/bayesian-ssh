@@ -502,7 +502,10 @@ pub async fn execute_download(args: DownloadArgs, config: AppConfig) -> Result<(
             style.mark(Glyph::Ok),
             connection.host,
             local.display(),
-            style.paint(Tone::Dim, &format!("({files} files, {})", format_bytes(bytes)))
+            style.paint(
+                Tone::Dim,
+                &format!("({files} files, {})", format_bytes(bytes))
+            )
         );
     } else {
         let bar = progress_bar(BarStyle::Sized);

@@ -339,7 +339,8 @@ mod tests {
     #[test]
     fn scan_ssh_keys_populates_trimmed_public_key_without_reading_private_key() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let raw_pub = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMockKeyDataForUnitTest1234567890AAA user@host";
+        let raw_pub =
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMockKeyDataForUnitTest1234567890AAA user@host";
         std::fs::write(dir.path().join("id_test.pub"), format!("  {raw_pub}\n\n"))
             .expect("write pub");
         let priv_path = dir.path().join("id_test");

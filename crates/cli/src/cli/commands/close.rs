@@ -171,12 +171,7 @@ fn close_session(db: &Database, target: &str, confirmation: Confirmation) -> Res
                         db.mark_session_terminated(&session_id, -15)?; // SIGTERM = 15
                     }
                     Err(e) => {
-                        println!(
-                            "{} Failed to kill PID {}: {}",
-                            style.mark(Glyph::Bad),
-                            p,
-                            e
-                        );
+                        println!("{} Failed to kill PID {}: {}", style.mark(Glyph::Bad), p, e);
                     }
                 }
             } else {
@@ -204,10 +199,7 @@ fn close_all_sessions(db: &Database, confirmation: Confirmation) -> Result<()> {
     let sessions = db.active_sessions()?;
 
     if sessions.is_empty() {
-        println!(
-            "{} No active sessions to close.",
-            style.mark(Glyph::Dot)
-        );
+        println!("{} No active sessions to close.", style.mark(Glyph::Dot));
         return Ok(());
     }
 
