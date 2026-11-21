@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.16.1] - 2026-11-21
+
 ### Security
 - **Dependency advisories fixed.** `rusqlite` 0.41 (bundled SQLite 3.54.1, RUSTSEC-2026-0459), `russh` 0.65 (RUSTSEC-2026-0495), `rmcp` 3.11 (bounded Streamable HTTP response bodies, RUSTSEC-2026-0462) and `zip` 9.8 (RUSTSEC-2026-0429/0545/0548). Moving `zip` pulls `tauri` 2.12 and `tauri-plugin-updater` 2.14; `rsa` is now the patched 0.10.0 release. `chrono` is flagged unmaintained with no fixed release and is ignored in `deny.toml` with that reason.
 
