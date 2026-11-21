@@ -194,12 +194,17 @@
 {/if}
 
 <style>
-  /* Connect is the primary action on the row the user is on. */
+  /* Subtle accent tint on row hover/selection so Connect stands out gently
+     without competing with the view's primary "+ New host" button. */
   :global(tr:hover) .host-connect:not(:disabled),
   :global(tr.is-selected) .host-connect:not(:disabled),
   :global(.host-card:hover) .host-connect:not(:disabled),
   :global(.host-card.is-selected) .host-connect:not(:disabled) {
-    background: var(--color-accent-strong);
-    color: var(--color-on-accent);
+    background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+    color: var(--color-accent);
+  }
+  .host-connect:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--color-accent) 24%, transparent);
+    color: var(--color-accent);
   }
 </style>

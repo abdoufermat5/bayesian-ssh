@@ -31,7 +31,7 @@
 </script>
 
 {#if getAttention().length > 0}
-  <div class="flex flex-col gap-px border-b border-border bg-chrome" aria-label="Needs attention">
+  <div class="flex flex-col gap-px border-b border-border bg-surface-subtle" aria-label="Needs attention">
     {#each getAttention() as item (item.id)}
       {@const t = tone[item.severity]}
       <div

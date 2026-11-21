@@ -301,11 +301,13 @@
     const requestedTab = takeTeamFocusTab();
     if (!teamId || !teams.some((t) => t.team_id === teamId)) return;
     const raised = new Set(getAttention().map((i) => i.id));
-    const tab: TeamTab = requestedTab ?? raised.has(TEAM_ATTENTION.auditFailed(teamId))
-      ? "audit"
-      : raised.has(TEAM_ATTENTION.pending(teamId)) || raised.has(TEAM_ATTENTION.rotationBlocked(teamId))
-        ? "members"
-        : "hosts";
+    const tab: TeamTab =
+      requestedTab ??
+      (raised.has(TEAM_ATTENTION.auditFailed(teamId))
+        ? "audit"
+        : raised.has(TEAM_ATTENTION.pending(teamId)) || raised.has(TEAM_ATTENTION.rotationBlocked(teamId))
+          ? "members"
+          : "hosts");
     modal = null;
     openTeamPage(teamId, tab);
   });
@@ -329,19 +331,21 @@
     </div>
     {#if status?.unlocked}
       <div class="view-actions">
-        <button type="button" class="btn btn-secondary" onclick={() => (modal = "join")}>
-          <LogIn size={14} />
-          Join with invite
-        </button>
-        <button type="button" class="btn btn-secondary" onclick={() => (modal = "create")}>
-          <Plus size={14} />
-          Create team
-        </button>
-        {#if teams.length > 0}
-          <button type="button" class="btn btn-secondary" onclick={syncAll} disabled={syncing !== null}>
-            <RefreshCw size={14} class={syncing === "all" ? "animate-spin" : ""} />
-            Sync all
+        {#if !openTeam}
+          <button type="button" class="btn btn-secondary" onclick={() => (modal = "join")}>
+            <LogIn size={14} />
+            Join with invite
           </button>
+          <button type="button" class="btn btn-secondary" onclick={() => (modal = "create")}>
+            <Plus size={14} />
+            Create team
+          </button>
+          {#if teams.length > 0}
+            <button type="button" class="btn btn-secondary" onclick={syncAll} disabled={syncing !== null}>
+              <RefreshCw size={14} class={syncing === "all" ? "animate-spin" : ""} />
+              Sync all
+            </button>
+          {/if}
         {/if}
         <button
           type="button"

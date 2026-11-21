@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { Lock } from "lucide-svelte";
   import type { TeamsIdentity, TeamsStatus } from "$lib/types";
@@ -11,6 +12,11 @@
   let passphrase = $state("");
   let busy = $state(false);
   let error = $state<string | null>(null);
+  let passInput = $state<HTMLInputElement | null>(null);
+
+  onMount(() => {
+    passInput?.focus();
+  });
 
   async function unlock() {
     if (!passphrase || busy) return;
@@ -47,6 +53,7 @@
   <div class="field">
     <label class="field-label" for="teams-unlock-pass">Teams passphrase</label>
     <input
+      bind:this={passInput}
       id="teams-unlock-pass"
       class="input"
       class:input-invalid={!!error}

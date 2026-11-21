@@ -48,7 +48,7 @@
 
 <div
   data-tab-id={tab.id}
-  class="group relative flex h-7 max-w-48 shrink-0 cursor-pointer items-center gap-2 overflow-hidden border-r border-border-subtle pl-2.5 pr-1 text-xs transition-colors duration-fast
+  class="group relative flex h-full max-w-48 shrink-0 cursor-pointer items-center gap-2 overflow-hidden border-r border-border-subtle pl-2.5 pr-1 text-xs transition-colors duration-fast
     {active ? 'bg-surface-terminal text-primary' : 'text-muted hover:bg-surface-hover hover:text-primary'}"
   class:tab-dragging-out={poppingOut}
   use:tabDrag={drag}
@@ -91,7 +91,7 @@
   {/if}
   <button
     type="button"
-    class="inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-muted transition-colors duration-fast hover:bg-surface-hover hover:text-primary focus-visible:opacity-100
+    class="inline-flex size-6 shrink-0 items-center justify-center rounded-sm text-muted transition-colors duration-fast hover:bg-surface-hover hover:text-primary focus-visible:opacity-100
       {active ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}"
     aria-label="Close {tab.name}"
     title="Close session"

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Bot, Layers, Lock, Network, Palette, RefreshCw, TerminalSquare } from "lucide-svelte";
+  import { Bot, Download, Layers, Lock, Network, Palette, RefreshCw, TerminalSquare } from "lucide-svelte";
   import type { DesktopSettings, EnvInfo, WorkspaceInfo } from "$lib/types";
   import {
     SETTINGS_SECTIONS,
@@ -53,6 +53,7 @@
     appearance: Palette,
     sources: RefreshCw,
     ai: Bot,
+    updates: Download,
   } as const;
 
   const LEADS: Record<SettingsSectionId, string> = {
@@ -61,8 +62,9 @@
     terminal: "Typography, cursor and behaviour of terminal sessions, file browsing and optional sections.",
     privacy: "What the app keeps about your sessions, and how much it logs.",
     appearance: "Theme, density and how dates are displayed.",
-    sources: "Where hosts are imported from, and this installation's version and update channel.",
+    sources: "Sync hosts from SSH configs, Ansible, Tailscale, AWS or GCP.",
     ai: "The policies that limit what AI agents may do on your hosts. Read-only here.",
+    updates: "This installation's version, update channel and release checks.",
   };
 
   // A request from elsewhere (command palette, a status link) is taken on
@@ -142,9 +144,10 @@
             <AppearanceSettings bind:settings {onSave} {onThemeChange} />
           {:else if active === "sources"}
             <SourcesSettings />
-            <UpdatesSettings />
           {:else if active === "ai"}
             <AiSettings />
+          {:else if active === "updates"}
+            <UpdatesSettings />
           {/if}
         </div>
       </div>

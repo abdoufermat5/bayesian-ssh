@@ -45,10 +45,17 @@
           }}
         />
       </label>
-      <div class="setting-row" class:opacity-50={!settings.record_sessions}>
+      <div class="setting-row {!settings.record_sessions ? 'cursor-not-allowed' : ''}">
         <div class="setting-row-main">
-          <label class="setting-title" for="settings-record-tags">Only for tags</label>
-          <span class="setting-meta">Comma-separated tags to record; leave empty to record all hosts.</span>
+          <label
+            class="setting-title {!settings.record_sessions ? '!text-disabled-fg cursor-not-allowed' : ''}"
+            for="settings-record-tags"
+          >
+            Only for tags
+          </label>
+          <span class="setting-meta {!settings.record_sessions ? '!text-disabled-fg' : ''}">
+            Comma-separated tags to record; leave empty to record all hosts.
+          </span>
         </div>
         <div class="setting-control">
           <input

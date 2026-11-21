@@ -7,7 +7,21 @@
 
 <script lang="ts">
   import { tick } from "svelte";
-  import { Download, Plus, Search, Server, SquareTerminal, Upload, X } from "lucide-svelte";
+  import {
+    Copy,
+    CopyPlus,
+    Download,
+    FolderOpen,
+    Pencil,
+    Plus,
+    Search,
+    Server,
+    Share2,
+    SquareTerminal,
+    Trash2,
+    Upload,
+    X,
+  } from "lucide-svelte";
   import { invoke } from "@tauri-apps/api/core";
   import type { Connection, Prediction } from "$lib/types";
   import { GLOBAL_SHORTCUTS, HOST_SHORTCUTS, IS_MAC, MOD, type Combo } from "$lib/shortcuts";
@@ -32,7 +46,8 @@
   } from "$lib/components/hosts/SourceBadge.svelte";
   import SourceFilter from "$lib/components/hosts/SourceFilter.svelte";
   import TagList from "$lib/components/hosts/TagList.svelte";
-  import HostActions from "$lib/components/hosts/HostActions.svelte";
+  import HostActions, { hostKeys, hostLabel } from "$lib/components/hosts/HostActions.svelte";
+  import FloatingMenu from "$lib/components/terminal/FloatingMenu.svelte";
   import ShareToTeamModal from "$lib/components/modals/ShareToTeamModal.svelte";
 
   interface Props {
@@ -44,6 +59,8 @@
     searchQuery?: string;
     selectedTag?: string | null;
     allTags: string[];
+    /** Compact header bar when mounted inside TerminalsView's pinned Hosts tab. */
+    compact?: boolean;
     onSelectHost: (index: number) => void;
     /** Without `newTab`, an open session to the same host is brought forward. */
     onConnect: (conn: Connection, options?: { newTab?: boolean }) => void | Promise<void>;
@@ -65,6 +82,7 @@
     searchQuery = $bindable(""),
     selectedTag = $bindable(null),
     allTags,
+    compact = false,
     onSelectHost,
     onConnect,
     onEdit,
@@ -92,6 +110,7 @@
   let sortBy = $state<SortKey>("bayesian");
   let suggestions = $state.raw<Prediction[]>([]);
   let shareTarget = $state.raw<Connection | null>(null);
+  let contextMenu = $state<{ conn: Connection; x: number; y: number } | null>(null);
   let innerWidth = $state(typeof window === "undefined" ? 1280 : window.innerWidth);
   // Re-render relative timestamps once a minute, not per frame.
   let now = $state(Date.now());
@@ -199,7 +218,7 @@
       case "error":
         return "lamp-error";
       default:
-        return "";
+        return "opacity-35";
     }
   }
 
@@ -235,6 +254,7 @@
   });
 
   const hasFilters = $derived(Boolean(searchQuery.trim() || selectedTag || sourceFilter !== "all"));
+  const isTrulyEmpty = $derived(connections.length === 0 && !hasFilters);
 
   // ---- Windowed rendering -------------------------------------------
   // Rendering every host row is O(n) DOM, so the list only mounts the rows
@@ -463,6 +483,25 @@
     if (!(e.target as HTMLElement).closest("button")) row.focus({ preventScroll: true });
   }
 
+  function openRowContextMenu(e: MouseEvent, conn: Connection, originalIndex: number) {
+    e.preventDefault();
+    onSelectHost(originalIndex);
+    contextMenu = { conn, x: e.clientX, y: e.clientY };
+  }
+
+  function closeContextMenu() {
+    const id = contextMenu?.conn.id;
+    contextMenu = null;
+    if (id) void focusRow(id);
+  }
+
+  function runContextAction(action: () => void) {
+    const id = contextMenu?.conn.id;
+    contextMenu = null;
+    if (id) void focusRow(id);
+    action();
+  }
+
   // Screen-reader help for the grid, generated from the shortcut table.
   const SPOKEN_KEYS: Record<string, string> = { "↑": "Up arrow", "↓": "Down arrow" };
   const gridHelp = [
@@ -521,10 +560,10 @@
   />
 {/snippet}
 
-<div class="view select-none">
-  <header class="view-header">
+<div class="view select-none" class:is-compact={compact}>
+  <header class="view-header" class:view-header-compact={compact}>
     <div class="flex min-w-0 items-baseline gap-2.5">
-      <h1 class="view-title">Hosts</h1>
+      <h1 class="view-title" class:view-title-compact={compact}>Hosts</h1>
       <span
         class="font-mono text-sm tabular-nums text-muted"
         title={hasFilters ? `${rows.length} of ${connections.length} hosts match the current filter` : undefined}
@@ -536,6 +575,7 @@
       <button
         type="button"
         class="btn btn-ghost"
+        class:btn-sm={compact}
         onclick={onOpenBatchExec}
         disabled={connections.length === 0}
         title="Run a command on several hosts"
@@ -546,6 +586,7 @@
       <button
         type="button"
         class="btn btn-ghost"
+        class:btn-sm={compact}
         onclick={onOpenUpload}
         disabled={connections.length === 0}
         title="Upload files to several hosts"
@@ -553,58 +594,68 @@
         <Upload size={14} />
         Upload files
       </button>
-      <button type="button" class="btn btn-primary" onclick={onAddHost} title="New host ({newHostKeys})">
-        <Plus size={15} />
-        New host
-      </button>
+      {#if !isTrulyEmpty}
+        <button
+          type="button"
+          class="btn btn-primary"
+          class:btn-sm={compact}
+          onclick={onAddHost}
+          title="New host ({newHostKeys})"
+        >
+          <Plus size={15} />
+          New host
+        </button>
+      {/if}
     </div>
   </header>
 
-  <div class="view-toolbar">
-    <label class="search-box w-64 lg:w-80">
-      <Search size={14} class="shrink-0" />
-      <input
-        type="text"
-        class="search-input"
-        placeholder="Filter hosts"
-        bind:value={searchQuery}
-        spellcheck="false"
-        autocomplete="off"
-      />
-      {#if searchQuery}
-        <button
-          type="button"
-          class="btn-icon btn-icon-sm -mr-1"
-          onclick={() => (searchQuery = "")}
-          aria-label="Clear filter"
-        >
-          <X size={13} />
-        </button>
-      {:else}
-        <kbd class="kbd">{filterKeys}</kbd>
-      {/if}
-    </label>
-
-    {#if allTags.length > 0}
-      <TagFilter tags={allTags} selected={selectedTag} onSelect={(tag) => (selectedTag = tag)} />
-    {:else}
-      <div class="flex-1"></div>
-    {/if}
-
-    <div class="flex shrink-0 items-center gap-2">
-      <div class="w-[168px]">
-        <CustomSelect
-          label="Sort"
-          options={SORT_OPTIONS}
-          value={sortBy}
-          onChange={(v) => (sortBy = v as SortKey)}
+  {#if !isTrulyEmpty}
+    <div class="view-toolbar">
+      <label class="search-box w-64 lg:w-80">
+        <Search size={14} class="shrink-0" />
+        <input
+          type="text"
+          class="search-input"
+          placeholder="Filter hosts"
+          bind:value={searchQuery}
+          spellcheck="false"
+          autocomplete="off"
         />
+        {#if searchQuery}
+          <button
+            type="button"
+            class="btn-icon btn-icon-sm -mr-1"
+            onclick={() => (searchQuery = "")}
+            aria-label="Clear filter"
+          >
+            <X size={13} />
+          </button>
+        {:else}
+          <kbd class="kbd">{filterKeys}</kbd>
+        {/if}
+      </label>
+
+      {#if allTags.length > 0}
+        <TagFilter tags={allTags} selected={selectedTag} onSelect={(tag) => (selectedTag = tag)} />
+      {:else}
+        <div class="flex-1"></div>
+      {/if}
+
+      <div class="flex shrink-0 items-center gap-2">
+        <div class="w-[168px]">
+          <CustomSelect
+            label="Sort"
+            options={SORT_OPTIONS}
+            value={sortBy}
+            onChange={(v) => (sortBy = v as SortKey)}
+          />
+        </div>
       </div>
     </div>
-  </div>
+  {/if}
 
   {#if hasSyncedHosts || sourceFilter !== "all"}
-    <div class="flex shrink-0 px-6 pb-3">
+    <div class="view-subbar flex shrink-0 px-6 pb-3">
       <SourceFilter
         sources={filterSources}
         value={sourceFilter}
@@ -668,6 +719,7 @@
         <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
         <table
           class="data-table host-table table-fixed"
+          class:has-synced={hasSyncedHosts}
           bind:this={tableEl}
           role="grid"
           aria-label="Hosts"
@@ -707,6 +759,7 @@
                 onclick={(e) => selectRow(originalIndex, e)}
                 onfocusin={() => onRowFocusIn(originalIndex)}
                 ondblclick={() => handleConnectHost(conn)}
+                oncontextmenu={(e) => openRowContextMenu(e, conn, originalIndex)}
               >
                 <td class="lamp-cell">
                   {#if session.status === "live"}
@@ -780,6 +833,92 @@
   </div>
 </div>
 
+{#if contextMenu}
+  {@const conn = contextMenu.conn}
+  {@const teamName = teamNameOf(conn)}
+  <FloatingMenu
+    x={contextMenu.x}
+    y={contextMenu.y}
+    label="Actions for {conn.name}"
+    onClose={closeContextMenu}
+  >
+    <button
+      type="button"
+      role="menuitem"
+      class="menu-item"
+      disabled={connectingHostId !== null}
+      onclick={() => runContextAction(() => void handleConnectHost(conn))}
+    >
+      <SquareTerminal size={14} aria-hidden="true" />
+      <span class="min-w-0 flex-1 truncate">{hostLabel("host-connect")}</span>
+      <kbd class="kbd" aria-hidden="true">{hostKeys("host-connect")}</kbd>
+    </button>
+    {#if showFiles}
+      <button
+        type="button"
+        role="menuitem"
+        class="menu-item"
+        onclick={() => runContextAction(() => openFiles(conn))}
+      >
+        <FolderOpen size={14} aria-hidden="true" />
+        <span class="min-w-0 flex-1 truncate">{hostLabel("host-files")}</span>
+        <kbd class="kbd" aria-hidden="true">{hostKeys("host-files")}</kbd>
+      </button>
+    {/if}
+    <div class="menu-separator" role="separator"></div>
+    <button
+      type="button"
+      role="menuitem"
+      class="menu-item"
+      onclick={() => runContextAction(() => onCopyCommand(toSshCommand(conn), conn.id))}
+    >
+      <Copy size={14} aria-hidden="true" />
+      <span class="min-w-0 flex-1 truncate">{hostLabel("host-copy")}</span>
+      <kbd class="kbd" aria-hidden="true">{hostKeys("host-copy")}</kbd>
+    </button>
+    <button
+      type="button"
+      role="menuitem"
+      class="menu-item"
+      onclick={() => runContextAction(() => onEdit(conn))}
+    >
+      <Pencil size={14} aria-hidden="true" />
+      <span class="min-w-0 flex-1 truncate">{hostLabel("host-edit")}</span>
+      <kbd class="kbd" aria-hidden="true">{hostKeys("host-edit")}</kbd>
+    </button>
+    <button
+      type="button"
+      role="menuitem"
+      class="menu-item"
+      onclick={() => runContextAction(() => onDuplicate(conn))}
+    >
+      <CopyPlus size={14} aria-hidden="true" />
+      <span class="min-w-0 flex-1 truncate">Duplicate</span>
+    </button>
+    <button
+      type="button"
+      role="menuitem"
+      class="menu-item"
+      onclick={() => runContextAction(() => (shareTarget = conn))}
+    >
+      <Share2 size={14} aria-hidden="true" />
+      <span class="min-w-0 flex-1 truncate">{teamName ? `Update in ${teamName}` : hostLabel("host-share")}</span>
+      <kbd class="kbd" aria-hidden="true">{hostKeys("host-share")}</kbd>
+    </button>
+    <div class="menu-separator" role="separator"></div>
+    <button
+      type="button"
+      role="menuitem"
+      class="menu-item menu-item-danger"
+      onclick={() => runContextAction(() => onDelete(conn))}
+    >
+      <Trash2 size={14} aria-hidden="true" />
+      <span class="min-w-0 flex-1 truncate">{hostLabel("host-delete")}</span>
+      <kbd class="kbd" aria-hidden="true">{hostKeys("host-delete")}</kbd>
+    </button>
+  </FloatingMenu>
+{/if}
+
 {#if shareTarget}
   <ShareToTeamModal
     connection={shareTarget}
@@ -790,8 +929,25 @@
 {/if}
 
 <style>
-  /* Content-sized columns; the name takes what is left. Rows follow the
-     density setting (--row-height, 32/40/48 px). */
+  .view-header-compact {
+    height: 40px;
+    border-bottom-color: var(--color-border-subtle);
+  }
+  .view-title-compact {
+    font-size: 1rem;
+    line-height: 1.25rem;
+  }
+  .view.is-compact :global(.view-toolbar) {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+  .view.is-compact .suggested-row {
+    padding-bottom: 0.5rem;
+  }
+
+  /* Balanced responsive widths for table-fixed: fixed utility columns plus
+     proportional data columns so Name always keeps generous space at 900px,
+     1180px, and 1440px. Rows follow the density setting (--row-height). */
   .host-table :global(tbody tr[data-host-row]) {
     height: var(--row-height, 40px);
   }
@@ -805,40 +961,40 @@
     padding: 0;
   }
   .col-lamp {
-    width: 48px;
+    width: 36px;
+  }
+  .col-name {
+    width: auto;
   }
   .col-address {
-    width: 240px;
+    width: 30%;
   }
   .col-tags {
-    width: 96px;
+    width: 16%;
   }
   .col-source {
-    width: 112px;
+    width: 11%;
   }
   .col-used {
     width: 104px;
   }
   .col-actions {
-    width: 104px;
+    width: 108px;
+  }
+  .host-table.has-synced .col-address {
+    width: 26%;
+  }
+  .host-table.has-synced .col-tags {
+    width: 14%;
+  }
+  .host-table :global(th.col-lamp),
+  .host-table :global(td.lamp-cell) {
+    padding-left: 10px;
+    padding-right: 2px;
   }
   .host-table :global(td.actions-cell) {
     padding-left: 4px;
     padding-right: 12px;
-  }
-  @media (min-width: 1180px) {
-    .col-address {
-      width: 320px;
-    }
-    .col-tags {
-      width: 176px;
-    }
-    .col-source {
-      width: 136px;
-    }
-    .col-used {
-      width: 120px;
-    }
   }
 
   /* Patch-bay jack: the lamp itself is `.lamp` (components.css); the slot

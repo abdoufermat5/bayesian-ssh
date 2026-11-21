@@ -40,6 +40,7 @@
   }
 
   const serverOk = $derived(/^https?:\/\/\S+$/i.test(server.trim()));
+  const passMismatch = $derived(pass2.length > 0 && pass1 !== pass2);
   const blocker = $derived.by(() => {
     if (!server.trim()) return "Enter the sync server";
     if (!serverOk) return "The server starts with https://";
@@ -170,7 +171,19 @@
   </div>
   <div class="field">
     <label class="field-label" for="teams-pass2">Repeat passphrase</label>
-    <input id="teams-pass2" class="input" type="password" bind:value={pass2} autocomplete="new-password" />
+    <input
+      id="teams-pass2"
+      class="input"
+      class:input-invalid={passMismatch}
+      type="password"
+      bind:value={pass2}
+      autocomplete="new-password"
+      aria-invalid={passMismatch}
+      aria-describedby={passMismatch ? "teams-pass2-error" : undefined}
+    />
+    {#if passMismatch}
+      <span id="teams-pass2-error" class="field-error" role="alert">The passphrases don't match</span>
+    {/if}
   </div>
 
   {#if codeNeeded}
@@ -207,7 +220,7 @@
       {#if busy}<span class="spinner size-3"></span>{/if}
       Set up this device
     </button>
-    {#if blocker}
+    {#if blocker && !passMismatch}
       <span id="teams-setup-reason" class="type-meta">{blocker}</span>
     {/if}
   </div>

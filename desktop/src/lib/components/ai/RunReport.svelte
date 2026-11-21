@@ -227,7 +227,7 @@
                   <ol class="m-0 flex list-none flex-col gap-2 p-0" aria-label={group.label}>
                     {#each phaseSteps as step (step.id + step.phase)}
                       {@const result = stepResult(step)}
-                      <li class="flex flex-col gap-1.5 rounded-lg border border-border bg-panel p-3">
+                      <li class="flex flex-col gap-1.5 rounded-lg border border-border bg-surface-subtle p-3">
                         <div class="flex flex-wrap items-center gap-1.5">
                           <span class="tag font-mono">{step.id}</span>
                           {#if step.host}<span class="tag">{step.host}</span>{/if}

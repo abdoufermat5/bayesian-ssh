@@ -9,8 +9,9 @@ export const SETTINGS_SECTIONS = [
   { id: "terminal", label: "Terminal & files" },
   { id: "privacy", label: "Privacy & history" },
   { id: "appearance", label: "Appearance" },
-  { id: "sources", label: "Sources & updates" },
+  { id: "sources", label: "Sources" },
   { id: "ai", label: "AI agents" },
+  { id: "updates", label: "Updates" },
 ] as const;
 
 export type SettingsSectionId = (typeof SETTINGS_SECTIONS)[number]["id"];

@@ -38,8 +38,18 @@
 
   const title = $derived(isEditing ? "Edit host" : "New host");
 
-  // Advanced starts open when the host already uses a jump host.
-  let showAdvanced = $state(Boolean(modalBastion?.trim() || modalBastionUser?.trim()));
+  // Connection options starts open when any jump host or auth/agent option is already set.
+  let showOptions = $state(
+    Boolean(modalBastion?.trim() || modalBastionUser?.trim() || modalUseKerberos || modalForwardAgent),
+  );
+
+  const optionsSummary = $derived.by(() => {
+    const parts: string[] = [];
+    if (modalBastion?.trim()) parts.push(`via ${modalBastion.trim()}`);
+    if (modalUseKerberos) parts.push("Kerberos");
+    if (modalForwardAgent) parts.push("Agent fwd");
+    return parts.join(" · ");
+  });
 
   // Validation errors appear only after the first submit attempt, then live.
   let attempted = $state(false);
@@ -175,30 +185,6 @@
         <span class="field-hint">Leave empty to use the SSH agent or your default keys.</span>
       </div>
 
-      <label
-        for="c-krb"
-        class="flex cursor-pointer items-center justify-between gap-4 rounded-md border border-border px-3 py-2.5"
-      >
-        <span class="flex min-w-0 flex-col gap-0.5">
-          <span class="text-sm text-primary">Kerberos (GSSAPI)</span>
-          <span class="text-xs text-muted">Authenticate with your Kerberos ticket.</span>
-        </span>
-        <input id="c-krb" type="checkbox" class="switch" bind:checked={modalUseKerberos} />
-      </label>
-
-      <label
-        for="c-agent"
-        class="flex cursor-pointer items-center justify-between gap-4 rounded-md border border-border px-3 py-2.5"
-      >
-        <span class="flex min-w-0 flex-col gap-0.5">
-          <span class="text-sm text-primary">Forward SSH agent</span>
-          <span class="text-xs text-muted">
-            Lets processes on the host use your local keys (ssh -A). Off unless you need it.
-          </span>
-        </span>
-        <input id="c-agent" type="checkbox" class="switch" bind:checked={modalForwardAgent} />
-      </label>
-
       <div class="field">
         <label for="c-tags" class="field-label">Tags</label>
         <input
@@ -211,17 +197,17 @@
           class="input"
         />
         {#if parsedTags.length > 0}
-          <div class="flex flex-wrap gap-1">
+          <div class="flex flex-wrap gap-1.5">
             {#each parsedTags as tag (tag)}
-              <span class="tag gap-1 pr-0.5">
-                {tag}
+              <span class="tag gap-0.5 py-0 pr-0">
+                <span class="py-0.5">{tag}</span>
                 <button
                   type="button"
-                  class="inline-flex size-4 cursor-pointer items-center justify-center rounded-xs text-muted transition-colors hover:text-error"
+                  class="inline-flex size-6 cursor-pointer items-center justify-center rounded-xs text-muted transition-colors hover:text-error"
                   onclick={() => removeTag(tag)}
                   aria-label={`Remove tag ${tag}`}
                 >
-                  <X size={10} />
+                  <X size={12} />
                 </button>
               </span>
             {/each}
@@ -235,46 +221,72 @@
         <button
           type="button"
           class="flex h-9 w-full cursor-pointer items-center gap-1.5 rounded-md px-3 text-left text-sm text-secondary transition-colors hover:text-primary"
-          aria-expanded={showAdvanced}
-          aria-controls="c-advanced"
-          onclick={() => (showAdvanced = !showAdvanced)}
+          aria-expanded={showOptions}
+          aria-controls="c-options"
+          onclick={() => (showOptions = !showOptions)}
         >
           <ChevronRight
             size={14}
-            class="text-muted transition-transform duration-150 {showAdvanced ? 'rotate-90' : ''}"
+            class="shrink-0 text-muted transition-transform duration-150 {showOptions ? 'rotate-90' : ''}"
           />
-          Advanced
-          {#if !showAdvanced && modalBastion.trim()}
-            <span class="ml-auto truncate font-mono text-xs text-muted">via {modalBastion}</span>
+          <span class="shrink-0">Connection options</span>
+          {#if !showOptions && optionsSummary}
+            <span class="badge badge-neutral ml-auto max-w-[60%] truncate">{optionsSummary}</span>
           {/if}
         </button>
-        {#if showAdvanced}
-          <div id="c-advanced" class="grid grid-cols-[1fr_160px] gap-3 border-t border-border-subtle px-3 pb-3 pt-3">
-            <div class="field">
-              <label for="c-bastion" class="field-label">Jump host</label>
-              <input
-                id="c-bastion"
-                type="text"
-                placeholder="bastion.example.com"
-                autocomplete="off"
-                spellcheck="false"
-                bind:value={modalBastion}
-                class="input input-mono"
-              />
+        {#if showOptions}
+          <div id="c-options" class="flex flex-col gap-3 border-t border-border-subtle px-3 pb-3 pt-3">
+            <div class="grid grid-cols-[1fr_160px] gap-3">
+              <div class="field">
+                <label for="c-bastion" class="field-label">Jump host</label>
+                <input
+                  id="c-bastion"
+                  type="text"
+                  placeholder="bastion.example.com"
+                  autocomplete="off"
+                  spellcheck="false"
+                  bind:value={modalBastion}
+                  class="input input-mono"
+                />
+              </div>
+              <div class="field">
+                <label for="c-bastion-user" class="field-label">Jump user</label>
+                <input
+                  id="c-bastion-user"
+                  type="text"
+                  placeholder="Same as user"
+                  autocomplete="off"
+                  spellcheck="false"
+                  bind:value={modalBastionUser}
+                  class="input input-mono"
+                />
+              </div>
+              <span class="field-hint col-span-2">Sessions connect to the jump host first, then to this host.</span>
             </div>
-            <div class="field">
-              <label for="c-bastion-user" class="field-label">Jump user</label>
-              <input
-                id="c-bastion-user"
-                type="text"
-                placeholder="Same as user"
-                autocomplete="off"
-                spellcheck="false"
-                bind:value={modalBastionUser}
-                class="input input-mono"
-              />
-            </div>
-            <span class="field-hint col-span-2">Sessions connect to the jump host first, then to this host.</span>
+
+            <label
+              for="c-krb"
+              class="flex cursor-pointer items-center justify-between gap-4 rounded-md border border-border-subtle px-3 py-2.5"
+            >
+              <span class="flex min-w-0 flex-col gap-0.5">
+                <span class="text-sm text-primary">Kerberos (GSSAPI)</span>
+                <span class="text-xs text-muted">Authenticate with your Kerberos ticket.</span>
+              </span>
+              <input id="c-krb" type="checkbox" class="switch" bind:checked={modalUseKerberos} />
+            </label>
+
+            <label
+              for="c-agent"
+              class="flex cursor-pointer items-center justify-between gap-4 rounded-md border border-border-subtle px-3 py-2.5"
+            >
+              <span class="flex min-w-0 flex-col gap-0.5">
+                <span class="text-sm text-primary">Forward SSH agent</span>
+                <span class="text-xs text-muted">
+                  Lets processes on the host use your local keys (ssh -A). Off unless you need it.
+                </span>
+              </span>
+              <input id="c-agent" type="checkbox" class="switch" bind:checked={modalForwardAgent} />
+            </label>
           </div>
         {/if}
       </div>

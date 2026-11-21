@@ -2,7 +2,7 @@
   import { Check } from "lucide-svelte";
   import type { DesktopSettings } from "$lib/types";
   import CustomSelect from "$lib/components/ui/CustomSelect.svelte";
-  import { applyDensity, type AppDensity } from "$lib/utils/theme";
+  import { applyDensity, THEME_SWATCHES, type AppDensity } from "$lib/utils/theme";
   import {
     SYSTEM_TIMEZONE,
     getSupportedTimezones,
@@ -17,11 +17,34 @@
 
   let { settings = $bindable(), onSave, onThemeChange }: Props = $props();
 
+  const FALLBACK_SWATCHES = {
+    light: {
+      chrome: "#f1f3f5",
+      surface: "#f8f9fa",
+      panel: "#ffffff",
+      border: "#d8dee6",
+      text: "#111418",
+      muted: "#5b6470",
+      accent: "#2563eb",
+    },
+    dark: {
+      chrome: "#0b0d10",
+      surface: "#111318",
+      panel: "#171a21",
+      border: "#272c36",
+      text: "#eceff4",
+      muted: "#8c96a6",
+      accent: "#3b82f6",
+    },
+  } as const;
+
+  const swatches = THEME_SWATCHES ?? FALLBACK_SWATCHES;
+
   // Swatch colors mirror the per-theme tokens in styles/tokens.css. They are a
   // preview of themes other than the active one, so they can't use utilities.
   const themes = [
-    { id: "light", name: "Light", chrome: "#e6e1d6", surface: "#eeeae1", panel: "#faf8f3", border: "#d9d3c6", text: "#1c1a16", muted: "#5c5649", accent: "#e8962a" },
-    { id: "dark", name: "Dark", chrome: "#0d0c0a", surface: "#121110", panel: "#181714", border: "#2a2823", text: "#ede7db", muted: "#9e9688", accent: "#f0a030" },
+    { id: "light", name: "Light", ...swatches.light },
+    { id: "dark", name: "Dark", ...swatches.dark },
     { id: "system", name: "Match system", chrome: "", surface: "", panel: "", border: "", text: "", muted: "", accent: "" },
   ];
 
@@ -39,36 +62,23 @@
 
   const systemTimezone = getSystemTimezone();
   const timezoneOptions = getSupportedTimezones();
-  let timezoneFilter = $state("");
 
-  const filteredTimezoneOptions = $derived.by(() => {
-    const query = timezoneFilter.trim().toLowerCase();
+  const timezoneSelectOptions = $derived.by(() => {
     const selected = settings.timezone;
-    const base = !query
-      ? timezoneOptions
-      : timezoneOptions.filter((tz) => tz.toLowerCase().includes(query));
-
-    if (selected && selected !== SYSTEM_TIMEZONE && !base.includes(selected)) {
-      return [selected, ...base];
-    }
-
-    return base;
+    const list =
+      selected && selected !== SYSTEM_TIMEZONE && !timezoneOptions.includes(selected)
+        ? [selected, ...timezoneOptions]
+        : timezoneOptions;
+    return [
+      { value: SYSTEM_TIMEZONE, label: `System (${systemTimezone})` },
+      ...list.map((tz) => ({ value: tz, label: tz })),
+    ];
   });
-
-  const timezoneSelectOptions = $derived([
-    { value: SYSTEM_TIMEZONE, label: `System (${systemTimezone})` },
-    ...filteredTimezoneOptions.map((tz) => ({ value: tz, label: tz })),
-  ]);
 </script>
 
 <div class="settings-page">
-  <div>
-    <h2 class="settings-heading">Appearance</h2>
-    <p class="settings-desc">Color theme, row density and how dates are displayed.</p>
-  </div>
-
   <section>
-    <h3 class="settings-group-title" id="settings-theme-label">Theme</h3>
+    <h2 class="settings-group-title" id="settings-theme-label">Theme</h2>
     <div class="grid grid-cols-1 gap-3 sm:grid-cols-3" role="radiogroup" aria-labelledby="settings-theme-label">
       {#each themes as t (t.id)}
         {@const active = settings.theme === t.id}
@@ -84,30 +94,30 @@
               class="flex h-16 overflow-hidden rounded-md border border-border"
               aria-hidden="true"
             >
-              <span class="flex flex-1 overflow-hidden" style="background: #121110;">
-                <span class="flex w-3.5 shrink-0 flex-col items-center gap-1 pt-2" style="background: #0d0c0a; border-right: 1px solid #2a2823;">
-                  <span class="size-1 rounded-full" style="background: #f0a030;"></span>
-                  <span class="size-1 rounded-full" style="background: #9e9688;"></span>
+              <span class="flex flex-1 overflow-hidden" style="background: {swatches.dark.surface};">
+                <span class="flex w-3.5 shrink-0 flex-col items-center gap-1 pt-2" style="background: {swatches.dark.chrome}; border-right: 1px solid {swatches.dark.border};">
+                  <span class="size-1 rounded-full" style="background: {swatches.dark.accent};"></span>
+                  <span class="size-1 rounded-full" style="background: {swatches.dark.muted};"></span>
                 </span>
                 <span class="flex flex-1 flex-col gap-1 p-1.5">
-                  <span class="flex flex-col gap-0.5 rounded-xs p-1" style="background: #181714; border: 1px solid #2a2823;">
-                    <span class="h-1 w-3/4 rounded-full" style="background: #ede7db;"></span>
-                    <span class="h-1 w-1/2 rounded-full" style="background: #9e9688;"></span>
+                  <span class="flex flex-col gap-0.5 rounded-xs p-1" style="background: {swatches.dark.panel}; border: 1px solid {swatches.dark.border};">
+                    <span class="h-1 w-3/4 rounded-full" style="background: {swatches.dark.text};"></span>
+                    <span class="h-1 w-1/2 rounded-full" style="background: {swatches.dark.muted};"></span>
                   </span>
-                  <span class="h-1.5 w-4 rounded-xs" style="background: #f0a030;"></span>
+                  <span class="h-1.5 w-4 rounded-xs" style="background: {swatches.dark.accent};"></span>
                 </span>
               </span>
-              <span class="flex flex-1 overflow-hidden" style="background: #eeeae1; border-left: 1px solid #d9d3c6;">
+              <span class="flex flex-1 overflow-hidden" style="background: {swatches.light.surface}; border-left: 1px solid {swatches.light.border};">
                 <span class="flex flex-1 flex-col gap-1 p-1.5">
-                  <span class="flex flex-col gap-0.5 rounded-xs p-1" style="background: #faf8f3; border: 1px solid #d9d3c6;">
-                    <span class="h-1 w-3/4 rounded-full" style="background: #1c1a16;"></span>
-                    <span class="h-1 w-1/2 rounded-full" style="background: #5c5649;"></span>
+                  <span class="flex flex-col gap-0.5 rounded-xs p-1" style="background: {swatches.light.panel}; border: 1px solid {swatches.light.border};">
+                    <span class="h-1 w-3/4 rounded-full" style="background: {swatches.light.text};"></span>
+                    <span class="h-1 w-1/2 rounded-full" style="background: {swatches.light.muted};"></span>
                   </span>
-                  <span class="h-1.5 w-4 rounded-xs" style="background: #e8962a;"></span>
+                  <span class="h-1.5 w-4 rounded-xs" style="background: {swatches.light.accent};"></span>
                 </span>
-                <span class="flex w-3.5 shrink-0 flex-col items-center gap-1 pt-2" style="background: #e6e1d6; border-left: 1px solid #d9d3c6;">
-                  <span class="size-1 rounded-full" style="background: #e8962a;"></span>
-                  <span class="size-1 rounded-full" style="background: #5c5649;"></span>
+                <span class="flex w-3.5 shrink-0 flex-col items-center gap-1 pt-2" style="background: {swatches.light.chrome}; border-left: 1px solid {swatches.light.border};">
+                  <span class="size-1 rounded-full" style="background: {swatches.light.accent};"></span>
+                  <span class="size-1 rounded-full" style="background: {swatches.light.muted};"></span>
                 </span>
               </span>
             </span>
@@ -141,7 +151,7 @@
   </section>
 
   <section>
-    <h3 class="settings-group-title" id="settings-density-label">Density</h3>
+    <h2 class="settings-group-title" id="settings-density-label">Density</h2>
     <div class="grid grid-cols-1 gap-3 sm:grid-cols-3" role="radiogroup" aria-labelledby="settings-density-label">
       {#each densityOptions as d (d.id)}
         {@const active = (settings.density ?? "comfortable") === d.id}
@@ -168,7 +178,7 @@
   </section>
 
   <section>
-    <h3 class="settings-group-title">Locale</h3>
+    <h2 class="settings-group-title">Locale</h2>
     <div class="settings-group">
       <div class="setting-row">
         <div class="setting-row-main">
@@ -176,18 +186,12 @@
           <span class="setting-meta">Used for dates in history, logs and audit.</span>
         </div>
         <div class="setting-control">
-          <input
-            id="settings-timezone-filter"
-            type="text"
-            placeholder="Filter…"
-            aria-label="Filter timezones"
-            bind:value={timezoneFilter}
-            class="input w-28"
-          />
           <CustomSelect
             id="settings-timezone"
-            class="w-56!"
+            class="w-64!"
             size="md"
+            searchable={true}
+            searchPlaceholder="Filter timezones…"
             options={timezoneSelectOptions}
             value={settings.timezone}
             onChange={(val) => {

@@ -1,8 +1,8 @@
 <script lang="ts">
   import BrandMark from "./BrandMark.svelte";
-  import { Command, HelpCircle, Search } from "lucide-svelte";
+  import { Info, Keyboard, Search } from "lucide-svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
-  import { GLOBAL_SHORTCUTS } from "$lib/shortcuts";
+  import { GLOBAL_SHORTCUTS, IS_MAC } from "$lib/shortcuts";
 
   interface Props {
     onOpenAbout?: () => void;
@@ -56,7 +56,7 @@
     {#if onOpenCommandPalette}
       <button
         type="button"
-        class="flex h-[26px] w-full max-w-[480px] cursor-pointer items-center gap-2 rounded-md border border-border-control bg-surface-input px-2.5 text-xs text-muted transition-colors duration-fast hover:border-border-hover hover:text-secondary"
+        class="flex h-[26px] w-full max-w-[440px] cursor-pointer items-center gap-2 rounded-md border border-border-control bg-surface-input px-2.5 text-xs text-muted transition-colors duration-fast hover:border-border-hover hover:text-secondary"
         onclick={onOpenCommandPalette}
         aria-label="Jump to…"
         title="Jump to hosts, views and actions"
@@ -70,7 +70,7 @@
     {/if}
   </div>
 
-  <div class="flex h-full items-center justify-end" data-tauri-drag-region>
+  <div class="flex h-full items-center justify-end {IS_MAC ? 'pr-2' : ''}" data-tauri-drag-region>
     {#if onOpenShortcuts}
       <button
         type="button"
@@ -79,56 +79,58 @@
         title="Keyboard shortcuts (?)"
         aria-label="Keyboard shortcuts"
       >
-        <Command size={14} />
+        <Keyboard size={14} />
       </button>
     {/if}
     {#if onOpenAbout}
       <button
         type="button"
-        class="btn-icon mr-1"
+        class="btn-icon {IS_MAC ? '' : 'mr-1'}"
         onclick={onOpenAbout}
         title="About Bayesian SSH"
         aria-label="About Bayesian SSH"
       >
-        <HelpCircle size={14} />
+        <Info size={14} />
       </button>
     {/if}
 
-    <div class="flex h-full items-stretch">
-      <button
-        type="button"
-        class="window-btn"
-        onclick={handleWindowMinimize}
-        title="Minimize"
-        aria-label="Minimize"
-      >
-        <svg viewBox="0 0 10 10" class="size-2.5" fill="none" stroke="currentColor" stroke-width="1.2">
-          <path d="M1 5.5h8" />
-        </svg>
-      </button>
-      <button
-        type="button"
-        class="window-btn"
-        onclick={handleWindowMaximize}
-        title="Maximize"
-        aria-label="Maximize or restore"
-      >
-        <svg viewBox="0 0 10 10" class="size-2.5" fill="none" stroke="currentColor" stroke-width="1.2">
-          <rect x="1.5" y="1.5" width="7" height="7" rx="1" />
-        </svg>
-      </button>
-      <button
-        type="button"
-        class="window-btn window-btn-close"
-        onclick={handleWindowClose}
-        title="Close"
-        aria-label="Close"
-      >
-        <svg viewBox="0 0 10 10" class="size-2.5" fill="none" stroke="currentColor" stroke-width="1.2">
-          <path d="M1.5 1.5l7 7M8.5 1.5l-7 7" />
-        </svg>
-      </button>
-    </div>
+    {#if !IS_MAC}
+      <div class="flex h-full items-stretch">
+        <button
+          type="button"
+          class="window-btn"
+          onclick={handleWindowMinimize}
+          title="Minimize"
+          aria-label="Minimize"
+        >
+          <svg viewBox="0 0 10 10" class="size-2.5" fill="none" stroke="currentColor" stroke-width="1.2">
+            <path d="M1 5.5h8" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          class="window-btn"
+          onclick={handleWindowMaximize}
+          title="Maximize"
+          aria-label="Maximize or restore"
+        >
+          <svg viewBox="0 0 10 10" class="size-2.5" fill="none" stroke="currentColor" stroke-width="1.2">
+            <rect x="1.5" y="1.5" width="7" height="7" rx="1" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          class="window-btn window-btn-close"
+          onclick={handleWindowClose}
+          title="Close"
+          aria-label="Close"
+        >
+          <svg viewBox="0 0 10 10" class="size-2.5" fill="none" stroke="currentColor" stroke-width="1.2">
+            <path d="M1.5 1.5l7 7M8.5 1.5l-7 7" />
+          </svg>
+        </button>
+      </div>
+    {/if}
   </div>
 </header>
 

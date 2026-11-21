@@ -34,7 +34,7 @@
     onOpenOrg?: (org: OrgSummary) => void;
   } = $props();
 
-  type Flag = { label: string; tone: "error" | "warning" | "accent" };
+  type Flag = { label: string; tone: "error" | "warning" | "neutral" };
 
   const ERROR_FLAGS: [(id: string) => string, string][] = [
     [TEAM_ATTENTION.auditFailed, "Audit log failed"],
@@ -52,7 +52,7 @@
       tone: "error",
     }));
     if (a?.removed) flags.push({ label: "You were removed", tone: "warning" });
-    else if (waitingForKey(team.team_id)) flags.push({ label: "Waiting for the key", tone: "accent" });
+    else if (waitingForKey(team.team_id)) flags.push({ label: "Waiting for the key", tone: "warning" });
     if (a?.role === "admin" && a.pending_devices > 0) {
       flags.push({ label: `${plural(a.pending_devices, "device")} waiting`, tone: "warning" });
     }
@@ -123,7 +123,7 @@
               </td>
               <td>
                 {#if role}
-                  <span class="badge {role === 'admin' ? 'badge-accent' : 'badge-neutral'}">{role === "admin" ? "Admin" : "Member"}</span>
+                  <span class="badge badge-neutral">{role === "admin" ? "Admin" : "Member"}</span>
                 {:else}
                   <span class="text-muted">–</span>
                 {/if}
@@ -185,7 +185,7 @@
                   <button type="button" class="link font-medium" onclick={() => onOpenOrg?.(org)}>{org.label}</button>
                 </td>
                 <td>
-                  <span class="badge {org.my_role === 'owner' ? 'badge-accent' : 'badge-neutral'}">
+                  <span class="badge badge-neutral">
                     {org.my_role === "owner" ? "Owner" : "Member"}
                   </span>
                 </td>

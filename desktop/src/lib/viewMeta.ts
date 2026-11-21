@@ -37,5 +37,5 @@ export function viewEnabled(
   return true;
 }
 
-/** The AI reports are a part of the "ai" view with their own sidebar entry, palette item and key. */
+/** The AI reports are part of the "ai" view and searchable in the command palette. */
 export const AI_REPORTS_META = { label: "AI reports", icon: FileText };

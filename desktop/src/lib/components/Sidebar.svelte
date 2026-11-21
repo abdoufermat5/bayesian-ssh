@@ -12,9 +12,9 @@
     Ticket,
   } from "lucide-svelte";
   import { attentionCount } from "$lib/stores/attention.svelte";
-  import { aiPendingCount, getAiMode, setAiMode, showAiReports } from "$lib/stores/ai.svelte";
-  import { AI_REPORTS_DIGIT, GLOBAL_SHORTCUTS, viewDigit } from "$lib/shortcuts";
-  import { AI_REPORTS_META, VIEW_META, viewEnabled } from "$lib/viewMeta";
+  import { aiPendingCount } from "$lib/stores/ai.svelte";
+  import { GLOBAL_SHORTCUTS, viewDigit } from "$lib/shortcuts";
+  import { VIEW_META, viewEnabled } from "$lib/viewMeta";
   import type { AppTab, DesktopSettings, EnvInfo } from "$lib/types";
 
   type KerberosHealth = "missing" | "expired" | "warning" | "valid" | "unavailable";
@@ -32,7 +32,7 @@
     externalSessionCount: number;
     agentActive: boolean;
     agentKeys: string[];
-    onStartAgent: () => void;
+    onStartAgent?: () => void;
     onShowAgentModal: () => void;
     kerberosHealth: KerberosHealth;
     /** False until a connection uses Kerberos: the indicator stays hidden. */
@@ -56,7 +56,6 @@
     externalSessionCount,
     agentActive,
     agentKeys,
-    onStartAgent,
     onShowAgentModal,
     kerberosHealth,
     kerberosInUse,
@@ -74,7 +73,7 @@
     badge?: number;
     attention?: number;
     key: string | null;
-    /** Overrides "this tab is showing" (two entries share the AI tab; Console spans two). */
+    /** Overrides "this tab is showing" (Console spans connections and terminals). */
     active?: boolean;
     /** Overrides the tab opened on click (Console opens live terminals when any exist). */
     target?: AppTab;
@@ -86,8 +85,13 @@
     return { id: tab, tab, icon, label, key: viewDigit(tab), ...extra };
   }
 
+  function navTitle(item: NavItem): string {
+    const base = item.key ? `${item.label} (${item.key})` : item.label;
+    return item.badge && item.badge > 0 ? `${base} · ${item.badge} live` : base;
+  }
+
   // Three console sections, Operate / Secure / Review; the digit shortcuts
-  // (shown in each tooltip and keycap) run 1..8 down the list per VIEW_ORDER.
+  // (shown in each tooltip and keycap) run 1..7 down the list per VIEW_ORDER.
   const sections = $derived<{ label: string; items: NavItem[] }[]>([
     {
       label: "Operate",
@@ -101,8 +105,6 @@
         ...(viewEnabled("sftp", settings) ? [navItem("sftp")] : []),
         navItem("ai", {
           attention: aiPendingCount(),
-          active: activeTab === "ai" && getAiMode() === "live",
-          onSelect: () => setAiMode("live"),
         }),
       ],
     },
@@ -116,17 +118,7 @@
     },
     {
       label: "Review",
-      items: [
-        navItem("history"),
-        {
-          id: "ai-reports",
-          tab: "ai",
-          ...AI_REPORTS_META,
-          key: AI_REPORTS_DIGIT,
-          active: activeTab === "ai" && getAiMode() === "reports",
-          onSelect: () => showAiReports(),
-        },
-      ],
+      items: [navItem("history")],
     },
   ]);
 
@@ -171,7 +163,7 @@
   <div class="relative px-2.5 pb-1 pt-1" bind:this={profileRoot}>
     <button
       type="button"
-      class="flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-md px-1.5 text-left transition-colors duration-fast hover:bg-surface-hover
+      class="flex h-10 w-full cursor-pointer items-center gap-2.5 rounded-md px-1.5 py-1 text-left transition-colors duration-fast hover:bg-surface-hover
         {sidebarCollapsed ? 'justify-center' : ''}"
       onclick={() => (profileMenuOpen = !profileMenuOpen)}
       aria-haspopup="menu"
@@ -236,10 +228,12 @@
   </div>
 
   <!-- Navigation -->
-  <nav class="flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pb-2 scrollbar-none">
-    {#each sections as section}
+  <nav class="flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pb-2 scrollbar-none {sidebarCollapsed ? 'pt-1.5' : ''}">
+    {#each sections as section, idx (section.label)}
       {#if sidebarCollapsed}
-        <div class="mx-2 my-2.5 h-px bg-border"></div>
+        {#if idx > 0}
+          <div class="mx-2 my-2.5 h-px bg-border"></div>
+        {/if}
       {:else}
         <div class="nav-section-label eyebrow">{section.label}</div>
       {/if}
@@ -253,7 +247,7 @@
               item.onSelect?.();
               onTabChange(item.target ?? item.tab);
             }}
-            title={item.key ? `${item.label} (${item.key})` : item.label}
+            title={navTitle(item)}
             aria-keyshortcuts={item.key ?? undefined}
             aria-label={item.attention
               ? `${item.label}, ${item.attention} ${item.attention === 1 ? "item needs" : "items need"} attention`
@@ -300,8 +294,8 @@
     <button
       type="button"
       class="nav-item {sidebarCollapsed ? 'nav-item-collapsed' : ''}"
-      onclick={() => (agentActive ? onShowAgentModal() : onStartAgent())}
-      title={agentActive ? `SSH agent · ${agentKeys.length} keys loaded` : "SSH agent stopped — click to start"}
+      onclick={onShowAgentModal}
+      title={agentActive ? `SSH agent · ${agentKeys.length} ${agentKeys.length === 1 ? "key" : "keys"} loaded` : "SSH agent · Off"}
       aria-label="SSH agent"
     >
       <span class="relative flex size-4 items-center justify-center">

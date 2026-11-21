@@ -158,14 +158,8 @@
 </script>
 
 <div class="settings-page">
-  <div class="flex flex-wrap items-start justify-between gap-3">
-    <div class="min-w-0 flex-1 basis-72">
-      <h2 class="settings-group-title !mb-1">Inventory sources</h2>
-      <p class="setting-meta m-0">
-        Sync hosts from SSH configs, Ansible, Tailscale, AWS or GCP. Connections are matched by
-        their source id, so a changed address updates the same host.
-      </p>
-    </div>
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <h2 class="settings-group-title !mb-0">Inventory sources</h2>
     <button type="button" class="btn btn-secondary" onclick={() => (showAdd = !showAdd)}>
       {#if showAdd}<X size={14} /> Cancel{:else}<Plus size={14} /> Add source{/if}
     </button>
@@ -176,7 +170,7 @@
       <div class="setting-row">
         <div class="setting-row-main">
           <label class="setting-title" for="source-name">Name</label>
-          <span class="setting-meta">Unique name used by `bssh source sync`.</span>
+          <span class="setting-meta">Unique name used by <code>bssh source sync</code>.</span>
         </div>
         <div class="setting-control">
           <input id="source-name" type="text" class="input w-56" bind:value={name} placeholder="aws-prod" />
@@ -213,7 +207,7 @@
         <div class="setting-row">
           <div class="setting-row-main">
             <span class="setting-title">Inventory path</span>
-            <span class="setting-meta">Passed to `ansible-inventory -i`.</span>
+            <span class="setting-meta">Passed to <code>ansible-inventory -i</code>.</span>
           </div>
           <div class="setting-control">
             <input type="text" class="input input-mono w-56" bind:value={inventory} placeholder="./inventory.yml" />
@@ -383,8 +377,8 @@
           </div>
           <div class="setting-control">
             {#if source.kind === "team"}
-              <!-- Team vaults need the device passphrase and are synced by the CLI. -->
-              <span class="setting-meta">Synced with <code>bssh teams sync</code></span>
+              <!-- Team vaults sync from the Teams view or CLI. -->
+              <span class="setting-meta">Synced from the Teams view or <code>bssh teams sync</code></span>
             {:else}
               <button
                 type="button"
@@ -423,9 +417,9 @@
           <div class="setting-row">
             <div class="setting-row-main">
               <span class="setting-title">Remove {source.name}?</span>
-              <label class="setting-meta cursor-pointer">
-                <input type="checkbox" bind:checked={deleteHosts} />
-                Also delete the {plural(source.hosts ?? 0, "connection")} it owns (otherwise they stay as manual hosts)
+              <label class="setting-meta mt-1 flex cursor-pointer items-center gap-2">
+                <input type="checkbox" class="checkbox" bind:checked={deleteHosts} />
+                <span>Also delete the {plural(source.hosts ?? 0, "connection")} it owns (otherwise they stay as manual hosts)</span>
               </label>
             </div>
             <div class="setting-control">
@@ -444,6 +438,6 @@
 
   <p class="-mt-3 text-xs text-muted">
     Manual connections are never modified. Hosts missing from a sync are marked stale and only
-    deleted by `bssh source sync --prune`.
+    deleted by <code>bssh source sync --prune</code>.
   </p>
 </div>

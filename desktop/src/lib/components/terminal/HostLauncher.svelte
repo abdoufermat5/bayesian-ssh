@@ -10,17 +10,54 @@
     connections: Connection[];
     /** Side of the active tab the session opens on; null for a plain tab. */
     split: SplitSide | null;
+    /** Triggering button to position the popover against. */
+    anchor?: HTMLElement | null;
     onConnect: (conn: Connection) => void;
     /** Connect to every remembered host of a saved group. */
     onOpenGroup: (groupId: string) => void;
   }
 
-  let { connections, split, onConnect, onOpenGroup }: Props = $props();
+  let { connections, split, anchor = null, onConnect, onOpenGroup }: Props = $props();
 
   const terminalState = getTerminalState();
 
+  const POPOVER_W = 288;
+  const PAD = 8;
+  const GAP = 4;
+
+  let popoverEl = $state<HTMLDivElement | null>(null);
+  let posStyle = $state("");
   let query = $state("");
   let index = $state(0);
+
+  function computePosition(): string {
+    const w = popoverEl?.offsetWidth || POPOVER_W;
+    const h = popoverEl?.offsetHeight || 320;
+    if (!anchor) {
+      return `top: 40px; left: ${PAD}px;`;
+    }
+    const r = anchor.getBoundingClientRect();
+    const prefersRightAlign = r.left > window.innerWidth / 2 || r.left + w > window.innerWidth - PAD;
+    const rawLeft = prefersRightAlign ? r.right - w : r.left;
+    const left = Math.max(PAD, Math.min(rawLeft, window.innerWidth - w - PAD));
+    const belowFits = r.bottom + GAP + h <= window.innerHeight - PAD;
+    const rawTop = belowFits ? r.bottom + GAP : r.top - GAP - h;
+    const top = Math.max(PAD, Math.min(rawTop, window.innerHeight - h - PAD));
+    return `top: ${Math.round(top)}px; left: ${Math.round(left)}px;`;
+  }
+
+  function updatePosition() {
+    posStyle = computePosition();
+  }
+
+  $effect(() => {
+    void anchor;
+    void split;
+    void results.length;
+    updatePosition();
+  });
+
+  const initialStyle = $derived(posStyle || computePosition());
 
   const results = $derived.by(() => {
     const q = query.trim().toLowerCase();
@@ -54,7 +91,13 @@
   }
 </script>
 
-<div class="popover absolute left-0 top-full mt-1 flex w-72 flex-col gap-1">
+<svelte:window onresize={updatePosition} />
+
+<div
+  bind:this={popoverEl}
+  class="popover fixed z-50 flex w-72 flex-col gap-1"
+  style={initialStyle}
+>
   {#if split && terminalState.activeTab}
     <p class="m-0 truncate px-1.5 pt-0.5 text-xs text-muted">
       Opens {SIDE_TEXT[split]}

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import { ChevronDown, Bot, Download, ExternalLink, FileText, FolderOpen, OctagonX, Play, Printer, RefreshCw, Search, Trash2, X } from "lucide-svelte";
+  import { Check, ChevronDown, Bot, Copy, Download, ExternalLink, FileText, FolderOpen, OctagonX, Play, Printer, RefreshCw, Search, Trash2, X } from "lucide-svelte";
   import type { AiPruneOutcome, AiReport, AiReportFormat, AiReportSummary, AiRun } from "$lib/types";
   import {
     clearAiReportTarget,
@@ -19,6 +19,7 @@
     stopAiRun,
   } from "$lib/stores/ai.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
+  import { copyTextWithFallback } from "$lib/utils/terminal-xterm";
   import RunReport from "./ai/RunReport.svelte";
   import CleanupDialog from "./ai/CleanupDialog.svelte";
   import { formatDateTime, formatRelative } from "$lib/utils/timezone";
@@ -67,6 +68,17 @@
   let listRequest = 0;
   /** Cleanup dialog: closed (null), or open with an optional preselected run. */
   let cleanup = $state<{ runId: string | null } | null>(null);
+  let copiedInstall = $state(false);
+  const INSTALL_CMD = "bssh ai install claude-code";
+
+  function copyInstallCmd() {
+    copyTextWithFallback(INSTALL_CMD);
+    copiedInstall = true;
+    notify("Copied command", "success");
+    setTimeout(() => {
+      copiedInstall = false;
+    }, 2000);
+  }
 
   const FORMATS: { id: AiReportFormat; label: string }[] = [
     { id: "txt", label: "Text (.txt)" },
@@ -266,6 +278,25 @@
   }
 </script>
 
+{#snippet installCommandBlock()}
+  <div class="code-block mt-1 flex w-full max-w-sm items-center gap-2 overflow-hidden py-1.5 pr-1.5">
+    <code class="min-w-0 flex-1 overflow-x-auto whitespace-pre text-left select-text">{INSTALL_CMD}</code>
+    <button
+      type="button"
+      class="btn-icon btn-icon-sm shrink-0"
+      onclick={copyInstallCmd}
+      aria-label="Copy install command"
+      title="Copy install command"
+    >
+      {#if copiedInstall}
+        <Check size={13} class="text-success" />
+      {:else}
+        <Copy size={13} />
+      {/if}
+    </button>
+  </div>
+{/snippet}
+
 {#snippet reportActions()}
   <button
     type="button"
@@ -397,7 +428,7 @@
         <div class="grid items-start gap-4 lg:grid-cols-[minmax(260px,340px)_minmax(0,1fr)]" aria-busy="true" aria-label="Loading runs">
           <div class="flex flex-col gap-2">
             {#each [0, 1, 2] as i (i)}
-              <div class="card flex flex-col gap-2">
+              <div class="card flex flex-col gap-2 p-3.5">
                 <div class="skeleton h-3.5 w-32"></div>
                 <div class="skeleton h-3 w-48"></div>
               </div>
@@ -426,11 +457,9 @@
           <div class="empty-state-icon"><FileText size={18} /></div>
           <div class="empty-state-title">No agent runs recorded yet</div>
           <p class="empty-state-desc">
-            A report is written for every run of an AI agent that works through bssh, built from the signed
-            audit log. Set an agent up with <span class="mono">bssh ai install claude-code</span> (or codex,
-            cursor, vscode, claude-desktop, omp), restart it, and its runs show up here with everything it
-            did, step by step, ready to download or print.
+            Signed audit reports appear here automatically once an AI agent runs through bssh.
           </p>
+          {@render installCommandBlock()}
           <div class="empty-state-action">
             <button type="button" class="btn btn-secondary" onclick={() => setMode("live")}>
               <Bot size={14} />
@@ -459,7 +488,7 @@
               <li>
                 <button
                   type="button"
-                  class="card card-interactive w-full text-left {isSelected ? 'card-selected' : ''}"
+                  class="card card-interactive w-full p-3.5 text-left {isSelected ? 'card-selected' : ''}"
                   aria-pressed={isSelected}
                   onclick={() => (reportId = item.run_id)}
                 >
@@ -503,13 +532,15 @@
           <div class="flex min-w-0 flex-col gap-4">
             {#if reportsError}
               <div class="alert alert-error" role="alert">
-                <div class="alert-title">Could not refresh the list</div>
-                <p class="m-0 text-xs">{reportsError}</p>
+                <div class="alert-body">
+                  <div class="alert-title">Could not refresh the list</div>
+                  <p class="m-0 text-xs">{reportsError}</p>
+                </div>
               </div>
             {/if}
             {#if savedFile}
               <div class="alert alert-success flex flex-wrap items-center gap-x-3 gap-y-2" role="status">
-                <div class="min-w-0 flex-1">
+                <div class="alert-body">
                   <div class="alert-title">Report saved</div>
                   <p class="m-0 break-all text-xs">Report saved to {savedFile.path}</p>
                 </div>
@@ -538,8 +569,10 @@
               </div>
             {:else if reportError}
               <div class="alert alert-error" role="alert">
-                <div class="alert-title">Could not load this report</div>
-                <p class="m-0 text-xs">{reportError}</p>
+                <div class="alert-body">
+                  <div class="alert-title">Could not load this report</div>
+                  <p class="m-0 text-xs">{reportError}</p>
+                </div>
               </div>
             {/if}
           </div>
@@ -550,10 +583,9 @@
         <div class="empty-state-icon"><Bot size={18} /></div>
         <div class="empty-state-title">No agent is connected</div>
         <p class="empty-state-desc">
-          Set one up with <span class="mono">bssh ai install claude-code</span> (or codex, cursor,
-          vscode, claude-desktop, omp), then restart it. Runs appear here while it works through
-          bssh.
+          Install the bssh hook in your agent and restart it to watch runs live here.
         </p>
+        {@render installCommandBlock()}
         <div class="empty-state-action">
           <button type="button" class="btn btn-secondary" onclick={() => setMode("reports")}>
             <FileText size={14} />
@@ -570,7 +602,7 @@
             <li>
               <button
                 type="button"
-                class="card card-interactive w-full text-left {isSelected ? 'card-selected' : ''}"
+                class="card card-interactive w-full p-3.5 text-left {isSelected ? 'card-selected' : ''}"
                 aria-pressed={isSelected}
                 onclick={() => (selectedId = run.run_id)}
               >

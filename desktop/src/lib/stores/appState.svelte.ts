@@ -14,7 +14,7 @@ import { notify } from "$lib/stores/notifications.svelte";
 import { refreshTeamsAttention, startTeamsAttentionPoller } from "$lib/stores/teamsAttention.svelte";
 import { applyTheme, applyDensity, normalizeTheme } from "$lib/utils/theme";
 import { isTerminalFocused } from "$lib/utils/terminal-focus";
-import { AI_REPORTS_DIGIT, VIEW_ORDER } from "$lib/shortcuts";
+import { VIEW_ORDER } from "$lib/shortcuts";
 import { viewEnabled } from "$lib/viewMeta";
 import { showAiReports } from "$lib/stores/ai.svelte";
 import { copyTextWithFallback, setTerminalSmartCopy } from "$lib/utils/terminal-xterm";
@@ -1004,13 +1004,6 @@ export class AppStateStore {
     ) {
       e.preventDefault();
       this.openAddModal();
-      return;
-    }
-
-    // AI reports: one key from anywhere (same guard as the view digits).
-    if (!isTerminalFocused() && !isEditing && !e.ctrlKey && !e.metaKey && !e.altKey && e.key === AI_REPORTS_DIGIT) {
-      e.preventDefault();
-      this.openAiReports();
       return;
     }
 

@@ -17,6 +17,7 @@
     X,
   } from "lucide-svelte";
   import type { Connection } from "$lib/types";
+  import { MOD } from "$lib/shortcuts";
   import { notify } from "$lib/stores/notifications.svelte";
   import { copyTextWithFallback } from "$lib/utils/terminal-xterm";
   import ModalShell from "$lib/components/ui/ModalShell.svelte";
@@ -46,6 +47,7 @@
     id: string;
     timestamp: number;
     command: string;
+    hostIds?: string[];
     targetCount: number;
     dryRun: boolean;
     results: BatchExecHostResult[];
@@ -91,9 +93,11 @@
   let initialized = $state(false);
 
   // ─── Execution state ─────────────────────────────────────────────────────────
+  const MAX_VISIBLE_TAGS = 5;
   const selectedIds = new SvelteSet<string>();
   let hostFilter = $state("");
   let tagFilter = $state<string | null>(null);
+  let showAllTags = $state(false);
   let command = $state("uptime");
   let dryRun = $state(true);
   let timeoutSecs = $state(10);
@@ -127,6 +131,7 @@
       initialized = false;
       results = null;
       envWarningDismissed = false;
+      showAllTags = false;
     }
   });
 
@@ -143,6 +148,16 @@
     for (const c of connections) for (const t of c.tags) set.add(t);
     return Array.from(set).sort();
   });
+
+  const visibleTags = $derived.by(() => {
+    if (showAllTags || allTags.length <= MAX_VISIBLE_TAGS) return allTags;
+    const top = allTags.slice(0, MAX_VISIBLE_TAGS);
+    if (tagFilter && !top.includes(tagFilter)) {
+      return [...top.slice(0, MAX_VISIBLE_TAGS - 1), tagFilter];
+    }
+    return top;
+  });
+  const hiddenTagCount = $derived(Math.max(0, allTags.length - visibleTags.length));
 
   const filteredConnections = $derived.by(() => {
     const q = hostFilter.trim().toLowerCase();
@@ -305,6 +320,7 @@
         id: crypto.randomUUID(),
         timestamp: startedAt,
         command: command.trim(),
+        hostIds: connectionIds,
         targetCount: connectionIds.length,
         dryRun,
         results: res,
@@ -321,6 +337,25 @@
       notify(`Batch execution failed: ${err}`, "error");
     } finally {
       running = false;
+    }
+  }
+
+  function loadRunToExecute(item: BatchRunRecord) {
+    const recordedIds = item.hostIds ?? item.results?.map((r) => r.connection_id) ?? [];
+    const existingIds = new Set(connections.map((c) => c.id));
+    const restoredIds = recordedIds.filter((id) => existingIds.has(id));
+    command = item.command;
+    dryRun = item.dryRun;
+    results = null;
+    replaceSelection(restoredIds);
+    activeTab = "execute";
+    if (restoredIds.length === 0) {
+      notify("None of the hosts from that run exist anymore. Select hosts before running.", "error");
+    } else if (restoredIds.length < recordedIds.length) {
+      notify(
+        `Restored ${restoredIds.length} of ${recordedIds.length} host(s) from that run. Review before running.`,
+        "info",
+      );
     }
   }
 
@@ -498,7 +533,7 @@
             </label>
             {#if allTags.length > 0}
               <div class="flex flex-wrap gap-1">
-                {#each allTags as tag (tag)}
+                {#each visibleTags as tag (tag)}
                   <button
                     type="button"
                     class="chip h-6 px-2 {tagFilter === tag ? 'chip-active' : ''}"
@@ -508,6 +543,23 @@
                     {tag}
                   </button>
                 {/each}
+                {#if hiddenTagCount > 0}
+                  <button
+                    type="button"
+                    class="chip h-6 px-2 text-muted"
+                    onclick={() => (showAllTags = true)}
+                  >
+                    +{hiddenTagCount}
+                  </button>
+                {:else if showAllTags && allTags.length > MAX_VISIBLE_TAGS}
+                  <button
+                    type="button"
+                    class="chip h-6 px-2 text-muted"
+                    onclick={() => (showAllTags = false)}
+                  >
+                    Less
+                  </button>
+                {/if}
               </div>
             {/if}
             <div class="-mx-1 flex items-center gap-0.5">
@@ -562,7 +614,7 @@
               <div class="flex items-center justify-between">
                 <label class="field-label" for="exec-command-input">Command</label>
                 <span class="flex items-center gap-1 text-xs text-muted">
-                  <kbd class="kbd">Ctrl</kbd><kbd class="kbd">↵</kbd> to run
+                  <kbd class="kbd">{MOD}</kbd><kbd class="kbd">↵</kbd> to run
                 </span>
               </div>
               <textarea
@@ -579,7 +631,7 @@
               {#each templates.slice(0, 8) as tmpl (tmpl.id)}
                 <button
                   type="button"
-                  class="chip h-6 px-2 {command === tmpl.command ? 'chip-active' : ''}"
+                  class="btn btn-sm {command === tmpl.command ? 'btn-secondary' : 'btn-ghost'}"
                   title={tmpl.command}
                   onclick={() => (command = tmpl.command)}
                 >
@@ -770,12 +822,7 @@
                         <button
                           type="button"
                           class="btn btn-secondary btn-sm"
-                          onclick={() => {
-                            command = item.command;
-                            dryRun = item.dryRun;
-                            activeTab = "execute";
-                            void executeBatch();
-                          }}
+                          onclick={() => loadRunToExecute(item)}
                         >
                           Run again
                         </button>
@@ -838,7 +885,7 @@
                 <tr>
                   <td class="text-primary">{tmpl.name}</td>
                   <td class="max-w-0"><span class="block truncate font-mono text-xs" title={tmpl.command}>{tmpl.command}</span></td>
-                  <td><span class="badge {builtin ? 'badge-neutral' : 'badge-accent'}">{builtin ? "Built-in" : "Custom"}</span></td>
+                  <td><span class="badge badge-neutral">{builtin ? "Built-in" : "Custom"}</span></td>
                   <td>
                     <div class="row-actions">
                       {#if !builtin}

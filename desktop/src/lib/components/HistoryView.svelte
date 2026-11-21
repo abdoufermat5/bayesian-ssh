@@ -1,6 +1,6 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
-  import { Clock, Download, FileText, Play, ScrollText, Search, X } from "lucide-svelte";
+  import { Clock, Download, FileText, Play, ScrollText, Search, Terminal, X } from "lucide-svelte";
   import ReplayModal from "$lib/components/modals/ReplayModal.svelte";
   import SourceBadge, {
     loadSourceIndex,
@@ -58,9 +58,15 @@
     running: { label: "Running", badge: "badge-neutral" },
   };
 
-  let filterQuery = $state("");
+  let searchScope = $state<"sessions" | "output">("sessions");
+  let searchQuery = $state("");
   let statusFilter = $state<Filter>("all");
   let sourceFilter = $state<SourceFilterValue>("all");
+
+  const filterQuery = $derived(searchScope === "sessions" ? searchQuery : "");
+  const outputQuery = $derived(searchScope === "output" ? searchQuery : "");
+  const isOutputMode = $derived(searchScope === "output");
+  const connectionByName = $derived(new Map(appState.allConnections.map((c) => [c.name, c])));
 
   // ---- Provenance: which source (local, inventory, team) each session's host
   // comes from. History rows only carry the host name, so map it through the
@@ -97,7 +103,6 @@
     appState.handleTabChange("teams");
   }
 
-  let outputQuery = $state("");
   let outputHits = $state.raw<SessionTextHit[]>([]);
   let outputSearching = $state(false);
   let outputError = $state<string | null>(null);
@@ -340,11 +345,72 @@
     return out;
   });
 
+  type DisplayItem =
+    | { kind: "group"; key: string; label: string; count: number; isFirst: boolean }
+    | { kind: "row"; key: string; row: Row };
+
+  const displayItems = $derived.by<DisplayItem[]>(() => {
+    const out: DisplayItem[] = [];
+    for (let gi = 0; gi < groups.length; gi++) {
+      const g = groups[gi];
+      out.push({ kind: "group", key: `g:${g.key}`, label: g.label, count: g.rows.length, isFirst: gi === 0 });
+      for (const row of g.rows) {
+        out.push({ kind: "row", key: row.key, row });
+      }
+    }
+    return out;
+  });
+
+  // ---- Windowed rendering for large histories (> 100 rows) -----------
+  const VIRTUAL_THRESHOLD = 100;
+  const OVERSCAN = 15;
+  let bodyEl = $state<HTMLDivElement>();
+  let tableEl = $state<HTMLTableElement>();
+  let scrollTop = $state(0);
+  let viewportH = $state(800);
+  let rowH = $state(40);
+
+  $effect(() => {
+    const el = bodyEl;
+    if (!el) return;
+    const ro = new ResizeObserver(() => (viewportH = el.clientHeight));
+    ro.observe(el);
+    return () => ro.disconnect();
+  });
+
+  const isVirtualized = $derived(filteredRows.length > VIRTUAL_THRESHOLD);
+  const tableTop = 37;
+  const windowSize = $derived(Math.ceil(viewportH / rowH) + 2 * OVERSCAN);
+  const windowStart = $derived(
+    isVirtualized
+      ? Math.min(
+          Math.max(0, Math.floor((scrollTop - tableTop) / rowH) - OVERSCAN),
+          Math.max(0, displayItems.length - windowSize),
+        )
+      : 0,
+  );
+  const windowEnd = $derived(
+    isVirtualized ? Math.min(displayItems.length, windowStart + windowSize) : displayItems.length,
+  );
+  const visibleItems = $derived(displayItems.slice(windowStart, windowEnd));
+
+  $effect(() => {
+    if (!isVirtualized) return;
+    void visibleItems.length;
+    const first = tableEl?.querySelector<HTMLTableRowElement>("tbody tr[data-history-row]");
+    if (first && first.offsetHeight > 0 && first.offsetHeight !== rowH) rowH = first.offsetHeight;
+  });
+
+  function onBodyScroll() {
+    if (!bodyEl || !isVirtualized) return;
+    scrollTop = bodyEl.scrollTop;
+  }
+
   const hasFilters = $derived(filterQuery.trim() !== "" || statusFilter !== "all" || sourceFilter !== "all");
-  const isOutputSearchActive = $derived(outputQuery.trim() !== "");
+  const isOutputSearchActive = $derived(isOutputMode && outputQuery.trim() !== "");
 
   function clearFilters() {
-    filterQuery = "";
+    searchQuery = "";
     statusFilter = "all";
     sourceFilter = "all";
   }
@@ -408,23 +474,27 @@
     </div>
   </header>
 
-  {#if rows.length > 0 || isOutputSearchActive}
+  {#if rows.length > 0 || isOutputMode}
     <div class="view-toolbar flex-wrap gap-2">
-      <label class="search-box w-56 lg:w-64">
-        <Search size={14} class="shrink-0" />
+      <label class="search-box w-64 lg:w-80">
+        {#if isOutputMode}
+          <FileText size={14} class="shrink-0" />
+        {:else}
+          <Search size={14} class="shrink-0" />
+        {/if}
         <input
           type="text"
-          placeholder="Filter by host or status"
-          bind:value={filterQuery}
+          placeholder={isOutputMode ? "Search recorded output…" : "Filter by host or status"}
+          bind:value={searchQuery}
           spellcheck="false"
           autocomplete="off"
           aria-label="Filter history"
         />
-        {#if filterQuery}
+        {#if searchQuery}
           <button
             type="button"
             class="btn-icon btn-icon-sm -mr-1"
-            onclick={() => (filterQuery = "")}
+            onclick={() => (searchQuery = "")}
             aria-label="Clear filter"
           >
             <X size={13} />
@@ -432,29 +502,26 @@
         {/if}
       </label>
 
-      <label class="search-box w-64 lg:w-80">
-        <FileText size={14} class="shrink-0" />
-        <input
-          type="text"
-          placeholder="Search recorded output…"
-          bind:value={outputQuery}
-          spellcheck="false"
-          autocomplete="off"
-          aria-label="Search recorded output"
-        />
-        {#if outputQuery}
-          <button
-            type="button"
-            class="btn-icon btn-icon-sm -mr-1"
-            onclick={() => (outputQuery = "")}
-            aria-label="Clear recorded output search"
-          >
-            <X size={13} />
-          </button>
-        {/if}
-      </label>
+      <div class="segmented" role="group" aria-label="Search scope">
+        <button
+          type="button"
+          class="segmented-item {searchScope === 'sessions' ? 'segmented-item-active' : ''}"
+          aria-pressed={searchScope === "sessions"}
+          onclick={() => (searchScope = "sessions")}
+        >
+          Sessions
+        </button>
+        <button
+          type="button"
+          class="segmented-item {searchScope === 'output' ? 'segmented-item-active' : ''}"
+          aria-pressed={searchScope === "output"}
+          onclick={() => (searchScope = "output")}
+        >
+          Output
+        </button>
+      </div>
 
-      {#if !isOutputSearchActive}
+      {#if !isOutputMode}
         <div class="flex items-center gap-1.5" role="group" aria-label="Filter by status">
           {#each [
             { id: "all", label: "All", count: counts.all },
@@ -474,7 +541,7 @@
         </div>
       {/if}
     </div>
-    {#if !isOutputSearchActive && (hasSources || sourceFilter !== "all")}
+    {#if !isOutputMode && (hasSources || sourceFilter !== "all")}
       <div class="flex shrink-0 px-6 pb-3">
         <SourceFilter
           sources={filterSources}
@@ -486,17 +553,25 @@
     {/if}
   {/if}
 
-  <div class="view-body">
-    {#if isOutputSearchActive}
-      {#if outputSearching}
+  <div class="view-body" bind:this={bodyEl} onscroll={onBodyScroll}>
+    {#if isOutputMode}
+      {#if !outputQuery.trim()}
+        <div class="empty-state h-full">
+          <div class="empty-state-icon"><FileText size={18} /></div>
+          <div class="empty-state-title">Search recorded output</div>
+          <p class="empty-state-desc">Type a command or text above to search across recorded terminal sessions.</p>
+        </div>
+      {:else if outputSearching}
         <div class="empty-state h-full">
           <span class="spinner" aria-hidden="true"></span>
           <div class="empty-state-title">Searching recorded output…</div>
         </div>
       {:else if outputError}
-        <div class="alert alert-error">
-          <div class="alert-title">Search failed</div>
-          <p class="m-0 text-xs">{outputError}</p>
+        <div class="alert alert-error" role="alert">
+          <div class="alert-body">
+            <div class="alert-title">Search failed</div>
+            <p class="m-0 text-xs select-text">{outputError}</p>
+          </div>
         </div>
       {:else if outputHits.length === 0}
         <div class="empty-state h-full">
@@ -504,7 +579,7 @@
           <div class="empty-state-title">No recorded output matches</div>
           <p class="empty-state-desc">No recorded session contained "{outputQuery.trim()}".</p>
           <div class="empty-state-action">
-            <button type="button" class="btn btn-secondary" onclick={() => (outputQuery = "")}>
+            <button type="button" class="btn btn-secondary" onclick={() => (searchQuery = "")}>
               Clear search
             </button>
           </div>
@@ -537,7 +612,7 @@
                   <td class="font-mono text-xs text-muted">
                     {hit.session_id.slice(0, 8)}
                   </td>
-                  <td class="font-mono text-xs text-secondary">
+                  <td class="font-mono text-xs text-secondary select-text">
                     <div class="truncate">
                       {#each parseSnippetParts(hit.snippet) as part, idx (idx)}
                         {#if part.highlight}
@@ -581,7 +656,7 @@
       </div>
     {:else}
       <div class="table-wrap">
-        <table class="data-table history-table table-fixed">
+        <table class="data-table history-table table-fixed" bind:this={tableEl}>
           <thead>
             <tr>
               <th>Host</th>
@@ -590,19 +665,27 @@
               <th class="w-[88px] text-right">Duration</th>
               <th>Status</th>
               <th class="w-[80px] text-right">Exit code</th>
-              <th class="w-[104px] text-right">Recording</th>
+              <th class="w-[132px] text-right">Actions</th>
             </tr>
           </thead>
-          {#each groups as group, gi (group.key)}
-            <tbody>
-              <tr class="hover:bg-transparent {gi > 0 ? 'border-t border-border' : ''}">
-                <td colspan={hasSources ? 7 : 6} class="h-8 bg-surface/60">
-                  <span class="section-label">{group.label}</span>
-                  <span class="ml-1.5 text-2xs tabular-nums text-muted">{group.rows.length}</span>
-                </td>
+          <tbody>
+            {#if windowStart > 0}
+              <tr aria-hidden="true" style="height: {windowStart * rowH}px">
+                <td colspan={hasSources ? 7 : 6} class="spacer"></td>
               </tr>
-              {#each group.rows as row (row.key)}
+            {/if}
+            {#each visibleItems as item (item.key)}
+              {#if item.kind === "group"}
+                <tr class="hover:bg-transparent {!item.isFirst ? 'border-t border-border' : ''}">
+                  <td colspan={hasSources ? 7 : 6} class="h-8 bg-surface/60">
+                    <span class="section-label">{item.label}</span>
+                    <span class="ml-1.5 text-2xs tabular-nums text-muted">{item.count}</span>
+                  </td>
+                </tr>
+              {:else}
+                {@const row = item.row}
                 {@const outcome = OUTCOME[row.outcome]}
+                {@const conn = connectionByName.get(row.name)}
                 <tr data-history-row>
                   <td>
                     <span class="block truncate font-medium text-primary" title={row.name}>{row.name}</span>
@@ -650,7 +733,7 @@
                         {outcome.label}
                       </span>
                       {#if row.error}
-                        <span class="truncate text-xs text-muted" title={row.error}>{row.error}</span>
+                        <span class="truncate text-xs text-muted select-text" title={row.error}>{row.error}</span>
                       {/if}
                     </div>
                   </td>
@@ -662,24 +745,43 @@
                     {row.exitCode ?? "—"}
                   </td>
                   <td class="text-right">
-                    {#if row.recorded && row.sessionId}
-                      <button
-                        type="button"
-                        class="btn btn-ghost btn-sm"
-                        onclick={() => openReplay(row.sessionId, row.name, row.absolute)}
-                        title="Replay recorded session ({row.sessionId.slice(0, 8)})"
-                      >
-                        <Play size={13} />
-                        Replay
-                      </button>
-                    {:else}
-                      <span class="text-xs text-muted">—</span>
-                    {/if}
+                    <div class="inline-flex items-center justify-end gap-1">
+                      {#if row.recorded && row.sessionId}
+                        <button
+                          type="button"
+                          class="btn btn-ghost btn-sm"
+                          onclick={() => openReplay(row.sessionId, row.name, row.absolute)}
+                          title="Replay recorded session ({row.sessionId.slice(0, 8)})"
+                        >
+                          <Play size={13} />
+                          Replay
+                        </button>
+                      {/if}
+                      {#if conn}
+                        <button
+                          type="button"
+                          class="btn-icon btn-icon-sm"
+                          onclick={() => void appState.handleConnect(conn)}
+                          aria-label="Connect again to {row.name}"
+                          title="Connect again"
+                        >
+                          <Terminal size={13} />
+                        </button>
+                      {/if}
+                      {#if !(row.recorded && row.sessionId) && !conn}
+                        <span class="text-xs text-muted">—</span>
+                      {/if}
+                    </div>
                   </td>
                 </tr>
-              {/each}
-            </tbody>
-          {/each}
+              {/if}
+            {/each}
+            {#if windowEnd < displayItems.length}
+              <tr aria-hidden="true" style="height: {(displayItems.length - windowEnd) * rowH}px">
+                <td colspan={hasSources ? 7 : 6} class="spacer"></td>
+              </tr>
+            {/if}
+          </tbody>
         </table>
       </div>
     {/if}
@@ -700,5 +802,10 @@
     height: var(--row-height, 40px);
     padding-top: 0;
     padding-bottom: 0;
+  }
+  .history-table :global(td.spacer) {
+    padding: 0;
+    border: 0;
+    height: auto;
   }
 </style>

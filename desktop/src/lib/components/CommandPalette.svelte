@@ -14,7 +14,6 @@
     TerminalSquare,
     Upload,
     UserPlus,
-    Users,
     Wrench,
     X,
     Copy,
@@ -32,7 +31,7 @@
     TeamsStatus,
   } from "$lib/types";
   import { predictionReason } from "$lib/utils/prediction";
-  import { AI_REPORTS_DIGIT, GLOBAL_SHORTCUTS, HOST_SHORTCUTS, MOD, VIEW_ORDER, viewDigit, type Shortcut } from "$lib/shortcuts";
+  import { GLOBAL_SHORTCUTS, HOST_SHORTCUTS, IS_MAC, MOD, VIEW_ORDER, viewDigit, type Shortcut } from "$lib/shortcuts";
   import { AI_REPORTS_META, VIEW_META, viewEnabled } from "$lib/viewMeta";
   import { showAiReports } from "$lib/stores/ai.svelte";
   import { SETTINGS_SECTIONS, requestSettingsSection } from "$lib/stores/settingsNav.svelte";
@@ -114,6 +113,7 @@
 
   let query = $state("");
   let selectedIndex = $state(0);
+  let dialogElement = $state<HTMLElement | null>(null);
   let inputElement = $state<HTMLInputElement | null>(null);
   let listElement = $state<HTMLElement | null>(null);
   let suggestions = $state.raw<Prediction[]>([]);
@@ -277,7 +277,6 @@
         keywords: "ai report reports agent runs audit history download",
         category: "Navigation",
         icon: AI_REPORTS_META.icon,
-        keys: [AI_REPORTS_DIGIT],
         action: () => run(() => (showAiReports(), onSelectTab("ai"))),
       },
     );
@@ -393,46 +392,87 @@
     return connections.find((c) => item.id === `host-${c.id}` || item.id === `suggested-${c.id}`) ?? null;
   });
 
+  const ALT = IS_MAC ? "⌥" : "Alt";
+  const CONNECT_CLI = shortcut(HOST_SHORTCUTS, "host-connect")?.cli ?? "bssh connect <host>";
+
   interface HostVerb {
     id: string;
     label: string;
+    title: string;
     icon: typeof Server;
     keys: string[];
     cli?: string;
     run: (conn: Connection) => void;
   }
 
-  const HOST_VERBS: HostVerb[] = ([
-    // Keys and CLI come from the registry below.
-    { id: "host-connect", label: "Connect", icon: Terminal, run: (c) => onConnectHost(c) },
-    { id: "host-connect-tab", label: "Connect in new tab", icon: TerminalSquare, run: (c) => onConnectHost(c, { newTab: true }) },
-    { id: "host-files", label: "Browse files", icon: FolderOpen, run: (c) => {
+  const HOST_VERBS: HostVerb[] = [
+    {
+      id: "host-connect-tab",
+      label: "New tab",
+      title: "Connect in new tab",
+      icon: TerminalSquare,
+      keys: ["Shift", "↵"],
+      run: (c) => onConnectHost(c, { newTab: true }),
+    },
+    {
+      id: "host-files",
+      label: "Browse files",
+      title: "Browse files",
+      icon: FolderOpen,
+      keys: [MOD, "↵"],
+      run: (c) => {
         requestFilesHost(c.id);
         onSelectTab("sftp");
-      } },
+      },
+    },
     {
       id: "host-copy",
-      label: "Copy ssh command",
+      label: "Copy",
+      title: "Copy ssh command",
       icon: Copy,
+      keys: [ALT, "C"],
       run: (c) => onCopyCommand(toSshCommand(c), c.id),
     },
-    { id: "host-edit", label: "Edit", icon: Pencil, run: (c) => onEditHost(c) },
-  ] as Omit<HostVerb, "keys" | "cli">[]).map((v) => {
-    const sc = shortcut(HOST_SHORTCUTS, v.id);
-    return { ...v, keys: sc?.combos[0] ?? [], cli: sc?.cli };
-  });
+    {
+      id: "host-edit",
+      label: "Edit",
+      title: "Edit host",
+      icon: Pencil,
+      keys: [ALT, "E"],
+      cli: shortcut(HOST_SHORTCUTS, "host-edit")?.cli,
+      run: (c) => onEditHost(c),
+    },
+  ];
 
   const visibleVerbs = $derived(HOST_VERBS.filter((v) => v.id !== "host-files" || viewEnabled("sftp", settings)));
   let hoveredVerb = $state<string | null>(null);
   const verbCli = $derived.by(() => {
-    const verb = visibleVerbs.find((v) => v.id === hoveredVerb) ?? visibleVerbs[0];
-    return verb?.cli && highlightedHost ? verb.cli.replace("<host>", highlightedHost.name) : null;
+    if (!highlightedHost) return null;
+    const verb = hoveredVerb ? visibleVerbs.find((v) => v.id === hoveredVerb) : null;
+    const template = verb?.cli ?? CONNECT_CLI;
+    return template.replace("<host>", highlightedHost.name);
   });
 
   function runVerb(verb: HostVerb) {
     const host = highlightedHost;
     if (!host) return;
     run(() => verb.run(host));
+  }
+
+  const FOCUSABLE_SELECTOR = [
+    "a[href]",
+    'button:not([disabled]):not([tabindex="-1"])',
+    "input:not([disabled])",
+    "select:not([disabled])",
+    "textarea:not([disabled])",
+    '[tabindex]:not([tabindex="-1"])',
+  ].join(", ");
+
+  function getFocusableElements(): HTMLElement[] {
+    if (!dialogElement) return [];
+    return Array.from(dialogElement.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
+      (el) => el.offsetParent !== null || el === document.activeElement,
+    );
   }
 
   let previousFocus: HTMLElement | null = null;
@@ -442,6 +482,7 @@
     previousFocus = document.activeElement as HTMLElement | null;
     query = "";
     selectedIndex = 0;
+    hoveredVerb = null;
     let cancelled = false;
     invoke<Prediction[]>("predict_connections", { limit: 3 })
       .then((list) => {
@@ -473,11 +514,40 @@
       .catch(() => {
         if (!cancelled) teamsInfo = null;
       });
+
+    function handleWindowKeydown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const focusables = getFocusableElements();
+      if (focusables.length === 0) {
+        e.preventDefault();
+        dialogElement?.focus();
+        return;
+      }
+      const active = document.activeElement as HTMLElement | null;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && (active === first || !dialogElement?.contains(active))) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (active === last || !dialogElement?.contains(active))) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    window.addEventListener("keydown", handleWindowKeydown);
     const raf = requestAnimationFrame(() => inputElement?.focus());
     return () => {
       cancelled = true;
+      window.removeEventListener("keydown", handleWindowKeydown);
       cancelAnimationFrame(raf);
-      previousFocus?.focus();
+      if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
     };
   });
 
@@ -501,6 +571,28 @@
     } else if (e.key === "ArrowUp" && count > 0) {
       e.preventDefault();
       void select((selectedIndex - 1 + count) % count);
+    } else if (
+      highlightedHost &&
+      e.altKey &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.shiftKey &&
+      (e.code === "KeyC" || e.key.toLowerCase() === "c")
+    ) {
+      e.preventDefault();
+      const verb = HOST_VERBS.find((v) => v.id === "host-copy");
+      if (verb) runVerb(verb);
+    } else if (
+      highlightedHost &&
+      e.altKey &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.shiftKey &&
+      (e.code === "KeyE" || e.key.toLowerCase() === "e")
+    ) {
+      e.preventDefault();
+      const verb = HOST_VERBS.find((v) => v.id === "host-edit");
+      if (verb) runVerb(verb);
     } else if (e.key === "Enter") {
       e.preventDefault();
       const combo = (id: string) => {
@@ -528,7 +620,8 @@
     }}
   >
     <div
-      class="flex max-h-[min(560px,72vh)] w-full max-w-[640px] flex-col overflow-hidden rounded-xl border border-border-hover bg-surface-raised shadow-xl"
+      bind:this={dialogElement}
+      class="flex max-h-[min(560px,72vh)] w-full max-w-[640px] flex-col overflow-hidden rounded-xl border border-border-hover bg-surface-raised shadow-xl outline-none"
       style="animation: popover-enter 140ms var(--ease-out)"
       role="dialog"
       aria-modal="true"
@@ -626,38 +719,45 @@
         {/each}
       </div>
 
-      {#if highlightedHost}
-        <div class="shrink-0 border-t border-border px-3 py-2" role="group" aria-label="Actions for {highlightedHost.name}">
-          <div class="flex flex-wrap items-center gap-1.5">
+      <div class="flex h-10 shrink-0 items-center gap-3 border-t border-border px-3 text-xs text-muted">
+        {#if highlightedHost}
+          <div
+            class="flex min-w-0 flex-1 items-center gap-1 overflow-hidden"
+            role="group"
+            aria-label="Actions for {highlightedHost.name}"
+          >
             {#each visibleVerbs as verb (verb.id)}
               <button
                 type="button"
-                class="btn btn-secondary btn-sm gap-1.5"
+                class="inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded px-1.5 text-xs text-secondary transition-colors duration-fast hover:bg-hover-on-floating hover:text-primary"
+                title={verb.title}
                 onclick={() => runVerb(verb)}
                 onmouseenter={() => (hoveredVerb = verb.id)}
                 onfocus={() => (hoveredVerb = verb.id)}
                 onmouseleave={() => (hoveredVerb = null)}
                 onblur={() => (hoveredVerb = null)}
               >
-                <verb.icon size={13} />
-                {verb.label}
-                {#each verb.keys as key (key)}<kbd class="kbd">{key}</kbd>{/each}
+                <verb.icon size={12} class="shrink-0" />
+                <span>{verb.label}</span>
+                {#if verb.keys.length > 0}
+                  <span class="flex items-center gap-0.5">
+                    {#each verb.keys as key (key)}<kbd class="kbd">{key}</kbd>{/each}
+                  </span>
+                {/if}
               </button>
             {/each}
+            {#if verbCli}
+              <span class="ml-auto min-w-0 truncate pl-2 font-mono text-2xs text-muted" title={verbCli}>{verbCli}</span>
+            {/if}
           </div>
-          {#if verbCli}
-            <p class="m-0 mt-1.5 truncate font-mono text-xs text-muted">{verbCli}</p>
-          {/if}
-        </div>
-      {/if}
-
-      <div class="flex h-9 shrink-0 items-center gap-4 border-t border-border px-3 text-xs text-muted">
-        <span class="flex items-center gap-1.5">
-          <kbd class="kbd">↑</kbd><kbd class="kbd">↓</kbd> Navigate
-        </span>
-        <span class="flex items-center gap-1.5"><kbd class="kbd">↵</kbd> Open</span>
-        <span class="flex items-center gap-1.5"><kbd class="kbd">esc</kbd> Close</span>
-        <span class="ml-auto tabular-nums">{flatItems.length} {flatItems.length === 1 ? "result" : "results"}</span>
+        {:else}
+          <span class="flex items-center gap-1.5">
+            <kbd class="kbd">↑</kbd><kbd class="kbd">↓</kbd> Navigate
+          </span>
+          <span class="flex items-center gap-1.5"><kbd class="kbd">↵</kbd> Open</span>
+          <span class="flex items-center gap-1.5"><kbd class="kbd">esc</kbd> Close</span>
+          <span class="ml-auto tabular-nums">{flatItems.length} {flatItems.length === 1 ? "result" : "results"}</span>
+        {/if}
       </div>
     </div>
   </div>

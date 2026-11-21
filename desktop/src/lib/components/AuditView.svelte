@@ -66,6 +66,8 @@
     runAudit();
   });
 
+  const PERMISSION_RE = /\b(chmod|permission|permissions|mode\s+[0-7]{3,4}|world[- ]?readable|group[- ]?readable|too\s+open)\b/i;
+
   // Most severe first; stable within a severity.
   const sortedFindings = $derived(
     report ? [...report.findings].sort((a, b) => SEVERITY[a.severity].rank - SEVERITY[b.severity].rank) : [],
@@ -73,11 +75,16 @@
   const filteredFindings = $derived(
     activeFilter === "all" ? sortedFindings : sortedFindings.filter((f) => f.severity === activeFilter),
   );
-  const filters = $derived<{ id: Filter; label: string; count: number }[]>([
-    { id: "all", label: "All", count: report?.findings.length ?? 0 },
-    { id: "critical", label: "Critical", count: report?.total_critical ?? 0 },
-    { id: "warning", label: "Warnings", count: report?.total_warning ?? 0 },
-    { id: "info", label: "Info", count: report?.total_info ?? 0 },
+  const hasPermissionFindings = $derived(
+    (report?.findings ?? []).some(
+      (f) => PERMISSION_RE.test(f.remediation) || PERMISSION_RE.test(f.title) || PERMISSION_RE.test(f.description),
+    ),
+  );
+  const filters = $derived<{ id: Filter; label: string; count: number; dot?: string; color: string }[]>([
+    { id: "all", label: "All", count: report?.findings.length ?? 0, color: "text-primary" },
+    { id: "critical", label: "Critical", count: report?.total_critical ?? 0, dot: "status-dot-error", color: "text-error" },
+    { id: "warning", label: "Warnings", count: report?.total_warning ?? 0, dot: "status-dot-warning", color: "text-warning" },
+    { id: "info", label: "Info", count: report?.total_info ?? 0, dot: "status-dot-offline", color: "text-primary" },
   ]);
 
   function gradeColor(grade: string): string {
@@ -103,8 +110,10 @@
         type="button"
         class="btn btn-secondary"
         onclick={fixPermissions}
-        disabled={loading || fixing}
-        title="Set secure modes on ~/.ssh and its key files"
+        disabled={loading || fixing || !report || !hasPermissionFindings}
+        title={!report || hasPermissionFindings
+          ? "Set secure modes on ~/.ssh and its key files"
+          : "No file permission issues found"}
       >
         {#if fixing}<span class="spinner size-3"></span>{:else}<Wrench size={14} />{/if}
         Fix permissions
@@ -116,33 +125,11 @@
     </div>
   </header>
 
-  {#if report}
-    <div class="view-toolbar">
-      <div class="segmented" role="group" aria-label="Filter by severity">
-        {#each filters as f (f.id)}
-          <button
-            type="button"
-            class="segmented-item {activeFilter === f.id ? 'segmented-item-active' : ''}"
-            onclick={() => (activeFilter = f.id)}
-            aria-pressed={activeFilter === f.id}
-          >
-            {f.label}
-            <span class="tabular-nums text-muted">{f.count}</span>
-          </button>
-        {/each}
-      </div>
-    </div>
-  {:else if loading}
-    <div class="view-toolbar" aria-hidden="true">
-      <div class="skeleton h-8 w-64 rounded-md"></div>
-    </div>
-  {/if}
-
   <div class="view-body">
     {#if !report && loading}
-      <div class="flex flex-col gap-3" aria-busy="true" aria-label="Running security check">
-        <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {#each [0, 1, 2, 3] as i (i)}
+      <div class="flex max-w-4xl flex-col gap-3" aria-busy="true" aria-label="Running security check">
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-[minmax(170px,1.4fr)_repeat(4,minmax(0,1fr))]">
+          {#each [0, 1, 2, 3, 4] as i (i)}
             <div class="stat">
               <div class="skeleton h-3 w-16"></div>
               <div class="skeleton mt-1 h-6 w-12"></div>
@@ -173,8 +160,8 @@
         </div>
       </div>
     {:else}
-      <div class="flex flex-col gap-3">
-        <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div class="flex max-w-4xl flex-col gap-3">
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-[minmax(170px,1.4fr)_repeat(4,minmax(0,1fr))]">
           <div class="stat">
             <div class="flex items-center justify-between gap-2">
               <span class="stat-label">Score</span>
@@ -186,19 +173,27 @@
               {report.score}<span class="text-sm font-normal text-muted">/100</span>
             </span>
           </div>
-          {#each [
-            { label: "Critical", value: report.total_critical, dot: "status-dot-error", color: "text-error" },
-            { label: "Warnings", value: report.total_warning, dot: "status-dot-warning", color: "text-warning" },
-            { label: "Info", value: report.total_info, dot: "status-dot-offline", color: "text-primary" },
-          ] as s (s.label)}
-            <div class="stat">
-              <span class="stat-label flex items-center gap-1.5">
-                <span class="status-dot status-dot-sm {s.value > 0 ? s.dot : 'status-dot-offline'}"></span>
-                {s.label}
-              </span>
-              <span class="stat-value {s.value > 0 ? s.color : ''}">{s.value}</span>
-            </div>
-          {/each}
+          <div class="contents" role="group" aria-label="Filter by severity">
+            {#each filters as f (f.id)}
+              {@const active = activeFilter === f.id}
+              <button
+                type="button"
+                class="stat cursor-pointer text-left transition-colors duration-fast hover:border-border-hover hover:bg-surface-hover {active
+                  ? 'border-accent bg-accent/8 shadow-[inset_2px_0_0_var(--color-accent)]'
+                  : ''}"
+                onclick={() => (activeFilter = f.id)}
+                aria-pressed={active}
+              >
+                <span class="stat-label flex items-center gap-1.5">
+                  {#if f.dot}
+                    <span class="status-dot status-dot-sm {f.count > 0 ? f.dot : 'status-dot-offline'}"></span>
+                  {/if}
+                  {f.label}
+                </span>
+                <span class="stat-value {f.count > 0 ? f.color : ''}">{f.count}</span>
+              </button>
+            {/each}
+          </div>
         </div>
 
         {#if filteredFindings.length === 0}

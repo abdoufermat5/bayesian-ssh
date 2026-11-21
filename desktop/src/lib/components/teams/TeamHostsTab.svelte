@@ -1,7 +1,9 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
-  import { Share2, Trash2 } from "lucide-svelte";
+  import { Share2, Terminal, Trash2 } from "lucide-svelte";
+  import CustomSelect from "$lib/components/ui/CustomSelect.svelte";
   import type { Connection, TeamSummary, TeamSyncReport } from "$lib/types";
+  import { appState } from "$lib/stores/appState.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
   import UnshareModal from "./UnshareModal.svelte";
 
@@ -22,6 +24,17 @@
   let busy = $state(false);
   let error = $state<string | null>(null);
   let unsharing = $state.raw<Connection | null>(null);
+
+  const localHostOptions = $derived(
+    localConnections.map((c) => ({
+      value: c.name,
+      label: `${c.name} (${c.user}@${c.host})`,
+    })),
+  );
+
+  function resolveConnection(c: Connection): Connection {
+    return appState.allConnections.find((conn) => conn.id === c.id || conn.name === c.name) ?? c;
+  }
 
   async function share() {
     if (!choice || busy) return;
@@ -57,15 +70,26 @@
                 <td class="text-primary">{c.name}</td>
                 <td class="font-mono text-xs">{c.user}@{c.host}:{c.port}</td>
                 <td class="text-right">
-                  <button
-                    type="button"
-                    class="btn btn-ghost btn-sm"
-                    onclick={() => (unsharing = c)}
-                    aria-label="Unshare {c.name}"
-                  >
-                    <Trash2 size={14} />
-                    Unshare
-                  </button>
+                  <div class="inline-flex items-center justify-end gap-1">
+                    <button
+                      type="button"
+                      class="btn btn-secondary btn-sm"
+                      onclick={() => void appState.handleConnect(resolveConnection(c))}
+                      aria-label="Connect to {c.name}"
+                    >
+                      <Terminal size={14} />
+                      Connect
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-sm"
+                      onclick={() => (unsharing = c)}
+                      aria-label="Unshare {c.name}"
+                    >
+                      <Trash2 size={14} />
+                      Unshare
+                    </button>
+                  </div>
                 </td>
               </tr>
             {/each}
@@ -90,12 +114,14 @@
     >
       <div class="field">
         <label class="field-label" for="team-share-choice">Your host</label>
-        <select id="team-share-choice" class="input w-72" bind:value={choice}>
-          <option value="">Choose a host…</option>
-          {#each localConnections as c (c.id)}
-            <option value={c.name}>{c.name} ({c.user}@{c.host})</option>
-          {/each}
-        </select>
+        <CustomSelect
+          id="team-share-choice"
+          class="w-72"
+          options={localHostOptions}
+          bind:value={choice}
+          placeholder="Choose a host…"
+          disabled={localHostOptions.length === 0}
+        />
       </div>
       <button type="submit" class="btn btn-secondary" disabled={busy || !choice}>
         {#if busy}<span class="spinner size-3"></span>{/if}

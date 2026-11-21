@@ -79,9 +79,11 @@
   let dragging = $state(false);
 
   // ─── Targets ─────────────────────────────────────────────────────────────────
+  const MAX_VISIBLE_TAGS = 5;
   const selectedIds = new SvelteSet<string>();
   let hostFilter = $state("");
   let tagFilter = $state<string | null>(null);
+  let showAllTags = $state(false);
   let remoteDir = $state("/");
 
   // ─── Run state ───────────────────────────────────────────────────────────────
@@ -124,6 +126,7 @@
       initialized = true;
     } else if (!show) {
       initialized = false;
+      showAllTags = false;
     }
   });
 
@@ -194,6 +197,16 @@
     for (const c of connections) for (const t of c.tags) set.add(t);
     return Array.from(set).sort();
   });
+
+  const visibleTags = $derived.by(() => {
+    if (showAllTags || allTags.length <= MAX_VISIBLE_TAGS) return allTags;
+    const top = allTags.slice(0, MAX_VISIBLE_TAGS);
+    if (tagFilter && !top.includes(tagFilter)) {
+      return [...top.slice(0, MAX_VISIBLE_TAGS - 1), tagFilter];
+    }
+    return top;
+  });
+  const hiddenTagCount = $derived(Math.max(0, allTags.length - visibleTags.length));
 
   const filteredConnections = $derived.by(() => {
     const q = hostFilter.trim().toLowerCase();
@@ -648,6 +661,8 @@
     open={show}
     title="Upload files to hosts"
     {onClose}
+    closeOnEscape={!running}
+    closeOnBackdrop={!running}
     width={isFullscreen ? "full" : "lg"}
     panelStyle={isFullscreen ? "" : "max-width: 1120px; height: min(780px, calc(100dvh - 48px));"}
     overlayStyle={isFullscreen ? "padding: 0" : ""}
@@ -669,7 +684,14 @@
         >
           {#if isFullscreen}<Minimize2 size={14} />{:else}<Maximize2 size={14} />{/if}
         </button>
-        <button type="button" class="modal-close mr-0 mt-0" aria-label="Close" onclick={onClose}>
+        <button
+          type="button"
+          class="modal-close mr-0 mt-0"
+          aria-label="Close"
+          title={running ? "Cancel the active upload before closing" : "Close"}
+          disabled={running}
+          onclick={onClose}
+        >
           <X size={16} />
         </button>
       </div>
@@ -691,7 +713,7 @@
           </label>
           {#if allTags.length > 0}
             <div class="flex flex-wrap gap-1">
-              {#each allTags as tag (tag)}
+              {#each visibleTags as tag (tag)}
                 <button
                   type="button"
                   class="chip h-6 px-2 {tagFilter === tag ? 'chip-active' : ''}"
@@ -701,6 +723,23 @@
                   {tag}
                 </button>
               {/each}
+              {#if hiddenTagCount > 0}
+                <button
+                  type="button"
+                  class="chip h-6 px-2 text-muted"
+                  onclick={() => (showAllTags = true)}
+                >
+                  +{hiddenTagCount}
+                </button>
+              {:else if showAllTags && allTags.length > MAX_VISIBLE_TAGS}
+                <button
+                  type="button"
+                  class="chip h-6 px-2 text-muted"
+                  onclick={() => (showAllTags = false)}
+                >
+                  Less
+                </button>
+              {/if}
             </div>
           {/if}
           <div class="-mx-1 flex items-center gap-0.5">
@@ -730,7 +769,7 @@
           {#each filteredConnections as conn (conn.id)}
             <label
               class="flex h-11 items-center gap-2.5 rounded-md px-2 transition-colors duration-fast {running
-                ? 'opacity-60'
+                ? 'cursor-not-allowed text-disabled-fg'
                 : 'cursor-pointer hover:bg-surface-hover'}"
             >
               <input
@@ -741,8 +780,8 @@
                 onchange={() => toggleSelect(conn.id)}
               />
               <span class="flex min-w-0 flex-1 flex-col">
-                <span class="truncate text-sm text-primary">{conn.name}</span>
-                <span class="truncate font-mono text-xs text-muted">{conn.user}@{conn.host}</span>
+                <span class="truncate text-sm {running ? 'text-disabled-fg' : 'text-primary'}">{conn.name}</span>
+                <span class="truncate font-mono text-xs {running ? 'text-disabled-fg' : 'text-muted'}">{conn.user}@{conn.host}</span>
               </span>
               {#if prodIds.has(conn.id)}
                 <span class="badge badge-warning">prod</span>
@@ -779,7 +818,7 @@
                   Drag files here, or use the buttons below.
                 </p>
               {:else}
-                <ul class="m-0 flex flex-col gap-1 p-0">
+                <ul class="m-0 flex max-h-48 flex-col gap-1 overflow-y-auto p-0">
                   {#each sources as path (path)}
                     <li class="flex items-center gap-2">
                       <File size={14} class="shrink-0 text-muted" />
@@ -986,7 +1025,7 @@
             </div>
           {:else}
             <div class="empty-state py-12">
-              <Upload size={22} class="mb-3 text-muted" aria-hidden="true" />
+              <div class="empty-state-icon"><Upload size={18} aria-hidden="true" /></div>
               <div class="empty-state-title">No upload yet</div>
               <div class="empty-state-desc">
                 Pick the files to send, choose the destination, then select the hosts.

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { ChevronLeft, ChevronRight, X } from "lucide-svelte";
+  import CustomSelect from "$lib/components/ui/CustomSelect.svelte";
   import ModalShell from "$lib/components/ui/ModalShell.svelte";
   import RiskTags from "$lib/components/ai/RiskTags.svelte";
   import StepList from "$lib/components/ai/StepList.svelte";
@@ -26,6 +27,7 @@
   } from "$lib/utils/ai";
 
   const GRANT_CHOICES = [5, 15, 30, 60];
+  const GRANT_OPTIONS = GRANT_CHOICES.map((m) => ({ value: String(m), label: `${m} min` }));
 
   const open = $derived(approvalDialogOpen());
   const current = $derived(currentApproval());
@@ -262,26 +264,32 @@
       {/if}
     </div>
 
-    <div class="modal-footer">
+    <div class="modal-footer flex-wrap gap-2">
       <button type="button" class="btn btn-ghost mr-auto" onclick={closeApproval}>Decide later</button>
       <button type="button" class="btn btn-secondary" disabled={busy || expired} onclick={() => decide(false)} data-autofocus>
         Deny
       </button>
       {#if blocker === null && request.subject.kind === "call"}
-        <select class="input w-auto" bind:value={grantMinutes} aria-label="Grant length" disabled={busy || expired}>
-          {#each GRANT_CHOICES as m (m)}
-            <option value={String(m)}>{m} min</option>
-          {/each}
-        </select>
-        <button
-          type="button"
-          class="btn btn-secondary"
-          disabled={busy || expired}
-          onclick={() => decide(true, true)}
-          title="Approve, and let this run repeat this kind of call on this host without asking, for the chosen time"
-        >
-          Approve and allow
-        </button>
+        <div class="flex items-center gap-2">
+          <label class="sr-only" for="approval-grant-length">Grant length</label>
+          <CustomSelect
+            id="approval-grant-length"
+            ariaLabel="Grant length"
+            class="w-28"
+            options={GRANT_OPTIONS}
+            bind:value={grantMinutes}
+            disabled={busy || expired}
+          />
+          <button
+            type="button"
+            class="btn btn-secondary"
+            disabled={busy || expired}
+            onclick={() => decide(true, true)}
+            title="Approve, and let this run repeat this kind of call on this host without asking, for the chosen time"
+          >
+            Approve and allow
+          </button>
+        </div>
       {:else if blocker && request.subject.kind === "call"}
         <span class="type-meta mr-1" title={blocker}>No grant offered</span>
       {/if}

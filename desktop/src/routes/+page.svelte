@@ -235,8 +235,9 @@
 
 <!-- The Console's home surface: the host list. Rendered on its own when no
      session exists, or inside TerminalsView as the pinned "Hosts" tab. -->
-{#snippet connectionsView()}
+{#snippet connectionsView(compact = false)}
   <ConnectionsView
+    {compact}
     connections={appState.connections}
     selectedHostIndex={appState.selectedHostIndex}
     copiedId={appState.copiedId}
@@ -256,6 +257,10 @@
     onOpenBatchExec={() => (showBatchExecModal = true)}
     onOpenUpload={() => openUploadModal([])}
   />
+{/snippet}
+
+{#snippet terminalHome()}
+  {@render connectionsView(true)}
 {/snippet}
 
 {#if appState.isInitializing}
@@ -353,11 +358,11 @@
             onCloseAll={appState.requestCloseAllSessions}
             onManageSessions={appState.openSessionManager}
             onConnect={(conn, options) => appState.handleConnect(conn, { newTab: true, ...options })}
-            home={connectionsView}
+            home={terminalHome}
           />
         </div>
       {:else if appState.activeTab === "connections"}
-        {@render connectionsView()}
+        {@render connectionsView(false)}
       {/if}
     </main>
   </div>

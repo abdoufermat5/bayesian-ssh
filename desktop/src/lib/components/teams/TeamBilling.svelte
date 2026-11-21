@@ -229,13 +229,55 @@
               <span class="field-label">Seats</span>
               <input class="input w-24" type="number" min={minSeats} max="1000" bind:value={seats} />
             </label>
-            <fieldset class="m-0 flex gap-3 border-0 p-0">
+            <fieldset class="m-0 flex gap-2 border-0 p-0">
               <legend class="field-label mb-1">Billing</legend>
-              <label class="flex items-center gap-1.5 type-body">
-                <input type="radio" name="billing-interval" checked={!yearly} onchange={() => (yearly = false)} /> Monthly
+              <label
+                class="relative flex cursor-pointer items-center gap-2 rounded-md border px-3 py-1.5 text-sm transition-colors duration-fast {!yearly
+                  ? 'border-accent bg-accent/8 text-primary'
+                  : 'border-border bg-surface-input text-secondary hover:border-border-hover'}"
+              >
+                <input
+                  type="radio"
+                  class="peer absolute inset-0 m-0 cursor-pointer opacity-0"
+                  name="billing-interval"
+                  checked={!yearly}
+                  onchange={() => (yearly = false)}
+                />
+                <span
+                  class="flex size-3.5 shrink-0 items-center justify-center rounded-full border transition-colors duration-fast peer-focus-visible:ring-2 peer-focus-visible:ring-accent/40 {!yearly
+                    ? 'border-accent bg-accent/15'
+                    : 'border-border-strong bg-panel'}"
+                  aria-hidden="true"
+                >
+                  {#if !yearly}
+                    <span class="size-1.5 rounded-full bg-accent"></span>
+                  {/if}
+                </span>
+                Monthly
               </label>
-              <label class="flex items-center gap-1.5 type-body">
-                <input type="radio" name="billing-interval" checked={yearly} onchange={() => (yearly = true)} /> Yearly
+              <label
+                class="relative flex cursor-pointer items-center gap-2 rounded-md border px-3 py-1.5 text-sm transition-colors duration-fast {yearly
+                  ? 'border-accent bg-accent/8 text-primary'
+                  : 'border-border bg-surface-input text-secondary hover:border-border-hover'}"
+              >
+                <input
+                  type="radio"
+                  class="peer absolute inset-0 m-0 cursor-pointer opacity-0"
+                  name="billing-interval"
+                  checked={yearly}
+                  onchange={() => (yearly = true)}
+                />
+                <span
+                  class="flex size-3.5 shrink-0 items-center justify-center rounded-full border transition-colors duration-fast peer-focus-visible:ring-2 peer-focus-visible:ring-accent/40 {yearly
+                    ? 'border-accent bg-accent/15'
+                    : 'border-border-strong bg-panel'}"
+                  aria-hidden="true"
+                >
+                  {#if yearly}
+                    <span class="size-1.5 rounded-full bg-accent"></span>
+                  {/if}
+                </span>
+                Yearly
               </label>
             </fieldset>
           </div>

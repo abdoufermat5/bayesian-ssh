@@ -111,7 +111,7 @@
       </button>
       <h2 class="m-0 truncate text-lg font-semibold text-primary">{team.name}</h2>
       {#if role}
-        <span class="badge {isAdmin ? 'badge-accent' : 'badge-neutral'}">{isAdmin ? "Admin" : "Member"}</span>
+        <span class="badge badge-neutral">{isAdmin ? "Admin" : "Member"}</span>
       {/if}
       <span class="type-meta">{plural(team.hosts, "host")}</span>
       <span class="type-meta" title={team.last_sync_at ? formatUtc(team.last_sync_at, true) : undefined}>

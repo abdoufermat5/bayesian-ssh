@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { Download, FolderOpen, RefreshCw, Upload } from "lucide-svelte";
+  import { Check, Copy, Download, FolderOpen, RefreshCw, Upload } from "lucide-svelte";
   import { invoke } from "@tauri-apps/api/core";
   import type { DesktopSettings, EnvInfo, WorkspaceInfo } from "$lib/types";
   import CustomSelect from "$lib/components/ui/CustomSelect.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
+  import { copyTextWithFallback } from "$lib/utils/terminal-xterm";
   import { handleDefaultsSave, handleWorkspaceSave } from "./helpers";
 
   interface Props {
@@ -32,6 +33,15 @@
 
   let backupPassphrase = $state("");
   let sshConfigPath = $state(workspace.ssh_config_path || "");
+  let copiedPath = $state<string | null>(null);
+
+  function copyPath(label: string, value: string) {
+    copyTextWithFallback(value);
+    copiedPath = label;
+    setTimeout(() => {
+      if (copiedPath === label) copiedPath = null;
+    }, 2000);
+  }
 
   $effect(() => {
     sshConfigPath = workspace.ssh_config_path || "";
@@ -214,7 +224,24 @@
       {#each systemPaths as p (p.label)}
         <div class="setting-row">
           <span class="setting-title shrink-0">{p.label}</span>
-          <code class="system-value min-w-0 max-w-[70%]" title={p.value}>{p.value}</code>
+          <div class="flex min-w-0 max-w-[70%] items-center gap-1.5">
+            <span class="min-w-0 select-all truncate font-mono text-xs text-secondary" title={p.value}>
+              {p.value}
+            </span>
+            <button
+              type="button"
+              class="btn-icon btn-icon-sm shrink-0"
+              aria-label="Copy {p.label}"
+              title="Copy path"
+              onclick={() => copyPath(p.label, p.value)}
+            >
+              {#if copiedPath === p.label}
+                <Check size={14} class="text-success" />
+              {:else}
+                <Copy size={14} />
+              {/if}
+            </button>
+          </div>
         </div>
       {/each}
     </div>

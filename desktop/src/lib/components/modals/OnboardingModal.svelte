@@ -1,10 +1,11 @@
 <script lang="ts">
   import { ArrowLeft, Check, FolderOpen, X } from "lucide-svelte";
+  import BrandMark from "$lib/components/BrandMark.svelte";
   import ModalShell from "$lib/components/ui/ModalShell.svelte";
   import type { OnboardingPayload } from "$lib/types";
   import { invoke } from "@tauri-apps/api/core";
   import { notify } from "$lib/stores/notifications.svelte";
-  import { applyTheme, normalizeTheme, THEME_OPTIONS, type AppTheme } from "$lib/utils/theme";
+  import { applyTheme, normalizeTheme, THEME_SWATCHES, type AppTheme } from "$lib/utils/theme";
   import { HOST_SHORTCUTS } from "$lib/shortcuts";
   import { appState } from "$lib/stores/appState.svelte";
   import { requestTeamFocus } from "$lib/stores/attention.svelte";
@@ -21,8 +22,47 @@
 
   let { defaultUser, defaultSshConfigPath, configRoot, onBrowseSshConfig, onComplete }: Props = $props();
 
-  const STEPS = ["Welcome", "Profile", "OpenSSH import", "Appearance", "First connect"] as const;
+  const STEPS = ["Welcome", "Profile & import", "Appearance"] as const;
   const LAST = STEPS.length - 1;
+
+  const FALLBACK_SWATCHES = {
+    light: {
+      chrome: "#f1f3f5",
+      surface: "#f8f9fa",
+      panel: "#ffffff",
+      border: "#d8dee6",
+      text: "#111418",
+      muted: "#5b6470",
+      accent: "#2563eb",
+    },
+    dark: {
+      chrome: "#0b0d10",
+      surface: "#111318",
+      panel: "#171a21",
+      border: "#272c36",
+      text: "#eceff4",
+      muted: "#8c96a6",
+      accent: "#3b82f6",
+    },
+  } as const;
+
+  const swatches = THEME_SWATCHES ?? FALLBACK_SWATCHES;
+
+  const THEME_CARDS: {
+    id: AppTheme;
+    name: string;
+    chrome: string;
+    surface: string;
+    panel: string;
+    border: string;
+    text: string;
+    muted: string;
+    accent: string;
+  }[] = [
+    { id: "light", name: "Light", ...swatches.light },
+    { id: "dark", name: "Dark", ...swatches.dark },
+    { id: "system", name: "Match system", chrome: "", surface: "", panel: "", border: "", text: "", muted: "", accent: "" },
+  ];
 
   const CONNECT = HOST_SHORTCUTS.find((s) => s.id === "host-connect");
   const CONNECT_CLI = CONNECT?.cli ?? "bssh connect <host>";
@@ -32,8 +72,6 @@
   /** Which welcome choice applies; "invite" swaps the stepper for the invited-member path. */
   let path = $state<"machine" | "invite">("machine");
   let inInvitePath = $state(false);
-  /** After setup: open the new-host form instead of landing on the host list. */
-  let addHostAfter = $state(false);
   let busy = $state(false);
 
   // Form fields
@@ -102,7 +140,6 @@
         import_ssh_config,
         fuzzy_search,
       });
-      if (!appState.showOnboarding && addHostAfter) appState.openAddModal();
     } finally {
       busy = false;
     }
@@ -220,7 +257,7 @@
 </script>
 
 <div
-  class="fixed inset-x-0 bottom-0 top-[var(--titlebar-h,36px)] z-[90] flex overflow-y-auto bg-surface"
+  class="fixed inset-x-0 bottom-0 top-[var(--titlebar-h,38px)] z-[90] flex overflow-y-auto bg-surface"
   role="main"
   aria-label="First-run setup"
 >
@@ -229,12 +266,12 @@
   </button>
 
   <!-- Anchored near the top (not centered) so the stepper doesn't jump as step heights change. -->
-  <div class="mx-auto mb-10 mt-[14vh] flex h-fit w-full max-w-[520px] flex-col gap-5 px-6">
+  <div class="mx-auto mb-10 mt-[10vh] flex h-fit w-full max-w-[540px] flex-col gap-5 px-6">
     {#if inInvitePath}
       <InvitedPath {busy} onBack={() => (inInvitePath = false)} onFinish={finishInvited} />
     {:else}
     <!-- Stepper -->
-    <ol class="m-0 grid list-none grid-cols-5 gap-2 p-0" aria-label="Setup progress">
+    <ol class="m-0 grid list-none grid-cols-3 gap-2 p-0" aria-label="Setup progress">
       {#each STEPS as label, i (label)}
         <li class="flex min-w-0 flex-col gap-1.5" aria-current={i === step ? "step" : undefined}>
           <span class="h-0.5 rounded-full {i <= step ? 'bg-accent' : 'bg-surface-active'}"></span>
@@ -250,11 +287,7 @@
         <div class="flex flex-col gap-5 p-6" use:focusStep>
           {#if step === 0}
             <div class="flex flex-col gap-3">
-              <svg viewBox="0 0 20 20" class="size-10" aria-hidden="true">
-                <rect width="20" height="20" rx="5" fill="var(--color-accent)" />
-                <path d="M5.5 7l3 3-3 3" fill="none" stroke="var(--color-on-accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-                <path d="M10.5 13.25h4" stroke="var(--color-on-accent)" stroke-width="1.6" stroke-linecap="round" />
-              </svg>
+              <BrandMark class="size-10" />
               <div class="flex flex-col gap-1.5">
                 <h1 class="m-0 text-lg font-semibold tracking-[-0.01em] text-primary">Welcome to Bayesian SSH</h1>
                 <p class="m-0 text-sm leading-relaxed text-secondary">
@@ -280,21 +313,19 @@
                 </button>
               {/each}
             </div>
-            {#if path === "machine"}
             <div class="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2.5">
               <span class="flex min-w-0 flex-col gap-0.5">
                 <span class="text-sm text-primary">Moving from another machine?</span>
                 <span class="text-xs text-muted">Restore hosts from a backup file (.json or .enc).</span>
               </span>
-              <button type="button" class="btn btn-secondary btn-sm" onclick={handleRestoreBackup} disabled={busy}>
+              <button type="button" class="btn btn-secondary btn-sm shrink-0" onclick={handleRestoreBackup} disabled={busy}>
                 Restore backup
               </button>
             </div>
-            {/if}
           {:else if step === 1}
             <div class="flex flex-col gap-1">
-              <h1 class="m-0 text-lg font-semibold tracking-[-0.01em] text-primary">Profile and defaults</h1>
-              <p class="m-0 text-sm text-muted">Used when a host doesn't set its own user or port.</p>
+              <h1 class="m-0 text-lg font-semibold tracking-[-0.01em] text-primary">Profile &amp; import</h1>
+              <p class="m-0 text-sm text-muted">Set connection defaults and optionally import hosts from OpenSSH.</p>
             </div>
             <div class="flex flex-col gap-4">
               <div class="field">
@@ -345,104 +376,129 @@
                 </span>
                 <input id="ob-agent" type="checkbox" class="switch" bind:checked={auto_start_agent} />
               </label>
-            </div>
-          {:else if step === 2}
-            <div class="flex flex-col gap-1">
-              <h1 class="m-0 text-lg font-semibold tracking-[-0.01em] text-primary">Import from OpenSSH</h1>
-              <p class="m-0 text-sm text-muted">Bring in the hosts you already have in your SSH config.</p>
-            </div>
-            <div class="flex flex-col gap-4">
-              <label for="ob-import" class="flex cursor-pointer items-center justify-between gap-4">
+              <label for="ob-fuzzy" class="flex cursor-pointer items-center justify-between gap-4">
                 <span class="flex flex-col gap-0.5">
-                  <span class="text-sm text-primary">Import hosts</span>
-                  <span class="text-xs text-muted">Hosts are copied into this profile. Your config file is only read.</span>
+                  <span class="text-sm text-primary">Fuzzy host search</span>
+                  <span class="text-xs text-muted">Match typos and partial host names.</span>
                 </span>
-                <input id="ob-import" type="checkbox" class="switch" bind:checked={import_ssh_config} />
+                <input id="ob-fuzzy" type="checkbox" class="switch" bind:checked={fuzzy_search} />
               </label>
-              <div class="field">
-                <label for="ob-ssh-config" class="field-label">Config file</label>
-                <div class="flex gap-2">
-                  <input
-                    id="ob-ssh-config"
-                    type="text"
-                    class="input input-mono flex-1"
-                    placeholder="~/.ssh/config"
-                    spellcheck="false"
-                    bind:value={ssh_config_path}
-                    disabled={!import_ssh_config}
-                  />
-                  <button type="button" class="btn btn-secondary" onclick={browseConfig} disabled={!import_ssh_config}>
-                    <FolderOpen size={14} />
-                    Browse
-                  </button>
+              <div class="flex flex-col gap-3 border-t border-border-subtle pt-4">
+                <label for="ob-import" class="flex cursor-pointer items-center justify-between gap-4">
+                  <span class="flex flex-col gap-0.5">
+                    <span class="text-sm text-primary">Import from OpenSSH config</span>
+                    <span class="text-xs text-muted">Hosts are copied into this profile. Your config file is only read.</span>
+                  </span>
+                  <input id="ob-import" type="checkbox" class="switch" bind:checked={import_ssh_config} />
+                </label>
+                <div class="field">
+                  <label for="ob-ssh-config" class="field-label">Config file</label>
+                  <div class="flex gap-2">
+                    <input
+                      id="ob-ssh-config"
+                      type="text"
+                      class="input input-mono flex-1"
+                      placeholder="~/.ssh/config"
+                      spellcheck="false"
+                      bind:value={ssh_config_path}
+                      disabled={!import_ssh_config}
+                    />
+                    <button type="button" class="btn btn-secondary" onclick={browseConfig} disabled={!import_ssh_config}>
+                      <FolderOpen size={14} />
+                      Browse
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
-          {:else if step === 3}
+          {:else}
             <div class="flex flex-col gap-1">
               <h1 class="m-0 text-lg font-semibold tracking-[-0.01em] text-primary">Appearance</h1>
               <p class="m-0 text-sm text-muted">You can change the theme later in Settings.</p>
             </div>
-            <div class="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Theme">
-              {#each THEME_OPTIONS as t (t.id)}
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-3" role="radiogroup" aria-label="Theme">
+              {#each THEME_CARDS as t (t.id)}
+                {@const active = theme === t.id}
                 <button
                   type="button"
                   role="radio"
-                  aria-checked={theme === t.id}
-                  class="card card-interactive flex items-start justify-between gap-2 px-3 py-2.5 text-left {theme === t.id ? 'card-selected' : ''}"
+                  aria-checked={active}
+                  class="card card-interactive flex flex-col gap-2.5 p-2 text-left {active ? 'card-selected' : ''}"
                   onclick={() => pickTheme(t.id)}
-                  data-autofocus={theme === t.id ? true : undefined}
+                  data-autofocus={active ? true : undefined}
                 >
-                  <span class="flex min-w-0 flex-col gap-0.5">
-                    <span class="text-sm text-primary">{t.label}</span>
-                    <span class="truncate text-xs text-muted">{t.desc}</span>
+                  {#if t.id === "system"}
+                    <span
+                      class="flex h-16 overflow-hidden rounded-md border border-border"
+                      aria-hidden="true"
+                    >
+                      <span class="flex flex-1 overflow-hidden" style="background: {swatches.dark.surface};">
+                        <span class="flex w-3.5 shrink-0 flex-col items-center gap-1 pt-2" style="background: {swatches.dark.chrome}; border-right: 1px solid {swatches.dark.border};">
+                          <span class="size-1 rounded-full" style="background: {swatches.dark.accent};"></span>
+                          <span class="size-1 rounded-full" style="background: {swatches.dark.muted};"></span>
+                        </span>
+                        <span class="flex flex-1 flex-col gap-1 p-1.5">
+                          <span class="flex flex-col gap-0.5 rounded-xs p-1" style="background: {swatches.dark.panel}; border: 1px solid {swatches.dark.border};">
+                            <span class="h-1 w-3/4 rounded-full" style="background: {swatches.dark.text};"></span>
+                            <span class="h-1 w-1/2 rounded-full" style="background: {swatches.dark.muted};"></span>
+                          </span>
+                          <span class="h-1.5 w-4 rounded-xs" style="background: {swatches.dark.accent};"></span>
+                        </span>
+                      </span>
+                      <span class="flex flex-1 overflow-hidden" style="background: {swatches.light.surface}; border-left: 1px solid {swatches.light.border};">
+                        <span class="flex flex-1 flex-col gap-1 p-1.5">
+                          <span class="flex flex-col gap-0.5 rounded-xs p-1" style="background: {swatches.light.panel}; border: 1px solid {swatches.light.border};">
+                            <span class="h-1 w-3/4 rounded-full" style="background: {swatches.light.text};"></span>
+                            <span class="h-1 w-1/2 rounded-full" style="background: {swatches.light.muted};"></span>
+                          </span>
+                          <span class="h-1.5 w-4 rounded-xs" style="background: {swatches.light.accent};"></span>
+                        </span>
+                        <span class="flex w-3.5 shrink-0 flex-col items-center gap-1 pt-2" style="background: {swatches.light.chrome}; border-left: 1px solid {swatches.light.border};">
+                          <span class="size-1 rounded-full" style="background: {swatches.light.accent};"></span>
+                          <span class="size-1 rounded-full" style="background: {swatches.light.muted};"></span>
+                        </span>
+                      </span>
+                    </span>
+                  {:else}
+                    <span
+                      class="flex h-16 overflow-hidden rounded-md border"
+                      style="background: {t.surface}; border-color: {t.border};"
+                      aria-hidden="true"
+                    >
+                      <span class="flex w-5 shrink-0 flex-col items-center gap-1 pt-2" style="background: {t.chrome}; border-right: 1px solid {t.border};">
+                        <span class="size-1.5 rounded-full" style="background: {t.accent};"></span>
+                        <span class="size-1.5 rounded-full" style="background: {t.muted};"></span>
+                        <span class="size-1.5 rounded-full" style="background: {t.muted};"></span>
+                      </span>
+                      <span class="flex flex-1 flex-col gap-1.5 p-2">
+                        <span class="flex flex-col gap-1 rounded-xs p-1.5" style="background: {t.panel}; border: 1px solid {t.border};">
+                          <span class="h-1 w-3/4 rounded-full" style="background: {t.text};"></span>
+                          <span class="h-1 w-1/2 rounded-full" style="background: {t.muted};"></span>
+                        </span>
+                        <span class="h-2 w-6 rounded-xs" style="background: {t.accent};"></span>
+                      </span>
+                    </span>
+                  {/if}
+                  <span class="flex items-center justify-between px-0.5 text-sm {active ? 'text-primary' : 'text-secondary'}">
+                    {t.name}
+                    {#if active}<Check size={14} class="text-accent" />{/if}
                   </span>
-                  {#if theme === t.id}<Check size={14} class="mt-0.5 shrink-0 text-accent" />{/if}
                 </button>
               {/each}
             </div>
-            <label for="ob-fuzzy" class="flex cursor-pointer items-center justify-between gap-4">
-              <span class="flex flex-col gap-0.5">
-                <span class="text-sm text-primary">Fuzzy host search</span>
-                <span class="text-xs text-muted">Match typos and partial host names.</span>
-              </span>
-              <input id="ob-fuzzy" type="checkbox" class="switch" bind:checked={fuzzy_search} />
-            </label>
-          {:else}
-            <div class="flex flex-col gap-1">
-              <h1 class="m-0 text-lg font-semibold tracking-[-0.01em] text-primary">Connect to your first host</h1>
-              <p class="m-0 text-sm text-muted">
-                {#if import_ssh_config}
-                  Hosts from {ssh_config_path.trim() || "~/.ssh/config"} are imported when you finish.
-                {:else}
-                  You skipped the OpenSSH import.
-                {/if}
-                Everything here can be changed in Settings.
+            <div class="rounded-md border border-border bg-surface-subtle px-3 py-2.5 text-xs leading-relaxed text-secondary">
+              <p class="m-0">
+                <span class="font-medium text-primary">Quick tip:</span> Select a host and press
+                <kbd class="kbd">{CONNECT_KEY}</kbd> to connect, or run
+                <code class="select-text">{CONNECT_CLI}</code> from any terminal.
               </p>
+              {#if import_ssh_config}
+                <p class="m-0 mt-1 text-muted">
+                  Hosts from <code class="select-text">{ssh_config_path.trim() || "~/.ssh/config"}</code> will be imported into
+                  <span class="text-secondary">{profileTrimmed}</span>.
+                </p>
+              {/if}
             </div>
-            <label for="ob-add-host" class="flex cursor-pointer items-center justify-between gap-4">
-              <span class="flex flex-col gap-0.5">
-                <span class="text-sm text-primary">Add a host now</span>
-                <span class="text-xs text-muted">Opens the new-host form as soon as setup finishes.</span>
-              </span>
-              <input id="ob-add-host" type="checkbox" class="switch" bind:checked={addHostAfter} />
-            </label>
-            <p class="m-0 text-sm text-secondary">
-              To connect, select a host and press <kbd class="kbd">{CONNECT_KEY}</kbd>, or run
-              <code class="select-text">{CONNECT_CLI}</code>.
-            </p>
-            <dl class="m-0 grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 rounded-md border border-border px-3 py-2.5 text-sm">
-              <dt class="text-muted">Profile</dt>
-              <dd class="m-0 truncate text-primary">{profileTrimmed}</dd>
-              <dt class="text-muted">Defaults</dt>
-              <dd class="m-0 truncate font-mono text-xs leading-5 text-primary">
-                {default_user.trim() || defaultUser || "root"}:{portInvalid ? 22 : default_port}
-              </dd>
-              <dt class="text-muted">SSH agent</dt>
-              <dd class="m-0 text-primary">{auto_start_agent ? "Starts on launch" : "Manual"}</dd>
-              <dt class="text-muted">Theme</dt>
-              <dd class="m-0 text-primary">{THEME_OPTIONS.find((t) => t.id === theme)?.label}</dd>
-            </dl>
           {/if}
         </div>
       {/key}

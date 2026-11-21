@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { CircleCheck, CircleX, Download, RefreshCw, ShieldAlert, ShieldCheck } from "lucide-svelte";
+  import CustomSelect from "$lib/components/ui/CustomSelect.svelte";
   import type { Connection, TeamAudit, TeamMember, TeamSummary } from "$lib/types";
   import { raiseAttention, resolveAttention, TEAM_ATTENTION } from "$lib/stores/attention.svelte";
   import {
@@ -29,6 +30,14 @@
 
   const verdict = $derived(log ? auditVerdict(log) : null);
   const filtered = $derived(!!(member || host || since));
+  const memberOptions = $derived([
+    { value: "", label: "Everyone" },
+    ...(members ?? []).map((m) => ({ value: m.email, label: m.email })),
+  ]);
+  const hostOptions = $derived([
+    { value: "", label: "Every host" },
+    ...teamConnections.map((c) => ({ value: c.name, label: c.name })),
+  ]);
   const cliLine = $derived(
     [
       `bssh teams audit ${team.name}`,
@@ -92,21 +101,11 @@
   <div class="flex flex-wrap items-end gap-2">
     <div class="field">
       <label class="field-label" for="audit-member">Member</label>
-      <select id="audit-member" class="input w-56" bind:value={member}>
-        <option value="">Everyone</option>
-        {#each members ?? [] as m (m.email)}
-          <option value={m.email}>{m.email}</option>
-        {/each}
-      </select>
+      <CustomSelect id="audit-member" ariaLabel="Member" class="w-56" options={memberOptions} bind:value={member} />
     </div>
     <div class="field">
       <label class="field-label" for="audit-host">Host</label>
-      <select id="audit-host" class="input w-56" bind:value={host}>
-        <option value="">Every host</option>
-        {#each teamConnections as c (c.id)}
-          <option value={c.name}>{c.name}</option>
-        {/each}
-      </select>
+      <CustomSelect id="audit-host" ariaLabel="Host" class="w-56" options={hostOptions} bind:value={host} />
     </div>
     <div class="field">
       <label class="field-label" for="audit-since">Since (UTC)</label>

@@ -101,6 +101,11 @@
   let showLauncher = $state(false);
   /** Side of the active tab a launcher connection opens on; null opens a plain tab. */
   let launcherSplit = $state<SplitSide | null>(null);
+  /** Triggering button used to anchor HostLauncher with viewport clamping. */
+  let launcherAnchor = $state<HTMLElement | null>(null);
+  let newSessionBtn = $state<HTMLButtonElement | null>(null);
+  let splitRightBtn = $state<HTMLButtonElement | null>(null);
+  let splitDownBtn = $state<HTMLButtonElement | null>(null);
   let showMoreMenu = $state(false);
   let tabStrip = $state<HTMLDivElement | null>(null);
   let stripBar = $state<HTMLDivElement | null>(null);
@@ -155,14 +160,19 @@
 
   // ---- Launcher and toolbar menu ------------------------------------------
 
-  function openLauncher(split: SplitSide | null = null) {
+  function openLauncher(split: SplitSide | null = null, anchor: HTMLElement | null = null) {
     showMoreMenu = false;
-    showLauncher = !(showLauncher && launcherSplit === split);
+    const closing = showLauncher && launcherSplit === split;
+    showLauncher = !closing;
     launcherSplit = split;
+    launcherAnchor = closing
+      ? null
+      : (anchor ?? (split === "right" ? splitRightBtn : split === "bottom" ? splitDownBtn : newSessionBtn));
   }
 
   function closeMenus() {
     showLauncher = false;
+    launcherAnchor = null;
     showMoreMenu = false;
   }
 
@@ -349,12 +359,12 @@
     <!-- Tab strip + active-session toolbar -->
     <div
       bind:this={stripBar}
-      class="relative z-20 flex h-10 shrink-0 select-none items-center gap-1 border-b border-border bg-surface px-2"
+      class="relative z-20 flex h-9 shrink-0 select-none items-stretch gap-1 border-b border-border bg-surface pr-2"
       use:tabBarReattachDrop={bringBackSession}
     >
       <div
         bind:this={tabStrip}
-        class="scrollbar-none flex min-w-0 items-center gap-0 overflow-x-auto"
+        class="scrollbar-none flex h-full min-w-0 items-stretch gap-0 overflow-x-auto"
         role="tablist"
         aria-label="Terminal sessions"
         tabindex="-1"
@@ -365,7 +375,7 @@
           type="button"
           role="tab"
           aria-selected={homeActive}
-          class="sticky left-0 z-10 flex h-7 shrink-0 items-center gap-1.5 border-r border-border-subtle pl-2.5 pr-2.5 text-xs font-medium transition-colors duration-fast
+          class="sticky left-0 z-10 flex h-full shrink-0 items-center gap-1.5 border-r border-border-subtle pl-2.5 pr-2.5 text-xs font-medium transition-colors duration-fast
             {homeActive
               ? 'bg-surface-terminal text-primary'
               : 'bg-surface text-muted hover:bg-surface-hover hover:text-primary'}"
@@ -386,7 +396,7 @@
             <button
               type="button"
               data-group-id={group.id}
-              class="tab-group-chip flex h-6 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-primary"
+              class="tab-group-chip mx-1 flex h-6 shrink-0 self-center items-center gap-1.5 rounded-md px-2 text-xs font-medium text-primary"
               class:tab-group-chip-target={drag?.target.kind === "group" && drag.target.groupId === group.id}
               style:--group-color={tabGroupColorVar(group.color)}
               aria-expanded={!group.collapsed}
@@ -422,10 +432,10 @@
         {/each}
 
         {#if awaySessions.length > 0}
-          <span class="mx-1 h-4 w-px shrink-0 bg-border" aria-hidden="true"></span>
+          <span class="mx-1 h-4 w-px shrink-0 self-center bg-border" aria-hidden="true"></span>
           {#each awaySessions as session (session.sessionId)}
             <div
-              class="group flex h-7 shrink-0 cursor-grab items-center gap-1.5 rounded-md border border-dashed border-border pl-2 pr-0.5 text-xs text-muted transition-colors duration-fast hover:border-border-hover hover:text-primary"
+              class="group flex h-7 shrink-0 self-center cursor-grab items-center gap-1.5 rounded-md border border-dashed border-border pl-2 pr-0.5 text-xs text-muted transition-colors duration-fast hover:border-border-hover hover:text-primary"
               draggable="true"
               title={session.kind === "popout"
                 ? `${session.name} — in its own window. Click to focus, drag here to dock.`
@@ -448,7 +458,7 @@
               <span class="max-w-32 truncate">{session.name}</span>
               <button
                 type="button"
-                class="btn-icon btn-icon-sm size-5"
+                class="btn-icon btn-icon-sm size-6"
                 aria-label={session.kind === "popout" ? `Dock ${session.name}` : `Reattach ${session.name}`}
                 title={session.kind === "popout" ? "Dock to this window" : "Reattach"}
                 onclick={(e) => {
@@ -470,181 +480,199 @@
         ></div>
       {/if}
 
-      <div class="relative shrink-0">
+      <div class="flex shrink-0 items-center self-center">
         <button
+          bind:this={newSessionBtn}
           type="button"
           class="btn-icon {showLauncher && !launcherSplit ? 'bg-surface-hover text-primary' : ''}"
           aria-label="New session"
           aria-expanded={showLauncher && !launcherSplit}
           title="New session"
-          onclick={() => openLauncher()}
+          onclick={(e) => openLauncher(null, e.currentTarget)}
         >
           <Plus size={14} />
         </button>
-        {#if showLauncher}
-          <div class="fixed inset-0 z-40" role="presentation" onclick={closeMenus}></div>
-          {#key launcherSplit}
-            <HostLauncher {connections} split={launcherSplit} onConnect={handleConnect} onOpenGroup={handleOpenGroup} />
-          {/key}
-        {/if}
       </div>
 
       <div class="min-w-2 flex-1 self-stretch" aria-hidden="true"></div>
 
-      {#if activeTab && !homeActive}
-        <button
-          type="button"
-          class="btn-icon {activeTab.showSearch ? 'bg-surface-hover text-primary' : ''}"
-          aria-label="Find in terminal"
-          aria-pressed={activeTab.showSearch}
-          title="Find (Ctrl+F)"
-          onclick={() => toggleTerminalSearch(activeTab.id)}
-        >
-          <Search size={14} />
-        </button>
-
-        <button
-          type="button"
-          class="btn-icon {showLauncher && launcherSplit === 'right' ? 'bg-surface-hover text-primary' : ''}"
-          aria-label="Split right"
-          aria-expanded={showLauncher && launcherSplit === "right"}
-          title="Open a session to the right"
-          onclick={() => openLauncher("right")}
-        >
-          <Columns2 size={14} />
-        </button>
-        <button
-          type="button"
-          class="btn-icon {showLauncher && launcherSplit === 'bottom' ? 'bg-surface-hover text-primary' : ''}"
-          aria-label="Split down"
-          aria-expanded={showLauncher && launcherSplit === "bottom"}
-          title="Open a session below"
-          onclick={() => openLauncher("bottom")}
-        >
-          <Rows2 size={14} />
-        </button>
-
-        <div class="flex h-7 shrink-0 items-center rounded-md border border-border" role="group" aria-label="Font size">
+      <div class="flex shrink-0 items-center gap-1 self-center">
+        {#if activeTab && !homeActive}
           <button
             type="button"
-            class="btn-icon btn-icon-sm"
-            aria-label="Decrease font size"
-            title="Smaller text (Ctrl −)"
-            onclick={() => updateTerminalFontSize(getTerminalFontSize() - 1)}
+            class="btn-icon {activeTab.showSearch ? 'bg-surface-hover text-primary' : ''}"
+            aria-label="Find in terminal"
+            aria-pressed={activeTab.showSearch}
+            title="Find (Ctrl+F)"
+            onclick={() => toggleTerminalSearch(activeTab.id)}
           >
-            <Minus size={14} />
+            <Search size={14} />
           </button>
-          <span class="w-6 text-center text-xs tabular-nums text-secondary" title="Font size">{getTerminalFontSize()}</span>
+
           <button
+            bind:this={splitRightBtn}
             type="button"
-            class="btn-icon btn-icon-sm"
-            aria-label="Increase font size"
-            title="Larger text (Ctrl +)"
-            onclick={() => updateTerminalFontSize(getTerminalFontSize() + 1)}
+            class="btn-icon {showLauncher && launcherSplit === 'right' ? 'bg-surface-hover text-primary' : ''}"
+            aria-label="Split right"
+            aria-expanded={showLauncher && launcherSplit === "right"}
+            title="Open a session to the right"
+            onclick={(e) => openLauncher("right", e.currentTarget)}
           >
-            <Plus size={14} />
+            <Columns2 size={14} />
           </button>
-        </div>
-      {/if}
-
-      {#if terminalState.externalSessionCount > 0}
-        <button
-          type="button"
-          class="btn btn-ghost btn-sm"
-          title="Manage background and pop-out sessions"
-          onclick={onManageSessions}
-        >
-          <Layers size={14} />
-          {terminalState.externalSessionCount} away
-        </button>
-      {/if}
-
-      <div class="relative shrink-0">
-        <button
-          type="button"
-          class="btn-icon {showMoreMenu ? 'bg-surface-hover text-primary' : ''}"
-          aria-label="More session actions"
-          aria-haspopup="menu"
-          aria-expanded={showMoreMenu}
-          title="More"
-          onclick={() => {
-            showLauncher = false;
-            showMoreMenu = !showMoreMenu;
-          }}
-        >
-          <MoreHorizontal size={14} />
-        </button>
-        {#if showMoreMenu}
-          <div class="fixed inset-0 z-40" role="presentation" onclick={closeMenus}></div>
-          <div class="popover absolute right-0 top-full mt-1 w-56" role="menu">
-            {#if activeTab && !homeActive}
-              <button
-                type="button"
-                class="menu-item"
-                role="menuitem"
-                onclick={() => runMenuAction(() => popOutTab(activeTab.id))}
-              >
-                <AppWindow size={14} />
-                Open in new window
-              </button>
-              <button
-                type="button"
-                class="menu-item"
-                role="menuitem"
-                onclick={() => runMenuAction(() => detachTab(activeTab.id))}
-              >
-                <Unlink size={14} />
-                Run in background
-              </button>
-              <div class="menu-separator"></div>
-              <button
-                type="button"
-                class="menu-item"
-                role="menuitem"
-                disabled={!activeTab.ready}
-                onclick={() =>
-                  runMenuAction(() => {
-                    if (activeTab.term) downloadTerminalScrollback(activeTab.term, activeTab.name);
-                  })}
-              >
-                <Download size={14} />
-                Export scrollback
-              </button>
-              <button
-                type="button"
-                class="menu-item"
-                role="menuitem"
-                disabled={!activeTab.ready}
-                onclick={() => runMenuAction(() => activeTab.term?.clear())}
-              >
-                <Eraser size={14} />
-                Clear screen
-              </button>
-              <div class="menu-separator"></div>
-            {/if}
-            <button
-              type="button"
-              class="menu-item"
-              role="menuitem"
-              onclick={() => runMenuAction(onManageSessions)}
-            >
-              <Layers size={14} />
-              Manage sessions…
-            </button>
-            {#if terminalState.totalSessionCount > 0}
-              <button
-                type="button"
-                class="menu-item menu-item-danger"
-                role="menuitem"
-                onclick={() => runMenuAction(onCloseAll)}
-              >
-                <OctagonX size={14} />
-                Close all sessions
-              </button>
-            {/if}
-          </div>
+          <button
+            bind:this={splitDownBtn}
+            type="button"
+            class="btn-icon {showLauncher && launcherSplit === 'bottom' ? 'bg-surface-hover text-primary' : ''}"
+            aria-label="Split down"
+            aria-expanded={showLauncher && launcherSplit === "bottom"}
+            title="Open a session below"
+            onclick={(e) => openLauncher("bottom", e.currentTarget)}
+          >
+            <Rows2 size={14} />
+          </button>
         {/if}
+
+        {#if terminalState.externalSessionCount > 0}
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm"
+            title="Manage background and pop-out sessions"
+            onclick={onManageSessions}
+          >
+            <Layers size={14} />
+            {terminalState.externalSessionCount} away
+          </button>
+        {/if}
+
+        <div class="relative shrink-0">
+          <button
+            type="button"
+            class="btn-icon {showMoreMenu ? 'bg-surface-hover text-primary' : ''}"
+            aria-label="More session actions"
+            aria-haspopup="menu"
+            aria-expanded={showMoreMenu}
+            title="More"
+            onclick={() => {
+              showLauncher = false;
+              launcherAnchor = null;
+              showMoreMenu = !showMoreMenu;
+            }}
+          >
+            <MoreHorizontal size={14} />
+          </button>
+          {#if showMoreMenu}
+            <div class="fixed inset-0 z-40" role="presentation" onclick={closeMenus}></div>
+            <div class="popover absolute right-0 top-full mt-1 w-56" role="menu">
+              {#if activeTab && !homeActive}
+                <button
+                  type="button"
+                  class="menu-item"
+                  role="menuitem"
+                  onclick={() => runMenuAction(() => popOutTab(activeTab.id))}
+                >
+                  <AppWindow size={14} />
+                  Open in new window
+                </button>
+                <button
+                  type="button"
+                  class="menu-item"
+                  role="menuitem"
+                  onclick={() => runMenuAction(() => detachTab(activeTab.id))}
+                >
+                  <Unlink size={14} />
+                  Run in background
+                </button>
+                <div class="menu-separator"></div>
+                <button
+                  type="button"
+                  class="menu-item"
+                  role="menuitem"
+                  disabled={!activeTab.ready}
+                  onclick={() =>
+                    runMenuAction(() => {
+                      if (activeTab.term) downloadTerminalScrollback(activeTab.term, activeTab.name);
+                    })}
+                >
+                  <Download size={14} />
+                  Export scrollback
+                </button>
+                <button
+                  type="button"
+                  class="menu-item"
+                  role="menuitem"
+                  disabled={!activeTab.ready}
+                  onclick={() => runMenuAction(() => activeTab.term?.clear())}
+                >
+                  <Eraser size={14} />
+                  Clear screen
+                </button>
+                <div class="menu-separator"></div>
+                <div class="flex items-center justify-between gap-2 px-2.5 py-1.5" role="group" aria-label="Font size">
+                  <span class="text-xs text-secondary">Font size</span>
+                  <div class="flex items-center gap-0.5 rounded-md border border-border">
+                    <button
+                      type="button"
+                      class="btn-icon btn-icon-sm"
+                      aria-label="Decrease font size"
+                      title="Smaller text (Ctrl −)"
+                      onclick={() => updateTerminalFontSize(getTerminalFontSize() - 1)}
+                    >
+                      <Minus size={14} />
+                    </button>
+                    <span class="w-6 text-center font-mono text-xs tabular-nums text-primary" title="Font size">
+                      {getTerminalFontSize()}
+                    </span>
+                    <button
+                      type="button"
+                      class="btn-icon btn-icon-sm"
+                      aria-label="Increase font size"
+                      title="Larger text (Ctrl +)"
+                      onclick={() => updateTerminalFontSize(getTerminalFontSize() + 1)}
+                    >
+                      <Plus size={14} />
+                    </button>
+                  </div>
+                </div>
+                <div class="menu-separator"></div>
+              {/if}
+              <button
+                type="button"
+                class="menu-item"
+                role="menuitem"
+                onclick={() => runMenuAction(onManageSessions)}
+              >
+                <Layers size={14} />
+                Manage sessions…
+              </button>
+              {#if terminalState.totalSessionCount > 0}
+                <button
+                  type="button"
+                  class="menu-item menu-item-danger"
+                  role="menuitem"
+                  onclick={() => runMenuAction(onCloseAll)}
+                >
+                  <OctagonX size={14} />
+                  Close all sessions
+                </button>
+              {/if}
+            </div>
+          {/if}
+        </div>
       </div>
+
+      {#if showLauncher}
+        <div class="fixed inset-0 z-40" role="presentation" onclick={closeMenus}></div>
+        {#key launcherSplit}
+          <HostLauncher
+            {connections}
+            split={launcherSplit}
+            anchor={launcherAnchor}
+            onConnect={handleConnect}
+            onOpenGroup={handleOpenGroup}
+          />
+        {/key}
+      {/if}
     </div>
 
     <!-- Terminal surfaces stay mounted (xterm buffers) and keep their size:

@@ -143,7 +143,7 @@
         <span class="min-w-0 flex-1 truncate font-medium">{tab.remoteTitle?.trim() || tab.name}</span>
         <button
           type="button"
-          class="btn-icon btn-icon-sm size-5"
+          class="btn-icon btn-icon-sm size-6"
           aria-label="Remove {tab.name} from split"
           title="Remove from split (the session keeps running)"
           onclick={() => unsplitTab(tab.id)}
@@ -193,7 +193,7 @@
           <button type="button" class="btn btn-primary" onclick={() => retryConnect(tab.id)} use:focusOnShow>
             Retry
           </button>
-          <button type="button" class="btn" onclick={editHost} disabled={!tab.conn}>Edit host</button>
+          <button type="button" class="btn btn-secondary" onclick={editHost} disabled={!tab.conn}>Edit host</button>
           <button type="button" class="btn btn-ghost ml-auto" onclick={() => disconnectTab(tab.id)}>
             Close tab
           </button>
