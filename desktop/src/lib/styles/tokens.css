@@ -2,11 +2,12 @@
 /* DESIGN TOKENS — single source of truth                        */
 /* ============================================================ */
 /* Rules of this file:
-   - The @theme block below IS the default theme (Dark, class
+   - The @theme block below IS the default theme ("Carbon", class
      `theme-dark`). `html.theme-light` overrides it.
-   - One accent (blue) in every theme, used only for the primary
-     action, focus, selection and links. Everything else is neutral;
-     success/warning/error mark state, never decoration.
+   - ONE signal accent (phosphor amber) in every theme, used only for
+     the primary action, focus, selection and links. Everything else is
+     warm neutral; success/warning/error mark state, never decoration.
+     `warning` is a caution yellow, deliberately distinct from amber.
    - html.theme-* blocks override ONLY what differs per theme.
    - Never put raw color literals in components; always consume
      a token from here (directly or via a components.css class).
@@ -16,7 +17,7 @@
    ============================================================ */
 
 @theme {
-  /* ---- Surfaces -------------------------------------------------
+  /* ---- Surfaces (warm carbon) -----------------------------------
      chrome           — title bar + sidebar (frames the workspace)
      surface          — workspace background (views)
      panel            — cards, tables, grouped settings
@@ -27,68 +28,68 @@
      surface-hover    — hover fill for rows / icon buttons
      surface-active   — selected row / pressed state
      surface-terminal — xterm background                           */
-  --color-chrome: #0c0c0e;
-  --color-surface: #111113;
-  --color-panel: #161618;
-  --color-surface-card: #161618;
-  --color-surface-raised: #212124;
-  --color-surface-elevated: #212124;
-  --color-surface-input: #0e0e10;
-  --color-surface-subtle: #141416;
-  --color-surface-hover: #1d1d20;
-  --color-surface-active: #232326;
-  --color-surface-terminal: #0c0c0e;
+  --color-chrome: #0d0c0a;
+  --color-surface: #121110;
+  --color-panel: #181714;
+  --color-surface-card: #181714;
+  --color-surface-raised: #24221e;
+  --color-surface-elevated: #24221e;
+  --color-surface-input: #0f0e0c;
+  --color-surface-subtle: #151412;
+  --color-surface-hover: #1f1d1a;
+  --color-surface-active: #282621;
+  --color-surface-terminal: #0d0c0a;
 
   /* ---- Borders -------------------------------------------------- */
-  --color-border: #242427;
-  --color-border-subtle: #1b1b1e;
-  --color-border-hover: #303034;
-  --color-border-strong: #3a3a3f;
-  --color-border-focus: #5b8def;
+  --color-border: #2a2823;
+  --color-border-subtle: #1f1d1a;
+  --color-border-hover: #37342e;
+  --color-border-strong: #46423a;
+  --color-border-focus: #f0a030;
   /* Control boundary (WCAG 1.4.11, ≥ 3:1 vs the surface it sits on):
      inputs, selects, secondary buttons, switch off-track, checkboxes.
      --color-border stays subtle and is for decorative panel edges only. */
-  --color-border-control: #74747b;
+  --color-border-control: #7f786b;
   /* Edge of floating layers (surface-raised) */
-  --color-border-floating: #3e3e44;
+  --color-border-floating: #4a453d;
 
   /* ---- Text ------------------------------------------------------
      primary   — default foreground
      secondary — supporting text, labels
      muted     — metadata, captions, placeholders
      faint     — decorative / disabled                              */
-  --color-primary: #ececef;
-  --color-secondary: #a3a3ab;
-  --color-muted: #96969e; /* ≥ 4.5:1 on every surface incl. selected rows and floating layers (WCAG AA) */
-  --color-faint: #4b4b52;
+  --color-primary: #ede7db;
+  --color-secondary: #b3ab9c;
+  --color-muted: #9e9688; /* ≥ 4.5:1 on every surface incl. selected rows and floating layers (WCAG AA) */
+  --color-faint: #504b43;
 
-  /* ---- Accent (brand / interactive) ----------------------------- */
-  --color-accent: #5b8def;
-  --color-accent-hover: #7aa3f2;
-  --color-accent-strong: #2563eb;
-  --color-accent-muted: rgba(91, 141, 239, 0.14);
-  --color-selected: rgba(91, 141, 239, 0.1); /* selected row / palette item tint (+ 2px accent rail) */
-  --color-on-accent: #ffffff;
-  --color-accent-strong-hover: #1d4ed8; /* primary button hover (≥ 4.5:1 with on-accent) */
+  /* ---- Accent (signal amber) ------------------------------------ */
+  --color-accent: #f0a030;
+  --color-accent-hover: #f6b552;
+  --color-accent-strong: #f0a030;
+  --color-accent-muted: rgba(240, 160, 48, 0.14);
+  --color-selected: rgba(240, 160, 48, 0.08); /* selected row / palette item tint (+ 2px accent rail) */
+  --color-on-accent: #1a1206; /* dark text on the amber fill */
+  --color-accent-strong-hover: #f6b552; /* primary button hover (≥ 4.5:1 with on-accent) */
   /* Danger button: fill + text are ≥ 4.5:1; --color-danger stays the
      lighter text/icon red for use on dark surfaces. */
-  --color-danger-strong: #c73e47;
-  --color-danger-strong-hover: #b3333c;
+  --color-danger-strong: #c2412f;
+  --color-danger-strong-hover: #a83625;
   --color-on-danger: #ffffff;
   /* Disabled text: legible (≥ 3:1) but visibly dimmer than --color-muted */
-  --color-disabled-fg: #74747b;
+  --color-disabled-fg: #7a7367;
   /* Hover fill for items inside floating layers (lighter than surface-raised) */
-  --color-hover-on-floating: rgba(255, 255, 255, 0.06);
+  --color-hover-on-floating: rgba(255, 240, 220, 0.06);
 
   /* ---- Feedback / state ----------------------------------------- */
-  --color-success: #3fb97f;
-  --color-running: #3fb97f;
-  --color-warning: #e5a93b;
-  --color-error: #f47c83;
-  --color-danger: #f47c83;
+  --color-success: #7cc58a;
+  --color-running: #7cc58a;
+  --color-warning: #e6cf5a; /* caution yellow, distinct from the amber accent */
+  --color-error: #f2776c;
+  --color-danger: #f2776c;
 
   /* ---- Overlay (modal backdrop) --------------------------------- */
-  --color-overlay: rgba(4, 5, 7, 0.66);
+  --color-overlay: rgba(6, 5, 3, 0.7);
 
   /* ---- Typography scale ------------------------------------------
      2xs — meta labels, badges, kbd              11px
@@ -113,11 +114,12 @@
   /* ---- Type scale (UX phase 2) ----------------------------------
      Five sizes, each with one job. Use the .type-* classes and
      .section-heading in components.css; never pick a size ad hoc.
-     title 20/600 · section 14/600 · body 13 · meta 12 · caption 11/500 */
-  --type-title: 1.25rem;
+     title 22/600 (display) · section 14/600 · body 13 · meta 12 ·
+     caption 11/500 */
+  --type-title: 1.375rem;
   --type-title-lh: 1.75rem;
   --type-title-weight: 600;
-  --type-title-tracking: -0.02em;
+  --type-title-tracking: 0.04em;
   --type-section: 0.875rem;
   --type-section-lh: 1.25rem;
   --type-section-weight: 600;
@@ -130,29 +132,37 @@
   --type-caption-weight: 500;
   /* ---- end Type scale ------------------------------------------- */
 
-  /* ---- Fonts (bundled: @fontsource-variable, see app.css) -------- */
-  --font-sans: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont,
-    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* ---- Fonts (bundled: @fontsource-variable, see app.css) --------
+     display — Archivo, condensed via font-stretch (wdth axis); titles,
+               sidebar/table/eyebrow labels. Body — IBM Plex Sans.
+     mono    — JetBrains Mono; every machine value.                */
+  --font-display: "Archivo Variable", "Archivo", ui-sans-serif, system-ui,
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif;
+  --font-sans: "IBM Plex Sans Variable", "IBM Plex Sans", -apple-system,
+    BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace,
     SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 
-  /* ---- Radius ------------------------------------------------------ */
-  --radius-xs: 4px;
-  --radius-sm: 5px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
-  --radius-xl: 10px;
-  --radius-2xl: 12px;
+  /* ---- Radius (tight, instrument-panel) ---------------------------- */
+  --radius-xs: 2px;
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 4px;
+  --radius-xl: 6px;
+  --radius-2xl: 8px;
 
-  /* ---- Shadows (only for floating layers) ------------------------- */
-  --shadow-xs: 0 1px 0 rgba(0, 0, 0, 0.25);
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 6px 16px -4px rgba(0, 0, 0, 0.45);
+  /* ---- Shadows (only for floating layers) -------------------------
+     Neutral-warm black; the inset top highlight stays so a layer edge
+     is still visible on near-black. */
+  --shadow-xs: 0 1px 0 rgba(6, 5, 3, 0.3);
+  --shadow-sm: 0 1px 2px rgba(6, 5, 3, 0.35);
+  --shadow-md: 0 6px 16px -4px rgba(6, 5, 3, 0.5);
   /* Floating layers carry an inset top highlight: shadows vanish on
      near-black, the highlight + border-floating keep the edge visible. */
-  --shadow-lg: 0 16px 40px -8px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.07);
-  --shadow-xl: 0 24px 64px -12px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.07);
-  --shadow-2xl: 0 24px 64px -12px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  --shadow-lg: 0 16px 40px -8px rgba(6, 5, 3, 0.65), 0 0 0 1px rgba(255, 240, 220, 0.04), inset 0 1px 0 rgba(255, 240, 220, 0.07);
+  --shadow-xl: 0 24px 64px -12px rgba(6, 5, 3, 0.75), 0 0 0 1px rgba(255, 240, 220, 0.05), inset 0 1px 0 rgba(255, 240, 220, 0.07);
+  --shadow-2xl: 0 24px 64px -12px rgba(6, 5, 3, 0.75), 0 0 0 1px rgba(255, 240, 220, 0.05), inset 0 1px 0 rgba(255, 240, 220, 0.07);
 
   /* ---- Motion ------------------------------------------------------ */
   --default-transition-duration: 120ms;
@@ -172,112 +182,112 @@
 /* ============================================================ */
 /* THEME VARIANTS                                                */
 /* ============================================================ */
-/* Dark is the @theme default; this block only adds its terminal
-   palette. Light overrides surfaces, text, accent shades, state colors,
-   shadows and the terminal palette. ANSI colors stay distinct (they're
-   program output) but muted to sit with the UI. */
+/* Carbon (dark) is the @theme default; this block only adds its
+   terminal palette. Paper (light) overrides surfaces, text, accent
+   shades, state colors, shadows and the terminal palette. ANSI colors
+   stay distinct (they're program output) but warmed to sit with the UI. */
 
 :root,
 html.theme-dark {
-  --selection-bg: rgba(91, 141, 239, 0.3);
-  --term-bg: #0c0c0e;
-  --term-fg: #d6d6db;
-  --term-cursor: #5b8def;
-  --term-cursor-accent: #0c0c0e;
-  --term-black: #2a2a2e;
-  --term-red: #e5636b;
-  --term-green: #5fb87a;
-  --term-yellow: #d4a54a;
-  --term-blue: #6b9bf0;
-  --term-magenta: #b388e0;
-  --term-cyan: #4fb3c4;
-  --term-white: #c4c4ca;
-  --term-bright-black: #6e6e76;
-  --term-bright-red: #f08a90;
-  --term-bright-green: #7fcf96;
-  --term-bright-yellow: #e6c071;
-  --term-bright-blue: #8db3f5;
-  --term-bright-magenta: #c9a6ec;
-  --term-bright-cyan: #74c7d5;
-  --term-bright-white: #f2f2f4;
+  --selection-bg: rgba(240, 160, 48, 0.28);
+  --term-bg: #0d0c0a;
+  --term-fg: #ddd6c8;
+  --term-cursor: #f0a030;
+  --term-cursor-accent: #0d0c0a;
+  --term-black: #2c2924;
+  --term-red: #e8685c;
+  --term-green: #8fbf7a;
+  --term-yellow: #d9b45a;
+  --term-blue: #7fa6d0;
+  --term-magenta: #c08fc0;
+  --term-cyan: #6fb3ad;
+  --term-white: #c9c1b2;
+  --term-bright-black: #6f685d;
+  --term-bright-red: #f2837a;
+  --term-bright-green: #a8d493;
+  --term-bright-yellow: #ecd07a;
+  --term-bright-blue: #9dbde0;
+  --term-bright-magenta: #d7aed7;
+  --term-bright-cyan: #8ccbc4;
+  --term-bright-white: #f2ecdf;
 }
 
-/* Light — neutral grays, same blue accent */
+/* Paper — warm paper surfaces, same amber accent, darkened for text */
 html.theme-light {
-  --color-chrome: #e9ebef;
-  --color-surface: #f1f2f4;
-  --color-panel: #ffffff;
-  --color-surface-card: #ffffff;
+  --color-chrome: #e6e1d6;
+  --color-surface: #eeeae1;
+  --color-panel: #faf8f3;
+  --color-surface-card: #faf8f3;
   --color-surface-raised: #ffffff;
   --color-surface-elevated: #ffffff;
   --color-surface-input: #ffffff;
-  --color-surface-subtle: #eceef1;
-  --color-surface-hover: #e6e8ec;
-  --color-surface-active: #dfe2e7;
-  --color-surface-terminal: #ffffff;
+  --color-surface-subtle: #e9e5db;
+  --color-surface-hover: #e3ded2;
+  --color-surface-active: #dad4c6;
+  --color-surface-terminal: #fbfaf6;
 
-  --color-border: #dde0e5;
-  --color-border-subtle: #e7e9ed;
-  --color-border-hover: #cdd1d8;
-  --color-border-strong: #b3b8c1;
-  --color-border-focus: #2563eb;
-  --color-border-control: #6b7280;
-  --color-border-floating: #c8ccd4;
+  --color-border: #d9d3c6;
+  --color-border-subtle: #e4dfd4;
+  --color-border-hover: #c9c2b3;
+  --color-border-strong: #ada593;
+  --color-border-focus: #a85b00;
+  --color-border-control: #6f6858;
+  --color-border-floating: #c4bdac;
 
-  --color-primary: #111827;
-  --color-secondary: #4b5563;
-  --color-muted: #565d6b;
-  --color-faint: #9ca3af;
+  --color-primary: #1c1a16;
+  --color-secondary: #4a453b;
+  --color-muted: #5c5649;
+  --color-faint: #a19a8a;
 
-  --color-accent: #2563eb;
-  --color-accent-hover: #1d4ed8;
-  --color-accent-strong: #2563eb;
-  --color-accent-muted: rgba(37, 99, 235, 0.1);
-  --color-selected: rgba(37, 99, 235, 0.08); /* selected row / palette item tint (+ 2px accent rail) */
-  --color-on-accent: #ffffff;
-  --color-accent-strong-hover: #1d4ed8;
-  --color-disabled-fg: #7b8190;
+  --color-accent: #8f4c00; /* text, links, focus */
+  --color-accent-hover: #733c00;
+  --color-accent-strong: #e8962a; /* button fill (on-accent text on top) */
+  --color-accent-strong-hover: #d4851c;
+  --color-on-accent: #1c1206;
+  --color-accent-muted: rgba(200, 120, 20, 0.12);
+  --color-selected: rgba(200, 120, 20, 0.08); /* selected row / palette item tint (+ 2px accent rail) */
+  --color-disabled-fg: #7d7666;
 
-  --color-hover-on-floating: rgba(0, 0, 0, 0.04);
+  --color-hover-on-floating: rgba(28, 26, 22, 0.05);
 
-  --color-success: #15803d;
-  --color-running: #15803d;
-  --color-warning: #b45309;
-  --color-error: #b91c1c;
-  --color-danger: #b91c1c;
-  --color-danger-strong: #b91c1c;
-  --color-danger-strong-hover: #991b1b;
+  --color-success: #2f7a3a;
+  --color-running: #2f7a3a;
+  --color-warning: #8a6a00;
+  --color-error: #b3261e;
+  --color-danger: #b3261e;
+  --color-danger-strong: #b3261e;
+  --color-danger-strong-hover: #93201a;
   --color-on-danger: #ffffff;
-  --color-overlay: rgba(17, 24, 39, 0.4);
+  --color-overlay: rgba(28, 26, 22, 0.4);
 
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
-  --shadow-lg: 0 12px 32px -4px rgba(0, 0, 0, 0.12), 0 4px 12px -2px rgba(0, 0, 0, 0.06);
-  --shadow-xl: 0 20px 48px -8px rgba(0, 0, 0, 0.16), 0 8px 20px -4px rgba(0, 0, 0, 0.08);
-  --shadow-2xl: 0 24px 56px -12px rgba(0, 0, 0, 0.2);
+  --shadow-xs: 0 1px 2px rgba(40, 34, 24, 0.06);
+  --shadow-sm: 0 1px 3px rgba(40, 34, 24, 0.1), 0 1px 2px rgba(40, 34, 24, 0.05);
+  --shadow-md: 0 4px 12px -2px rgba(40, 34, 24, 0.1), 0 2px 6px -1px rgba(40, 34, 24, 0.05);
+  --shadow-lg: 0 12px 32px -4px rgba(40, 34, 24, 0.14), 0 4px 12px -2px rgba(40, 34, 24, 0.07);
+  --shadow-xl: 0 20px 48px -8px rgba(40, 34, 24, 0.18), 0 8px 20px -4px rgba(40, 34, 24, 0.09);
+  --shadow-2xl: 0 24px 56px -12px rgba(40, 34, 24, 0.22);
 
-  --selection-bg: rgba(37, 99, 235, 0.2);
-  --term-bg: #ffffff;
-  --term-fg: #1f2328;
-  --term-cursor: #2563eb;
-  --term-cursor-accent: #ffffff;
-  --term-black: #24292f;
-  --term-red: #cf222e;
-  --term-green: #116329;
-  --term-yellow: #9a6700;
-  --term-blue: #0969da;
-  --term-magenta: #8250df;
-  --term-cyan: #1b7c83;
-  --term-white: #57606a;
-  --term-bright-black: #57606a;
-  --term-bright-red: #a40e26;
-  --term-bright-green: #1a7f37;
-  --term-bright-yellow: #7d4e00;
-  --term-bright-blue: #218bff;
-  --term-bright-magenta: #a475f9;
-  --term-bright-cyan: #3192aa;
-  --term-bright-white: #24292f;
+  --selection-bg: rgba(200, 120, 20, 0.22);
+  --term-bg: #fbfaf6;
+  --term-fg: #2a2620;
+  --term-cursor: #a85b00;
+  --term-cursor-accent: #fbfaf6;
+  --term-black: #2a2620;
+  --term-red: #b3261e;
+  --term-green: #2f7a3a;
+  --term-yellow: #8a6a00;
+  --term-blue: #2b5d8a;
+  --term-magenta: #7a4a86;
+  --term-cyan: #1d6f6b;
+  --term-white: #6a6355;
+  --term-bright-black: #6a6355;
+  --term-bright-red: #93201a;
+  --term-bright-green: #256b2f;
+  --term-bright-yellow: #6e5400;
+  --term-bright-blue: #1f4f7a;
+  --term-bright-magenta: #643b70;
+  --term-bright-cyan: #155c58;
+  --term-bright-white: #1c1a16;
 }
 
 /* ============================================================ */

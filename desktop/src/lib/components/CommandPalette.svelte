@@ -257,7 +257,10 @@
     const navItems: CommandItem[] = nav.map((item) => ({
       id: `nav-${item.tab}`,
       title: item.label,
-      subtitle: activeTab === item.tab ? "Current view" : undefined,
+      subtitle:
+        activeTab === item.tab || (item.tab === "connections" && activeTab === "terminals")
+          ? "Current view"
+          : undefined,
       category: "Navigation",
       icon: item.icon,
       keys: item.tab === "settings" ? keysOf(GLOBAL_SHORTCUTS, "settings") : item.key ? [item.key] : undefined,

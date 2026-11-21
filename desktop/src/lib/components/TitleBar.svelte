@@ -44,7 +44,10 @@
 <header class="titlebar" data-tauri-drag-region>
   <div class="flex min-w-0 items-center gap-2.5" data-tauri-drag-region>
     <BrandMark class="size-[18px] shrink-0" />
-    <span class="pointer-events-none truncate text-sm font-semibold tracking-[-0.01em] text-primary">
+    <span
+      class="pointer-events-none truncate font-display text-sm font-semibold uppercase tracking-[0.04em] text-primary"
+      data-tauri-drag-region
+    >
       Bayesian SSH
     </span>
   </div>
@@ -53,13 +56,13 @@
     {#if onOpenCommandPalette}
       <button
         type="button"
-        class="flex h-[26px] w-full max-w-[150px] cursor-pointer items-center gap-2 rounded-md border border-border bg-surface px-2.5 text-xs text-muted transition-colors duration-fast hover:border-border-hover hover:text-secondary"
+        class="flex h-[26px] w-full max-w-[480px] cursor-pointer items-center gap-2 rounded-md border border-border-control bg-surface-input px-2.5 text-xs text-muted transition-colors duration-fast hover:border-border-hover hover:text-secondary"
         onclick={onOpenCommandPalette}
         aria-label="Jump to…"
         title="Jump to hosts, views and actions"
       >
         <Search size={13} class="shrink-0" />
-        <span class="truncate">Jump to…</span>
+        <span class="mono truncate">› Jump to host, view or action</span>
         <span class="ml-auto flex shrink-0 items-center gap-0.5">
           {#each paletteKeys as key (key)}<kbd class="kbd">{key}</kbd>{/each}
         </span>
@@ -144,7 +147,7 @@
     color: var(--color-primary);
   }
   .window-btn-close:hover {
-    background: #e5484d;
-    color: #fff;
+    background: var(--color-danger-strong);
+    color: var(--color-on-danger);
   }
 </style>

@@ -648,10 +648,10 @@ test.describe("AI run reports", () => {
     await expect(page.getByRole("list", { name: "Past runs" })).toHaveCount(0);
   });
 
-  test("the 9 key and the palette open the reports", async ({ app, page }) => {
+  test("the 8 key and the palette open the reports", async ({ app, page }) => {
     await seedReports(page);
     await app.gotoApp();
-    await page.keyboard.press("9");
+    await page.keyboard.press("8");
     await expect(page.getByRole("list", { name: "Past runs" })).toBeVisible();
 
     await app.setActiveTab("connections");

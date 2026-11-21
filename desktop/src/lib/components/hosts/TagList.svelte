@@ -53,7 +53,7 @@
 
 {#if open && button}
   <AnchoredPopover anchor={button} label="Tags" width={220} onClose={() => (open = false)}>
-    <div class="section-label px-2 pb-1 pt-1.5">Tags</div>
+    <div class="eyebrow px-2 pb-1 pt-1.5">Tags</div>
     <ul class="m-0 flex list-none flex-wrap gap-1 p-2 pt-1">
       {#each tags as tag (tag)}
         <li class="tag">{tag}</li>

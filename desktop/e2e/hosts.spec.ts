@@ -27,6 +27,9 @@ test.describe("hosts list", () => {
   test("renders every mocked host", async ({ app, page }) => {
     await app.gotoApp();
     await expect(page.locator(".workspace h1")).toHaveText("Hosts");
+    // The count is a zero-padded mono number, and the lamp column has a header.
+    await expect(page.locator(".view-header")).toContainText("08");
+    await expect(page.getByRole("columnheader", { name: "Sessions" })).toBeVisible();
     await expect(page.locator("tbody tr")).toHaveCount(HOSTS.length);
     for (const name of HOSTS) {
       await expect(row(page, name)).toHaveCount(1);
@@ -56,7 +59,7 @@ test.describe("hosts list", () => {
     await expect(row(page, "prod-api-01")).toHaveCount(1);
     await expect(row(page, "prod-db-primary")).toHaveCount(1);
     await expect(row(page, "staging-web")).toHaveCount(0);
-    await expect(page.locator(".view-header")).toContainText("3 matching");
+    await expect(page.locator(".view-header")).toContainText("03");
   });
 
   test("a tag chip filters via get_connections tagFilter", async ({ app, page }) => {
@@ -164,6 +167,15 @@ async function rowMenu(page: Page, host: string, item: string) {
 async function focusRow(page: Page, host: string) {
   await row(page, host).locator("td").first().click();
   await expect(row(page, host)).toBeFocused();
+}
+
+/**
+ * Return to the Console's host list while sessions exist: the strip's pinned
+ * "Hosts" tab is the Console home (the sidebar Console opens the sessions).
+ */
+async function goToHosts(page: Page) {
+  await page.getByRole("tab", { name: "Hosts", exact: true }).click();
+  await expect(page.locator(".workspace h1")).toHaveText("Hosts");
 }
 
 test.describe("hosts row actions", () => {
@@ -285,7 +297,7 @@ test.describe("hosts keyboard", () => {
     await page.keyboard.press("Control+Enter");
     await expect(page.locator(".workspace h1")).toHaveText("Files");
 
-    await app.nav("Hosts");
+    await app.nav("Console");
     await focusRow(page, "staging-web");
     await page.keyboard.press("Shift+Enter");
     await expect(page.locator(".workspace h1")).toHaveText("Terminals");
@@ -304,13 +316,13 @@ test.describe("hosts keyboard", () => {
     await page.keyboard.press("Enter");
     await expect.poll(sessions).toBe(1);
 
-    await app.nav("Hosts");
+    await goToHosts(page);
     await focusRow(page, "staging-web");
     await page.keyboard.press("Enter");
     await expect(page.locator(".workspace h1")).toHaveText("Terminals");
     await expect.poll(sessions).toBe(1);
 
-    await app.nav("Hosts");
+    await goToHosts(page);
     await focusRow(page, "staging-web");
     await page.keyboard.press("Shift+Enter");
     await expect.poll(sessions).toBe(2);

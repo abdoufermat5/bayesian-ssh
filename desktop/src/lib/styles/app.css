@@ -1,5 +1,8 @@
 @import "tailwindcss";
-@import "@fontsource-variable/inter/index.css";
+/* Display: Archivo with the width (wdth) axis so `font-stretch` condenses it. */
+@import "@fontsource-variable/archivo/wdth.css";
+/* Body: IBM Plex Sans (weight axis only). */
+@import "@fontsource-variable/ibm-plex-sans/index.css";
 @import "@fontsource-variable/jetbrains-mono/index.css";
 @import "./tokens.css";
 @import "./base.css";

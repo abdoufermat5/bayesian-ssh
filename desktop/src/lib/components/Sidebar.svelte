@@ -74,8 +74,10 @@
     badge?: number;
     attention?: number;
     key: string | null;
-    /** Overrides "this tab is showing" (two entries share the AI tab). */
+    /** Overrides "this tab is showing" (two entries share the AI tab; Console spans two). */
     active?: boolean;
+    /** Overrides the tab opened on click (Console opens live terminals when any exist). */
+    target?: AppTab;
     onSelect?: () => void;
   };
 
@@ -84,36 +86,38 @@
     return { id: tab, tab, icon, label, key: viewDigit(tab), ...extra };
   }
 
-  // Section order follows VIEW_ORDER, so the digit shortcuts (shown in each tooltip) run 1..n down the list.
-  const sections = $derived<{ label: string | null; items: NavItem[] }[]>([
+  // Three console sections, Operate / Secure / Review; the digit shortcuts
+  // (shown in each tooltip and keycap) run 1..8 down the list per VIEW_ORDER.
+  const sections = $derived<{ label: string; items: NavItem[] }[]>([
     {
-      label: null,
+      label: "Operate",
       items: [
-        navItem("connections"),
-        navItem("terminals", { badge: terminalCount }),
+        navItem("connections", {
+          badge: terminalCount,
+          active: activeTab === "connections" || activeTab === "terminals",
+          // appState lands on the host list when no tab is open.
+          target: "terminals",
+        }),
         ...(viewEnabled("sftp", settings) ? [navItem("sftp")] : []),
-      ],
-    },
-    {
-      label: "Security",
-      items: [navItem("keys"), navItem("audit")],
-    },
-    {
-      label: "Activity",
-      items: [navItem("history")],
-    },
-    {
-      label: "Team",
-      items: [navItem("teams", { attention: attentionCount("teams") })],
-    },
-    {
-      label: "AI",
-      items: [
         navItem("ai", {
           attention: aiPendingCount(),
           active: activeTab === "ai" && getAiMode() === "live",
           onSelect: () => setAiMode("live"),
         }),
+      ],
+    },
+    {
+      label: "Secure",
+      items: [
+        navItem("keys"),
+        navItem("audit"),
+        navItem("teams", { attention: attentionCount("teams") }),
+      ],
+    },
+    {
+      label: "Review",
+      items: [
+        navItem("history"),
         {
           id: "ai-reports",
           tab: "ai",
@@ -181,8 +185,8 @@
       </span>
       {#if !sidebarCollapsed}
         <span class="flex min-w-0 flex-1 flex-col leading-tight">
-          <span class="truncate text-sm font-medium text-primary">{activeEnv}</span>
-          <span class="text-2xs text-muted">Profile</span>
+          <span class="eyebrow">Profile</span>
+          <span class="mono truncate text-sm text-primary">{activeEnv}</span>
         </span>
         <ChevronsUpDown size={14} class="shrink-0 text-muted" />
       {/if}
@@ -234,14 +238,10 @@
   <!-- Navigation -->
   <nav class="flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pb-2 scrollbar-none">
     {#each sections as section}
-      {#if section.label}
-        {#if sidebarCollapsed}
-          <div class="mx-2 my-2.5 h-px bg-border"></div>
-        {:else}
-          <div class="nav-section-label">{section.label}</div>
-        {/if}
+      {#if sidebarCollapsed}
+        <div class="mx-2 my-2.5 h-px bg-border"></div>
       {:else}
-        <div class="h-2"></div>
+        <div class="nav-section-label eyebrow">{section.label}</div>
       {/if}
       <div class="nav-section">
         {#each section.items as item (item.id)}
@@ -251,7 +251,7 @@
             class="nav-item {active ? 'nav-item-active' : ''} {sidebarCollapsed ? 'nav-item-collapsed' : ''}"
             onclick={() => {
               item.onSelect?.();
-              onTabChange(item.tab);
+              onTabChange(item.target ?? item.tab);
             }}
             title={item.key ? `${item.label} (${item.key})` : item.label}
             aria-keyshortcuts={item.key ?? undefined}
@@ -267,6 +267,8 @@
                 <span class="count ml-auto bg-warning/15 text-warning" aria-hidden="true">{item.attention}</span>
               {:else if item.badge}
                 <span class="count ml-auto {active ? 'bg-accent/15 text-accent' : ''}">{item.badge}</span>
+              {:else if item.key}
+                <span class="mono ml-auto w-4 text-center text-xs text-muted" aria-hidden="true">{item.key}</span>
               {/if}
             {:else if item.attention}
               <span class="absolute right-1.5 top-1.5 size-2 rounded-full bg-warning ring-2 ring-chrome" aria-hidden="true"></span>
@@ -292,7 +294,7 @@
         <Layers size={16} strokeWidth={1.75} />
         {#if !sidebarCollapsed}
           <span class="truncate">Background</span>
-          <span class="count ml-auto bg-accent/15 text-accent">{externalSessionCount}</span>
+          <span class="mono ml-auto text-xs tabular-nums text-accent">{externalSessionCount}</span>
         {/if}
       </button>
     {/if}
@@ -310,7 +312,7 @@
       </span>
       {#if !sidebarCollapsed}
         <span class="truncate">SSH agent</span>
-        <span class="ml-auto text-xs tabular-nums text-muted">
+        <span class="mono ml-auto text-xs tabular-nums text-muted">
           {agentActive ? `${agentKeys.length} key${agentKeys.length === 1 ? "" : "s"}` : "Off"}
         </span>
       {/if}
@@ -330,7 +332,7 @@
         </span>
         {#if !sidebarCollapsed}
           <span class="truncate">Kerberos</span>
-          <span class="ml-auto truncate text-xs tabular-nums {kerberosTone === 'success' ? 'text-muted' : `text-${kerberosTone}`}">
+          <span class="mono ml-auto truncate text-xs tabular-nums {kerberosTone === 'success' ? 'text-muted' : kerberosTone === 'warning' ? 'text-warning' : 'text-error'}">
             {kerberosLabel}
           </span>
         {/if}

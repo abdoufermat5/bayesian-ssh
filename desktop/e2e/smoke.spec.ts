@@ -4,7 +4,7 @@ import { test, expect } from "./fixtures/app";
 test("shell renders with hosts loaded", async ({ app, page }) => {
   await app.gotoApp();
   await expect(page.locator(".app-shell")).toBeVisible();
-  await app.nav("Hosts");
+  await app.nav("Console");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Hosts");
   await expect(page.getByText("prod-api-01")).toBeVisible();
   const calls = await app.ipcCalls("get_connections");

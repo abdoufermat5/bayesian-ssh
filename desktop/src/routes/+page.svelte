@@ -79,12 +79,23 @@
     lastFilterKey = key;
   });
 
-  // Single place that reacts to the Terminals view becoming visible:
-  // resumes output rendering, then fits + focuses the active terminal.
+  // Single place that reacts to the terminal surface becoming visible:
+  // resumes output rendering, then fits + focuses the active terminal. The
+  // Console's home (host list) keeps the panes mounted but not rendered.
+  let hadTabs = terminalState.tabs.length > 0;
   $effect(() => {
-    const visible = appState.activeTab === "terminals";
+    const active = appState.activeTab;
+    const count = terminalState.tabs.length;
+    const visible = active === "terminals" && count > 0;
     setTerminalsVisible(visible);
-    if (visible) requestAnimationFrame(() => appState.goToTerminals());
+    if (visible) {
+      requestAnimationFrame(() => appState.goToTerminals());
+    } else if (active === "terminals" && count === 0 && hadTabs) {
+      // The last session went away while the terminal surface was showing;
+      // the Console falls back to its home (host list).
+      appState.activeTab = "connections";
+    }
+    hadTabs = count > 0;
   });
 
   let unlistenConnect: (() => void) | undefined;
@@ -222,6 +233,31 @@
   });
 </script>
 
+<!-- The Console's home surface: the host list. Rendered on its own when no
+     session exists, or inside TerminalsView as the pinned "Hosts" tab. -->
+{#snippet connectionsView()}
+  <ConnectionsView
+    connections={appState.connections}
+    selectedHostIndex={appState.selectedHostIndex}
+    copiedId={appState.copiedId}
+    justDuplicatedId={appState.justDuplicatedId}
+    timezone={appState.settings.timezone}
+    bind:searchQuery={appState.searchQuery}
+    bind:selectedTag={appState.selectedTag}
+    allTags={appState.allTags}
+    onSelectHost={(i) => (appState.selectedHostIndex = i)}
+    onConnect={appState.handleConnect}
+    onEdit={appState.openEditModal}
+    onDelete={appState.deleteConnection}
+    onDuplicate={appState.duplicateConnection}
+    onCopyCommand={appState.copyToClipboard}
+    onAddHost={appState.openAddModal}
+    onImportSshConfig={appState.importSshConfig}
+    onOpenBatchExec={() => (showBatchExecModal = true)}
+    onOpenUpload={() => openUploadModal([])}
+  />
+{/snippet}
+
 {#if appState.isInitializing}
   <AppLoader />
 {:else if appState.showOnboarding}
@@ -270,28 +306,7 @@
 
     <main class="workspace">
       <AttentionBanner onTabChange={appState.handleTabChange} />
-      {#if appState.activeTab === "connections"}
-        <ConnectionsView
-          connections={appState.connections}
-          selectedHostIndex={appState.selectedHostIndex}
-          copiedId={appState.copiedId}
-          justDuplicatedId={appState.justDuplicatedId}
-          timezone={appState.settings.timezone}
-          bind:searchQuery={appState.searchQuery}
-          bind:selectedTag={appState.selectedTag}
-          allTags={appState.allTags}
-          onSelectHost={(i) => (appState.selectedHostIndex = i)}
-          onConnect={appState.handleConnect}
-          onEdit={appState.openEditModal}
-          onDelete={appState.deleteConnection}
-          onDuplicate={appState.duplicateConnection}
-          onCopyCommand={appState.copyToClipboard}
-          onAddHost={appState.openAddModal}
-          onImportSshConfig={appState.importSshConfig}
-          onOpenBatchExec={() => (showBatchExecModal = true)}
-          onOpenUpload={() => openUploadModal([])}
-        />
-      {:else if appState.activeTab === "history"}
+      {#if appState.activeTab === "history"}
         <HistoryView history={appState.history} timezone={appState.settings.timezone} />
       {:else if appState.activeTab === "keys"}
         <KeysView connections={appState.allConnections} />
@@ -323,16 +338,26 @@
       {/if}
 
       <!-- Terminals stay mounted while sessions exist so xterm buffers
-           survive tab switches; hidden with display:none (no layout/paint). -->
+           survive view switches; hidden with display:none only when the
+           Console is not the active workspace. With sessions open the Console
+           is TerminalsView, whose first strip tab is the host list. -->
       {#if appState.showTerminalsPanel}
-        <div class="view" class:hidden={appState.activeTab !== "terminals"}>
+        <div
+          class="view"
+          class:hidden={appState.activeTab !== "connections" && appState.activeTab !== "terminals"}
+        >
           <TerminalsView
             connections={appState.allConnections}
+            homeActive={appState.activeTab === "connections" || terminalState.tabs.length === 0}
+            onGoHome={() => appState.handleTabChange("connections")}
             onCloseAll={appState.requestCloseAllSessions}
             onManageSessions={appState.openSessionManager}
             onConnect={(conn, options) => appState.handleConnect(conn, { newTab: true, ...options })}
+            home={connectionsView}
           />
         </div>
+      {:else if appState.activeTab === "connections"}
+        {@render connectionsView()}
       {/if}
     </main>
   </div>

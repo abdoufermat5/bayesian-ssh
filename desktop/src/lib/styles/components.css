@@ -15,13 +15,13 @@
   .btn {
     @apply inline-flex h-8 shrink-0 cursor-pointer select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-transparent px-3 text-sm font-medium leading-none transition-colors duration-fast disabled:cursor-not-allowed;
   }
-  /* Filled with accent-strong so on-accent text meets 4.5:1 in every theme. */
+  /* Filled with accent-strong so on-accent text meets 4.5:1 in every theme.
+     No shadow on the fill: the amber plane is the signal. */
   .btn-primary {
     @apply bg-accent-strong text-on-accent hover:bg-accent-strong-hover;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 1px 2px rgba(0, 0, 0, 0.3);
   }
   .btn-secondary {
-    @apply border-border-control bg-panel text-primary hover:border-border-strong hover:bg-surface-hover;
+    @apply border-border-control bg-transparent text-primary hover:border-border-strong hover:bg-surface-hover;
   }
   .btn-ghost {
     @apply bg-transparent text-secondary hover:bg-surface-hover hover:text-primary;
@@ -137,7 +137,7 @@
      BADGES, TAGS, KBD, STATUS
      ================================================================ */
   .badge {
-    @apply inline-flex h-5 shrink-0 select-none items-center gap-1 whitespace-nowrap rounded-sm px-1.5 text-2xs font-medium leading-none;
+    @apply inline-flex h-5 shrink-0 select-none items-center gap-1 whitespace-nowrap rounded-xs px-1.5 text-2xs font-medium leading-none;
   }
   .badge-neutral {
     @apply bg-surface-active text-secondary;
@@ -158,17 +158,19 @@
     @apply font-mono uppercase tracking-wide;
   }
   .count {
-    @apply inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-surface-active px-1.5 font-mono text-2xs font-medium text-secondary;
+    @apply inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-xs bg-surface-active px-1.5 font-mono text-2xs font-medium tabular-nums text-secondary;
   }
 
   /* .tag = static label (read-only metadata): flat filled rectangle, no border.
      .chip = interactive filter: pill with a control border (see below). */
   .tag {
-    @apply inline-flex h-5 shrink-0 select-none items-center rounded-xs bg-surface-active px-1.5 text-2xs text-secondary;
+    @apply inline-flex h-5 shrink-0 select-none items-center rounded-xs bg-surface-active px-1.5 font-mono text-2xs uppercase tracking-[0.04em] text-secondary;
   }
 
+  /* Mono keycap: 1 px control edge plus a hairline bottom shadow. */
   .kbd {
-    @apply inline-flex h-[18px] min-w-[18px] select-none items-center justify-center rounded-xs border border-border-hover bg-surface-hover px-1 font-sans text-2xs font-medium text-secondary;
+    @apply inline-flex h-[18px] min-w-[18px] select-none items-center justify-center rounded-xs border border-border-control bg-surface-input px-1 font-mono text-2xs font-medium leading-none text-secondary;
+    box-shadow: 0 1px 0 var(--color-border-strong);
   }
 
   .status-dot {
@@ -194,16 +196,44 @@
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-running) 22%, transparent);
   }
 
+  /* ---- Patch-bay jack --------------------------------------------
+     A 10 px round jack per host row: hollow ring when idle, amber when
+     a session to that host is live, error fill when it failed. State is
+     never color alone — always pair with a title or sr-only text. The
+     only motion is the connecting state's opacity breathe. */
+  .lamp {
+    @apply inline-block size-2.5 shrink-0 rounded-full border border-border-control bg-transparent;
+  }
+  .lamp-live {
+    @apply border-accent bg-accent;
+  }
+  .lamp-connecting {
+    @apply border-accent bg-transparent;
+    animation: lamp-breathe 2s ease-in-out infinite;
+  }
+  .lamp-error {
+    @apply border-error bg-error;
+  }
+  /* Optional session count beside the jack. */
+  .lamp-count {
+    @apply font-mono tabular-nums text-muted;
+    font-size: 0.625rem;
+    line-height: 1;
+  }
+
   /* ================================================================
      TEXT HELPERS
      ================================================================ */
-  /* Type contract (tokens.css "Type scale"): title 20, section 14, body 13,
+  /* Type contract (tokens.css "Type scale"): title 22 display, section 14, body 13,
      meta 12, caption 11. Each size has one job; never pick one ad hoc. */
   .type-title {
+    font-family: var(--font-display);
+    font-stretch: 75%;
     font-size: var(--type-title);
     line-height: var(--type-title-lh);
     font-weight: var(--type-title-weight);
     letter-spacing: var(--type-title-tracking);
+    text-transform: uppercase;
     @apply text-primary;
   }
   .type-section {
@@ -234,8 +264,20 @@
     line-height: var(--type-section-lh);
     font-weight: var(--type-section-weight);
   }
-  .section-label {
-    @apply select-none text-2xs font-medium uppercase tracking-[0.06em] text-muted;
+  /* Instrument-panel eyebrow: condensed uppercase display type. Titles,
+     sidebar sections, table headers and settings group titles share it. */
+  .eyebrow,
+  .section-label,
+  .nav-section-label,
+  .settings-eyebrow {
+    font-family: var(--font-display);
+    font-stretch: 75%;
+    font-size: var(--type-caption);
+    line-height: var(--type-caption-lh);
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    @apply select-none text-muted;
   }
   .link {
     @apply cursor-pointer text-accent underline-offset-2 transition-colors duration-fast hover:text-accent-hover hover:underline;
@@ -270,6 +312,12 @@
   .app-shell {
     @apply flex h-[100dvh] w-full min-h-0 flex-col overflow-hidden bg-chrome;
   }
+  /* Static grain: one inline SVG noise tile at ≤ 3 % opacity on the chrome
+     only. The texture is baked into the data URI, so no runtime filter. */
+  .titlebar,
+  .sidebar {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  }
   .titlebar {
     @apply relative z-50 grid h-[var(--titlebar-h)] shrink-0 select-none items-center bg-chrome pl-3;
     grid-template-columns: 1fr minmax(0, 420px) 1fr;
@@ -282,7 +330,7 @@
     @apply flex flex-col gap-px;
   }
   .nav-section-label {
-    @apply px-2.5 pb-1 pt-4 text-2xs font-medium text-muted;
+    @apply px-2.5 pb-1 pt-4;
   }
   .nav-item {
     @apply relative flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-left text-sm text-secondary transition-colors duration-fast hover:bg-surface-hover hover:text-primary;
@@ -310,14 +358,24 @@
     @apply flex min-h-0 w-full flex-1 flex-col overflow-hidden;
   }
   .view-header {
-    @apply flex h-[var(--header-h)] shrink-0 items-center justify-between gap-4 px-6;
+    @apply flex h-[var(--header-h)] shrink-0 items-center justify-between gap-4 border-b border-border px-6;
   }
   .view-title {
     @apply m-0 flex min-w-0 items-center gap-2 truncate text-primary;
+    font-family: var(--font-display);
+    font-stretch: 75%;
     font-size: var(--type-title);
     line-height: var(--type-title-lh);
     font-weight: var(--type-title-weight);
     letter-spacing: var(--type-title-tracking);
+    text-transform: uppercase;
+  }
+  /* Counts in the header are machine values: mono, tabular, muted. */
+  .view-count {
+    @apply font-mono text-sm tabular-nums text-muted;
+  }
+  .view-header .tabular-nums {
+    font-family: var(--font-mono);
   }
   .view-subtitle {
     @apply truncate text-xs text-muted;
@@ -381,7 +439,14 @@
     @apply w-full border-collapse text-sm;
   }
   .data-table thead th {
-    @apply sticky top-0 z-[1] h-9 select-none border-b border-border bg-panel px-3 text-left text-xs font-medium text-muted;
+    @apply sticky top-0 z-[1] h-9 select-none border-b border-border bg-panel px-3 text-left text-muted;
+    font-family: var(--font-display);
+    font-stretch: 75%;
+    font-size: var(--type-caption);
+    line-height: var(--type-caption-lh);
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
   }
   .data-table tbody tr {
     @apply transition-colors duration-fast;
@@ -587,7 +652,14 @@
     @apply flex shrink-0 items-start justify-between gap-4 px-5 pb-3 pt-4;
   }
   .modal-title {
-    @apply m-0 text-lg font-semibold leading-tight tracking-[-0.01em] text-primary;
+    @apply m-0 text-primary;
+    font-family: var(--font-display);
+    font-stretch: 75%;
+    font-size: var(--text-lg);
+    line-height: 1.25;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
   }
   .modal-subtitle {
     @apply m-0 mt-1 text-xs leading-snug text-muted;
@@ -610,13 +682,6 @@
      ================================================================ */
   .settings-frame {
     @apply mx-auto flex min-h-0 w-full max-w-[1040px] flex-1 flex-col;
-  }
-  .settings-eyebrow {
-    @apply select-none text-muted;
-    font-size: var(--type-caption);
-    font-weight: var(--type-caption-weight);
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
   }
   .settings-shell {
     @apply flex min-h-0 w-full flex-1 gap-6 overflow-hidden px-6;
@@ -666,10 +731,14 @@
     @apply flex flex-col rounded-lg border border-border bg-panel;
   }
   .settings-group-title {
-    @apply m-0 mb-2 text-primary;
-    font-size: var(--type-section);
-    line-height: var(--type-section-lh);
-    font-weight: var(--type-section-weight);
+    @apply m-0 mb-2 text-muted;
+    font-family: var(--font-display);
+    font-stretch: 75%;
+    font-size: var(--text-xs);
+    line-height: var(--text-xs--line-height);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
   }
   .setting-row {
     @apply flex min-h-14 flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3;

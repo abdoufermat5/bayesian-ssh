@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { tick } from "svelte";
+  import { tick, type Snippet } from "svelte";
   import {
     AppWindow,
     Columns2,
     Download,
     Eraser,
+    House,
     Layers,
     Link2,
     Minus,
@@ -17,6 +18,7 @@
   } from "lucide-svelte";
   import type { Connection } from "$lib/types";
   import { notify } from "$lib/stores/notifications.svelte";
+  import { appState } from "$lib/stores/appState.svelte";
   import { downloadTerminalScrollback, terminalShortcutId } from "$lib/utils/terminal-xterm";
   import type { TabDragHandlers } from "$lib/actions/tabDrag";
   import { tabBarReattachDrop } from "$lib/actions/tabBarReattachDrop";
@@ -26,7 +28,6 @@
   import StripTab from "$lib/components/terminal/StripTab.svelte";
   import TabMenu from "$lib/components/terminal/TabMenu.svelte";
   import TerminalPane from "$lib/components/terminal/TerminalPane.svelte";
-  import TerminalsEmptyState from "$lib/components/terminal/TerminalsEmptyState.svelte";
   import {
     activateAwaySession,
     bringBackSession,
@@ -66,12 +67,36 @@
     onCloseAll: () => void;
     onManageSessions: () => void;
     onConnect: (conn: Connection, options?: Pick<ConnectOptions, "split">) => void | Promise<void>;
+    /** The host list (home) is the surface in view; terminals stay mounted. */
+    homeActive: boolean;
+    onGoHome: () => void;
+    /** Console home surface: the host list, shared with the standalone view. */
+    home: Snippet;
   }
 
-  let { connections, onCloseAll, onManageSessions, onConnect }: Props = $props();
+  let {
+    connections,
+    onCloseAll,
+    onManageSessions,
+    onConnect,
+    homeActive,
+    onGoHome,
+    home,
+  }: Props = $props();
 
   const terminalState = getTerminalState();
   const activeTab = $derived(terminalState.activeTab);
+
+  /**
+   * The Console (host list or terminals) is the workspace in front. While
+   * another view is open the whole Console is hidden; the host list must not
+   * mount there, because its window-level shortcuts would stay live behind
+   * that view.
+   */
+  const consoleInView = $derived(
+    appState.activeTab === "connections" || appState.activeTab === "terminals",
+  );
+  const homeInView = $derived(homeActive && consoleInView);
 
   let showLauncher = $state(false);
   /** Side of the active tab a launcher connection opens on; null opens a plain tab. */
@@ -160,6 +185,11 @@
     }
   }
 
+  /** A session tab was chosen: leave the home surface for the terminal. */
+  function handleSelectTab() {
+    if (homeActive) appState.goToTerminals();
+  }
+
   function runMenuAction(action: () => void | Promise<void>) {
     showMoreMenu = false;
     void action();
@@ -188,6 +218,8 @@
     // focused terminal.
     const target = e.target;
     if (!(target instanceof HTMLElement) || !target.closest("[data-terminals-view]")) return;
+    // The host list owns the keyboard while it is the surface in view.
+    if (homeActive) return;
     const id = terminalShortcutId(e);
     if (!id || id.startsWith("term-zoom")) return;
     if (id === "term-cancel" && target instanceof HTMLInputElement) return;
@@ -275,8 +307,10 @@
     try {
       if (target.kind === "strip") moveTab(tabId, target.beforeTabId);
       else if (target.kind === "group") addTabToGroup(tabId, target.groupId);
-      else if (target.kind === "pane" && target.side !== "center") splitTab(tabId, target.tabId, target.side);
-      else await popOutTab(tabId);
+      else if (target.kind === "pane" && target.side !== "center") {
+        splitTab(tabId, target.tabId, target.side);
+        if (homeActive) appState.goToTerminals();
+      } else await popOutTab(tabId);
     } catch (e: unknown) {
       notify(String(e), "error");
     }
@@ -306,11 +340,12 @@
 
 <svelte:window onkeydown={handleWindowKeydown} />
 
-{#if terminalState.tabs.length > 0}
   <div data-terminals-view class="flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-surface-terminal">
-    <!-- Keep a page heading for the sessions layout too: the tab strip acts as
-         the visual header, so the accessible title is visually hidden. -->
-    <h1 class="sr-only">Terminals</h1>
+    <!-- The accessible title belongs to the terminal surface; on home the host
+         list below carries its own heading. -->
+    {#if !homeActive && consoleInView}
+      <h1 class="sr-only">Terminals</h1>
+    {/if}
     <!-- Tab strip + active-session toolbar -->
     <div
       bind:this={stripBar}
@@ -319,12 +354,31 @@
     >
       <div
         bind:this={tabStrip}
-        class="scrollbar-none flex min-w-0 items-center gap-0.5 overflow-x-auto"
+        class="scrollbar-none flex min-w-0 items-center gap-0 overflow-x-auto"
         role="tablist"
         aria-label="Terminal sessions"
         tabindex="-1"
         use:horizontalWheel
       >
+        <!-- Pinned home tab: the host list, the Console's starting surface. -->
+        <button
+          type="button"
+          role="tab"
+          aria-selected={homeActive}
+          class="sticky left-0 z-10 flex h-7 shrink-0 items-center gap-1.5 border-r border-border-subtle pl-2.5 pr-2.5 text-xs font-medium transition-colors duration-fast
+            {homeActive
+              ? 'bg-surface-terminal text-primary'
+              : 'bg-surface text-muted hover:bg-surface-hover hover:text-primary'}"
+          title="Hosts — the host list"
+          onclick={onGoHome}
+        >
+          {#if homeActive}
+            <span class="pointer-events-none absolute inset-x-0 top-0 h-0.5 bg-accent" aria-hidden="true"></span>
+          {/if}
+          <House size={14} class="shrink-0" aria-hidden="true" />
+          <span>Hosts</span>
+        </button>
+
         {#each stripItems as item (item.kind === "tab" ? item.tab.id : `group:${item.group.id}`)}
           {#if item.kind === "group"}
             {@const group = item.group}
@@ -357,11 +411,12 @@
             <StripTab
               tab={item.tab}
               group={item.group}
-              active={terminalState.activeTabId === item.tab.id}
+              active={!homeActive && terminalState.activeTabId === item.tab.id}
               inSplit={splitTabIds.has(item.tab.id)}
               poppingOut={popsOut(item.tab.id)}
               drag={dragHandlers(item.tab.id)}
               onMenu={(e) => openTabMenu(e, item.tab.id)}
+              onSelect={handleSelectTab}
             />
           {/if}
         {/each}
@@ -436,7 +491,7 @@
 
       <div class="min-w-2 flex-1 self-stretch" aria-hidden="true"></div>
 
-      {#if activeTab}
+      {#if activeTab && !homeActive}
         <button
           type="button"
           class="btn-icon {activeTab.showSearch ? 'bg-surface-hover text-primary' : ''}"
@@ -522,7 +577,7 @@
         {#if showMoreMenu}
           <div class="fixed inset-0 z-40" role="presentation" onclick={closeMenus}></div>
           <div class="popover absolute right-0 top-full mt-1 w-56" role="menu">
-            {#if activeTab}
+            {#if activeTab && !homeActive}
               <button
                 type="button"
                 class="menu-item"
@@ -592,41 +647,52 @@
       </div>
     </div>
 
-    <!-- Terminal surfaces; inactive tabs stay mounted with display:none. -->
-    <div bind:this={surfaceArea} class="relative min-h-0 flex-1 overflow-hidden bg-surface-terminal">
-      {#each terminalState.tabs as tab (tab.id)}
-        <TerminalPane
-          {tab}
-          rect={paneRects.get(tab.id)}
-          active={terminalState.activeTabId === tab.id}
-          {connections}
-        />
-      {/each}
+    <!-- Terminal surfaces stay mounted (xterm buffers) and keep their size:
+         the home surface is layered above them, never replacing them. -->
+    <div class="relative min-h-0 flex-1 overflow-hidden">
+      <div
+        bind:this={surfaceArea}
+        class="absolute inset-0 flex flex-col overflow-hidden bg-surface-terminal"
+        class:invisible={homeActive}
+        aria-hidden={homeActive}
+      >
+        {#each terminalState.tabs as tab (tab.id)}
+          <TerminalPane
+            {tab}
+            rect={paneRects.get(tab.id)}
+            active={terminalState.activeTabId === tab.id}
+            {connections}
+          />
+        {/each}
 
-      {#if splitLayout}
-        <SplitDividers dividers={splitLayout.dividers} area={surfaceArea} />
-      {/if}
+        {#if splitLayout}
+          <SplitDividers dividers={splitLayout.dividers} area={surfaceArea} />
+        {/if}
 
-      {#if drag && drag.target.kind === "pane"}
-        {@const zone = drag.target}
-        <div
-          class="split-drop-zone pointer-events-none absolute z-30 flex items-center justify-center rounded-md"
-          style:left={cssPercent(zone.rect.x)}
-          style:top={cssPercent(zone.rect.y)}
-          style:width={cssPercent(zone.rect.w)}
-          style:height={cssPercent(zone.rect.h)}
-          aria-hidden="true"
-        >
-          <span class="rounded-md border border-border-floating bg-surface-raised px-2 py-1 text-xs text-primary shadow-md">
-            {zone.side === "center" ? "Open in new window" : `Split ${zone.side}`}
-          </span>
+        {#if drag && drag.target.kind === "pane"}
+          {@const zone = drag.target}
+          <div
+            class="split-drop-zone pointer-events-none absolute z-30 flex items-center justify-center rounded-md"
+            style:left={cssPercent(zone.rect.x)}
+            style:top={cssPercent(zone.rect.y)}
+            style:width={cssPercent(zone.rect.w)}
+            style:height={cssPercent(zone.rect.h)}
+            aria-hidden="true"
+          >
+            <span class="rounded-md border border-border-floating bg-surface-raised px-2 py-1 text-xs text-primary shadow-md">
+              {zone.side === "center" ? "Open in new window" : `Split ${zone.side}`}
+            </span>
+          </div>
+        {/if}
+      </div>
+
+      {#if homeInView}
+        <div class="absolute inset-0 flex min-h-0 flex-col overflow-hidden bg-surface">
+          {@render home()}
         </div>
       {/if}
     </div>
   </div>
-{:else}
-  <TerminalsEmptyState {connections} {onManageSessions} onConnect={handleConnect} />
-{/if}
 
 {#if tabMenu}
   {@const menuTab = terminalState.tabs.find((t) => t.id === tabMenu?.tabId)}

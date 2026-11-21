@@ -1,12 +1,15 @@
 import { test, expect } from "./fixtures/app";
 
 const VIEWS: Array<{ nav: string; title: string }> = [
-  { nav: "Hosts", title: "Hosts" },
-  { nav: "Terminals", title: "Terminals" },
+  { nav: "Console", title: "Hosts" },
   { nav: "Files", title: "Files" },
+  { nav: "AI agents", title: "AI agents" },
   { nav: "Keys", title: "Keys" },
   { nav: "Security check", title: "Security check" },
+  { nav: "Teams", title: "Teams" },
   { nav: "History", title: "History" },
+  // The AI reports entry shares the AI view; its h1 stays "AI agents".
+  { nav: "AI reports", title: "AI agents" },
   { nav: "Settings", title: "Settings" },
 ];
 
@@ -25,8 +28,8 @@ test.describe("app shell", () => {
     await app.gotoApp();
     await app.nav("Keys");
     await expect(page.locator('.sidebar [aria-label="Keys"]')).toHaveAttribute("aria-current", "page");
-    await app.nav("Hosts");
-    await expect(page.locator('.sidebar [aria-label="Hosts"]')).toHaveAttribute("aria-current", "page");
+    await app.nav("Console");
+    await expect(page.locator('.sidebar [aria-label="Console"]')).toHaveAttribute("aria-current", "page");
     await expect(page.locator('.sidebar [aria-label="Keys"]')).not.toHaveAttribute("aria-current", "page");
   });
 
@@ -37,12 +40,12 @@ test.describe("app shell", () => {
 
     await page.getByRole("button", { name: "Collapse sidebar" }).click();
     await expect(page.getByRole("button", { name: "Expand sidebar" })).toBeVisible();
-    await expect(sidebar.getByText("Hosts", { exact: true })).toHaveCount(0);
+    await expect(sidebar.getByText("Console", { exact: true })).toHaveCount(0);
     await expect.poll(async () => (await sidebar.boundingBox())!.width).toBeLessThan(expanded);
 
     await page.getByRole("button", { name: "Expand sidebar" }).click();
     await expect(page.getByRole("button", { name: "Collapse sidebar" })).toBeVisible();
-    await expect(sidebar.getByText("Hosts", { exact: true })).toBeVisible();
+    await expect(sidebar.getByText("Console", { exact: true })).toBeVisible();
   });
 
   test("profile switcher lists profiles and switching calls set_active_env", async ({ app, page }) => {

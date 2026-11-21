@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Desktop: split screen.** **Split right** and **Split down** in the terminal toolbar (or in a tab's menu) open a session beside the current one; a tab's menu can also show an open tab right of or below the current one. Splits nest, the divider drags (or moves with the arrow keys, double-click evens it out), clicking a pane focuses its tab, and the pane header's button takes a session back out of the split without closing it. A split left with one pane goes back to a single terminal.
 - **Desktop: drag tabs.** Drag a tab along the strip to reorder it; dropped inside a group it joins it, dropped onto a group chip it moves into that group, dropped outside its own group it leaves it. Dragged onto the edge of a terminal pane it splits that pane; dropped in the middle or outside the strip it opens in its own window, as before. Esc cancels a drag. **Move left** and **Move right** in the tab menu do the same from the keyboard.
 
+### Changed
+- **Desktop: Operator Console redesign.** **Hosts** and **Terminals** become one **Console**: with no sessions it is the host list, and once sessions exist the list is the strip's pinned **Hosts** home tab while terminal panes stay mounted behind it (the separate terminal empty state is gone). The sidebar regroups into **Operate**, **Secure** and **Review** with digits 1–8 (AI reports moves from 9 to 8), and each host row gets a round patch-bay lamp that lights amber while a session to it is live. The app is restyled as an industrial instrument panel: warm carbon (dark) and paper (light) surfaces, one phosphor-amber signal accent with caution-yellow warnings, hairline rules and tight radii, Archivo condensed uppercase display type, IBM Plex Sans body text and JetBrains Mono for every machine value.
+
 ## [2.15.2] - 2026-11-01
 
 ### Added

@@ -14,6 +14,11 @@
   import { predictionDetail, predictionReason } from "$lib/utils/prediction";
   import { toSshCommand } from "$lib/utils/sshCommand";
   import { formatDateTime, formatRelative } from "$lib/utils/timezone";
+  import {
+    IDLE_HOST_SESSION,
+    sessionsByHost,
+    type HostSessionState,
+  } from "$lib/utils/host-sessions";
   import { notify } from "$lib/stores/notifications.svelte";
   import { appState } from "$lib/stores/appState.svelte";
   import { requestFilesHost } from "$lib/stores/filesHost.svelte";
@@ -159,11 +164,43 @@
     if (sourceGone || noSources) sourceFilter = "all";
   });
 
-  const columnCount = $derived(hasSyncedHosts ? 6 : 5);
+  // One pass over the open tabs: every row looks its host up in this map
+  // instead of each scanning every tab.
+  const sessions = $derived(sessionsByHost());
+
+  const columnCount = $derived(hasSyncedHosts ? 7 : 6);
 
   function teamNameOf(conn: Connection): string | null {
     const source = sourceOf(conn.source_id, sourceIndex);
     return source?.kind === "team" ? source.name : null;
+  }
+
+  /** Spoken text and tooltip of a row's session lamp, e.g. "2 live sessions". */
+  function sessionLabel(session: HostSessionState): string {
+    if (session.count === 0) return "No open sessions";
+    switch (session.status) {
+      case "live":
+        return `${session.count} live ${session.count === 1 ? "session" : "sessions"}`;
+      case "connecting":
+        return `Connecting · ${session.count} ${session.count === 1 ? "session" : "sessions"}`;
+      case "error":
+        return `${session.count} ${session.count === 1 ? "session" : "sessions"} · failed`;
+      default:
+        return `${session.count} open ${session.count === 1 ? "session" : "sessions"}`;
+    }
+  }
+
+  function lampClass(session: HostSessionState): string {
+    switch (session.status) {
+      case "live":
+        return "lamp-live";
+      case "connecting":
+        return "lamp-connecting";
+      case "error":
+        return "lamp-error";
+      default:
+        return "";
+    }
   }
 
   async function handleConnectHost(conn: Connection, newTab = false) {
@@ -442,16 +479,16 @@
 
 {#snippet kindBadges(conn: Connection)}
   {#if conn.use_kerberos}
-    <span class="badge badge-neutral" title="Kerberos (GSSAPI) authentication">Kerberos</span>
+    <span class="tag" title="Kerberos (GSSAPI) authentication">Kerberos</span>
   {/if}
   {#if conn.bastion}
-    <span class="badge badge-neutral" title={`Via jump host ${conn.bastion_user ? `${conn.bastion_user}@` : ""}${conn.bastion}`}>
+    <span class="tag" title={`Via jump host ${conn.bastion_user ? `${conn.bastion_user}@` : ""}${conn.bastion}`}>
       Jump
     </span>
   {/if}
   {#if conn.pending_change}
     <span
-      class="badge badge-warning"
+      class="badge badge-warning badge-mono"
       title={`A team sync changed this host's route (${conn.pending_change.detected_at}). Confirm it before connecting.`}
     >
       Unconfirmed
@@ -459,7 +496,7 @@
   {/if}
   {#if conn.stale_since}
     <span
-      class="badge badge-warning"
+      class="badge badge-warning badge-mono"
       title={`Missing from syncs since ${formatDateTime(conn.stale_since, timezone)}. Deleted only by a sync with --prune.`}
     >
       Stale · {formatRelative(conn.stale_since, now)}
@@ -488,8 +525,11 @@
   <header class="view-header">
     <div class="flex min-w-0 items-baseline gap-2.5">
       <h1 class="view-title">Hosts</h1>
-      <span class="text-sm tabular-nums text-muted">
-        {#if hasFilters}{rows.length} matching{:else}{rows.length}{/if}
+      <span
+        class="font-mono text-sm tabular-nums text-muted"
+        title={hasFilters ? `${rows.length} of ${connections.length} hosts match the current filter` : undefined}
+      >
+        {String(rows.length).padStart(2, "0")}
       </span>
     </div>
     <div class="view-actions">
@@ -575,18 +615,17 @@
   {/if}
 
   {#if !hasFilters && suggestions.length > 0}
-    <div class="flex shrink-0 flex-wrap items-center gap-2 px-6 pb-3" role="region" aria-label="Suggested connections">
-      <span class="section-label mr-1">Suggested</span>
+    <div class="suggested-row" role="region" aria-label="Suggested connections">
+      <span class="suggested-mark" aria-hidden="true">Suggested ›</span>
       {#each suggestions as item (item.connection.id)}
         <button
           type="button"
-          class="btn btn-secondary btn-sm"
+          class="suggested-link"
           onclick={() => handleConnectHost(item.connection)}
           disabled={connectingHostId !== null}
           title={`Connect · ${predictionDetail(item)}`}
         >
-          <SquareTerminal size={12} class="text-muted" />
-          <span class="font-medium text-primary">{item.connection.name}</span>
+          <span>{item.connection.name}</span>
           <span class="text-muted">· {predictionReason(item, now)}</span>
         </button>
       {/each}
@@ -638,6 +677,7 @@
         >
           <thead>
             <tr aria-rowindex={1}>
+              <th class="col-lamp"><span class="sr-only">Sessions</span></th>
               <th class="col-name">Name</th>
               <th class="col-address">Address</th>
               <th class="col-tags">Tags</th>
@@ -651,6 +691,8 @@
               <tr aria-hidden="true" style="height: {windowStart * rowH}px"><td colspan={columnCount} class="spacer"></td></tr>
             {/if}
             {#each visibleRows as { conn, originalIndex }, i (conn.id)}
+              {@const session = sessions.get(conn.id) ?? IDLE_HOST_SESSION}
+              {@const lampText = sessionLabel(session)}
               {@const selected = selectedHostIndex === originalIndex}
               <tr
                 class="cursor-default {selected ? 'is-selected' : ''} {justDuplicatedId === conn.id ? 'animate-flash' : ''}"
@@ -666,6 +708,31 @@
                 onfocusin={() => onRowFocusIn(originalIndex)}
                 ondblclick={() => handleConnectHost(conn)}
               >
+                <td class="lamp-cell">
+                  {#if session.status === "live"}
+                    <button
+                      type="button"
+                      class="lamp-button"
+                      tabindex="-1"
+                      title="{lampText} · bring session forward"
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        void onConnect(conn);
+                      }}
+                      ondblclick={(e) => e.stopPropagation()}
+                    >
+                      <span class="lamp lamp-live" aria-hidden="true"></span>
+                      {#if session.count > 1}<span class="lamp-count" aria-hidden="true">{session.count}</span>{/if}
+                      <span class="sr-only">{lampText}</span>
+                    </button>
+                  {:else}
+                    <span class="lamp-slot" title={lampText}>
+                      <span class="lamp {lampClass(session)}" aria-hidden="true"></span>
+                      {#if session.count > 1}<span class="lamp-count" aria-hidden="true">{session.count}</span>{/if}
+                      <span class="sr-only">{lampText}</span>
+                    </span>
+                  {/if}
+                </td>
                 <td>
                   <div class="flex min-w-0 items-center gap-2.5">
                     <span class="truncate font-medium {conn.stale_since ? 'text-muted' : 'text-primary'}" title={conn.name}>{conn.name}</span>
@@ -692,7 +759,7 @@
                 {/if}
                 <td>
                   <span
-                    class="block truncate text-xs {conn.last_used ? 'text-secondary' : 'text-muted'}"
+                    class="block truncate font-mono text-xs tabular-nums {conn.last_used ? 'text-secondary' : 'text-muted'}"
                     title={conn.last_used ? formatDateTime(conn.last_used, timezone) : undefined}
                   >
                     {lastUsedLabel(conn)}
@@ -737,8 +804,11 @@
     height: auto;
     padding: 0;
   }
+  .col-lamp {
+    width: 48px;
+  }
   .col-address {
-    width: 180px;
+    width: 240px;
   }
   .col-tags {
     width: 96px;
@@ -747,7 +817,7 @@
     width: 112px;
   }
   .col-used {
-    width: 88px;
+    width: 104px;
   }
   .col-actions {
     width: 104px;
@@ -758,7 +828,7 @@
   }
   @media (min-width: 1180px) {
     .col-address {
-      width: 240px;
+      width: 320px;
     }
     .col-tags {
       width: 176px;
@@ -767,8 +837,70 @@
       width: 136px;
     }
     .col-used {
-      width: 104px;
+      width: 120px;
     }
+  }
+
+  /* Patch-bay jack: the lamp itself is `.lamp` (components.css); the slot
+     keeps every row's lamp on one baseline, and the live jack is a button
+     that brings the session forward. */
+  .lamp-slot {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 24px;
+  }
+  .lamp-button {
+    display: inline-flex;
+    min-width: 24px;
+    height: 24px;
+    align-items: center;
+    gap: 4px;
+    padding: 0 2px;
+    border-radius: var(--radius-xs);
+    cursor: pointer;
+  }
+
+  /* Suggested connections: one quiet mono line under the toolbar. */
+  .suggested-row {
+    display: flex;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: 1rem;
+    row-gap: 4px;
+    padding: 0 1.5rem 0.75rem;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    line-height: var(--text-xs--line-height);
+    color: var(--color-secondary);
+  }
+  .suggested-mark {
+    user-select: none;
+    font-size: var(--text-2xs);
+    line-height: var(--text-2xs--line-height);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+  }
+  .suggested-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--text-xs);
+    line-height: var(--text-xs--line-height);
+    color: var(--color-primary);
+    transition: color var(--transition-duration-fast) var(--ease-out);
+  }
+  .suggested-link:hover:not(:disabled) {
+    color: var(--color-accent);
+  }
+  .suggested-link:disabled {
+    color: var(--color-disabled-fg);
+    cursor: not-allowed;
+  }
+  .suggested-link:disabled span {
+    color: var(--color-disabled-fg);
   }
 
   /* Actions stay visible while a row menu is open. */

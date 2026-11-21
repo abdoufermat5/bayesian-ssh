@@ -15,7 +15,7 @@
     font-family: var(--font-sans);
     font-size: 13px;
     line-height: 1.45;
-    font-feature-settings: "cv11", "ss01", "ss03";
+    font-feature-settings: "kern" 1;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
@@ -53,7 +53,8 @@
   }
 
   ::selection {
-    background: var(--selection-bg, rgba(123, 136, 255, 0.28));
+    background: var(--selection-bg, rgba(240, 160, 48, 0.28));
+    color: var(--color-primary);
   }
 
   /* ---- Global scrollbar --------------------------------------- */
@@ -66,13 +67,13 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: var(--color-border-hover);
+    background: var(--color-border-strong);
     border: 3px solid transparent;
     background-clip: padding-box;
     border-radius: 999px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background-color: var(--color-border-strong);
+    background-color: color-mix(in srgb, var(--color-border-strong) 70%, var(--color-primary));
   }
 
   /* ---- Native select -------------------------------------------
@@ -81,7 +82,7 @@
     appearance: none !important;
     -webkit-appearance: none !important;
     -moz-appearance: none !important;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%239e9688' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
     background-repeat: no-repeat !important;
     background-position: right 10px center !important;
     background-size: 14px 14px !important;
@@ -113,7 +114,7 @@
     padding: 8px 12px !important;
   }
   html.theme-light select {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23565d6b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%235c5649' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
   }
 
 
@@ -237,6 +238,38 @@
   }
   100% {
     transform: translateX(320%);
+  }
+}
+
+/* Application boot: the workspace settles once — fade + 6 px rise. */
+@keyframes console-boot {
+  from {
+    transform: translateY(6px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Patch-bay jack waiting for a session: opacity only (WebKitGTK cheap). */
+@keyframes lamp-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* One entrance sequence on app load, applied to the workspace surface
+   (base layer, so a component may still override it). The global
+   reduced-motion guard below collapses it to an instant swap. */
+@layer base {
+  .workspace > * {
+    animation: console-boot 220ms var(--ease-out);
   }
 }
 

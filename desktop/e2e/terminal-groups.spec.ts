@@ -1,13 +1,16 @@
 import { test, expect, type Page } from "./fixtures/app";
 
-/** Open sessions to `hosts` in order: the first from the empty state, the rest through the launcher. */
+/** Session tabs in the Console strip; the pinned "Hosts" tab carries no data-tab-id. */
+const sessionTabs = (page: Page) => page.locator('[role="tab"][data-tab-id]');
+
+/** Open sessions to `hosts` in order: the first from the host list, the rest through the launcher. */
 async function openSessions(page: Page, hosts: string[]): Promise<string[]> {
-  await page.getByTitle(`Connect to ${hosts[0]}`).click();
+  await page.getByRole("button", { name: `Connect to ${hosts[0]}`, exact: true }).click();
   for (const host of hosts.slice(1)) {
     await page.getByRole("button", { name: "New session" }).click();
     await page.getByRole("option", { name: new RegExp(host) }).click();
   }
-  const tabs = page.locator('[role="tab"]');
+  const tabs = sessionTabs(page);
   await expect(tabs).toHaveCount(hosts.length);
   const ids: string[] = [];
   for (const host of hosts) {
@@ -17,13 +20,13 @@ async function openSessions(page: Page, hosts: string[]): Promise<string[]> {
 }
 
 function tabOrder(page: Page): Promise<string[]> {
-  return page.locator('[role="tab"]').evaluateAll((els) => els.map((el) => el.textContent?.trim() ?? ""));
+  return sessionTabs(page).evaluateAll((els) => els.map((el) => el.textContent?.trim() ?? ""));
 }
 
 test.describe("terminals — tab groups", () => {
   test("group tabs, collapse a group and reopen its hosts after a reload", async ({ app, page }) => {
     await app.gotoApp();
-    await app.nav("Terminals");
+    await app.nav("Console");
     const [prod1, , prod2] = await openSessions(page, ["prod-api-01", "staging-web", "prod-api-02"]);
 
     // New group from the tab menu; its editor opens to name it.
@@ -53,19 +56,19 @@ test.describe("terminals — tab groups", () => {
     await page.locator(`[data-tab-id="${prod2}"]`).click();
     await page.getByRole("button", { name: /^prod, 2 sessions$/ }).click();
     await expect(page.getByRole("button", { name: /^prod, 2 sessions$/ })).toHaveAttribute("aria-expanded", "false");
-    await expect(page.locator('[role="tab"]')).toHaveCount(1);
-    await expect(page.locator('[role="tab"]').first()).toContainText("staging-web");
-    await expect(page.locator('[role="tab"]').first()).toHaveAttribute("aria-selected", "true");
+    await expect(sessionTabs(page)).toHaveCount(1);
+    await expect(sessionTabs(page).first()).toContainText("staging-web");
+    await expect(sessionTabs(page).first()).toHaveAttribute("aria-selected", "true");
 
     // Ctrl+Tab skips the collapsed tabs.
     await page.keyboard.press("Control+Tab");
-    await expect(page.locator('[role="tab"]').first()).toHaveAttribute("aria-selected", "true");
+    await expect(sessionTabs(page).first()).toHaveAttribute("aria-selected", "true");
 
     // The group and its hosts survive a restart: the launcher offers to reopen it.
     await page.reload();
     await expect(page.locator(".app-shell")).toBeVisible({ timeout: 15000 });
-    await app.nav("Terminals");
-    await page.getByTitle("Connect to staging-web").click();
+    await app.nav("Console");
+    await page.getByRole("button", { name: "Connect to staging-web", exact: true }).click();
     await page.getByRole("button", { name: "New session" }).click();
     await page.getByRole("button", { name: /Open prod/ }).click();
     await expect(page.getByRole("button", { name: /^prod, 2 sessions$/ })).toBeVisible();
@@ -79,13 +82,13 @@ test.describe("terminals — tab groups", () => {
     await page.getByRole("button", { name: /^prod, 2 sessions$/ }).click({ button: "right" });
     await page.getByRole("dialog", { name: "Edit group" }).getByRole("button", { name: "Ungroup" }).click();
     await expect(page.locator("[data-group-id]")).toHaveCount(0);
-    await expect(page.locator('[role="tab"]')).toHaveCount(3);
+    await expect(sessionTabs(page)).toHaveCount(3);
     expect(await page.evaluate(() => localStorage.getItem("bayesian-ssh-tab-groups"))).toBe("[]");
   });
 
   test("dragging a tab reorders it, and into a group's middle joins the group", async ({ app, page }) => {
     await app.gotoApp();
-    await app.nav("Terminals");
+    await app.nav("Console");
     const [a, b, c] = await openSessions(page, ["prod-api-01", "staging-web", "prod-api-02"]);
 
     const box = async (id: string) => (await page.locator(`[data-tab-id="${id}"]`).boundingBox())!;
@@ -131,7 +134,7 @@ test.describe("terminals — tab groups", () => {
 test.describe("terminals — split screen", () => {
   test("open a session beside the current one, resize the split and take a pane out", async ({ app, page }) => {
     await app.gotoApp();
-    await app.nav("Terminals");
+    await app.nav("Console");
     await openSessions(page, ["prod-api-01"]);
 
     await page.getByRole("button", { name: "Split right" }).click();
@@ -148,9 +151,9 @@ test.describe("terminals — split screen", () => {
     expect(Math.abs(leftBox.width - rightBox.width)).toBeLessThan(3);
 
     // The new pane is focused; clicking the other pane focuses its tab.
-    await expect(page.locator('[role="tab"]', { hasText: "staging-web" })).toHaveAttribute("aria-selected", "true");
+    await expect(sessionTabs(page).filter({ hasText: "staging-web" })).toHaveAttribute("aria-selected", "true");
     await left.click();
-    await expect(page.locator('[role="tab"]', { hasText: "prod-api-01" })).toHaveAttribute("aria-selected", "true");
+    await expect(sessionTabs(page).filter({ hasText: "prod-api-01" })).toHaveAttribute("aria-selected", "true");
     await expect(right).toBeVisible();
 
     // Keyboard resize.
@@ -175,17 +178,17 @@ test.describe("terminals — split screen", () => {
     await expect(page.getByRole("separator", { name: "Resize split" })).toHaveCount(0);
     await expect(right).toBeVisible();
     await expect(left).toBeHidden();
-    await expect(page.locator('[role="tab"]')).toHaveCount(2);
+    await expect(sessionTabs(page)).toHaveCount(2);
     expect(await app.ipcCalls("close_pty")).toEqual([]);
   });
 
   test("dragging a tab onto the bottom edge of the terminal splits it down", async ({ app, page }) => {
     await app.gotoApp();
-    await app.nav("Terminals");
+    await app.nav("Console");
     const [, staging] = await openSessions(page, ["prod-api-01", "staging-web"]);
 
     // Show prod-api-01, then drag staging-web onto its bottom edge.
-    await page.locator('[role="tab"]', { hasText: "prod-api-01" }).click();
+    await sessionTabs(page).filter({ hasText: "prod-api-01" }).click();
     const from = (await page.locator(`[data-tab-id="${staging}"]`).boundingBox())!;
     const panel = (await page.getByRole("tabpanel", { name: "prod-api-01" }).boundingBox())!;
     await page.mouse.move(from.x + 10, from.y + from.height / 2);
@@ -207,7 +210,7 @@ test.describe("terminals — split screen", () => {
 
   test("dragging a tab to the middle of the terminal opens it in a window", async ({ app, page }) => {
     await app.gotoApp();
-    await app.nav("Terminals");
+    await app.nav("Console");
     const [prod] = await openSessions(page, ["prod-api-01"]);
 
     const from = (await page.locator(`[data-tab-id="${prod}"]`).boundingBox())!;

@@ -9,6 +9,9 @@ test.describe("command palette", () => {
     await expect(dialog.getByRole("group", { name: "Actions", exact: true })).toBeVisible();
     await expect(dialog.getByRole("group", { name: "Navigation" })).toBeVisible();
     await expect(dialog.getByRole("option", { name: /prod-api-01/ })).toBeVisible();
+    // The Console replaced the separate Hosts/Terminals entries.
+    await expect(dialog.getByRole("option", { name: /Go to Console/ })).toBeVisible();
+    await expect(dialog.getByRole("option", { name: /Go to Terminals/ })).toHaveCount(0);
 
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();

@@ -6,6 +6,7 @@ import {
   KeyRound,
   Server,
   ShieldCheck,
+  SquareTerminal,
   TerminalSquare,
   Users,
 } from "lucide-svelte";
@@ -16,7 +17,8 @@ export const VIEW_META: Record<
   Exclude<AppTab, "settings">,
   { label: string; icon: typeof Server }
 > = {
-  connections: { label: "Hosts", icon: Server },
+  connections: { label: "Console", icon: SquareTerminal },
+  /* "terminals" is the Console's session state, not a numbered view; kept for the strip/tab labels. */
   terminals: { label: "Terminals", icon: TerminalSquare },
   sftp: { label: "Files", icon: HardDrive },
   keys: { label: "Keys", icon: KeyRound },

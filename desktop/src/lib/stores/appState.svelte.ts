@@ -713,7 +713,10 @@ export class AppStateStore {
   }
 
   goToTerminals = () => {
-    this.activeTab = "terminals";
+    // Nothing to reveal without a session (open or away): the Console's home
+    // is the host list.
+    this.activeTab =
+      terminalState.count === 0 && terminalState.externalSessionCount === 0 ? "connections" : "terminals";
     requestAnimationFrame(() => {
       fitActiveTerminal();
       focusActiveTerminal();
@@ -849,8 +852,10 @@ export class AppStateStore {
   }
 
   handleTabChange = (tab: AppTab) => {
-    this.activeTab = tab;
-    if (tab === "history") {
+    // The Console replaced the separate Terminals view: with no open session
+    // its "terminals" state is the host list, so land on connections.
+    this.activeTab = tab === "terminals" && terminalState.count === 0 ? "connections" : tab;
+    if (this.activeTab === "history") {
       void this.loadHistory();
     }
   }
@@ -1014,8 +1019,7 @@ export class AppStateStore {
       const view = digitView(e.key);
       if (view && viewEnabled(view, this.settings)) {
         e.preventDefault();
-        if (view === "terminals") this.goToTerminals();
-        else this.handleTabChange(view);
+        this.handleTabChange(view);
         return;
       }
     }

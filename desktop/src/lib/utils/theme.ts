@@ -9,14 +9,14 @@ export type AppDensity = (typeof APP_DENSITIES)[number];
 
 /** The themes users can pick, in display order; onboarding and Appearance both read this. */
 export const THEME_OPTIONS: { id: AppTheme; label: string; desc: string }[] = [
-  { id: "light", label: "Light", desc: "Light surfaces, blue accent" },
-  { id: "dark", label: "Dark", desc: "Dark surfaces, blue accent" },
+  { id: "light", label: "Light", desc: "Warm paper surfaces, amber accent" },
+  { id: "dark", label: "Dark", desc: "Warm carbon surfaces, amber accent" },
   { id: "system", label: "Match system", desc: "Light or Dark, following your system" },
 ];
 
 const THEME_WINDOW_BG: Record<ConcreteTheme, string> = {
-  dark: "#0c0c0e",
-  light: "#e9ebef",
+  dark: "#0d0c0a",
+  light: "#e6e1d6",
 };
 
 /** Themes from earlier versions, and what they became. */
@@ -149,27 +149,27 @@ export interface XtermTheme {
 /** The terminal palette of the active theme (the --term-* tokens); Dark when unstyled. */
 export function getCurrentXtermTheme(): XtermTheme {
   const fallback: XtermTheme = {
-    background: "#0c0c0e",
-    foreground: "#d6d6db",
-    cursor: "#5b8def",
-    cursorAccent: "#0c0c0e",
-    black: "#2a2a2e",
-    red: "#e5636b",
-    green: "#5fb87a",
-    yellow: "#d4a54a",
-    blue: "#6b9bf0",
-    magenta: "#b388e0",
-    cyan: "#4fb3c4",
-    white: "#c4c4ca",
-    brightBlack: "#6e6e76",
-    brightRed: "#f08a90",
-    brightGreen: "#7fcf96",
-    brightYellow: "#e6c071",
-    brightBlue: "#8db3f5",
-    brightMagenta: "#c9a6ec",
-    brightCyan: "#74c7d5",
-    brightWhite: "#f2f2f4",
-    selectionBackground: "rgba(91, 141, 239, 0.3)",
+    background: "#0d0c0a",
+    foreground: "#ddd6c8",
+    cursor: "#f0a030",
+    cursorAccent: "#0d0c0a",
+    black: "#2c2924",
+    red: "#e8685c",
+    green: "#8fbf7a",
+    yellow: "#d9b45a",
+    blue: "#7fa6d0",
+    magenta: "#c08fc0",
+    cyan: "#6fb3ad",
+    white: "#c9c1b2",
+    brightBlack: "#6f685d",
+    brightRed: "#f2837a",
+    brightGreen: "#a8d493",
+    brightYellow: "#ecd07a",
+    brightBlue: "#9dbde0",
+    brightMagenta: "#d7aed7",
+    brightCyan: "#8ccbc4",
+    brightWhite: "#f2ecdf",
+    selectionBackground: "rgba(240, 160, 48, 0.28)",
   };
 
   if (typeof window === "undefined") {

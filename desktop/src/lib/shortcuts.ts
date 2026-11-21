@@ -31,20 +31,20 @@ export interface Shortcut {
   cli?: string;
 }
 
-/** Sidebar order; digit n opens the nth view (outside inputs and terminals). */
+/** Sidebar order; digit n opens the nth view (outside inputs and terminals).
+ *  "terminals" is deliberately absent: the Console (connections) covers it. */
 export const VIEW_ORDER: AppTab[] = [
   "connections",
-  "terminals",
   "sftp",
+  "ai",
   "keys",
   "audit",
-  "history",
   "teams",
-  "ai",
+  "history",
 ];
 
-/** The AI reports have no tab of their own (they are part of "ai"); digit 9 opens them. */
-export const AI_REPORTS_DIGIT = "9";
+/** The AI reports have no tab of their own (they are part of "ai"); digit 8 opens them. */
+export const AI_REPORTS_DIGIT = "8";
 
 export function viewDigit(tab: AppTab): string | null {
   const i = VIEW_ORDER.indexOf(tab);
@@ -66,7 +66,7 @@ export const GLOBAL_SHORTCUTS: Shortcut[] = [
   { id: "settings", label: "Settings", combos: [[MOD, ","]], scope: "anywhere" },
   { id: "help", label: "Keyboard shortcuts", combos: [["?"], ["F1"], [MOD, "/"]], scope: "anywhere" },
   { id: "filter", label: "Focus filter", combos: [["/"]], scope: "global" },
-  { id: "ai-reports", label: "AI reports", combos: [["9"]], scope: "global" },
+  { id: "ai-reports", label: "AI reports", combos: [["8"]], scope: "global" },
   { id: "new-host", label: "New host", combos: [["N"], [MOD, "N"]], scope: "global", cli: "bssh add" },
 ];
 

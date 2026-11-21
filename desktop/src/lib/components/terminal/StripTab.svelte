@@ -3,7 +3,7 @@
   import { tabDrag, type TabDragHandlers } from "$lib/actions/tabDrag";
   import { disconnectTab, getTerminalState, type TerminalTab } from "$lib/stores/terminal.svelte";
   import { tabGroupColorVar, type TabGroup } from "$lib/utils/tab-groups";
-  import { statusDot, statusLabel } from "$lib/utils/terminal-status";
+  import { statusLabel } from "$lib/utils/terminal-status";
 
   interface Props {
     tab: TerminalTab;
@@ -14,11 +14,21 @@
     poppingOut: boolean;
     drag: TabDragHandlers;
     onMenu: (e: MouseEvent | KeyboardEvent) => void;
+    /** The tab was chosen (mouse or keyboard); the parent decides what to reveal. */
+    onSelect: () => void;
   }
 
-  let { tab, group, active, inSplit, poppingOut, drag, onMenu }: Props = $props();
+  let { tab, group, active, inSplit, poppingOut, drag, onMenu, onSelect }: Props = $props();
 
   const terminalState = getTerminalState();
+
+  /** Jack lamp state: live, breathing (connecting), error, or idle (disconnected). */
+  function lampClass(status: TerminalTab["status"]): string {
+    if (status === "connected") return "lamp-live";
+    if (status === "connecting") return "lamp-connecting";
+    if (status === "error") return "lamp-error";
+    return "";
+  }
 
   const label = $derived(tab.remoteTitle?.trim() ? tab.remoteTitle : tab.name);
   const tooltip = $derived(
@@ -38,11 +48,14 @@
 
 <div
   data-tab-id={tab.id}
-  class="group relative flex h-7 max-w-48 shrink-0 cursor-pointer items-center gap-2 overflow-hidden rounded-md pl-2.5 pr-1 text-xs transition-colors duration-fast
-    {active ? 'bg-surface-active text-primary' : 'text-muted hover:bg-surface-hover hover:text-primary'}"
+  class="group relative flex h-7 max-w-48 shrink-0 cursor-pointer items-center gap-2 overflow-hidden border-r border-border-subtle pl-2.5 pr-1 text-xs transition-colors duration-fast
+    {active ? 'bg-surface-terminal text-primary' : 'text-muted hover:bg-surface-hover hover:text-primary'}"
   class:tab-dragging-out={poppingOut}
   use:tabDrag={drag}
-  onclick={() => (terminalState.activeTabId = tab.id)}
+  onclick={() => {
+    terminalState.activeTabId = tab.id;
+    onSelect();
+  }}
   onauxclick={(e) => {
     if (e.button === 1) {
       e.preventDefault();
@@ -54,6 +67,7 @@
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       terminalState.activeTabId = tab.id;
+      onSelect();
     } else if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) {
       onMenu(e);
     }
@@ -63,7 +77,10 @@
   aria-selected={active}
   title="{tooltip} · {statusLabel(tab.status)} — drag to reorder, split or open in a window; right-click for more"
 >
-  <span class="status-dot status-dot-sm {statusDot(tab.status)}" aria-hidden="true"></span>
+  {#if active}
+    <span class="pointer-events-none absolute inset-x-0 top-0 h-0.5 bg-accent" aria-hidden="true"></span>
+  {/if}
+  <span class="lamp {lampClass(tab.status)}" title={statusLabel(tab.status)} aria-hidden="true"></span>
   <span class="min-w-0 truncate font-medium">{label}</span>
   {#if inSplit}
     <Columns2 size={12} class="shrink-0 text-muted" aria-hidden="true" />

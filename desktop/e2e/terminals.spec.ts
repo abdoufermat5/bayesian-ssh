@@ -1,38 +1,67 @@
 import { test, expect, type Page, type AppFixture } from "./fixtures/app";
 
+/** Session tabs in the Console strip; the pinned "Hosts" tab carries no data-tab-id. */
+const sessionTabs = (page: Page) => page.locator('[role="tab"][data-tab-id]');
+/** The strip's pinned home tab, which shows the host list. */
+const hostsTab = (page: Page) => page.getByRole("tab", { name: "Hosts", exact: true });
+
 async function connect(app: AppFixture, page: Page, host: string): Promise<string> {
-  await page.getByTitle(`Connect to ${host}`).click();
+  await page.getByRole("button", { name: `Connect to ${host}`, exact: true }).click();
   await expect.poll(async () => (await app.ipcCalls("spawn_pty")).length).toBeGreaterThan(0);
   const calls = (await app.ipcCalls("spawn_pty")) as Array<{ sessionId: string }>;
   return calls[calls.length - 1].sessionId;
 }
-test.describe("terminals — empty state", () => {
-  test("lists recent hosts and clicking one spawns a pty", async ({ app, page }) => {
+
+test.describe("console — no sessions", () => {
+  test("shows the host list, and connecting opens the session strip", async ({ app, page }) => {
     await app.gotoApp();
-    await app.nav("Terminals");
+    await app.nav("Console");
 
-    await expect(page.locator(".workspace h1")).toHaveText("Terminals");
-    const emptyTitle = page.getByRole("paragraph").filter({ hasText: "No open sessions" });
-    await expect(emptyTitle).toBeVisible();
-    await expect(page.getByText("Recent hosts")).toBeVisible();
+    // No open session: the Console is the host list alone (no strip, no empty state).
+    await expect(page.locator(".workspace h1")).toHaveText("Hosts");
+    await expect(page.getByRole("grid", { name: "Hosts" })).toBeVisible();
+    await expect(page.getByRole("tablist", { name: "Terminal sessions" })).toHaveCount(0);
 
-    // Most recently used host first (mock: prod-api-01 was used 12 min ago).
-    const recent = page.locator('button[title^="Connect to "]');
-    await expect(recent.first()).toHaveAttribute("title", "Connect to prod-api-01");
-    await expect(recent.filter({ hasText: "gpu-trainer" })).toBeVisible();
-
-    await page.getByTitle("Connect to prod-api-01").click();
+    await page.getByRole("button", { name: "Connect to prod-api-01", exact: true }).click();
 
     await expect
       .poll(async () => app.ipcCalls("spawn_pty"))
       .toEqual([{ sessionId: expect.any(String), connectionName: "prod-api-01", output: "__CHANNEL__" }]);
 
-    // The empty state is replaced by a tab for the new session.
-    const tabs = page.locator('[role="tab"]');
-    await expect(tabs).toHaveCount(1);
-    await expect(tabs.first()).toHaveAttribute("aria-selected", "true");
-    await expect(tabs.first()).toContainText("prod-api-01");
-    await expect(emptyTitle).toBeHidden();
+    // The session strip is now the Console: pinned Hosts tab + the live session.
+    await expect(page.getByRole("tablist", { name: "Terminal sessions" })).toBeVisible();
+    await expect(sessionTabs(page)).toHaveCount(1);
+    await expect(sessionTabs(page).first()).toHaveAttribute("aria-selected", "true");
+    await expect(sessionTabs(page).first()).toContainText("prod-api-01");
+    await expect(hostsTab(page)).toHaveAttribute("aria-selected", "false");
+    await expect(page.locator(".workspace h1")).toHaveText("Terminals");
+  });
+});
+
+test.describe("console — live sessions", () => {
+  // A live backend reports the open session from `count_active_sessions`; the
+  // default mock stub reports 0, and the sidebar's Console target follows that
+  // backend count (strip when sessions exist, host list otherwise).
+  test.use({ mockOptions: { overrides: { count_active_sessions: () => 1 } } });
+
+  test("the pinned Hosts tab returns to the host list and keeps the session alive", async ({
+    app,
+    page,
+  }) => {
+    await app.gotoApp();
+    await connect(app, page, "prod-api-01");
+    await expect(sessionTabs(page)).toHaveCount(1);
+
+    await hostsTab(page).click();
+    await expect(page.locator(".workspace h1")).toHaveText("Hosts");
+    await expect(page.getByRole("grid", { name: "Hosts" })).toBeVisible();
+    await expect(hostsTab(page)).toHaveAttribute("aria-selected", "true");
+
+    // Console in the sidebar goes to the live sessions when there are any.
+    await app.nav("Console");
+    await expect(page.locator(".workspace h1")).toHaveText("Terminals");
+    await expect(sessionTabs(page).first()).toHaveAttribute("aria-selected", "true");
+    expect(await app.ipcCalls("close_pty")).toEqual([]);
   });
 });
 
@@ -42,7 +71,7 @@ test.describe("terminals — sessions in the tab strip", () => {
     page,
   }) => {
     await app.gotoApp();
-    await app.nav("Hosts");
+    await app.nav("Console");
 
     // Select a host row, then connect with Enter (the documented shortcut).
     await page.locator("tbody tr", { hasText: "staging-web" }).click();
@@ -52,10 +81,12 @@ test.describe("terminals — sessions in the tab strip", () => {
       .poll(async () => app.ipcCalls("spawn_pty"))
       .toContainEqual({ sessionId: expect.any(String), connectionName: "staging-web", output: "__CHANNEL__" });
 
-    const tabs = page.locator('[role="tab"]');
+    const tabs = sessionTabs(page);
     await expect(tabs).toHaveCount(1);
     await expect(tabs.first()).toContainText("staging-web");
     await expect(tabs.first()).toHaveAttribute("aria-selected", "true");
+    await expect(hostsTab(page)).toHaveAttribute("aria-selected", "false");
+    await expect(page.locator(".workspace h1")).toHaveText("Terminals");
 
     // Second session through the "New session" launcher.
     await page.getByRole("button", { name: "New session" }).click();
@@ -98,9 +129,9 @@ test.describe("terminals — sessions in the tab strip", () => {
 
     test("overflow menu, font-size stepper and find bar behave", async ({ app, page }) => {
       await app.gotoApp();
-      await app.nav("Terminals");
-      await page.getByTitle("Connect to prod-api-01").click();
-      await expect(page.locator('[role="tab"]')).toHaveCount(1);
+      await app.nav("Console");
+      await page.getByRole("button", { name: "Connect to prod-api-01", exact: true }).click();
+      await expect(sessionTabs(page)).toHaveCount(1);
 
       // --- Font-size stepper ------------------------------------------------
       const fontGroup = page.getByRole("group", { name: "Font size" });
@@ -159,14 +190,14 @@ test.describe("terminals — sessions in the tab strip", () => {
       await dialog.getByRole("button", { name: "Done" }).click();
       await expect(dialog).toBeHidden();
 
-      // "Close all sessions" closes every pty and returns to the empty state.
+      // "Close all sessions" closes every pty: with no session left the
+      // Console is the host list alone again (no strip).
       await more.click();
       await menu.getByRole("menuitem", { name: "Close all sessions" }).click();
       await expect.poll(async () => app.ipcCalls("close_all_ptys")).toHaveLength(1);
-      await expect(page.locator('[role="tab"]')).toHaveCount(0);
-      await expect(
-        page.getByRole("paragraph").filter({ hasText: "No open sessions" }),
-      ).toBeVisible();
+      await expect(sessionTabs(page)).toHaveCount(0);
+      await expect(page.locator(".workspace h1")).toHaveText("Hosts");
+      await expect(page.getByRole("tablist", { name: "Terminal sessions" })).toHaveCount(0);
     });
   });
 });
@@ -195,11 +226,12 @@ test.describe("terminals — detached sessions", () => {
     // A successful reattach closes the manager (the session is now a tab).
     await expect(dialog).toBeHidden();
 
-    await app.nav("Terminals");
-    const tabs = page.locator('[role="tab"]');
+    // The reattached session is the visible terminal surface, not the home list.
+    const tabs = sessionTabs(page);
     await expect(tabs).toHaveCount(1);
     await expect(tabs.first()).toContainText("gpu-trainer");
     await expect(tabs.first()).toHaveAttribute("aria-selected", "true");
+    await expect(page.locator(".workspace h1")).toHaveText("Terminals");
     // The restored session is no longer listed as running elsewhere.
     await expect(page.locator('.sidebar [aria-label="Background sessions"]')).toBeHidden();
   });
@@ -228,19 +260,20 @@ test.describe("terminals — connect progress and failure", () => {
 
   test("shows Connecting until ssh prints something, and Esc cancels", async ({ app, page }) => {
     await app.gotoApp();
-    await app.nav("Terminals");
+    await app.nav("Console");
     const id = await connect(app, page, "prod-api-01");
 
     const status = page.getByRole("status").filter({ hasText: /Connecting to .*prod-api-01|Connecting to .*@/ });
     await expect(status).toBeVisible();
     await page.keyboard.press("Escape");
     await expect.poll(async () => app.ipcCalls("close_pty")).toEqual([{ sessionId: id }]);
-    await expect(page.locator('[role="tab"]')).toHaveCount(0);
+    await expect(sessionTabs(page)).toHaveCount(0);
+    await expect(page.locator(".workspace h1")).toHaveText("Hosts");
   });
 
   test("first output ends the connecting state", async ({ app, page }) => {
     await app.gotoApp();
-    await app.nav("Terminals");
+    await app.nav("Console");
     const id = await connect(app, page, "prod-api-01");
     await app.ptyOutput(id, "Last login\r\n");
     await expect(page.getByRole("status").filter({ hasText: "Connecting to" })).toBeHidden();
@@ -248,7 +281,7 @@ test.describe("terminals — connect progress and failure", () => {
 
   test("an ssh failure stays in the tab with Retry and Edit host", async ({ app, page }) => {
     await app.gotoApp();
-    await app.nav("Terminals");
+    await app.nav("Console");
     const id = await connect(app, page, "prod-api-01");
     await app.ptyOutput(id, "ssh: connect to host x port 22: Connection refused\r\n");
     await app.mockEmit("pty-exit-status", { session_id: id, exit_code: 255 });
@@ -266,11 +299,11 @@ test.describe("terminals — connect progress and failure", () => {
 test.describe("terminals — tab shortcuts", () => {
   test("Ctrl+Tab cycles tabs, Ctrl+Shift+W closes, Ctrl+Shift+T reopens", async ({ app, page }) => {
     await app.gotoApp();
-    await app.nav("Terminals");
-    await page.getByTitle("Connect to prod-api-01").click();
+    await app.nav("Console");
+    await page.getByRole("button", { name: "Connect to prod-api-01", exact: true }).click();
     await page.getByRole("button", { name: "New session" }).click();
     await page.getByRole("option", { name: /prod-api-02/ }).click();
-    const tabs = page.locator('[role="tab"]');
+    const tabs = sessionTabs(page);
     await expect(tabs).toHaveCount(2);
     await expect(tabs.nth(1)).toHaveAttribute("aria-selected", "true");
 
@@ -284,6 +317,7 @@ test.describe("terminals — tab shortcuts", () => {
     await page.keyboard.press("Control+Shift+T");
     await expect(tabs).toHaveCount(2);
     await expect(tabs.nth(1)).toContainText("prod-api-02");
+    await expect(page.locator(".workspace h1")).toHaveText("Terminals");
   });
 });
 
@@ -295,7 +329,7 @@ test.describe("terminals — New session launcher", () => {
 
     await page.locator("tbody tr", { hasText: "prod-api-01" }).click();
     await page.keyboard.press("Enter");
-    await expect(page.locator('[role="tab"]')).toHaveCount(1);
+    await expect(sessionTabs(page)).toHaveCount(1);
     await page.getByRole("button", { name: "New session" }).click();
     await expect(page.getByRole("option", { name: /gpu-trainer/ })).toBeVisible();
   });
@@ -307,7 +341,7 @@ test.describe("terminals — channel output, signals and interactions", () => {
     page,
   }) => {
     await app.gotoApp();
-    await app.nav("Terminals");
+    await app.nav("Console");
     const id = await connect(app, page, "prod-api-01");
     const testOutput = "Hello from bssh PTY channel!\r\n";
     const expectedBytes = new TextEncoder().encode(testOutput).length;
@@ -339,10 +373,10 @@ test.describe("terminals — channel output, signals and interactions", () => {
 
   test("OSC 2 title changes the tab label", async ({ app, page }) => {
     await app.gotoApp();
-    await app.nav("Terminals");
+    await app.nav("Console");
     const id = await connect(app, page, "prod-api-01");
 
-    const tabs = page.locator('[role="tab"]');
+    const tabs = sessionTabs(page);
     await expect(tabs.first()).toContainText("prod-api-01");
 
     await app.ptyOutput(id, "\x1b]2;user@host:~/dir\x07");
@@ -355,7 +389,7 @@ test.describe("terminals — channel output, signals and interactions", () => {
     page,
   }) => {
     await app.gotoApp();
-    await app.nav("Terminals");
+    await app.nav("Console");
     const id1 = await connect(app, page, "prod-api-01");
     await app.ptyOutput(id1, "ready 1\r\n");
 
@@ -367,7 +401,7 @@ test.describe("terminals — channel output, signals and interactions", () => {
     const id2 = spawns[spawns.length - 1].sessionId;
     await app.ptyOutput(id2, "ready 2\r\n");
 
-    const tabs = page.locator('[role="tab"]');
+    const tabs = sessionTabs(page);
     await expect(tabs).toHaveCount(2);
 
     const tab1 = tabs.filter({ hasText: "prod-api-01" });
@@ -392,12 +426,14 @@ test.describe("terminals — channel output, signals and interactions", () => {
 
   test("OSC 9;4 renders a progress bar on the tab, removed with state 0", async ({ app, page }) => {
     await app.gotoApp();
-    await app.nav("Terminals");
+    await app.nav("Console");
     const id = await connect(app, page, "prod-api-01");
     await app.ptyOutput(id, "ready\r\n");
 
-    const tab = page.locator('[role="tab"]').first();
-    const progressBar = tab.locator(".bg-accent");
+    const tab = sessionTabs(page).first();
+    // The active tab also carries an accent top rail; the progress fill is the
+    // element that carries the width style.
+    const progressBar = tab.locator("div.bg-accent[style]");
 
     await expect(progressBar).toHaveCount(0);
 
@@ -418,7 +454,7 @@ test.describe("terminals — channel output, signals and interactions", () => {
     page,
   }) => {
     await app.gotoApp();
-    await app.nav("Terminals");
+    await app.nav("Console");
     const id = await connect(app, page, "prod-api-01");
     await app.ptyOutput(id, "prompt$ \r\n");
 
@@ -445,7 +481,7 @@ test.describe("terminals — channel output, signals and interactions", () => {
     page,
   }) => {
     await app.gotoApp();
-    await app.nav("Terminals");
+    await app.nav("Console");
     const id = await connect(app, page, "prod-api-01");
     await app.ptyOutput(id, "ready\r\n");
 

@@ -61,7 +61,9 @@
   }
 </script>
 
-<div bind:this={row} class="relative flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden" role="group" aria-label="Filter by tag">
+<!-- overflow-clip, not -hidden: a hidden-overflow box is still a scroll container, so focusing a
+     clipped chip scrolls it and the scroll closes the "+N" popover that the same click opened. -->
+<div bind:this={row} class="relative flex min-w-0 flex-1 items-center gap-1.5 overflow-clip" role="group" aria-label="Filter by tag">
   <div bind:this={measure} class="pointer-events-none invisible absolute left-0 top-0 flex gap-1.5" aria-hidden="true">
     <span class="chip">All</span>
     {#each tags as tag (tag)}
@@ -106,7 +108,7 @@
 
 {#if open && moreButton}
   <AnchoredPopover anchor={moreButton} label="More tags" width={240} onClose={() => (open = false)}>
-    <div class="section-label px-2 pb-1 pt-1.5">More tags</div>
+    <div class="eyebrow px-2 pb-1 pt-1.5">More tags</div>
     <div class="flex flex-wrap gap-1.5 p-2 pt-1">
       {#each hidden as tag (tag)}
         <button

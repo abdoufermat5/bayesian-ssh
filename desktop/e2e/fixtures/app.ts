@@ -181,9 +181,12 @@ export const test = base.extend<Fixtures>({
         // `import()` of the module URL in dev creates a second store instance
         // (the app loaded it with an HMR `?t=` query), so mutations wouldn't
         // reach the running app.
+        // The Console nav item covers both internal tabs: with live sessions
+        // it opens the session strip ("terminals"), otherwise the host list
+        // ("connections").
         const labels: Record<string, string> = {
-          connections: "Hosts",
-          terminals: "Terminals",
+          connections: "Console",
+          terminals: "Console",
           sftp: "Files",
           keys: "Keys",
           audit: "Security check",

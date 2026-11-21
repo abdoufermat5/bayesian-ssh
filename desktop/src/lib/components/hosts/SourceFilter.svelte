@@ -21,7 +21,7 @@
 </script>
 
 <div class="flex min-w-0 items-center gap-1.5 overflow-x-auto scrollbar-none" role="group" aria-label="Filter by source">
-  <span class="section-label mr-1 shrink-0" aria-hidden="true">Source</span>
+  <span class="eyebrow mr-1 shrink-0" aria-hidden="true">Source</span>
   {#each options as opt (opt.value)}
     {@const active = value === opt.value}
     <button

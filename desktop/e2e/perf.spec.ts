@@ -69,19 +69,18 @@ test.describe("performance smoke", () => {
 
   test("the terminals panel is display:none while another view is active", async ({ app, page }) => {
     await app.gotoApp();
-    // Connect a host so the terminals panel stays mounted in the background.
+    // Connect a host so the Console stays mounted in the background.
     await page.keyboard.press("Enter");
     await expect(page.locator(".workspace h1")).toHaveText("Terminals");
 
     // Navigate with the sidebar, not the "1" shortcut: shortcuts are ignored
     // while the terminal has focus (keys go to the shell), and xterm takes
     // focus asynchronously after connecting, which made this test racy.
-    await app.nav("Hosts");
-    await expect(page.getByRole("heading", { level: 1, name: "Hosts" })).toBeVisible();
+    await app.nav("Files");
+    await expect(page.getByRole("heading", { level: 1, name: "Files" })).toBeVisible();
 
     const display = await page.evaluate(() => {
-      const heading = Array.from(document.querySelectorAll("h1")).find((h) => h.textContent === "Terminals");
-      const panel = heading?.closest(".view");
+      const panel = document.querySelector("[data-terminals-view]")?.closest(".view");
       return panel ? getComputedStyle(panel).display : null;
     });
     expect(display).toBe("none");

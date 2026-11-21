@@ -49,7 +49,7 @@ async function axeReport(page: Page, label: string): Promise<string[]> {
 test.describe("accessibility smoke", () => {
   test("icon-only buttons have accessible names across the shell and views", async ({ app, page }) => {
     await app.gotoApp();
-    for (const view of ["Hosts", "Terminals", "Files", "Keys", "Security check", "History", "Settings"]) {
+    for (const view of ["Console", "Files", "Keys", "Security check", "History", "Settings"]) {
       await app.nav(view);
       await expect(page.locator(".workspace h1")).toBeVisible();
       expect(await unnamedIconButtons(page), `unnamed buttons in ${view}`).toEqual([]);
@@ -71,7 +71,7 @@ test.describe("accessibility smoke", () => {
   test("main views have no serious axe violations", async ({ app, page }) => {
     await app.gotoApp();
     const report: string[] = [];
-    for (const view of ["Hosts", "Keys", "History", "Settings"]) {
+    for (const view of ["Console", "Keys", "History", "Settings"]) {
       await app.nav(view);
       await expect(page.locator(".workspace h1")).toBeVisible();
       report.push(...(await axeReport(page, view)));
