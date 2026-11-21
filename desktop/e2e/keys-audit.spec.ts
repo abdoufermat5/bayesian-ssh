@@ -43,7 +43,20 @@ test.describe("Keys", () => {
       .toBe("SHA256:Qx3n0b8kdl2bG9");
   });
 
-  test("shows the insecure-key alert and fix command for the 644 key", async ({ app, page }) => {
+  test("copy public key writes the .pub material to the clipboard and toasts", async ({ app, page }) => {
+    await grantClipboard(page);
+    await app.gotoApp();
+    await app.nav("Keys");
+
+    await page.getByRole("button", { name: "Copy public key of id_ed25519" }).click();
+
+    await expect(page.getByText("Copied public key", { exact: true })).toBeVisible();
+    await expect
+      .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+      .toBe("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMockEd25519KeyMaterial0001 me@laptop");
+  });
+
+  test("shows the insecure-key alert with one-click Fix permissions for the 644 key", async ({ app, page }) => {
     await app.gotoApp();
     await app.nav("Keys");
 
@@ -51,6 +64,10 @@ test.describe("Keys", () => {
     await expect(alert).toBeVisible();
     await expect(alert).toContainText("1 private key is readable by other users.");
     await expect(alert.getByText("chmod 600 ~/.ssh/id_rsa_old")).toBeVisible();
+
+    await alert.getByRole("button", { name: "Fix permissions" }).click();
+    await app.waitForIpc("fix_security_permissions");
+    await expect(page.getByText(/Fixed permissions on 1 file/)).toBeVisible();
   });
 
   test("generate-key modal submits generate_ssh_key with name and key type", async ({ app, page }) => {

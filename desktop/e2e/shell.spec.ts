@@ -8,8 +8,6 @@ const VIEWS: Array<{ nav: string; title: string }> = [
   { nav: "Security check", title: "Security check" },
   { nav: "Teams", title: "Teams" },
   { nav: "History", title: "History" },
-  // The AI reports entry shares the AI view; its h1 stays "AI agents".
-  { nav: "AI reports", title: "AI agents" },
   { nav: "Settings", title: "Settings" },
 ];
 

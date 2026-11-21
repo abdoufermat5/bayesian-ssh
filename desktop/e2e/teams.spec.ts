@@ -531,7 +531,8 @@ test.describe("Teams audit log, verified", () => {
     await expect(row).toContainText("db-prod");
     await expect(row).toContainText("Session start");
 
-    await page.getByLabel("Member").selectOption("ana@example.com");
+    await page.getByRole("combobox", { name: "Member" }).click();
+    await page.getByRole("option", { name: "ana@example.com" }).click();
     await page.getByLabel("Since (UTC)").fill("2030-01-01");
     await expect(page.getByText("bssh teams audit platform --member ana@example.com --since 2030-01-01")).toBeVisible();
     await expect

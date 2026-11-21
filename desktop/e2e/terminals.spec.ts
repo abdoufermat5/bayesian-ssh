@@ -133,17 +133,6 @@ test.describe("terminals — sessions in the tab strip", () => {
       await page.getByRole("button", { name: "Connect to prod-api-01", exact: true }).click();
       await expect(sessionTabs(page)).toHaveCount(1);
 
-      // --- Font-size stepper ------------------------------------------------
-      const fontGroup = page.getByRole("group", { name: "Font size" });
-      const size = fontGroup.locator("span[title='Font size']");
-      await expect(size).toHaveText("13");
-
-      await page.getByRole("button", { name: "Increase font size" }).click();
-      await expect(size).toHaveText("14");
-      await page.getByRole("button", { name: "Decrease font size" }).click();
-      await page.getByRole("button", { name: "Decrease font size" }).click();
-      await expect(size).toHaveText("12");
-
       // --- Find bar ---------------------------------------------------------
       const findToggle = page.getByRole("button", { name: "Find in terminal" });
       await expect(findToggle).toHaveAttribute("aria-pressed", "false");
@@ -162,13 +151,22 @@ test.describe("terminals — sessions in the tab strip", () => {
       await expect(findInput).toBeHidden();
       await expect(findToggle).toHaveAttribute("aria-pressed", "false");
 
-      // --- Overflow menu ----------------------------------------------------
+      // --- Overflow menu & font-size stepper --------------------------------
       const more = page.getByRole("button", { name: "More session actions" });
       await expect(more).toHaveAttribute("aria-expanded", "false");
       await more.click();
       await expect(more).toHaveAttribute("aria-expanded", "true");
 
       const menu = page.getByRole("menu");
+      const fontGroup = menu.getByRole("group", { name: "Font size" });
+      const size = fontGroup.locator("span[title='Font size']");
+      await expect(size).toHaveText("13");
+      await fontGroup.getByRole("button", { name: "Increase font size" }).click();
+      await expect(size).toHaveText("14");
+      await fontGroup.getByRole("button", { name: "Decrease font size" }).click();
+      await fontGroup.getByRole("button", { name: "Decrease font size" }).click();
+      await expect(size).toHaveText("12");
+
       await expect(menu.getByRole("menuitem", { name: "Open in new window" })).toBeVisible();
       await expect(menu.getByRole("menuitem", { name: "Run in background" })).toBeVisible();
       await expect(menu.getByRole("menuitem", { name: "Export scrollback" })).toBeVisible();
@@ -501,15 +499,16 @@ test.describe("terminals — channel output, signals and interactions", () => {
       }, text);
     };
 
-    // 1. Multi-line paste cancelled
+    // 1. Multi-line paste cancelled via Enter on default-focused Cancel button
     await app.clearIpc();
     await dispatchPaste("echo first line\necho second line");
 
     const dialog = page.getByRole("alertdialog");
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText(/Paste 2 lines\?/)).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
 
-    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await page.keyboard.press("Enter");
     await expect(dialog).toBeHidden();
     expect(await app.ipcCalls("write_pty")).toHaveLength(0);
 

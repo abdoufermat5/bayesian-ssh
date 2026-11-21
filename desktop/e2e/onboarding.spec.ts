@@ -27,28 +27,20 @@ test("stepper drives to completion and submits the exact onboarding payload", as
   await expect(page.getByRole("radio", { name: /Set up this machine/ })).toBeChecked();
   await page.getByRole("button", { name: "Get started" }).click();
 
-  // Step 2 — Profile and defaults.
-  await expect(page.getByRole("heading", { name: "Profile and defaults" })).toBeVisible();
+  // Step 2 — Profile & import (defaults, fuzzy search, and OpenSSH import).
+  await expect(page.getByRole("heading", { name: "Profile & import" })).toBeVisible();
   await page.locator("#ob-profile").fill("work");
   await page.locator("#ob-user").fill("deploy");
   await page.locator("#ob-port").fill("2222");
   await page.locator("#ob-agent").check();
-  await page.getByRole("button", { name: "Continue" }).click();
-
-  // Step 3 — OpenSSH import (host import stays on by default).
-  await expect(page.getByRole("heading", { name: "Import from OpenSSH" })).toBeVisible();
+  await page.locator("#ob-fuzzy").check();
   await expect(page.locator("#ob-import")).toBeChecked();
   await page.locator("#ob-ssh-config").fill("~/.ssh/config");
   await page.getByRole("button", { name: "Continue" }).click();
 
-  // Step 4 — Appearance.
+  // Step 3 — Appearance & finish.
   await expect(page.getByRole("heading", { name: "Appearance" })).toBeVisible();
   await page.getByRole("radio", { name: /^Light/ }).click();
-  await page.locator("#ob-fuzzy").check();
-  await page.getByRole("button", { name: "Continue" }).click();
-
-  // Step 5 — First connect. Submit the form via the primary action.
-  await expect(page.getByRole("heading", { name: "Connect to your first host" })).toBeVisible();
   await page.getByRole("button", { name: "Open Bayesian SSH" }).click();
 
   await app.waitForIpc("complete_onboarding", 1);

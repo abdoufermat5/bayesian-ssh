@@ -57,8 +57,8 @@ test.describe("new host modal", () => {
     await page.locator("#c-user").fill("deploy");
     await page.locator("#c-tags").fill("prod, web");
 
-    // Expand Advanced and configure a jump host + Kerberos.
-    await modal.getByRole("button", { name: /Advanced/ }).click();
+    // Expand Connection options and configure a jump host + Kerberos.
+    await modal.getByRole("button", { name: /Connection options/ }).click();
     await page.locator("#c-bastion").fill("jump.example.com");
     await page.locator("#c-bastion-user").fill("jumpuser");
     await page.locator("#c-krb").check();

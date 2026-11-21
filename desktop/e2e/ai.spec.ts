@@ -300,7 +300,8 @@ test.describe("approval dialog", () => {
     await seed(page, withPending(serviceRequest));
     await app.gotoApp();
     const dialog = page.getByRole("dialog", { name: "Approval needed" });
-    await dialog.getByLabel("Grant length").selectOption("30");
+    await dialog.getByRole("combobox", { name: "Grant length" }).click();
+    await page.getByRole("option", { name: "30 min" }).click();
     await dialog.getByRole("button", { name: "Approve and allow" }).click();
     await app.waitForIpc("ai_decide");
     expect(await app.ipcCalls("ai_decide")).toEqual([
@@ -637,27 +638,18 @@ test.describe("AI run reports", () => {
     await expect(page.getByText(/Opened in your browser/)).toBeVisible();
   });
 
-  test("the sidebar entry opens the reports from anywhere", async ({ app, page }) => {
+  test("the header switcher and palette open the reports from anywhere", async ({ app, page }) => {
     await seedReports(page);
     await app.gotoApp();
-    await page.locator('.sidebar [aria-label="AI reports"]').click();
-    await expect(page.getByRole("list", { name: "Past runs" })).toBeVisible();
-    await expect(page.locator('.sidebar [aria-label="AI reports"]')).toHaveAttribute("aria-current", "page");
-    await expect(page.locator('.sidebar [aria-label="AI agents"]')).not.toHaveAttribute("aria-current", "page");
-    await page.locator('.sidebar [aria-label="AI agents"]').click();
-    await expect(page.getByRole("list", { name: "Past runs" })).toHaveCount(0);
-  });
-
-  test("the 8 key and the palette open the reports", async ({ app, page }) => {
-    await seedReports(page);
-    await app.gotoApp();
-    await page.keyboard.press("8");
-    await expect(page.getByRole("list", { name: "Past runs" })).toBeVisible();
-
-    await app.setActiveTab("connections");
     await app.openPalette();
     await page.getByRole("dialog").getByRole("combobox").fill("ai reports");
     await page.keyboard.press("Enter");
+    await expect(page.getByRole("list", { name: "Past runs" })).toBeVisible();
+    await expect(page.locator('.sidebar [aria-label="AI agents"]')).toHaveAttribute("aria-current", "page");
+
+    await page.getByRole("group", { name: "AI agents view" }).getByRole("button", { name: "Live", exact: true }).click();
+    await expect(page.getByRole("list", { name: "Past runs" })).toHaveCount(0);
+    await page.getByRole("group", { name: "AI agents view" }).getByRole("button", { name: "Reports", exact: true }).click();
     await expect(page.getByRole("list", { name: "Past runs" })).toBeVisible();
   });
 

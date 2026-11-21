@@ -211,7 +211,6 @@ test.describe("shortcuts modal", () => {
       ["Security check", "5"],
       ["Teams", "6"],
       ["History", "7"],
-      ["AI reports", "8"],
     ];
     await expect(row("Settings").locator("kbd")).toHaveText(["Ctrl", ","]);
     for (const [name, key] of views) {

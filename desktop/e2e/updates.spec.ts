@@ -13,7 +13,7 @@ const SECTIONS = 'nav[aria-label="Settings sections"]';
 async function openUpdates(app: AppFixture, page: Page) {
   await app.gotoApp();
   await app.nav("Settings");
-  await page.locator(SECTIONS).getByRole("button", { name: "Sources & updates", exact: true }).click();
+  await page.locator(SECTIONS).getByRole("button", { name: "Updates", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Application", level: 2 })).toBeVisible();
 }
 

@@ -1,7 +1,7 @@
 import { test, expect } from "./fixtures/app";
 
 test.describe("global shortcuts", () => {
-  test("number keys 1-8 switch views in sidebar order", async ({ app, page }) => {
+  test("number keys 1-7 switch views in sidebar order", async ({ app, page }) => {
     await app.gotoApp();
     const expectations: Array<[string, string]> = [
       ["1", "Hosts"], // Console home: the host list
@@ -16,11 +16,6 @@ test.describe("global shortcuts", () => {
       await page.keyboard.press(key);
       await expect(page.locator(".workspace h1")).toHaveText(title);
     }
-
-    // 8 opens the AI reports, which share the AI view's single h1.
-    await page.keyboard.press("8");
-    await expect(page.locator(".workspace h1")).toHaveText("AI agents");
-    await expect(page.locator('.sidebar [aria-label="AI reports"]')).toHaveAttribute("aria-current", "page");
   });
 
   test("Ctrl+, opens Settings, even from a text field", async ({ app, page }) => {
@@ -36,7 +31,7 @@ test.describe("global shortcuts", () => {
     await expect(page.locator('.sidebar [aria-label="Console"]')).toHaveAttribute("aria-keyshortcuts", "1");
     await expect(page.locator('.sidebar [aria-label="Keys"]')).toHaveAttribute("aria-keyshortcuts", "4");
     await expect(page.locator('.sidebar [aria-label="Teams"]')).toHaveAttribute("aria-keyshortcuts", "6");
-    await expect(page.locator('.sidebar [aria-label="AI reports"]')).toHaveAttribute("aria-keyshortcuts", "8");
+    await expect(page.locator('.sidebar [aria-label="History"]')).toHaveAttribute("aria-keyshortcuts", "7");
   });
 
   test("'/' focuses the hosts filter", async ({ app, page }) => {

@@ -37,11 +37,12 @@ test.describe("settings", () => {
       { label: "Terminal & files", marker: page.getByText("Font size", { exact: true }) },
       { label: "Privacy & history", marker: page.getByRole("checkbox", { name: /Record session history/ }) },
       { label: "Appearance", marker: page.getByRole("radiogroup", { name: "Theme" }) },
-      { label: "Sources & updates", marker: page.getByRole("button", { name: "Check for updates" }) },
+      { label: "Sources", marker: page.getByText(/sources/i).first() },
       { label: "AI agents", marker: page.getByText("Unanswered requests expire after") },
+      { label: "Updates", marker: page.getByRole("button", { name: "Check for updates" }) },
     ];
 
-    // The rail exposes exactly the seven settings sections.
+    // The rail exposes exactly the eight settings sections.
     await expect(page.locator(SECTIONS).getByRole("button")).toHaveCount(sections.length);
 
     for (const { label, marker } of sections) {

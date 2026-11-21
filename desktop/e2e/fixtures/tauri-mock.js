@@ -102,6 +102,7 @@
       key_type: "ED25519",
       fingerprint: "SHA256:Qx3n0b8kdl2bG9",
       comment: "me@laptop",
+      public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMockEd25519KeyMaterial0001 me@laptop",
       public_key_path: "/home/me/.ssh/id_ed25519.pub",
       private_key_path: "/home/me/.ssh/id_ed25519",
       private_key_permission: "600",
@@ -112,6 +113,7 @@
       key_type: "RSA-2048",
       fingerprint: "SHA256:Zk1uB2mvLx77qa",
       comment: "legacy",
+      public_key: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAMockRsaKeyMaterial0002 legacy",
       public_key_path: "/home/me/.ssh/id_rsa_old.pub",
       private_key_path: "/home/me/.ssh/id_rsa_old",
       private_key_permission: "644",
@@ -502,6 +504,11 @@
         e("README.md", false, 6120, "-rw-r--r--", "Jul 19 12:00"),
       ];
     },
+    save_remote_file: (a) => `/home/me/Downloads/${(a && a.defaultName) || "file"}`,
+    download_remote_file: () => 2290,
+    create_remote_directory: () => null,
+    rename_remote_entry: () => null,
+    delete_remote_entry: () => null,
     // bssh AI. Runs and timelines come from the `__MOCK_AI_*` knobs; tests push
     // live changes with `__MOCK_EMIT("ai://runs" | "ai://event" | "ai://request", ...)`.
     ai_list_runs: () => window.__MOCK_AI_RUNS || [],

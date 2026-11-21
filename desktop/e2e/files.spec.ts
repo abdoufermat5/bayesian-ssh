@@ -203,3 +203,46 @@ test("surfaces a connection failure from the listing call", async ({ app, page }
   // Still disconnected: the header keeps the "Not connected" label.
   await expect(page.getByText("Not connected")).toBeVisible();
 });
+
+test("supports download, new folder, rename and delete remote operations", async ({ app, page }) => {
+  await openFiles(app, page);
+  await connectDefaultHost(app, page);
+
+  // Download file
+  await page.getByRole("button", { name: "Download deploy.sh" }).click();
+  await app.waitForIpc("download_remote_file");
+  expect(await app.ipcCalls("download_remote_file")).toEqual([
+    { connectionName: "prod-api-01", remotePath: "/deploy.sh", localPath: "/home/me/Downloads/deploy.sh" },
+  ]);
+  await expect(page.getByText("Downloaded deploy.sh", { exact: true })).toBeVisible();
+
+  // New folder
+  await page.getByRole("button", { name: "New folder" }).click();
+  const folderDialog = page.getByRole("dialog", { name: "New folder" });
+  await folderDialog.getByLabel("Folder name").fill("releases");
+  await folderDialog.getByRole("button", { name: "Create folder" }).click();
+  await app.waitForIpc("create_remote_directory");
+  expect(await app.ipcCalls("create_remote_directory")).toEqual([
+    { connectionName: "prod-api-01", remotePath: "/releases" },
+  ]);
+
+  // Rename file
+  await page.getByRole("button", { name: "Rename deploy.sh" }).click();
+  const renameDialog = page.getByRole("dialog", { name: "Rename file" });
+  await renameDialog.getByLabel("New name").fill("deploy-v2.sh");
+  await renameDialog.getByRole("button", { name: "Rename" }).click();
+  await app.waitForIpc("rename_remote_entry");
+  expect(await app.ipcCalls("rename_remote_entry")).toEqual([
+    { connectionName: "prod-api-01", fromPath: "/deploy.sh", toPath: "/deploy-v2.sh" },
+  ]);
+
+  // Delete file (confirmed via dialog naming full path)
+  await page.getByRole("button", { name: "Delete deploy.sh" }).click();
+  const deleteDialog = page.getByRole("dialog", { name: /Delete/ });
+  await expect(deleteDialog.getByText("/deploy.sh")).toBeVisible();
+  await deleteDialog.getByRole("button", { name: /^Delete/ }).click();
+  await app.waitForIpc("delete_remote_entry");
+  expect(await app.ipcCalls("delete_remote_entry")).toEqual([
+    { connectionName: "prod-api-01", remotePath: "/deploy.sh", isDir: false },
+  ]);
+});
