@@ -131,7 +131,7 @@
   {#if error}
     <div class="alert alert-error" role="alert">Couldn't load the plan: {error}</div>
   {:else if info === null}
-    <div class="skeleton h-14 w-full rounded-md" aria-label="Loading plan and seats"></div>
+    <div class="skeleton h-14 w-full rounded-md" role="status" aria-busy="true" aria-label="Loading plan and seats"></div>
   {:else}
     <div class="panel flex flex-col gap-3 px-4 py-3">
       <div class="flex flex-wrap items-center justify-between gap-2">

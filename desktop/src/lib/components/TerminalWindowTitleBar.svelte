@@ -55,6 +55,7 @@
       title={status === "connected" ? "Connected" : "Disconnected"}
       aria-hidden="true"
     ></span>
+    <span class="sr-only">{status === "connected" ? "Connected" : "Disconnected"}</span>
     <span class="truncate text-sm font-medium text-primary" data-tauri-drag-region>{title}</span>
     {#if dockHintActive}
       <span class="shrink-0 text-xs text-accent">Drop onto the main window to dock</span>
@@ -81,7 +82,7 @@
         title="Minimize"
         aria-label="Minimize"
       >
-        <svg viewBox="0 0 10 10" class="size-2.5" fill="none" stroke="currentColor" stroke-width="1.2">
+        <svg viewBox="0 0 10 10" class="size-2.5" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true">
           <path d="M1 5.5h8" />
         </svg>
       </button>
@@ -92,7 +93,7 @@
         title="Maximize"
         aria-label="Maximize or restore"
       >
-        <svg viewBox="0 0 10 10" class="size-2.5" fill="none" stroke="currentColor" stroke-width="1.2">
+        <svg viewBox="0 0 10 10" class="size-2.5" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true">
           <rect x="1.5" y="1.5" width="7" height="7" rx="1" />
         </svg>
       </button>
@@ -103,7 +104,7 @@
         title="Close session"
         aria-label="Close session"
       >
-        <svg viewBox="0 0 10 10" class="size-2.5" fill="none" stroke="currentColor" stroke-width="1.2">
+        <svg viewBox="0 0 10 10" class="size-2.5" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true">
           <path d="M1.5 1.5l7 7M8.5 1.5l-7 7" />
         </svg>
       </button>
@@ -127,7 +128,7 @@
     color: var(--color-primary);
   }
   .window-btn-close:hover {
-    background: var(--color-error);
-    color: white;
+    background: var(--color-danger-strong);
+    color: var(--color-on-danger);
   }
 </style>

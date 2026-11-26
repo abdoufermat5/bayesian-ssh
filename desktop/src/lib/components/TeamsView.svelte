@@ -367,7 +367,7 @@
 
   <div class="view-body">
     {#if loading}
-      <div class="flex flex-col gap-3" aria-busy="true" aria-label="Loading Teams">
+      <div class="flex flex-col gap-3" role="status" aria-busy="true" aria-label="Loading Teams">
         <div class="skeleton h-24 w-full rounded-md"></div>
         <div class="skeleton h-16 w-full rounded-md"></div>
       </div>

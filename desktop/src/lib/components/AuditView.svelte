@@ -127,7 +127,7 @@
 
   <div class="view-body">
     {#if !report && loading}
-      <div class="flex max-w-4xl flex-col gap-3" aria-busy="true" aria-label="Running security check">
+      <div class="flex max-w-4xl flex-col gap-3" role="status" aria-busy="true" aria-label="Running security check">
         <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-[minmax(170px,1.4fr)_repeat(4,minmax(0,1fr))]">
           {#each [0, 1, 2, 3, 4] as i (i)}
             <div class="stat">

@@ -117,7 +117,7 @@
       {#if pendingError}
         <div class="alert alert-error" role="alert">Couldn't load waiting devices: {pendingError}</div>
       {:else if pending === null}
-        <div class="skeleton h-10 w-full rounded-md" aria-label="Loading waiting devices"></div>
+        <div class="skeleton h-10 w-full rounded-md" role="status" aria-busy="true" aria-label="Loading waiting devices"></div>
       {:else if pending.length === 0}
         <p class="m-0 type-meta">No device is waiting.</p>
       {:else}
@@ -158,7 +158,7 @@
     {#if membersError}
       <div class="alert alert-error" role="alert">Couldn't load members: {membersError}</div>
     {:else if members === null}
-      <div class="skeleton h-16 w-full rounded-md" aria-label="Loading members"></div>
+      <div class="skeleton h-16 w-full rounded-md" role="status" aria-busy="true" aria-label="Loading members"></div>
     {:else}
       <ul class="panel m-0 flex list-none flex-col p-0">
         {#each members as m, i (m.email)}

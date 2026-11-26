@@ -58,12 +58,12 @@
         type="button"
         class="flex h-[26px] w-full max-w-[440px] cursor-pointer items-center gap-2 rounded-md border border-border-control bg-surface-input px-2.5 text-xs text-muted transition-colors duration-fast hover:border-border-hover hover:text-secondary"
         onclick={onOpenCommandPalette}
-        aria-label="Jump to…"
+        aria-label="Jump to host, view or action"
         title="Jump to hosts, views and actions"
       >
-        <Search size={13} class="shrink-0" />
-        <span class="mono truncate">› Jump to host, view or action</span>
-        <span class="ml-auto flex shrink-0 items-center gap-0.5">
+        <Search size={13} class="shrink-0" aria-hidden="true" />
+        <span class="mono truncate"><span aria-hidden="true">› </span>Jump to host, view or action</span>
+        <span class="ml-auto flex shrink-0 items-center gap-0.5" aria-hidden="true">
           {#each paletteKeys as key (key)}<kbd class="kbd">{key}</kbd>{/each}
         </span>
       </button>
@@ -103,7 +103,7 @@
           title="Minimize"
           aria-label="Minimize"
         >
-          <svg viewBox="0 0 10 10" class="size-2.5" fill="none" stroke="currentColor" stroke-width="1.2">
+          <svg viewBox="0 0 10 10" class="size-2.5" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true">
             <path d="M1 5.5h8" />
           </svg>
         </button>
@@ -114,7 +114,7 @@
           title="Maximize"
           aria-label="Maximize or restore"
         >
-          <svg viewBox="0 0 10 10" class="size-2.5" fill="none" stroke="currentColor" stroke-width="1.2">
+          <svg viewBox="0 0 10 10" class="size-2.5" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true">
             <rect x="1.5" y="1.5" width="7" height="7" rx="1" />
           </svg>
         </button>
@@ -125,7 +125,7 @@
           title="Close"
           aria-label="Close"
         >
-          <svg viewBox="0 0 10 10" class="size-2.5" fill="none" stroke="currentColor" stroke-width="1.2">
+          <svg viewBox="0 0 10 10" class="size-2.5" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true">
             <path d="M1.5 1.5l7 7M8.5 1.5l-7 7" />
           </svg>
         </button>

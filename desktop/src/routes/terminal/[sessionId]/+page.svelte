@@ -158,19 +158,22 @@
     onClose={() => getCurrentWindow().close()}
   />
 
-  {#if loadError}
-    <div class="empty-state flex-1 bg-surface">
-      <p class="empty-state-title">Couldn't open this session</p>
-      <p class="empty-state-desc">{loadError}</p>
-      <div class="empty-state-action">
-        <button type="button" class="btn btn-secondary" onclick={() => getCurrentWindow().close()}>
-          Close window
-        </button>
+  <main class="flex min-h-0 flex-1 flex-col">
+    <h1 class="sr-only">{connectionName}</h1>
+    {#if loadError}
+      <div class="empty-state flex-1 bg-surface" role="alert">
+        <p class="empty-state-title">Couldn't open this session</p>
+        <p class="empty-state-desc">{loadError}</p>
+        <div class="empty-state-action">
+          <button type="button" class="btn btn-secondary" onclick={() => getCurrentWindow().close()}>
+            Close window
+          </button>
+        </div>
       </div>
-    </div>
-  {:else}
-    <div class="box-border min-h-0 flex-1 bg-surface-terminal p-2">
-      <div id="terminal-popout-root" class="h-full w-full"></div>
-    </div>
-  {/if}
+    {:else}
+      <div class="box-border min-h-0 flex-1 bg-surface-terminal p-2">
+        <div id="terminal-popout-root" class="h-full w-full"></div>
+      </div>
+    {/if}
+  </main>
 </div>

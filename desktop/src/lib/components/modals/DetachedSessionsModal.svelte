@@ -54,7 +54,7 @@
 <ModalShell open={true} title="Running sessions" {onClose} width="form" panelClass="max-h-[80vh]">
   <div class="modal-header">
     <div>
-      <h3 id="session-manager-title" class="modal-title">Running sessions</h3>
+      <h2 id="session-manager-title" class="modal-title">Running sessions</h2>
       <p class="modal-subtitle">
         Sessions outside the tab bar keep running. Reattach or dock one to bring it back into the tab bar.
       </p>

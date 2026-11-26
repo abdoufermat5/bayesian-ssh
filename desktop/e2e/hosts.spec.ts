@@ -236,7 +236,7 @@ test.describe("hosts row actions", () => {
     await app.clearIpc();
     await rowMenu(page, "prod-api-01", "Delete…");
 
-    const dialog = page.getByRole("dialog").filter({ hasText: "Delete prod-api-01?" });
+    const dialog = page.getByRole("alertdialog").filter({ hasText: "Delete prod-api-01?" });
     await expect(dialog).toBeVisible();
     await dialog.getByRole("button", { name: "Delete", exact: true }).click();
 
@@ -288,7 +288,7 @@ test.describe("hosts keyboard", () => {
 
     await focusRow(page, "prod-api-02");
     await page.keyboard.press("Delete");
-    await expect(page.getByRole("dialog", { name: "Delete prod-api-02?" })).toBeVisible();
+    await expect(page.getByRole("alertdialog", { name: "Delete prod-api-02?" })).toBeVisible();
   });
 
   test("Shift+Enter connects in a tab; Ctrl+Enter opens Files", async ({ app, page }) => {

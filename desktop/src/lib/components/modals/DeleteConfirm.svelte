@@ -29,7 +29,7 @@
   const subtitleIsProse = $derived(/\s/.test(subtitle.trim()) && /[.!?]$/.test(subtitle.trim()));
 </script>
 
-<ModalShell open={true} title={heading} onClose={onCancel} width="sm">
+<ModalShell open={true} role="alertdialog" title={heading} onClose={onCancel} width="sm">
   <div class="modal-header">
     <h2 class="modal-title break-words">{heading}</h2>
     <button type="button" class="modal-close" onclick={onCancel} aria-label="Close">

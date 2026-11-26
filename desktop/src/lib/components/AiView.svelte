@@ -425,7 +425,7 @@
   <div class="view-body">
     {#if mode === "reports"}
       {#if reportsLoading && reports.length === 0}
-        <div class="grid items-start gap-4 lg:grid-cols-[minmax(260px,340px)_minmax(0,1fr)]" aria-busy="true" aria-label="Loading runs">
+        <div class="grid items-start gap-4 lg:grid-cols-[minmax(260px,340px)_minmax(0,1fr)]" role="status" aria-busy="true" aria-label="Loading runs">
           <div class="flex flex-col gap-2">
             {#each [0, 1, 2] as i (i)}
               <div class="card flex flex-col gap-2 p-3.5">
@@ -562,7 +562,7 @@
             {#if shownReport}
               <RunReport report={shownReport} {timezone} actions={reportActions} />
             {:else if reportLoading}
-              <div class="panel flex flex-col gap-2.5 p-4" aria-busy="true" aria-label="Loading report">
+              <div class="panel flex flex-col gap-2.5 p-4" role="status" aria-busy="true" aria-label="Loading report">
                 <div class="skeleton h-4 w-40"></div>
                 <div class="skeleton h-3 w-3/4"></div>
                 <div class="skeleton h-16 w-full"></div>

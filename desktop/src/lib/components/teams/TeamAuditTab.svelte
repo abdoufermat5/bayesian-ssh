@@ -126,7 +126,7 @@
   {#if error}
     <div class="alert alert-error" role="alert">Couldn't load the audit log: {error}</div>
   {:else if !log}
-    <div class="skeleton h-14 w-full rounded-md" aria-busy="true" aria-label="Verifying the audit log"></div>
+    <div class="skeleton h-14 w-full rounded-md" role="status" aria-busy="true" aria-label="Verifying the audit log"></div>
   {:else}
     {#if verdict === "verified"}
       <div class="alert alert-success" role="status">

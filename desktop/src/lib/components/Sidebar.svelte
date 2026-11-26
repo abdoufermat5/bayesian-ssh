@@ -157,7 +157,7 @@
 <aside
   class="sidebar"
   style="width: {sidebarCollapsed ? 'var(--sidebar-w-collapsed)' : 'var(--sidebar-w)'}"
-  aria-label="Main navigation"
+  aria-label="Sidebar"
 >
   <!-- Profile switcher -->
   <div class="relative px-2.5 pb-1 pt-1" bind:this={profileRoot}>
@@ -168,6 +168,7 @@
       onclick={() => (profileMenuOpen = !profileMenuOpen)}
       aria-haspopup="menu"
       aria-expanded={profileMenuOpen}
+      aria-label={`Profile: ${activeEnv}`}
       title={`Profile: ${activeEnv}`}
     >
       <span
@@ -188,6 +189,7 @@
       <div
         class="popover absolute left-2.5 top-full mt-1 w-[220px]"
         role="menu"
+        aria-label="Profiles"
       >
         <div class="section-label px-2 pb-1 pt-1.5">Profiles</div>
         {#each environments as env (env.name)}
@@ -210,7 +212,7 @@
             {/if}
           </button>
         {/each}
-        <div class="menu-separator"></div>
+        <div class="menu-separator" role="separator"></div>
         <button
           type="button"
           role="menuitem"
@@ -228,7 +230,10 @@
   </div>
 
   <!-- Navigation -->
-  <nav class="flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pb-2 scrollbar-none {sidebarCollapsed ? 'pt-1.5' : ''}">
+  <nav
+    class="flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pb-2 scrollbar-none {sidebarCollapsed ? 'pt-1.5' : ''}"
+    aria-label="Main navigation"
+  >
     {#each sections as section, idx (section.label)}
       {#if sidebarCollapsed}
         {#if idx > 0}
@@ -251,21 +256,23 @@
             aria-keyshortcuts={item.key ?? undefined}
             aria-label={item.attention
               ? `${item.label}, ${item.attention} ${item.attention === 1 ? "item needs" : "items need"} attention`
-              : item.label}
+              : item.badge
+                ? `${item.label}, ${item.badge}`
+                : item.label}
             aria-current={active ? "page" : undefined}
           >
-            <item.icon size={16} strokeWidth={1.75} class={active ? "text-primary" : "text-muted"} />
+            <item.icon size={16} strokeWidth={1.75} class={active ? "text-primary" : "text-muted"} aria-hidden="true" />
             {#if !sidebarCollapsed}
               <span class="truncate">{item.label}</span>
               {#if item.attention}
                 <span class="count ml-auto bg-warning/15 text-warning" aria-hidden="true">{item.attention}</span>
               {:else if item.badge}
-                <span class="count ml-auto {active ? 'bg-accent/15 text-accent' : ''}">{item.badge}</span>
+                <span class="count ml-auto {active ? 'bg-accent/15 text-accent' : ''}" aria-hidden="true">{item.badge}</span>
               {/if}
             {:else if item.attention}
               <span class="absolute right-1.5 top-1.5 size-2 rounded-full bg-warning ring-2 ring-chrome" aria-hidden="true"></span>
             {:else if item.badge}
-              <span class="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-accent"></span>
+              <span class="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-accent" aria-hidden="true"></span>
             {/if}
           </button>
         {/each}
@@ -296,9 +303,9 @@
       class="nav-item {sidebarCollapsed ? 'nav-item-collapsed' : ''}"
       onclick={onShowAgentModal}
       title={agentActive ? `SSH agent · ${agentKeys.length} ${agentKeys.length === 1 ? "key" : "keys"} loaded` : "SSH agent · Off"}
-      aria-label="SSH agent"
+      aria-label={agentActive ? `SSH agent, ${agentKeys.length} ${agentKeys.length === 1 ? "key" : "keys"} loaded` : "SSH agent, off"}
     >
-      <span class="relative flex size-4 items-center justify-center">
+      <span class="relative flex size-4 items-center justify-center" aria-hidden="true">
         <KeyRound size={16} strokeWidth={1.75} class="text-muted" />
         <span class="status-dot status-dot-sm absolute -bottom-0.5 -right-0.5 ring-2 ring-chrome {agentActive ? 'status-dot-success' : 'status-dot-offline'}"></span>
       </span>
@@ -316,9 +323,9 @@
         class="nav-item {sidebarCollapsed ? 'nav-item-collapsed' : ''}"
         onclick={onShowKerberosModal}
         title={`Kerberos · ${kerberosLabel}`}
-        aria-label="Kerberos ticket"
+        aria-label={`Kerberos ticket, ${kerberosLabel}`}
       >
-        <span class="relative flex size-4 items-center justify-center">
+        <span class="relative flex size-4 items-center justify-center" aria-hidden="true">
           <Ticket size={16} strokeWidth={1.75} class="text-muted" />
           <span class="status-dot status-dot-sm absolute -bottom-0.5 -right-0.5 ring-2 ring-chrome status-dot-{kerberosTone}"></span>
         </span>

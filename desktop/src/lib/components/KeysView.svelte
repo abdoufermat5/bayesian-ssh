@@ -178,7 +178,7 @@
 
   <div class="view-body">
     {#if loading && keys.length === 0}
-      <div class="table-wrap" aria-busy="true" aria-label="Loading keys">
+      <div class="table-wrap" role="status" aria-busy="true" aria-label="Loading keys">
         {#each [0, 1, 2] as i (i)}
           <div class="flex h-14 items-center gap-4 px-4 {i > 0 ? 'border-t border-border-subtle' : ''}">
             <div class="flex w-[30%] flex-col gap-1.5">

@@ -14,7 +14,7 @@
   let { prompt, onConfirm, onCancel }: Props = $props();
 </script>
 
-<ModalShell open={true} title="Confirm connection change" onClose={onCancel} width="sm">
+<ModalShell open={true} role="alertdialog" title="Confirm connection change" onClose={onCancel} width="sm">
   <div class="modal-header">
     <h2 class="modal-title break-words">Confirm connection change</h2>
     <button type="button" class="modal-close" onclick={onCancel} aria-label="Close">

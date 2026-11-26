@@ -166,9 +166,9 @@
 
   {#if orgs && orgs.length > 0}
     <section class="flex flex-col gap-2" aria-labelledby="orgs-heading">
-      <h3 id="orgs-heading" class="section-heading flex items-center gap-1.5">
-        <Building2 size={14} /> Organizations
-      </h3>
+      <h2 id="orgs-heading" class="section-heading flex items-center gap-1.5">
+        <Building2 size={14} aria-hidden="true" /> Organizations
+      </h2>
       <div class="table-wrap overflow-x-auto">
         <table class="data-table">
           <thead>

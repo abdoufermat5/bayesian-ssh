@@ -93,7 +93,7 @@
           </div>
         </div>
       {:else if !preview}
-        <div class="flex flex-col gap-2" aria-busy="true" aria-label="Loading the removal preview">
+        <div class="flex flex-col gap-2" role="status" aria-busy="true" aria-label="Loading the removal preview">
           <div class="skeleton h-4 w-2/3 rounded-sm"></div>
           <div class="skeleton h-4 w-full rounded-sm"></div>
           <div class="skeleton h-4 w-1/2 rounded-sm"></div>

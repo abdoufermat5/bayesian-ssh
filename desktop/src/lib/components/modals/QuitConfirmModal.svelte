@@ -14,7 +14,7 @@
   const sessions = $derived(`${activeCount} session${activeCount === 1 ? "" : "s"}`);
 </script>
 
-<ModalShell open={true} title="Quit Bayesian SSH" onClose={onCancel} width="md">
+<ModalShell open={true} role="alertdialog" title="Quit Bayesian SSH" onClose={onCancel} width="md">
   <div class="modal-header">
     <h2 class="modal-title">Quit Bayesian SSH?</h2>
     <button type="button" class="modal-close" onclick={onCancel} aria-label="Close">

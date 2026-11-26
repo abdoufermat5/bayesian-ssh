@@ -720,6 +720,7 @@
               <button
                 type="button"
                 class="h-6 shrink-0 cursor-pointer whitespace-nowrap rounded-sm px-1.5 font-mono text-xs transition-colors hover:bg-surface-hover hover:text-primary {i === pathBreadcrumbs.length - 1 ? 'text-primary' : 'text-muted'}"
+                aria-current={i === pathBreadcrumbs.length - 1 ? "location" : undefined}
                 onclick={() => loadDirectory(crumb.path)}
               >
                 {crumb.label}
@@ -871,7 +872,7 @@
     {/if}
 
     {#if loading && (viewMode === "list" || !isConnected)}
-      <div class="table-wrap" aria-busy="true" aria-label="Loading directory">
+      <div class="table-wrap" role="status" aria-busy="true" aria-label="Loading directory">
         <table class="data-table table-fixed">
           <thead>
             <tr>

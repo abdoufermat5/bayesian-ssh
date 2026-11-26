@@ -10,7 +10,6 @@
 
 <div
   class="pointer-events-none fixed right-4 top-12 z-[400] flex flex-col items-end gap-2"
-  aria-live="polite"
 >
   {#each visibleToasts as toast (toast.id)}
     <div class="toast" role={toast.type === "error" ? "alert" : "status"}>

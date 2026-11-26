@@ -25,7 +25,7 @@ test.describe("profiles modal", () => {
     await openProfilesModal(page);
 
     await page.getByRole("button", { name: "Delete profile work" }).click();
-    const confirm = page.getByRole("dialog", { name: "Delete work?" });
+    const confirm = page.getByRole("alertdialog", { name: "Delete work?" });
     await expect(confirm).toBeVisible();
 
     await confirm.getByRole("button", { name: "Delete", exact: true }).click();
@@ -42,7 +42,7 @@ test.describe("ssh agent modal", () => {
     page,
   }) => {
     await app.gotoApp();
-    await page.locator('.sidebar [aria-label="SSH agent"]').click();
+    await page.locator('.sidebar [aria-label^="SSH agent"]').click();
 
     const dialog = page.getByRole("dialog", { name: "SSH agent" });
     await expect(dialog).toBeVisible();
@@ -62,7 +62,7 @@ test.describe("ssh agent modal", () => {
 test.describe("kerberos modal", () => {
   test("valid ticket shows status and renew calls renew_kerberos_ticket", async ({ app, page }) => {
     await app.gotoApp();
-    await page.locator('.sidebar [aria-label="Kerberos ticket"]').click();
+    await page.locator('.sidebar [aria-label^="Kerberos ticket"]').click();
 
     const dialog = page.getByRole("dialog", { name: "Kerberos ticket" });
     await expect(dialog).toBeVisible();
@@ -99,7 +99,7 @@ test.describe("kerberos indicator (no Kerberos connection)", () => {
   test("stays hidden even with Kerberos tools and a valid ticket", async ({ app, page }) => {
     await app.gotoApp();
     await expect(page.locator("tr", { hasText: "plain-host" })).toBeVisible();
-    await expect(page.locator('.sidebar [aria-label="Kerberos ticket"]')).toHaveCount(0);
+    await expect(page.locator('.sidebar [aria-label^="Kerberos ticket"]')).toHaveCount(0);
   });
 });
 
@@ -111,7 +111,7 @@ test.describe("kerberos modal (no ticket)", () => {
     page,
   }) => {
     await app.gotoApp();
-    await page.locator('.sidebar [aria-label="Kerberos ticket"]').click();
+    await page.locator('.sidebar [aria-label^="Kerberos ticket"]').click();
 
     const dialog = page.getByRole("dialog", { name: "Kerberos ticket" });
     await expect(dialog).toBeVisible();
@@ -156,7 +156,7 @@ test.describe("kerberos modal (tools missing)", () => {
 test.describe("delete confirmation", () => {
   test("host delete: Cancel aborts, Confirm removes the host", async ({ app, page }) => {
     await app.gotoApp();
-    const dialog = page.getByRole("dialog", { name: "Delete prod-api-01?" });
+    const dialog = page.getByRole("alertdialog", { name: "Delete prod-api-01?" });
 
     const openDelete = async () => {
       await page.getByRole("button", { name: "More actions for prod-api-01" }).click();
