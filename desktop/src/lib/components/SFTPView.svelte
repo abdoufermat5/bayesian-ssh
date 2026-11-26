@@ -33,6 +33,7 @@
   import { appState } from "$lib/stores/appState.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
   import { pendingFilesHost, takeFilesHost } from "$lib/stores/filesHost.svelte";
+  import { formatBytes } from "$lib/utils/format";
   import { copyTextWithFallback } from "$lib/utils/terminal-xterm";
 
   export interface RemoteFileEntry {
@@ -421,14 +422,6 @@
     } finally {
       deleting = false;
     }
-  }
-
-  function formatBytes(bytes: number): string {
-    if (bytes === 0) return "0 B";
-    const k = 1024;
-    const sizes = ["B", "KB", "MB", "GB", "TB"];
-    const i = Math.min(sizes.length - 1, Math.floor(Math.log(bytes) / Math.log(k)));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
   }
 
   const CODE_EXT = new Set(["js", "ts", "py", "rs", "go", "json", "yaml", "yml", "toml", "html", "css", "sh", "conf", "ini"]);

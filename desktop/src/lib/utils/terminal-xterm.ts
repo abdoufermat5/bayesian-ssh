@@ -53,7 +53,7 @@ export function attachXtermPtyResize(sessionId: string, term: Terminal): void {
   term.onResize(() => syncPtySize(sessionId, term));
 }
 
-let fontWait: Promise<void> | null = null;
+const fontWait = new Map<string, Promise<void>>();
 
 /**
  * Resolve once the terminal font is loaded (or after a short timeout), so
@@ -61,7 +61,8 @@ let fontWait: Promise<void> | null = null;
  * only arrives after the timeout, `onLateLoad` lets callers re-measure.
  */
 export function waitForTerminalFont(fontFamily: string, onLateLoad?: () => void): Promise<void> {
-  if (fontWait) return fontWait;
+  const cached = fontWait.get(fontFamily);
+  if (cached) return cached;
   if (typeof document === "undefined" || !document.fonts) return Promise.resolve();
   let timedOut = false;
   const load = document.fonts
@@ -76,8 +77,9 @@ export function waitForTerminalFont(fontFamily: string, onLateLoad?: () => void)
       resolve();
     }, 1200),
   );
-  fontWait = Promise.race([load, timeout]);
-  return fontWait;
+  const pending = Promise.race([load, timeout]);
+  fontWait.set(fontFamily, pending);
+  return pending;
 }
 
 /**
@@ -708,9 +710,9 @@ export function createXtermSession(
 
   const dispose = () => {
     if (disposed) return;
+    setVisible(false);
     disposed = true;
 
-    setVisible(false);
     coalescer.dispose();
 
     container.removeEventListener("wheel", onWheel);

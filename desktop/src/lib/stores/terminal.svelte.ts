@@ -55,6 +55,7 @@ import {
 import {
   getTerminalFontSize,
   initThemeSyncForTerminals,
+  teardownThemeSyncForTerminals,
   resetTerminalFontSize,
   updateTerminalFontSize,
 } from "$lib/stores/terminal-appearance.svelte";
@@ -555,104 +556,120 @@ export async function initTerminalListeners(onHistoryChanged?: HistoryCallback) 
   onHistoryUpdated = onHistoryChanged ?? null;
 
   const registration = (async () => {
-    initThemeSyncForTerminals();
+    try {
+      initThemeSyncForTerminals();
 
-    await syncDetachedSessions();
-    await syncPopoutSessions();
-    await syncActiveSessionCount();
-
-    unlistenExitStatus = await listen("pty-exit-status", (event) => {
-      const payload = event.payload as { session_id: string; exit_code: number };
-      exitCodes.set(payload.session_id, payload.exit_code);
-    });
-
-    unlistenExit = await listen("pty-exit", (event) => {
-      const sessionId = event.payload as string;
-      const exitCode = exitCodes.get(sessionId);
-      exitCodes.delete(sessionId);
-
-      if (findDetachedSession(sessionId)) {
-        awayGroups.delete(sessionId);
-        removeDetachedSession(sessionId);
-        return;
-      }
-
-      if (popoutSessions.some((s) => s.id === sessionId)) {
-        awayGroups.delete(sessionId);
-        removePopoutSession(sessionId);
-        return;
-      }
-
-      const tab = findTab(sessionId);
-      const rt = runtimes.get(sessionId);
-      if (
-        tab &&
-        exitCode === SSH_ERROR_EXIT &&
-        tab.status !== "exited" &&
-        Date.now() - tab.connectStartedAt < CONNECT_WINDOW_MS
-      ) {
-        // ssh gave up while connecting: keep the tab and explain, don't close it.
-        if (rt) {
-          flushRuntime(rt);
-        }
-        failConnect(tab, describeConnectFailure(rt?.recentOutput ?? ""));
-        void syncActiveSessionCount();
-        return;
-      }
-      if (tab) {
-        tab.status = "exited";
-        tab.progress = null;
-        if (tab.id === activeTabId) {
-          void setWindowProgress(0, 0);
-        }
-      }
-      if (rt) {
-        // Flush pending output first so the disconnect notice lands after it.
-        flushRuntime(rt);
-        safeWrite(rt.term, "\n\x1b[1;33mSession disconnected.\x1b[0m\r\n");
-      }
-
-      setTimeout(() => {
-        cleanupTabUi(sessionId);
-      }, 800);
-    });
-
-    unlistenSessionClosed = await listen("session-closed", async () => {
       await syncDetachedSessions();
       await syncPopoutSessions();
       await syncActiveSessionCount();
-    });
 
-    unlistenSessionDocked = await listen("session-docked", async (event) => {
-      const payload = event.payload as { session_id?: string; sessionId?: string; connection_name?: string; connectionName?: string };
-      const sessionId = payload.session_id ?? payload.sessionId;
-      if (!sessionId) return;
-      const connectionName = payload.connection_name ?? payload.connectionName ?? "Terminal";
-      removePopoutSession(sessionId);
-      createRuntime(sessionId);
-      try {
-        const outputChannel = new Channel<PtyChunk>((chunk) => {
-          deliverPtyOutput(sessionId, chunk.data, chunk.bytes);
-        });
-        const info = await invoke<ReattachSessionPayload>("attach_pty_output", {
-          sessionId,
-          output: outputChannel,
-        });
-        await mountReattachedSession(info);
-        notify(`"${info.connection_name || connectionName}" docked — output restored`, "success");
-      } catch (e: unknown) {
-        disposeRuntime(sessionId);
-        notify(`Failed to dock "${connectionName}": ${String(e)}`, "error");
-      }
-      await syncActiveSessionCount();
-    });
+      unlistenExitStatus = await listen("pty-exit-status", (event) => {
+        const payload = event.payload as { session_id: string; exit_code: number };
+        exitCodes.set(payload.session_id, payload.exit_code);
+      });
 
-    unlistenHistoryUpdated = await listen("history-updated", () => {
-      void onHistoryUpdated?.();
-    });
+      unlistenExit = await listen("pty-exit", (event) => {
+        const sessionId = event.payload as string;
+        const exitCode = exitCodes.get(sessionId);
+        exitCodes.delete(sessionId);
 
-    listenersReady = true;
-    listenersInFlight = null;
+        if (findDetachedSession(sessionId)) {
+          awayGroups.delete(sessionId);
+          removeDetachedSession(sessionId);
+          return;
+        }
+
+        if (popoutSessions.some((s) => s.id === sessionId)) {
+          awayGroups.delete(sessionId);
+          removePopoutSession(sessionId);
+          return;
+        }
+
+        const tab = findTab(sessionId);
+        const rt = runtimes.get(sessionId);
+        if (
+          tab &&
+          exitCode === SSH_ERROR_EXIT &&
+          tab.status !== "exited" &&
+          Date.now() - tab.connectStartedAt < CONNECT_WINDOW_MS
+        ) {
+          // ssh gave up while connecting: keep the tab and explain, don't close it.
+          if (rt) {
+            flushRuntime(rt);
+          }
+          failConnect(tab, describeConnectFailure(rt?.recentOutput ?? ""));
+          void syncActiveSessionCount();
+          return;
+        }
+        if (tab) {
+          tab.status = "exited";
+          tab.progress = null;
+          if (tab.id === activeTabId) {
+            void setWindowProgress(0, 0);
+          }
+        }
+        if (rt) {
+          // Flush pending output first so the disconnect notice lands after it.
+          flushRuntime(rt);
+          safeWrite(rt.term, "\n\x1b[1;33mSession disconnected.\x1b[0m\r\n");
+        }
+
+        setTimeout(() => {
+          cleanupTabUi(sessionId);
+        }, 800);
+      });
+
+      unlistenSessionClosed = await listen("session-closed", async () => {
+        await syncDetachedSessions();
+        await syncPopoutSessions();
+        await syncActiveSessionCount();
+      });
+
+      unlistenSessionDocked = await listen("session-docked", async (event) => {
+        const payload = event.payload as { session_id?: string; sessionId?: string; connection_name?: string; connectionName?: string };
+        const sessionId = payload.session_id ?? payload.sessionId;
+        if (!sessionId) return;
+        const connectionName = payload.connection_name ?? payload.connectionName ?? "Terminal";
+        removePopoutSession(sessionId);
+        createRuntime(sessionId);
+        try {
+          const outputChannel = new Channel<PtyChunk>((chunk) => {
+            deliverPtyOutput(sessionId, chunk.data, chunk.bytes);
+          });
+          const info = await invoke<ReattachSessionPayload>("attach_pty_output", {
+            sessionId,
+            output: outputChannel,
+          });
+          await mountReattachedSession(info);
+          notify(`"${info.connection_name || connectionName}" docked — output restored`, "success");
+        } catch (e: unknown) {
+          disposeRuntime(sessionId);
+          notify(`Failed to dock "${connectionName}": ${String(e)}`, "error");
+        }
+        await syncActiveSessionCount();
+      });
+
+      unlistenHistoryUpdated = await listen("history-updated", () => {
+        void onHistoryUpdated?.();
+      });
+
+      listenersReady = true;
+    } catch (err) {
+      unlistenExit?.();
+      unlistenExitStatus?.();
+      unlistenSessionClosed?.();
+      unlistenSessionDocked?.();
+      unlistenHistoryUpdated?.();
+      unlistenExit = null;
+      unlistenExitStatus = null;
+      unlistenSessionClosed = null;
+      unlistenSessionDocked = null;
+      unlistenHistoryUpdated = null;
+      listenersReady = false;
+      throw err;
+    } finally {
+      listenersInFlight = null;
+    }
   })();
 
   listenersInFlight = registration;
@@ -665,6 +682,7 @@ export async function teardownTerminalListeners() {
   if (listenersInFlight) {
     await listenersInFlight.catch(() => {});
   }
+  teardownThemeSyncForTerminals();
   unlistenExit?.();
   unlistenExitStatus?.();
   unlistenSessionClosed?.();

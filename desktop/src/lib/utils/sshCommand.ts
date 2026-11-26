@@ -26,6 +26,10 @@ function splitBastion(bastion: string): { host: string; port?: number } {
   return port === undefined ? { host: bastion } : { host: bastion.slice(0, colon), port };
 }
 
+function shellQuote(value: string): string {
+  return /^[A-Za-z0-9/._:~@\[\]-]+$/.test(value) ? value : `'${value.replace(/'/g, "'\\''")}'`;
+}
+
 /** Mirrors Rust `Connection::to_ssh_command`. */
 export function toSshCommand(conn: Connection): string {
   let cmd = conn.use_kerberos ? "ssh -t " : "ssh ";
@@ -34,10 +38,10 @@ export function toSshCommand(conn: Connection): string {
   if (conn.use_kerberos) cmd += "-K ";
 
   if (conn.key_path) {
-    // Validation rejects `'` in key paths, so single quotes are safe.
-    const key = /^[A-Za-z0-9/._~-]+$/.test(conn.key_path) ? conn.key_path : `'${conn.key_path}'`;
-    cmd += `-i ${key} `;
+    cmd += `-i ${shellQuote(conn.key_path)} `;
   }
+
+  const target = shellQuote(`${conn.user}@${conn.host}`);
 
   if (conn.bastion) {
     const bastionUser = conn.bastion_user || conn.user;
@@ -46,12 +50,12 @@ export function toSshCommand(conn: Connection): string {
       // Interactive bastion: log into the bastion and hand it the target.
       // Its port is only pinned when the stored value has one.
       if (bastion.port) cmd += `-p ${bastion.port} `;
-      cmd += `${bastionUser}@${bastion.host} ${conn.user}@${conn.host}`;
+      cmd += `${shellQuote(`${bastionUser}@${bastion.host}`)} ${target}`;
     } else {
-      cmd += `-J ${bastionUser}@${conn.bastion} -p ${conn.port} ${conn.user}@${conn.host}`;
+      cmd += `-J ${shellQuote(`${bastionUser}@${conn.bastion}`)} -p ${conn.port} ${target}`;
     }
   } else {
-    cmd += `-p ${conn.port} ${conn.user}@${conn.host}`;
+    cmd += `-p ${conn.port} ${target}`;
   }
 
   return cmd;

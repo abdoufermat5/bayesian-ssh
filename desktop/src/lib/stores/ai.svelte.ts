@@ -26,6 +26,7 @@ let answered = $state.raw<Set<string>>(new Set());
 
 let unlisten: UnlistenFn[] = [];
 let starting: Promise<void> | null = null;
+let listenerGeneration = 0;
 
 // ---- which part of the AI view is showing, so the sidebar and shortcuts can reach it
 
@@ -72,12 +73,16 @@ export function getAiEvents(runId: string): AiStoredEvent[] {
   return events[runId] ?? [];
 }
 
-/** Open requests across all runs, oldest first (the one nearest to expiring leads). */
-export function pendingApprovals(): PendingApproval[] {
-  return runs
+const derivedPendingApprovals = $derived<PendingApproval[]>(
+  runs
     .flatMap((run) => run.pending.map((request) => ({ run, request })))
     .filter((p) => !answered.has(p.request.request_id))
-    .sort((a, b) => Date.parse(a.request.created_at) - Date.parse(b.request.created_at));
+    .sort((a, b) => Date.parse(a.request.created_at) - Date.parse(b.request.created_at)),
+);
+
+/** Open requests across all runs, oldest first (the one nearest to expiring leads). */
+export function pendingApprovals(): PendingApproval[] {
+  return derivedPendingApprovals;
 }
 
 export function aiPendingCount(): number {
@@ -133,7 +138,12 @@ async function loadEvents(runId: string) {
 }
 
 function setRuns(next: AiRun[]) {
+  const nextIds = new Set(next.map((r) => r.run_id));
   const known = new Set(Object.keys(events));
+  const prunedEntries = Object.entries(events).filter(([id]) => nextIds.has(id));
+  if (prunedEntries.length !== known.size) {
+    events = Object.fromEntries(prunedEntries);
+  }
   runs = next;
   for (const run of next) {
     if (!known.has(run.run_id)) void loadEvents(run.run_id);
@@ -147,8 +157,9 @@ function setRuns(next: AiRun[]) {
 /** Subscribe to the backend and load the current runs. Safe to call twice. */
 export function startAi(): Promise<void> {
   if (starting) return starting;
-  starting = (async () => {
-    unlisten = await Promise.all([
+  const gen = ++listenerGeneration;
+  const run = (async () => {
+    const subs = await Promise.all([
       listen<AiRun[]>("ai://runs", (e) => setRuns(e.payload)),
       listen<AiStoredEvent & { run_id: string }>("ai://event", (e) => {
         const { run_id, ...stored } = e.payload;
@@ -163,17 +174,29 @@ export function startAi(): Promise<void> {
         notify(e.payload.message, "error");
       }),
     ]);
+    if (gen !== listenerGeneration) {
+      for (const off of subs) off();
+      return;
+    }
+    unlisten = subs;
     try {
-      setRuns(await invoke<AiRun[]>("ai_list_runs"));
+      const initial = await invoke<AiRun[]>("ai_list_runs");
+      if (gen !== listenerGeneration) return;
+      setRuns(initial);
       if (pendingApprovals().length > 0) openApproval();
     } catch (err) {
       console.error("Failed to list AI runs", err);
     }
-  })();
+  })().catch((err) => {
+    if (starting === run) starting = null;
+    console.error("Failed to start AI listeners", err);
+  });
+  starting = run;
   return starting;
 }
 
 export function stopAiListeners() {
+  listenerGeneration += 1;
   for (const off of unlisten) off();
   unlisten = [];
   starting = null;

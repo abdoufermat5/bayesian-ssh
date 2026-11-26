@@ -86,6 +86,17 @@
             command,
             checkout ? { team: team!.team_id, seats, yearly } : { team: team!.team_id },
           );
+      let parsed: URL;
+      try {
+        parsed = new URL(url);
+      } catch {
+        notify("Invalid billing URL returned by server", "error");
+        return;
+      }
+      if (parsed.protocol !== "https:") {
+        notify("Refused to open non-HTTPS billing URL", "error");
+        return;
+      }
       await openUrl(url).catch(() => window.open(url, "_blank", "noopener,noreferrer"));
       upgrading = false;
       notify(

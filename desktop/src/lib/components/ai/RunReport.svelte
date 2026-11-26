@@ -3,6 +3,7 @@
   import type { AiReport, AiReportApproval, AiReportChange, AiReportStep } from "$lib/types";
   import { formatDateTime } from "$lib/utils/timezone";
   import { decisionLabel, formatClock, formatDuration, redactionSummary, shortId, toolLabel } from "$lib/utils/ai";
+  import { plural } from "$lib/utils/format";
 
   interface Props {
     report: AiReport;
@@ -30,10 +31,6 @@
     { phase: "verify", label: "Checks" },
     { phase: "undo", label: "Undo" },
   ];
-
-  function plural(n: number, one: string, many: string): string {
-    return `${n} ${n === 1 ? one : many}`;
-  }
 
   function stamp(iso: string | null | undefined): string {
     return iso ? formatDateTime(iso, timezone) : "";

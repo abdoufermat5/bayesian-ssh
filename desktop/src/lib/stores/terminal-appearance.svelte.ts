@@ -6,16 +6,20 @@ import { runtimes, scheduleFit } from "$lib/stores/terminal-runtime";
 let terminalFontSize = $state(13);
 /** Size from Settings; zoom changes `terminalFontSize` and, below, the settings object. */
 let configuredFontSize: number | null = null;
-let themeSyncInitialized = false;
+let themeObserver: MutationObserver | null = null;
 
 export function initThemeSyncForTerminals() {
-  if (themeSyncInitialized || typeof window === "undefined") return;
-  themeSyncInitialized = true;
+  if (themeObserver || typeof window === "undefined") return;
 
-  const observer = new MutationObserver(() => {
+  themeObserver = new MutationObserver(() => {
     applyThemeToAllTerminals();
   });
-  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+}
+
+export function teardownThemeSyncForTerminals() {
+  themeObserver?.disconnect();
+  themeObserver = null;
 }
 
 export function applyThemeToAllTerminals(settings?: DesktopSettings) {

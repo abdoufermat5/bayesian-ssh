@@ -249,12 +249,16 @@
   }
 
   async function lock() {
-    await invoke("teams_lock");
-    attention = {};
-    orgs = null;
-    openOrgId = null;
-    openTeamId = null;
-    await refresh();
+    try {
+      await invoke("teams_lock");
+      attention = {};
+      orgs = null;
+      openOrgId = null;
+      openTeamId = null;
+      await refresh();
+    } catch (err) {
+      notify(String(err), "error");
+    }
   }
 
   function openTeamPage(teamId: string, tab: TeamTab = "hosts") {

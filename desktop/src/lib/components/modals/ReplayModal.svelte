@@ -286,11 +286,22 @@
 
     const container = containerRef;
     let disposed = false;
+    let instanceDisposed = false;
+    const disposeInstance = () => {
+      if (instanceDisposed) return;
+      instanceDisposed = true;
+      try {
+        instance.dispose();
+      } catch {}
+    };
 
     void waitForTerminalFont(String(opts.fontFamily ?? "monospace"), () => {
       if (!disposed) fit.fit();
     }).then(() => {
-      if (disposed) return;
+      if (disposed) {
+        if (term !== instance) disposeInstance();
+        return;
+      }
       instance.open(container);
       addons = attachXtermAddons(instance);
       attachXtermKeyHandler(instance);
@@ -319,6 +330,7 @@
     return () => {
       disposed = true;
       resizeObserver.disconnect();
+      if (term !== instance) disposeInstance();
       destroyTerminal();
     };
   });

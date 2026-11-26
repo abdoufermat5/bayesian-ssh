@@ -29,6 +29,7 @@
   } from "$lib/types";
   import { notify } from "$lib/stores/notifications.svelte";
   import { appState } from "$lib/stores/appState.svelte";
+  import { formatBytes } from "$lib/utils/format";
   import ModalShell from "$lib/components/ui/ModalShell.svelte";
 
   interface Props {
@@ -136,16 +137,22 @@
     if (!show) return;
     let disposed = false;
 
-    listen<UploadEventPayload>("upload-event", (e) => handleUploadEvent(e.payload)).then((un) => {
-      if (disposed) un();
-      else unlistenEvent = un;
-    });
-    listen<UploadFinishedPayload>("upload-finished", (e) => handleUploadFinished(e.payload)).then(
-      (un) => {
+    listen<UploadEventPayload>("upload-event", (e) => handleUploadEvent(e.payload))
+      .then((un) => {
+        if (disposed) un();
+        else unlistenEvent = un;
+      })
+      .catch((err) => {
+        console.error("Failed to listen for upload-event:", err);
+      });
+    listen<UploadFinishedPayload>("upload-finished", (e) => handleUploadFinished(e.payload))
+      .then((un) => {
         if (disposed) un();
         else unlistenFinished = un;
-      },
-    );
+      })
+      .catch((err) => {
+        console.error("Failed to listen for upload-finished:", err);
+      });
 
     // Drag & drop of OS files is delivered by the Tauri webview, not the DOM.
     let unlistenDrop: UnlistenFn | null = null;
@@ -595,13 +602,6 @@
   }
 
   // ─── Presentation helpers ────────────────────────────────────────────────────
-  function formatBytes(bytes: number): string {
-    if (!bytes || bytes <= 0) return "0 B";
-    const units = ["B", "KB", "MB", "GB", "TB"];
-    const i = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
-    return `${(bytes / 1024 ** i).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
-  }
-
   function percentOf(row: UploadRow): number | null {
     if (!row.bytesTotal || row.bytesTotal <= 0) return null;
     return Math.min(100, Math.round((row.bytesDone / row.bytesTotal) * 100));

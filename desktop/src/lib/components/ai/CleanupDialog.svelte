@@ -15,6 +15,7 @@
   } from "$lib/types";
   import { formatDateTime } from "$lib/utils/timezone";
   import { shortId } from "$lib/utils/ai";
+  import { formatBytes } from "$lib/utils/format";
   import { notify } from "$lib/stores/notifications.svelte";
 
   interface Props {
@@ -127,18 +128,6 @@
     }, 250);
     return () => clearTimeout(timer);
   });
-
-  function formatBytes(n: number): string {
-    if (n < 1024) return `${n} B`;
-    const units = ["KB", "MB", "GB", "TB"];
-    let v = n / 1024;
-    let i = 0;
-    while (v >= 1024 && i < units.length - 1) {
-      v /= 1024;
-      i++;
-    }
-    return `${v >= 10 ? v.toFixed(0) : v.toFixed(1)} ${units[i]}`;
-  }
 
   function togglePicked(id: string, on: boolean) {
     picked = on ? [...picked, id] : picked.filter((p) => p !== id);

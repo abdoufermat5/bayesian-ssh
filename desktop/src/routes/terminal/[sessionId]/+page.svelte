@@ -47,8 +47,6 @@
   async function dockToMain() {
     if (closing || !handle || !sessionId) return;
     closing = true;
-    unlistenClose?.();
-    unlistenClose = undefined;
     unlistenDocked?.();
     unlistenDocked = undefined;
 
@@ -64,6 +62,8 @@
     try {
       // Rust destroys this window after docking; no local destroy needed.
       await dockPopoutToMain(sessionId, snapshot);
+      unlistenClose?.();
+      unlistenClose = undefined;
     } catch (e: unknown) {
       loadError = String(e);
       closing = false;
@@ -93,7 +93,7 @@
         void shutdownAndDestroy();
       })
       .then((unlisten) => {
-        if (closing) {
+        if (cancelled || closing) {
           unlisten();
           return;
         }
@@ -107,7 +107,7 @@
         return;
       }
 
-      unlistenDocked = await listen("session-docked", (event) => {
+      const unsubDocked = await listen("session-docked", (event) => {
         const info = event.payload as { session_id?: string };
         if (info.session_id !== sessionId || closing) return;
         closing = true;
@@ -118,6 +118,11 @@
         unlistenDocked?.();
         unlistenDocked = undefined;
       });
+      if (cancelled || closing) {
+        unsubDocked();
+        return;
+      }
+      unlistenDocked = unsubDocked;
 
       try {
         handle = await initPopoutTerminal(sessionId, {

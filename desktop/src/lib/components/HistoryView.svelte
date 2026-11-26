@@ -71,25 +71,32 @@
   // ---- Provenance: which source (local, inventory, team) each session's host
   // comes from. History rows only carry the host name, so map it through the
   // current, unfiltered host list.
-  let sourceByName = $state.raw<Record<string, string | null>>({});
+  const sourceByName = $derived<Record<string, string | null>>(
+    Object.fromEntries(appState.allConnections.map((c) => [c.name, c.source_id ?? null])),
+  );
+  const hasSourcedConnections = $derived(appState.allConnections.some((c) => Boolean(c.source_id)));
   let sourceIndex = $state.raw<Record<string, SourceInfo>>({});
   /** Team ids where this device's account is an admin (needs Teams unlocked). */
   let adminTeams = $state.raw<Set<string>>(new Set());
 
   $effect(() => {
-    if (history.length === 0) return;
+    if (!hasSourcedConnections) {
+      sourceIndex = {};
+      adminTeams = new Set();
+      return;
+    }
     let cancelled = false;
     void (async () => {
-      const conns = (await invoke<Connection[] | null>("get_connections", { query: "", tagFilter: null }).catch(() => null)) ?? [];
-      if (cancelled) return;
-      sourceByName = Object.fromEntries(conns.map((c) => [c.name, c.source_id ?? null]));
-      if (!conns.some((c) => c.source_id)) return;
-      const index = await loadSourceIndex();
+      const [index, status] = await Promise.all([
+        loadSourceIndex(),
+        invoke<TeamsStatus | null>("teams_status").catch(() => null),
+      ]);
       if (cancelled) return;
       sourceIndex = index;
-      if (!Object.values(index).some((s) => s.kind === "team")) return;
-      const status = await invoke<TeamsStatus | null>("teams_status").catch(() => null);
-      if (!status?.unlocked) return;
+      if (!Object.values(index).some((s) => s.kind === "team") || !status?.unlocked) {
+        adminTeams = new Set();
+        return;
+      }
       const attention = (await invoke<TeamAttention[] | null>("teams_attention").catch(() => null)) ?? [];
       if (!cancelled) adminTeams = new Set(attention.filter((a) => a.role === "admin").map((a) => a.team_id));
     })();

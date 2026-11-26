@@ -110,7 +110,7 @@
       const active = document.activeElement as HTMLElement | null;
       // Focus inside a dialog: that dialog owns the key. Focus elsewhere
       // (body, backdrop click): only the topmost shell reacts.
-      const containingDialog = active?.closest('[role="dialog"]');
+      const containingDialog = active?.closest('[role="dialog"], [role="alertdialog"]');
       const ownsFocus = containingDialog
         ? containingDialog === panelRef
         : openStack[openStack.length - 1] === id;

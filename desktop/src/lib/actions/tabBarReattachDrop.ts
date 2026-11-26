@@ -24,6 +24,7 @@ export function tabBarReattachDrop(
   node: HTMLElement,
   onDropSession: (payload: SessionDragPayload) => void | Promise<void>,
 ) {
+  let currentOnDrop = onDropSession;
   let dragDepth = 0;
 
   function onDragEnter(event: DragEvent) {
@@ -58,7 +59,7 @@ export function tabBarReattachDrop(
     const payload = decodeSessionDrag(raw);
     if (!payload) return;
 
-    await onDropSession(payload);
+    await currentOnDrop(payload);
   }
 
   node.addEventListener("dragenter", onDragEnter);
@@ -67,6 +68,9 @@ export function tabBarReattachDrop(
   node.addEventListener("drop", onDrop);
 
   return {
+    update(next: (payload: SessionDragPayload) => void | Promise<void>) {
+      currentOnDrop = next;
+    },
     destroy() {
       node.removeEventListener("dragenter", onDragEnter);
       node.removeEventListener("dragover", onDragOver);

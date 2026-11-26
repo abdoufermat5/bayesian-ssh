@@ -55,6 +55,7 @@
     closeKerberosModal,
     stopKerberosMonitoring,
   } from "$lib/stores/kerberos.svelte";
+  import { stopTeamsAttentionPoller } from "$lib/stores/teamsAttention.svelte";
   import { appState } from "$lib/stores/appState.svelte";
 
   const terminalState = getTerminalState();
@@ -164,6 +165,8 @@
 
     void startAi();
 
+    let disposed = false;
+
     const appWindow = getCurrentWindow();
     void appWindow
       .onCloseRequested((event) => {
@@ -179,7 +182,11 @@
         }
       })
       .then((unsub) => {
-        unlistenCloseRequested = unsub;
+        if (disposed) unsub();
+        else unlistenCloseRequested = unsub;
+      })
+      .catch((err) => {
+        console.error("Failed to register close handler:", err);
       });
 
     listen("prompt-quit-confirm", () => {
@@ -187,9 +194,14 @@
       void appWindow.unminimize();
       void appWindow.show();
       void appWindow.setFocus();
-    }).then((unsub) => {
-      unlistenQuitConfirm = unsub;
-    });
+    })
+      .then((unsub) => {
+        if (disposed) unsub();
+        else unlistenQuitConfirm = unsub;
+      })
+      .catch((err) => {
+        console.error("Failed to listen for prompt-quit-confirm:", err);
+      });
 
     listen("connect-host", async (event) => {
       const hostName = event.payload as string;
@@ -197,9 +209,14 @@
       if (conn) {
         await appState.handleConnect(conn);
       }
-    }).then((unsub) => {
-      unlistenConnect = unsub;
-    });
+    })
+      .then((unsub) => {
+        if (disposed) unsub();
+        else unlistenConnect = unsub;
+      })
+      .catch((err) => {
+        console.error("Failed to listen for connect-host:", err);
+      });
 
     // Below 1100 px the sidebar collapses to icons by itself; the manual toggle
     // still works. It re-expands on widening only if we were the one to collapse it.
@@ -221,11 +238,13 @@
     handleWindowResize();
 
     return () => {
+      disposed = true;
       window.removeEventListener("keydown", handleKeydownWithHelp);
       window.removeEventListener("resize", handleWindowResize);
       teardownTerminalListeners();
       stopAiListeners();
       stopKerberosMonitoring();
+      stopTeamsAttentionPoller();
       unlistenConnect?.();
       unlistenQuitConfirm?.();
       unlistenCloseRequested?.();
@@ -494,12 +513,20 @@
     onCancel={() => (showQuitConfirmModal = false)}
     onMinimize={async () => {
       showQuitConfirmModal = false;
-      const appWindow = getCurrentWindow();
-      await appWindow.hide();
+      try {
+        const appWindow = getCurrentWindow();
+        await appWindow.hide();
+      } catch (err) {
+        notify(`Failed to minimize window: ${String(err)}`, "error");
+      }
     }}
     onQuit={async () => {
       showQuitConfirmModal = false;
-      await invoke("force_quit_app");
+      try {
+        await invoke("force_quit_app");
+      } catch (err) {
+        notify(`Failed to quit application: ${String(err)}`, "error");
+      }
     }}
   />
 {/if}

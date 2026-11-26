@@ -150,13 +150,37 @@ export async function initPopoutTerminal(
   window.addEventListener("keydown", handleKeydown);
 
   let unlistenExit: UnlistenFn | null = null;
-  unlistenExit = await listen(`pty-exit:${sessionId}`, () => {
+
+  const releaseUi = () => {
+    closing = true;
     void setWindowProgress(0, 0);
-    if (session) {
-      safeWrite(session.term, "\n\x1b[1;33mSession disconnected.\x1b[0m\r\n");
+    window.removeEventListener("keydown", handleKeydown);
+    themeObserver?.disconnect();
+    themeObserver = null;
+    unlistenExit?.();
+    unlistenExit = null;
+    for (const chunk of earlyChunks) {
+      if (chunk.bytes > 0) {
+        invoke("ack_pty", { sessionId, bytes: chunk.bytes }).catch(() => {});
+      }
     }
-    options?.onExit?.();
-  });
+    earlyChunks = [];
+    session?.dispose();
+    session = null;
+  };
+
+  try {
+    unlistenExit = await listen(`pty-exit:${sessionId}`, () => {
+      void setWindowProgress(0, 0);
+      if (session) {
+        safeWrite(session.term, "\n\x1b[1;33mSession disconnected.\x1b[0m\r\n");
+      }
+      options?.onExit?.();
+    });
+  } catch (err) {
+    releaseUi();
+    throw err;
+  }
 
   const flushEarlyChunks = () => {
     replayDone = true;
@@ -200,24 +224,6 @@ export async function initPopoutTerminal(
       }
     }),
   );
-
-  const releaseUi = () => {
-    closing = true;
-    void setWindowProgress(0, 0);
-    window.removeEventListener("keydown", handleKeydown);
-    themeObserver?.disconnect();
-    themeObserver = null;
-    unlistenExit?.();
-    unlistenExit = null;
-    for (const chunk of earlyChunks) {
-      if (chunk.bytes > 0) {
-        invoke("ack_pty", { sessionId, bytes: chunk.bytes }).catch(() => {});
-      }
-    }
-    earlyChunks = [];
-    session?.dispose();
-    session = null;
-  };
 
   const shutdown = async (options?: { closeWindow?: boolean }) => {
     if (closing) return;

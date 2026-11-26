@@ -220,20 +220,15 @@
 
   // ─── Storage helpers ─────────────────────────────────────────────────────────
   function loadHistory() {
+    // Batch command history is kept in-memory for the session only; clear any
+    // legacy plaintext history previously stored in localStorage.
     try {
-      const raw = localStorage.getItem("bayesian-ssh-batch-history");
-      if (raw) history = JSON.parse(raw).slice(0, 100);
-    } catch {
-      history = [];
-    }
+      localStorage.removeItem("bayesian-ssh-batch-history");
+    } catch {}
   }
 
   function saveHistory() {
-    try {
-      localStorage.setItem("bayesian-ssh-batch-history", JSON.stringify(history.slice(0, 100)));
-    } catch {
-      // ignore storage quota
-    }
+    history = history.slice(0, 100);
   }
 
   function clearHistory() {
@@ -247,8 +242,9 @@
   function loadTemplates() {
     try {
       const raw = localStorage.getItem("bayesian-ssh-batch-templates");
-      const parsed = raw ? (JSON.parse(raw) as CommandTemplate[]) : [];
-      templates = [...DEFAULT_TEMPLATES, ...parsed.filter((t) => !BUILTIN_TEMPLATE_IDS.has(t.id))];
+      const parsed: unknown = raw ? JSON.parse(raw) : [];
+      const custom = Array.isArray(parsed) ? (parsed as CommandTemplate[]) : [];
+      templates = [...DEFAULT_TEMPLATES, ...custom.filter((t) => !BUILTIN_TEMPLATE_IDS.has(t.id))];
     } catch {
       templates = [...DEFAULT_TEMPLATES];
     }
