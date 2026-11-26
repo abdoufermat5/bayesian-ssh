@@ -79,13 +79,30 @@
 <div class="settings-page">
   <section>
     <h2 class="settings-group-title" id="settings-theme-label">Theme</h2>
-    <div class="grid grid-cols-1 gap-3 sm:grid-cols-3" role="radiogroup" aria-labelledby="settings-theme-label">
+    <div
+      class="grid grid-cols-1 gap-3 sm:grid-cols-3"
+      role="radiogroup"
+      tabindex="-1"
+      aria-labelledby="settings-theme-label"
+      onkeydown={(e) => {
+        const idx = themes.findIndex((t) => t.id === settings.theme);
+        let next = -1;
+        if (e.key === "ArrowRight" || e.key === "ArrowDown") next = (idx + 1) % themes.length;
+        else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = (idx - 1 + themes.length) % themes.length;
+        if (next === -1) return;
+        e.preventDefault();
+        onThemeChange(themes[next].id);
+        const buttons = (e.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>('[role="radio"]');
+        buttons[next]?.focus();
+      }}
+    >
       {#each themes as t (t.id)}
         {@const active = settings.theme === t.id}
         <button
           type="button"
           role="radio"
           aria-checked={active}
+          tabindex={active ? 0 : -1}
           class="card card-interactive flex flex-col gap-2.5 p-2 text-left {active ? 'card-selected' : ''}"
           onclick={() => onThemeChange(t.id)}
         >
@@ -152,13 +169,31 @@
 
   <section>
     <h2 class="settings-group-title" id="settings-density-label">Density</h2>
-    <div class="grid grid-cols-1 gap-3 sm:grid-cols-3" role="radiogroup" aria-labelledby="settings-density-label">
+    <div
+      class="grid grid-cols-1 gap-3 sm:grid-cols-3"
+      role="radiogroup"
+      tabindex="-1"
+      aria-labelledby="settings-density-label"
+      onkeydown={(e) => {
+        const current = settings.density ?? "comfortable";
+        const idx = densityOptions.findIndex((d) => d.id === current);
+        let next = -1;
+        if (e.key === "ArrowRight" || e.key === "ArrowDown") next = (idx + 1) % densityOptions.length;
+        else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = (idx - 1 + densityOptions.length) % densityOptions.length;
+        if (next === -1) return;
+        e.preventDefault();
+        handleDensitySelect(densityOptions[next].id);
+        const buttons = (e.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>('[role="radio"]');
+        buttons[next]?.focus();
+      }}
+    >
       {#each densityOptions as d (d.id)}
         {@const active = (settings.density ?? "comfortable") === d.id}
         <button
           type="button"
           role="radio"
           aria-checked={active}
+          tabindex={active ? 0 : -1}
           class="card card-interactive flex flex-col gap-2 p-3 text-left {active ? 'card-selected' : ''}"
           onclick={() => handleDensitySelect(d.id)}
         >
@@ -188,6 +223,7 @@
         <div class="setting-control">
           <CustomSelect
             id="settings-timezone"
+            ariaLabel="Timezone"
             class="w-64!"
             size="md"
             searchable={true}

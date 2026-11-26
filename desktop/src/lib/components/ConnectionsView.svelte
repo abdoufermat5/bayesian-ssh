@@ -1043,6 +1043,7 @@
   .suggested-link {
     display: inline-flex;
     align-items: center;
+    min-height: 24px;
     gap: 6px;
     font-size: var(--text-xs);
     line-height: var(--text-xs--line-height);

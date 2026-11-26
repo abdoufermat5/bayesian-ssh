@@ -310,23 +310,45 @@
       </button>
     </div>
 
-    <div class="tabs shrink-0 px-5" role="tablist" aria-label="Policy sections">
+    <div
+      class="tabs shrink-0 px-5"
+      role="tablist"
+      tabindex="-1"
+      aria-label="Policy sections"
+      onkeydown={(e) => {
+        const tabs: Array<"general" | "approvals" | "guardrails" | "budgets"> = ["general", "approvals", "guardrails", "budgets"];
+        const idx = tabs.indexOf(activeTab);
+        let next = -1;
+        if (e.key === "ArrowRight") next = (idx + 1) % tabs.length;
+        else if (e.key === "ArrowLeft") next = (idx - 1 + tabs.length) % tabs.length;
+        else if (e.key === "Home") next = 0;
+        else if (e.key === "End") next = tabs.length - 1;
+        if (next === -1) return;
+        e.preventDefault();
+        activeTab = tabs[next];
+        const buttons = (e.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>('[role="tab"]');
+        buttons[next]?.focus();
+      }}
+    >
       <button
         type="button"
         role="tab"
         aria-selected={activeTab === "general"}
+        tabindex={activeTab === "general" ? 0 : -1}
         class="tab {activeTab === 'general' ? 'tab-active' : ''}"
         onclick={() => (activeTab = "general")}
       >
         General &amp; scope
         {#if attempted && (nameError || scopeEmpty)}
           <span class="status-dot status-dot-sm status-dot-error" aria-hidden="true"></span>
+          <span class="sr-only"> (has errors)</span>
         {/if}
       </button>
       <button
         type="button"
         role="tab"
         aria-selected={activeTab === "approvals"}
+        tabindex={activeTab === "approvals" ? 0 : -1}
         class="tab {activeTab === 'approvals' ? 'tab-active' : ''}"
         onclick={() => (activeTab = "approvals")}
       >
@@ -336,6 +358,7 @@
         type="button"
         role="tab"
         aria-selected={activeTab === "guardrails"}
+        tabindex={activeTab === "guardrails" ? 0 : -1}
         class="tab {activeTab === 'guardrails' ? 'tab-active' : ''}"
         onclick={() => (activeTab = "guardrails")}
       >
@@ -345,12 +368,14 @@
         type="button"
         role="tab"
         aria-selected={activeTab === "budgets"}
+        tabindex={activeTab === "budgets" ? 0 : -1}
         class="tab {activeTab === 'budgets' ? 'tab-active' : ''}"
         onclick={() => (activeTab = "budgets")}
       >
         Budgets &amp; safety
         {#if ttlError}
           <span class="status-dot status-dot-sm status-dot-error" aria-hidden="true"></span>
+          <span class="sr-only"> (has errors)</span>
         {/if}
       </button>
     </div>
@@ -371,6 +396,8 @@
             type="text"
             class="input input-mono max-w-xs"
             class:input-invalid={Boolean(nameError)}
+            aria-invalid={Boolean(nameError) || undefined}
+            aria-describedby={nameError ? "ai-policy-name-error" : "ai-policy-name-hint"}
             placeholder="default"
             autocomplete="off"
             spellcheck="false"
@@ -379,9 +406,9 @@
             data-autofocus
           />
           {#if nameError}
-            <span class="field-error">{nameError}</span>
+            <span id="ai-policy-name-error" class="field-error" role="alert">{nameError}</span>
           {:else}
-            <span class="field-hint">
+            <span id="ai-policy-name-hint" class="field-hint">
               Named <code class="mono">default</code> applies automatically unless an agent passes
               <code class="mono">--policy &lt;name&gt;</code>.
             </span>
@@ -403,13 +430,30 @@
               </button>
             {/if}
           </div>
-          <div class="grid grid-cols-1 gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Policy profile">
+          <div
+            class="grid grid-cols-1 gap-2 sm:grid-cols-3"
+            role="radiogroup"
+            tabindex="-1"
+            aria-label="Policy profile"
+            onkeydown={(e) => {
+              const idx = PROFILES.findIndex((p) => p.id === draft.profile);
+              let next = -1;
+              if (e.key === "ArrowRight" || e.key === "ArrowDown") next = (idx + 1) % PROFILES.length;
+              else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = (idx - 1 + PROFILES.length) % PROFILES.length;
+              if (next === -1) return;
+              e.preventDefault();
+              selectProfile(PROFILES[next].id);
+              const buttons = (e.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>('[role="radio"]');
+              buttons[next]?.focus();
+            }}
+          >
             {#each PROFILES as opt (opt.id)}
               {@const selected = draft.profile === opt.id}
               <button
                 type="button"
                 role="radio"
                 aria-checked={selected}
+                tabindex={selected ? 0 : -1}
                 class="card card-interactive flex flex-col gap-1 p-3 text-left {selected ? 'card-selected' : ''}"
                 onclick={() => selectProfile(opt.id)}
               >
@@ -468,7 +512,7 @@
                       {tag}
                       <button
                         type="button"
-                        class="btn-icon btn-icon-sm size-5 text-muted hover:text-error"
+                        class="btn-icon btn-icon-sm text-muted hover:text-error"
                         onclick={() => (draft.scope.tags = removeItem(scopeTags, tag))}
                         aria-label="Remove tag {tag}"
                       >
@@ -484,7 +528,7 @@
                   {#each suggestedTags as tag (tag)}
                     <button
                       type="button"
-                      class="rounded-sm border border-border bg-surface-subtle px-1.5 py-0.5 font-mono text-2xs text-secondary transition-colors hover:border-border-hover hover:text-primary"
+                      class="min-h-6 rounded-sm border border-border bg-surface-subtle px-1.5 py-0.5 font-mono text-2xs text-secondary transition-colors hover:border-border-hover hover:text-primary"
                       onclick={() => addScopeTag(tag)}
                     >
                       + {tag}
@@ -524,7 +568,7 @@
                       {h}
                       <button
                         type="button"
-                        class="btn-icon btn-icon-sm size-5 text-muted hover:text-error"
+                        class="btn-icon btn-icon-sm text-muted hover:text-error"
                         onclick={() => (draft.scope.hosts = removeItem(draft.scope.hosts, h))}
                         aria-label="Remove host {h}"
                       >
@@ -540,7 +584,7 @@
                   {#each suggestedHosts as h (h)}
                     <button
                       type="button"
-                      class="rounded-sm border border-border bg-surface-subtle px-1.5 py-0.5 font-mono text-2xs text-secondary transition-colors hover:border-border-hover hover:text-primary"
+                      class="min-h-6 rounded-sm border border-border bg-surface-subtle px-1.5 py-0.5 font-mono text-2xs text-secondary transition-colors hover:border-border-hover hover:text-primary"
                       onclick={() => addScopeHost(h)}
                     >
                       + {h}
@@ -552,7 +596,7 @@
           {/if}
 
           {#if scopeError}
-            <span class="field-error">{scopeError}</span>
+            <span class="field-error" role="alert">{scopeError}</span>
           {/if}
         </div>
       {:else if activeTab === "approvals"}
@@ -610,7 +654,7 @@
                   {tag}
                   <button
                     type="button"
-                    class="btn-icon btn-icon-sm size-5 text-muted hover:text-error"
+                    class="btn-icon btn-icon-sm text-muted hover:text-error"
                     onclick={() => (draft.approval.in_client = removeItem(draft.approval.in_client, tag))}
                     aria-label="Remove in-client tag {tag}"
                   >
@@ -661,7 +705,7 @@
                   {tag}
                   <button
                     type="button"
-                    class="btn-icon btn-icon-sm size-5 text-muted hover:text-error"
+                    class="btn-icon btn-icon-sm text-muted hover:text-error"
                     onclick={() => (draft.approval.two_person = removeItem(draft.approval.two_person, tag))}
                     aria-label="Remove two-person tag {tag}"
                   >
@@ -714,7 +758,7 @@
                   {h}
                   <button
                     type="button"
-                    class="btn-icon btn-icon-sm size-5 text-muted hover:text-error"
+                    class="btn-icon btn-icon-sm text-muted hover:text-error"
                     onclick={() => (draft.approval.two_person_hosts = removeItem(draft.approval.two_person_hosts, h))}
                     aria-label="Remove two-person host pattern {h}"
                   >
@@ -767,7 +811,7 @@
                   {p}
                   <button
                     type="button"
-                    class="btn-icon btn-icon-sm size-5 text-muted hover:text-error"
+                    class="btn-icon btn-icon-sm text-muted hover:text-error"
                     onclick={() => (draft.read_paths = removeItem(draft.read_paths, p))}
                     aria-label="Remove readable path {p}"
                   >
@@ -820,7 +864,7 @@
                   {p}
                   <button
                     type="button"
-                    class="btn-icon btn-icon-sm size-5 text-muted hover:text-error"
+                    class="btn-icon btn-icon-sm text-muted hover:text-error"
                     onclick={() => (draft.write_paths = removeItem(draft.write_paths, p))}
                     aria-label="Remove writable path {p}"
                   >
@@ -871,7 +915,7 @@
                   {p}
                   <button
                     type="button"
-                    class="btn-icon btn-icon-sm size-5 text-muted hover:text-error"
+                    class="btn-icon btn-icon-sm text-muted hover:text-error"
                     onclick={() => (draft.deny_paths = removeItem(draft.deny_paths, p))}
                     aria-label="Remove blocked path {p}"
                   >
@@ -922,7 +966,7 @@
                   {cmd}
                   <button
                     type="button"
-                    class="btn-icon btn-icon-sm size-5 text-muted hover:text-error"
+                    class="btn-icon btn-icon-sm text-muted hover:text-error"
                     onclick={() => (draft.deny = removeItem(draft.deny, cmd))}
                     aria-label="Remove blocked command {cmd}"
                   >
@@ -1003,6 +1047,8 @@
               type="text"
               class="input input-mono"
               class:input-invalid={Boolean(ttlError)}
+              aria-invalid={Boolean(ttlError) || undefined}
+              aria-describedby={ttlError ? "ai-budget-ttl-error" : undefined}
               placeholder="2h"
               spellcheck="false"
               bind:value={draft.budgets.run_ttl}
@@ -1011,6 +1057,7 @@
               {#each TTL_PRESETS as preset (preset)}
                 <button
                   type="button"
+                  aria-pressed={draft.budgets.run_ttl.trim() === preset}
                   class="btn btn-sm {draft.budgets.run_ttl.trim() === preset ? 'btn-secondary' : 'btn-ghost'}"
                   onclick={() => (draft.budgets.run_ttl = preset)}
                 >
@@ -1019,7 +1066,7 @@
               {/each}
             </div>
             {#if ttlError}
-              <span class="field-error">{ttlError}</span>
+              <span id="ai-budget-ttl-error" class="field-error" role="alert">{ttlError}</span>
             {/if}
           </div>
 

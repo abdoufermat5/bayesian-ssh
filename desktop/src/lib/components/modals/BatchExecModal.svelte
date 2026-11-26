@@ -486,18 +486,58 @@
       </div>
     </header>
 
-    <nav class="tabs shrink-0 px-5" aria-label="Batch sections">
-      <button type="button" class="tab {activeTab === 'execute' ? 'tab-active' : ''}" onclick={() => (activeTab = "execute")}>
+    <div
+      class="tabs shrink-0 px-5"
+      role="tablist"
+      tabindex="-1"
+      aria-label="Batch sections"
+      onkeydown={(e) => {
+        const tabs: Array<"execute" | "history" | "templates"> = ["execute", "history", "templates"];
+        const idx = tabs.indexOf(activeTab);
+        let next = -1;
+        if (e.key === "ArrowRight") next = (idx + 1) % tabs.length;
+        else if (e.key === "ArrowLeft") next = (idx - 1 + tabs.length) % tabs.length;
+        else if (e.key === "Home") next = 0;
+        else if (e.key === "End") next = tabs.length - 1;
+        if (next === -1) return;
+        e.preventDefault();
+        activeTab = tabs[next];
+        const buttons = (e.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>('[role="tab"]');
+        buttons[next]?.focus();
+      }}
+    >
+      <button
+        type="button"
+        role="tab"
+        aria-selected={activeTab === "execute"}
+        tabindex={activeTab === "execute" ? 0 : -1}
+        class="tab {activeTab === 'execute' ? 'tab-active' : ''}"
+        onclick={() => (activeTab = "execute")}
+      >
         Run
       </button>
-      <button type="button" class="tab {activeTab === 'history' ? 'tab-active' : ''}" onclick={() => (activeTab = "history")}>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={activeTab === "history"}
+        tabindex={activeTab === "history" ? 0 : -1}
+        class="tab {activeTab === 'history' ? 'tab-active' : ''}"
+        onclick={() => (activeTab = "history")}
+      >
         History
         {#if history.length > 0}<span class="count">{history.length}</span>{/if}
       </button>
-      <button type="button" class="tab {activeTab === 'templates' ? 'tab-active' : ''}" onclick={() => (activeTab = "templates")}>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={activeTab === "templates"}
+        tabindex={activeTab === "templates" ? 0 : -1}
+        class="tab {activeTab === 'templates' ? 'tab-active' : ''}"
+        onclick={() => (activeTab = "templates")}
+      >
         Templates
       </button>
-    </nav>
+    </div>
 
     {#if showEnvWarning}
       <div class="alert alert-warning mx-5 mt-3 shrink-0 items-center">
@@ -543,6 +583,7 @@
                   <button
                     type="button"
                     class="chip h-6 px-2 text-muted"
+                    aria-label="Show {hiddenTagCount} more tags"
                     onclick={() => (showAllTags = true)}
                   >
                     +{hiddenTagCount}
@@ -714,6 +755,8 @@
                     {/each}
                   </div>
                   <CustomSelect
+                    id="batch-export-format"
+                    ariaLabel="Export format"
                     options={EXPORT_OPTIONS}
                     value={exportFormat}
                     onChange={(v) => (exportFormat = v as typeof exportFormat)}

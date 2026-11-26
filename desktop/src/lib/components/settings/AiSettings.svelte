@@ -311,7 +311,7 @@
       <div class="alert-body">Could not read the AI settings: {loadError}</div>
     </div>
   {:else if !view}
-    <div class="skeleton h-24 w-full rounded-lg" aria-busy="true" aria-label="Loading AI settings"></div>
+    <div class="skeleton h-24 w-full rounded-lg" role="status" aria-busy="true" aria-label="Loading AI settings"></div>
   {:else}
     <!-- Section 1: Global approvals, recording, trusted tag sources -->
     <section>
@@ -411,7 +411,7 @@
                     {src}
                     <button
                       type="button"
-                      class="btn-icon btn-icon-sm size-5 text-muted hover:text-error"
+                      class="btn-icon btn-icon-sm text-muted hover:text-error"
                       disabled={savingGlobal}
                       onclick={() => toggleTrustedSource(src)}
                       aria-label="Remove trusted source {src}"

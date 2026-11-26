@@ -295,12 +295,30 @@
                 </p>
               </div>
             </div>
-            <div class="flex flex-col gap-2" role="radiogroup" aria-label="What brings you here">
+            <div
+              class="flex flex-col gap-2"
+              role="radiogroup"
+              tabindex="-1"
+              aria-label="What brings you here"
+              onkeydown={(e) => {
+                const opts: Array<"machine" | "invite"> = ["machine", "invite"];
+                const idx = opts.indexOf(path);
+                let next = -1;
+                if (e.key === "ArrowDown" || e.key === "ArrowRight") next = (idx + 1) % opts.length;
+                else if (e.key === "ArrowUp" || e.key === "ArrowLeft") next = (idx - 1 + opts.length) % opts.length;
+                if (next === -1) return;
+                e.preventDefault();
+                path = opts[next];
+                const buttons = (e.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>('[role="radio"]');
+                buttons[next]?.focus();
+              }}
+            >
               {#each [{ id: "machine", label: "Set up this machine", desc: "Pick defaults, add or import your hosts, connect." }, { id: "invite", label: "I was invited to a team", desc: "Paste the invite and join your team's shared hosts." }] as opt (opt.id)}
                 <button
                   type="button"
                   role="radio"
                   aria-checked={path === opt.id}
+                  tabindex={path === opt.id ? 0 : -1}
                   class="card card-interactive flex items-start justify-between gap-2 px-3 py-2.5 text-left {path === opt.id ? 'card-selected' : ''}"
                   onclick={() => (path = opt.id as "machine" | "invite")}
                   data-autofocus={path === opt.id ? true : undefined}
@@ -362,12 +380,14 @@
                     max="65535"
                     class="input input-mono tabular-nums"
                     class:input-invalid={portInvalid}
+                    aria-invalid={portInvalid || undefined}
+                    aria-describedby={portInvalid ? "ob-port-error" : undefined}
                     bind:value={default_port}
                   />
                 </div>
               </div>
               {#if portInvalid}
-                <span class="field-error -mt-2">Port must be between 1 and 65535.</span>
+                <span id="ob-port-error" class="field-error -mt-2" role="alert">Port must be between 1 and 65535.</span>
               {/if}
               <label for="ob-agent" class="flex cursor-pointer items-center justify-between gap-4">
                 <span class="flex flex-col gap-0.5">
@@ -416,13 +436,30 @@
               <h1 class="m-0 text-lg font-semibold tracking-[-0.01em] text-primary">Appearance</h1>
               <p class="m-0 text-sm text-muted">You can change the theme later in Settings.</p>
             </div>
-            <div class="grid grid-cols-1 gap-3 sm:grid-cols-3" role="radiogroup" aria-label="Theme">
+            <div
+              class="grid grid-cols-1 gap-3 sm:grid-cols-3"
+              role="radiogroup"
+              tabindex="-1"
+              aria-label="Theme"
+              onkeydown={(e) => {
+                const idx = THEME_CARDS.findIndex((t) => t.id === theme);
+                let next = -1;
+                if (e.key === "ArrowRight" || e.key === "ArrowDown") next = (idx + 1) % THEME_CARDS.length;
+                else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = (idx - 1 + THEME_CARDS.length) % THEME_CARDS.length;
+                if (next === -1) return;
+                e.preventDefault();
+                pickTheme(THEME_CARDS[next].id);
+                const buttons = (e.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>('[role="radio"]');
+                buttons[next]?.focus();
+              }}
+            >
               {#each THEME_CARDS as t (t.id)}
                 {@const active = theme === t.id}
                 <button
                   type="button"
                   role="radio"
                   aria-checked={active}
+                  tabindex={active ? 0 : -1}
                   class="card card-interactive flex flex-col gap-2.5 p-2 text-left {active ? 'card-selected' : ''}"
                   onclick={() => pickTheme(t.id)}
                   data-autofocus={active ? true : undefined}
