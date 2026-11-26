@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.17.0] - 2026-11-27
+
+### Security
+- **Dependency advisories fixed.** Updated `url` and `cookie` in `Cargo.lock` to resolve RustSec advisories.
+- **AI jail hardening.** Enforced Landlock V6 scopes, tighter environment isolation, and stricter `--read` path validation in `bssh-ai-jail`.
+- **Desktop & GUI hardening.** Enforced an IPC path allowlist for file operations, bounded PTY and AI resources, validated billing URLs before opening, and hardened `teams-proto` with pre-decode base64 length validation and redacted secret `Debug` output.
+- **CLI hardening.** Hardened URL handling, SSH config parsing, SFTP transfers, SQLite queries, and async transport paths.
+- **Release & CI hardening.** Pinned GitHub Actions to commit SHAs and hardened release and packaging scripts.
+
+### Changed
+- **Desktop: faster startup and smaller bundle.** Code-split routes and xterm, trimmed unused font subsets, and parallelized startup IPC calls.
+- **GUI backend: lower latency and contention.** Eliminated PTY buffer clones and lock convoys, pooled SQLite connections, cached configuration, and offloaded blocking I/O off the async runtime.
+- **CLI: faster startup, search, and audit.** Optimized SQLite startup and indexes, search ranking, audit log streaming, and secret redaction.
+
+### Fixed
+- **Desktop: accessibility and keyboard navigation.** Hardened shell landmarks, live regions, accessible labels, and `alertdialog` roles; added roving keyboard navigation to tabs and radiogroups with 24px minimum targets; fixed `CustomSelect` ARIA semantics, form labels, and validation error links; and improved keyboard operability and focus management across popovers, menus, and session replay.
+- **Desktop: resource cleanup.** Fixed event listener and xterm leaks and `alertdialog` focus restoration.
+
 ## [2.16.2] - 2026-11-21
 
 ### Added
