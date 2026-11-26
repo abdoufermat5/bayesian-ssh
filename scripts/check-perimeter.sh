@@ -15,9 +15,9 @@ cd "$(dirname "$0")/.."
 fail=0
 private='bssh[-_]cloud'
 
-manifests=$(git ls-files 'Cargo.toml' '*/Cargo.toml' 'Cargo.lock' \
+mapfile -t manifests < <(git ls-files 'Cargo.toml' '*/Cargo.toml' 'Cargo.lock' \
     'desktop/package.json' 'desktop/package-lock.json')
-if hits=$(grep -nEi "$private" $manifests); then
+if [ "${#manifests[@]}" -gt 0 ] && hits=$(grep -nEi "$private" "${manifests[@]}"); then
     echo "perimeter: manifests reference the private server:" >&2
     echo "$hits" >&2
     fail=1
@@ -29,6 +29,30 @@ if hits=$(grep -n '^source = ' Cargo.lock \
     echo "$hits" >&2
     fail=1
 fi
+
+if [ -f desktop/package-lock.json ] && hits=$(grep -nE '"resolved"[[:space:]]*:' desktop/package-lock.json \
+    | grep -Ev '"resolved"[[:space:]]*:[[:space:]]*"https://registry\.npmjs\.org/'); then
+    echo "perimeter: desktop/package-lock.json has non-npmjs resolved URLs:" >&2
+    echo "$hits" >&2
+    fail=1
+fi
+
+repo_root="$(pwd -P)"
+mapfile -t cargo_tomls < <(git ls-files 'Cargo.toml' '*/Cargo.toml')
+for toml in "${cargo_tomls[@]}"; do
+    toml_dir="$(dirname "$toml")"
+    while IFS= read -r rel_path; do
+        [ -n "$rel_path" ] || continue
+        resolved="$(realpath -m "${toml_dir}/${rel_path}")"
+        case "$resolved" in
+            "$repo_root"|"$repo_root"/*) ;;
+            *)
+                echo "perimeter: ${toml} has out-of-tree path dependency: ${rel_path}" >&2
+                fail=1
+                ;;
+        esac
+    done < <(sed -nE 's/.*\bpath[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$toml")
+done
 
 # The Teams client may name the server in docs and user-facing strings, but no
 # code may import it. Rust `use`/`extern crate` and JS imports are what matter.

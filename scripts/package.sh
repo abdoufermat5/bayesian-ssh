@@ -3,16 +3,18 @@
 # Bayesian SSH - Unified Packaging Script (.deb & .rpm)
 # Creates a single 'bayesian-ssh' package containing both CLI and Desktop GUI.
 
-set -e
+set -euo pipefail
 
 # Load NVM or add Node binaries to PATH if available
 export NVM_DIR="${HOME}/.nvm"
 if [ -s "${NVM_DIR}/nvm.sh" ]; then
+    set +u
     . "${NVM_DIR}/nvm.sh"
+    set -u
 elif [ -d "${HOME}/.nvm/versions/node" ]; then
-    LATEST_NODE="$(ls -d "${HOME}/.nvm/versions/node"/v* 2>/dev/null | sort -V | tail -n 1)/bin"
-    if [ -d "${LATEST_NODE}" ]; then
-        export PATH="${LATEST_NODE}:${PATH}"
+    LATEST_NODE_DIR="$(ls -d "${HOME}/.nvm/versions/node"/v* 2>/dev/null | sort -V | tail -n 1 || true)"
+    if [ -n "${LATEST_NODE_DIR}" ] && [ -d "${LATEST_NODE_DIR}/bin" ]; then
+        export PATH="${LATEST_NODE_DIR}/bin:${PATH}"
     fi
 fi
 
@@ -47,14 +49,14 @@ echo "=========================================="
 # 1. Build release binaries
 echo "🔨 Step 1/4: Building Rust CLI release binaries..."
 cd "${ROOT_DIR}"
-cargo build --release --package bayesian-ssh
+cargo build --release --locked --package bayesian-ssh
 
 echo "🔨 Step 2/4: Building Desktop GUI release binary..."
 if [ -d "${ROOT_DIR}/desktop" ] && command -v npm >/dev/null 2>&1; then
     cd "${ROOT_DIR}/desktop"
     if [ ! -d "node_modules" ]; then
         echo "📦 Installing npm dependencies for desktop..."
-        npm ci --legacy-peer-deps || npm install --legacy-peer-deps
+        npm ci --legacy-peer-deps
     fi
     npm run tauri build -- --config ../crates/gui/tauri.conf.json --no-bundle
 else

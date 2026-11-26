@@ -44,7 +44,22 @@ rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR/download" "$OUT_DIR/cli"
 
 gh release download "$TAG" -R "$REPO" --dir "$OUT_DIR/download" \
-    --pattern "$CLI_ASSET" --pattern "$DEB_ASSET" --pattern SHA256SUMS
+    --pattern "$CLI_ASSET" --pattern "$DEB_ASSET" \
+    --pattern SHA256SUMS --pattern SHA256SUMS.sigstore.json
+
+# Verify SHA256SUMS provenance with cosign when available (required in CI).
+if command -v cosign >/dev/null 2>&1; then
+    cosign verify-blob \
+        --bundle "$OUT_DIR/download/SHA256SUMS.sigstore.json" \
+        --certificate-identity-regexp '^https://github\.com/abdoufermat5/bayesian-ssh/\.github/workflows/release\.yml@refs/(tags/v.+|heads/main)$' \
+        --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+        "$OUT_DIR/download/SHA256SUMS"
+elif [ "${CI:-}" = "true" ]; then
+    echo "cosign is required in CI to verify SHA256SUMS.sigstore.json" >&2
+    exit 1
+else
+    echo "warning: cosign not installed; skipping SHA256SUMS signature verification" >&2
+fi
 
 # Every staged asset must have a matching SHA256SUMS line; --ignore-missing
 # alone would pass if an asset were absent from the manifest.

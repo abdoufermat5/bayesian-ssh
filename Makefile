@@ -27,7 +27,7 @@ gui-dev: ## Run the desktop GUI with hot reload (Vite HMR; restart for Rust chan
 	@./scripts/gui-dev.sh
 
 release: frontend ## Build release binaries (CLI + Desktop GUI)
-	cargo build --release --workspace
+	cargo build --release --locked --workspace
 
 test: frontend ## Run tests for the whole workspace
 	cargo test --workspace
@@ -67,7 +67,7 @@ install: release ## Install bayesian-ssh, bssh alias, and desktop GUI binary to 
 	fi
 
 uninstall: ## Remove bayesian-ssh, bssh, and desktop GUI binary from system
-	sudo rm -f $(INSTALL_DIR)/bayesian-ssh $(INSTALL_DIR)/bssh $(INSTALL_DIR)/bayesian-ssh-gui
+	sudo rm -f "$(INSTALL_DIR)/bayesian-ssh" "$(INSTALL_DIR)/bssh" "$(INSTALL_DIR)/bayesian-ssh-gui"
 
 package: ## Build unified .deb and .rpm packages
 	./scripts/package.sh
@@ -80,7 +80,7 @@ snap-build: ## Build Snap package from a published release (TAG=vX.Y.Z [ARCH=amd
 		echo "usage: make snap-build TAG=vX.Y.Z [ARCH=amd64|arm64]"; \
 		exit 1; \
 	fi
-	scripts/snap-stage.sh $(TAG) $(ARCH) && cd target/snap && snapcraft pack
+	scripts/snap-stage.sh "$(TAG)" "$(ARCH)" && cd target/snap && snapcraft pack
 
 clean: ## Clean build artifacts
 	cargo clean

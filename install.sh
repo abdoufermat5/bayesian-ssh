@@ -8,7 +8,7 @@
 # Reinstall even when up to date: ... | bash -s -- --force
 # Choose interactively: ... | bash -s -- --interactive
 
-set -e
+set -euo pipefail
 
 # Configuration
 REPO="abdoufermat5/bayesian-ssh"
@@ -201,6 +201,9 @@ fetch_checksums() {
         fi
         SIGNATURE="verified with cosign"
         ok "release signature verified"
+    else
+        warn "cosign is not installed: SHA256SUMS signature was NOT verified"
+        warn "install cosign (https://docs.sigstore.dev/cosign/system_config/installation/) to verify release provenance"
     fi
 }
 
@@ -246,7 +249,7 @@ install_cli() {
 # still installed so it works once they are added.
 check_gui_runtime() {
     command -v ldconfig &> /dev/null || return 0
-    if ! ldconfig -p 2>/dev/null | grep -q 'libwebkit2gtk-4.1\.so\.0'; then
+    if ! ldconfig -p 2>/dev/null | grep 'libwebkit2gtk-4.1\.so\.0' >/dev/null; then
         warn "the desktop app needs WebKitGTK 4.1, which isn't installed:"
         info "  Debian/Ubuntu: sudo apt install libwebkit2gtk-4.1-0 libayatana-appindicator3-1"
         info "  Fedora:        sudo dnf install webkit2gtk4.1 libappindicator-gtk3"
@@ -260,13 +263,16 @@ install_gui() {
     confirm_overwrite "${INSTALL_DIR}/${GUI_NAME}"
     $SUDO_CMD install -m 755 "$GUI_NAME" "${INSTALL_DIR}/${GUI_NAME}"
 
-    # Download the icon as the invoking user, then install it with sudo.
-    # (desktop/src-tauri is a symlink, which raw.githubusercontent.com does not follow.)
+    # Download the icon pinned to LATEST_TAG as the invoking user, then install it
+    # with sudo. (desktop/src-tauri is a symlink, which raw.githubusercontent.com
+    # does not follow. The icon is not in SHA256SUMS, so verify its PNG magic bytes.)
     local icon_url="https://raw.githubusercontent.com/${REPO}/${LATEST_TAG}/crates/gui/icons/128x128.png"
-    if curl -fsSL -o "${TEMP_DIR}/${GUI_NAME}.png" "$icon_url"; then
-        $SUDO_CMD install -Dm644 "${TEMP_DIR}/${GUI_NAME}.png" "/usr/share/icons/hicolor/128x128/apps/${GUI_NAME}.png"
+    local icon_file="${TEMP_DIR}/${GUI_NAME}.png"
+    if curl -fsSL -o "$icon_file" "$icon_url" \
+        && [ "$(head -c 8 "$icon_file" | od -An -tx1 | tr -d ' \n')" = "89504e470d0a1a0a" ]; then
+        $SUDO_CMD install -Dm644 "$icon_file" "/usr/share/icons/hicolor/128x128/apps/${GUI_NAME}.png"
     else
-        warn "could not download the application icon; the menu entry has none"
+        warn "could not download a valid PNG application icon; the menu entry has none"
     fi
 
     $SUDO_CMD install -d /usr/share/applications
@@ -359,9 +365,10 @@ build_from_source() {
         die "make and npm are required to build the desktop app" "Or build the CLI only with --no-gui."
     fi
 
+    get_latest_release
     resolve_sudo
-    step "Building from source (this takes a few minutes)"
-    git clone --quiet "https://github.com/${REPO}.git" "$TEMP_DIR/src"
+    step "Building ${LATEST_TAG} from source (this takes a few minutes)"
+    git clone --quiet --branch "$LATEST_TAG" --depth 1 "https://github.com/${REPO}.git" "$TEMP_DIR/src"
     cd "$TEMP_DIR/src"
 
     if [ "$INSTALL_GUI" = true ]; then

@@ -19,6 +19,10 @@ on:
         description: Release tag to package (e.g. v2.6.0)
         required: true
         type: string
+    secrets:
+      SNAPCRAFT_STORE_CREDENTIALS:
+        description: Snap Store credentials exported via snapcraft export-login
+        required: false
   workflow_dispatch:
     inputs:
       tag:
@@ -44,7 +48,10 @@ jobs:
           - arch: arm64
             os: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
 
       # The staging script downloads the release assets, verifies them against
       # SHA256SUMS and renders the snapcraft.yaml version token, so tag and arch
@@ -57,12 +64,12 @@ jobs:
           ARCH: ${{ matrix.arch }}
         run: scripts/snap-stage.sh "$TAG" "$ARCH" target/snap
 
-      - uses: snapcore/action-build@v1
+      - uses: snapcore/action-build@3bdaa03e1ba6bf59a65f84a751d943d549a54e79 # v1
         id: snapcraft
         with:
           path: target/snap
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: snap-${{ matrix.arch }}
           path: ${{ steps.snapcraft.outputs.snap }}
@@ -109,7 +116,7 @@ jobs:
             *) echo "channel=stable" >> "$GITHUB_OUTPUT" ;;
           esac
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         if: steps.creds.outputs.configured == 'true'
         with:
           name: snap-${{ matrix.arch }}
@@ -127,7 +134,7 @@ jobs:
           fi
           echo "snap=$file" >> "$GITHUB_OUTPUT"
 
-      - uses: snapcore/action-publish@v1
+      - uses: snapcore/action-publish@214b86e5ca036ead1668c79afb81e550e6c54d40 # v1
         if: steps.creds.outputs.configured == 'true'
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
