@@ -2,12 +2,14 @@
 
 use crate::config::AppConfig;
 use crate::services::ai::audit::read_entries;
+use crate::services::ai::types::{AiEvent, Decision};
 use crate::services::ai::ui::{self, Glyph, Style, Tone};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
-use super::build::{build_report, run_ids};
+use super::build::event_run_id;
 
 /// One line per run for `bssh ai log`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -27,26 +29,57 @@ pub struct RunSummary {
 /// Runs, most recent first, at most `limit`.
 pub fn list_runs(config: &AppConfig, limit: usize) -> Result<Vec<RunSummary>> {
     let entries = read_entries(config)?;
-    let mut v: Vec<RunSummary> = run_ids(&entries)
-        .into_iter()
-        .map(|id| {
-            let r = build_report(&entries, &id);
-            RunSummary {
-                run_id: id,
-                client: r.client,
-                policy: r.policy,
-                started: r.started,
-                ended: r.ended,
-                calls: r.calls.len(),
-                denials: r.denials.len(),
-                changes: r.changes.len(),
-                end_reason: r.end_reason,
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
+    let mut index_by_run: HashMap<&str, usize> = HashMap::new();
+    let mut summaries: Vec<RunSummary> = Vec::new();
+    for e in &entries {
+        let id = event_run_id(&e.event);
+        let idx = *index_by_run.entry(id).or_insert_with(|| {
+            let i = summaries.len();
+            summaries.push(RunSummary {
+                run_id: id.to_string(),
+                client: None,
+                policy: None,
+                started: None,
+                ended: None,
+                calls: 0,
+                denials: 0,
+                changes: 0,
+                end_reason: None,
+            });
+            i
+        });
+        let s = &mut summaries[idx];
+        match &e.event {
+            AiEvent::RunStarted { client, policy, .. } => {
+                s.client = Some(client.clone());
+                s.policy = Some(policy.clone());
+                s.started = Some(e.ts.clone());
             }
-        })
-        .collect();
-    v.reverse();
-    v.truncate(limit);
-    Ok(v)
+            AiEvent::Call { decision, .. } => {
+                s.calls += 1;
+                if matches!(decision, Decision::Deny { .. }) {
+                    s.denials += 1;
+                }
+            }
+            AiEvent::Change { .. } => {
+                s.changes += 1;
+            }
+            AiEvent::RunEnded { reason, .. } => {
+                s.ended = Some(e.ts.clone());
+                s.end_reason = Some(reason.clone());
+            }
+            AiEvent::Approval { .. }
+            | AiEvent::Result { .. }
+            | AiEvent::Paused { .. }
+            | AiEvent::Resumed { .. } => {}
+        }
+    }
+    summaries.reverse();
+    summaries.truncate(limit);
+    Ok(summaries)
 }
 
 pub fn render_runs(style: &Style, runs: &[RunSummary], now: DateTime<Utc>) -> String {

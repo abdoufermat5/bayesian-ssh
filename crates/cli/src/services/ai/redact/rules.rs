@@ -1,125 +1,149 @@
 //! One function per redaction rule, and the helpers they share.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 use regex::{Captures, Regex};
 
 use super::redactor::{Counts, MARKER_CLOSE, MARKER_OPEN};
 
-pub(super) fn apply_pattern(
+pub(super) fn apply_pattern<'a>(
     regex: Option<&Regex>,
     kind: &'static str,
-    text: &str,
+    text: Cow<'a, str>,
     counts: &mut Counts,
-) -> String {
+) -> Cow<'a, str> {
     let Some(regex) = regex else {
-        return text.to_string();
+        return text;
     };
-    regex
-        .replace_all(text, |_: &Captures<'_>| {
-            *counts.entry(kind).or_insert(0) += 1;
-            marker(kind)
-        })
-        .into_owned()
+    match regex.replace_all(&text, |_: &Captures<'_>| {
+        *counts.entry(kind).or_insert(0) += 1;
+        marker(kind)
+    }) {
+        Cow::Borrowed(_) => text,
+        Cow::Owned(s) => Cow::Owned(s),
+    }
 }
 
 /// `aws_secret_access_key = <40 base64-ish chars>`: only the value is replaced.
-pub(super) fn apply_aws_secret(regex: Option<&Regex>, text: &str, counts: &mut Counts) -> String {
+pub(super) fn apply_aws_secret<'a>(
+    regex: Option<&Regex>,
+    text: Cow<'a, str>,
+    counts: &mut Counts,
+) -> Cow<'a, str> {
     let Some(regex) = regex else {
-        return text.to_string();
+        return text;
     };
-    regex
-        .replace_all(text, |caps: &Captures<'_>| {
-            *counts.entry("aws-secret").or_insert(0) += 1;
-            let (open, close) = (&caps["q"], &caps["postv"]);
-            format!("{}{open}{}{close}", &caps["pre"], marker("aws-secret"))
-        })
-        .into_owned()
+    match regex.replace_all(&text, |caps: &Captures<'_>| {
+        *counts.entry("aws-secret").or_insert(0) += 1;
+        let (open, close) = (&caps["q"], &caps["postv"]);
+        format!("{}{open}{}{close}", &caps["pre"], marker("aws-secret"))
+    }) {
+        Cow::Borrowed(_) => text,
+        Cow::Owned(s) => Cow::Owned(s),
+    }
 }
 
 /// `Authorization: Bearer <token>` and bare `Bearer <token>`: the prefix stays.
-pub(super) fn apply_bearer(regex: Option<&Regex>, text: &str, counts: &mut Counts) -> String {
+pub(super) fn apply_bearer<'a>(
+    regex: Option<&Regex>,
+    text: Cow<'a, str>,
+    counts: &mut Counts,
+) -> Cow<'a, str> {
     let Some(regex) = regex else {
-        return text.to_string();
+        return text;
     };
-    regex
-        .replace_all(text, |caps: &Captures<'_>| {
-            *counts.entry("bearer").or_insert(0) += 1;
-            format!("{}{}", &caps["pre"], marker("bearer"))
-        })
-        .into_owned()
+    match regex.replace_all(&text, |caps: &Captures<'_>| {
+        *counts.entry("bearer").or_insert(0) += 1;
+        format!("{}{}", &caps["pre"], marker("bearer"))
+    }) {
+        Cow::Borrowed(_) => text,
+        Cow::Owned(s) => Cow::Owned(s),
+    }
 }
 
 /// `scheme://user:pass@host`: keep scheme, user and host, replace the password.
-pub(super) fn apply_url_credentials(
+pub(super) fn apply_url_credentials<'a>(
     regex: Option<&Regex>,
-    text: &str,
+    text: Cow<'a, str>,
     counts: &mut Counts,
-) -> String {
+) -> Cow<'a, str> {
     let Some(regex) = regex else {
-        return text.to_string();
+        return text;
     };
-    regex
-        .replace_all(text, |caps: &Captures<'_>| {
-            let password = &caps["pass"];
-            if is_marker(password) {
-                return whole(caps);
-            }
-            *counts.entry("url-credentials").or_insert(0) += 1;
-            format!(
-                "{}://{}:{}@",
-                &caps["scheme"],
-                &caps["user"],
-                marker("url-credentials")
-            )
-        })
-        .into_owned()
+    match regex.replace_all(&text, |caps: &Captures<'_>| {
+        let password = &caps["pass"];
+        if is_marker(password) {
+            return whole(caps);
+        }
+        *counts.entry("url-credentials").or_insert(0) += 1;
+        format!(
+            "{}://{}:{}@",
+            &caps["scheme"],
+            &caps["user"],
+            marker("url-credentials")
+        )
+    }) {
+        Cow::Borrowed(_) => text,
+        Cow::Owned(s) => Cow::Owned(s),
+    }
 }
 
 /// `password=...`, `client_secret: "..."`, `--password=...`, `SECRET_KEY=...`.
-pub(super) fn apply_key_value(regex: Option<&Regex>, text: &str, counts: &mut Counts) -> String {
+pub(super) fn apply_key_value<'a>(
+    regex: Option<&Regex>,
+    text: Cow<'a, str>,
+    counts: &mut Counts,
+) -> Cow<'a, str> {
     let Some(regex) = regex else {
-        return text.to_string();
+        return text;
     };
-    regex
-        .replace_all(text, |caps: &Captures<'_>| {
-            let start = caps.get(0).map_or(0, |m| m.start());
-            if starts_mid_word(text, start) {
-                return whole(caps);
-            }
-            let key = &caps["key"];
-            let value = &caps["value"];
-            let Some(kind) = classify_key_value(key, value) else {
-                return whole(caps);
-            };
-            *counts.entry(kind).or_insert(0) += 1;
-            let (open, close) = (&caps["q"], &caps["postv"]);
-            format!(
-                "{key}{}{}{open}{}{close}",
-                &caps["postq"],
-                &caps["sep"],
-                marker(kind)
-            )
-        })
-        .into_owned()
+    let replaced = regex.replace_all(&text, |caps: &Captures<'_>| {
+        let start = caps.get(0).map_or(0, |m| m.start());
+        if starts_mid_word(&text, start) {
+            return whole(caps);
+        }
+        let key = &caps["key"];
+        let value = &caps["value"];
+        let Some(kind) = classify_key_value(key, value) else {
+            return whole(caps);
+        };
+        *counts.entry(kind).or_insert(0) += 1;
+        let (open, close) = (&caps["q"], &caps["postv"]);
+        format!(
+            "{key}{}{}{open}{}{close}",
+            &caps["postq"],
+            &caps["sep"],
+            marker(kind)
+        )
+    });
+    match replaced {
+        Cow::Borrowed(_) => text,
+        Cow::Owned(s) => Cow::Owned(s),
+    }
 }
 
 /// `.env`-style `KEY=<high-entropy value>` lines whose key is not in the list.
-pub(super) fn apply_env_secrets(regex: Option<&Regex>, text: &str, counts: &mut Counts) -> String {
+pub(super) fn apply_env_secrets<'a>(
+    regex: Option<&Regex>,
+    text: Cow<'a, str>,
+    counts: &mut Counts,
+) -> Cow<'a, str> {
     let Some(regex) = regex else {
-        return text.to_string();
+        return text;
     };
-    regex
-        .replace_all(text, |caps: &Captures<'_>| {
-            let value = &caps["value"];
-            if value.chars().count() < 24 || is_marker(value) || shannon_entropy(value) < 4.0 {
-                return whole(caps);
-            }
-            *counts.entry("env-secret").or_insert(0) += 1;
-            let (open, close) = (&caps["q"], &caps["postv"]);
-            format!("{}={open}{}{close}", &caps["key"], marker("env-secret"))
-        })
-        .into_owned()
+    match regex.replace_all(&text, |caps: &Captures<'_>| {
+        let value = &caps["value"];
+        if value.chars().count() < 24 || is_marker(value) || shannon_entropy(value) < 4.0 {
+            return whole(caps);
+        }
+        *counts.entry("env-secret").or_insert(0) += 1;
+        let (open, close) = (&caps["q"], &caps["postv"]);
+        format!("{}={open}{}{close}", &caps["key"], marker("env-secret"))
+    }) {
+        Cow::Borrowed(_) => text,
+        Cow::Owned(s) => Cow::Owned(s),
+    }
 }
 
 pub(super) fn whole(caps: &Captures<'_>) -> String {

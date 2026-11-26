@@ -8,12 +8,12 @@ use crate::services::ai::types::{
 };
 use anyhow::Result;
 use serde::Deserialize;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 use super::casts::run_casts;
 use super::model::{ReportApproval, ReportCall, ReportChange, ReportStep, RunReport};
 
-fn event_run_id(e: &AiEvent) -> &str {
+pub(super) fn event_run_id(e: &AiEvent) -> &str {
     match e {
         AiEvent::RunStarted { run_id, .. }
         | AiEvent::Approval { run_id, .. }
@@ -82,6 +82,7 @@ pub fn build_report(entries: &[AuditEntry], run_id: &str) -> RunReport {
     };
     let mut hosts = BTreeSet::new();
     let mut reds: std::collections::BTreeMap<String, usize> = Default::default();
+    let mut call_index: HashMap<&str, usize> = HashMap::new();
     for e in entries.iter().filter(|e| event_run_id(&e.event) == run_id) {
         match &e.event {
             AiEvent::RunStarted {
@@ -117,6 +118,7 @@ pub fn build_report(entries: &[AuditEntry], run_id: &str) -> RunReport {
                         reason
                     ));
                 }
+                call_index.insert(call.call_id.as_str(), r.calls.len());
                 r.calls.push(ReportCall {
                     seq: e.seq,
                     ts: e.ts.clone(),
@@ -166,7 +168,8 @@ pub fn build_report(entries: &[AuditEntry], run_id: &str) -> RunReport {
                 for x in redactions {
                     *reds.entry(x.kind.clone()).or_default() += x.count;
                 }
-                if let Some(c) = r.calls.iter_mut().rev().find(|c| &c.call_id == call_id) {
+                if let Some(&idx) = call_index.get(call_id.as_str()) {
+                    let c = &mut r.calls[idx];
                     c.exit_code = *exit_code;
                     c.output_sha256 = Some(output_sha256.clone());
                     c.redactions = redactions.clone();

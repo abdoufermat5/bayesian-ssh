@@ -22,7 +22,7 @@ pub use search::{Prediction, RankContext, ScoreBreakdown, SearchField};
 pub use session::{ActiveSession, live_pid};
 pub use source::SourceSummary;
 
-const SCHEMA_VERSION: i32 = 11;
+const SCHEMA_VERSION: i32 = 12;
 
 /// How long a statement waits on a lock held by another process (the CLI
 /// and the desktop app share the same database file) before failing with
@@ -63,7 +63,9 @@ impl Database {
 
         let db = Self::open(config)?;
         crate::config::enforce_secure_file(path);
-        db.init()?;
+        if db.current_schema_version()? != SCHEMA_VERSION {
+            db.init()?;
+        }
 
         INITIALIZED_PATHS
             .lock()
@@ -77,7 +79,13 @@ impl Database {
     fn open(config: &AppConfig) -> Result<Self> {
         let conn = SqliteConnection::open(&config.database_path)?;
         conn.busy_timeout(BUSY_TIMEOUT)?;
-        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+        conn.execute_batch(
+            "PRAGMA foreign_keys = ON;
+             PRAGMA synchronous = NORMAL;
+             PRAGMA temp_store = MEMORY;
+             PRAGMA cache_size = -16000;
+             PRAGMA mmap_size = 67108864;",
+        )?;
         Ok(Database {
             conn,
             window_days: config.prediction.window_days,
@@ -85,8 +93,7 @@ impl Database {
     }
 
     fn init(&self) -> Result<()> {
-        self.conn
-            .execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")?;
+        self.conn.execute_batch("PRAGMA journal_mode = WAL;")?;
         // Use a single transaction for the full migration so the schema is
         // always either fully applied or fully rolled back. IMMEDIATE takes
         // the write lock up front so two processes opening the database
@@ -177,6 +184,10 @@ impl Database {
         if current < 11 {
             self.migrate_v11_forward_agent()?;
             self.set_schema_version(11)?;
+        }
+        if current < 12 {
+            self.migrate_v12_perf_indexes()?;
+            self.set_schema_version(12)?;
         }
         Ok(())
     }
@@ -447,11 +458,23 @@ impl Database {
         Ok(())
     }
 
-    fn create_indexes(&self) -> Result<()> {
-        self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_connections_name ON connections(name)",
-            [],
+    /// v12: add partial/composite session indexes for active-session, recording
+    /// retention, and Bayesian aggregate queries, and drop the redundant
+    /// `idx_connections_name` (already covered by the `UNIQUE` constraint).
+    fn migrate_v12_perf_indexes(&self) -> Result<()> {
+        self.conn.execute_batch(
+            "DROP INDEX IF EXISTS idx_connections_name;
+             CREATE INDEX IF NOT EXISTS idx_sessions_open
+                 ON sessions(started_at DESC) WHERE ended_at IS NULL;
+             CREATE INDEX IF NOT EXISTS idx_sessions_recorded
+                 ON sessions(started_at) WHERE recording_path IS NOT NULL;
+             CREATE INDEX IF NOT EXISTS idx_sessions_conn_started
+                 ON sessions(connection_id, started_at);",
         )?;
+        Ok(())
+    }
+
+    fn create_indexes(&self) -> Result<()> {
         self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_connections_host ON connections(host)",
             [],
@@ -500,6 +523,18 @@ impl Database {
         // Index on sessions.pid; existing databases already carry it.
         self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_sessions_pid ON sessions(pid)",
+            [],
+        )?;
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sessions_open ON sessions(started_at DESC) WHERE ended_at IS NULL",
+            [],
+        )?;
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sessions_recorded ON sessions(started_at) WHERE recording_path IS NOT NULL",
+            [],
+        )?;
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sessions_conn_started ON sessions(connection_id, started_at)",
             [],
         )?;
         Ok(())
@@ -952,6 +987,6 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(indexes, 6, "indexes are rebuilt with the table");
+        assert_eq!(indexes, 9, "indexes are rebuilt with the table");
     }
 }

@@ -328,16 +328,21 @@ impl Database {
             rows.collect::<rusqlite::Result<_>>()?
         };
 
+        if expired.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let tx = self.conn.unchecked_transaction()?;
         let mut paths = Vec::with_capacity(expired.len());
         for (id, path) in expired {
-            self.conn
-                .execute("DELETE FROM session_text WHERE session_id = ?", params![id])?;
-            self.conn.execute(
+            tx.execute("DELETE FROM session_text WHERE session_id = ?", params![id])?;
+            tx.execute(
                 "UPDATE sessions SET recording_path = NULL WHERE id = ?",
                 params![id],
             )?;
             paths.push(path);
         }
+        tx.commit()?;
         Ok(paths)
     }
 
@@ -426,23 +431,29 @@ impl Database {
             rows.collect::<rusqlite::Result<_>>()?
         };
 
-        let mut closed = Vec::new();
-        for (id, name, pid) in open {
-            if pid.and_then(live_pid).is_some() {
-                continue;
-            }
-            self.conn.execute(
+        let stale: Vec<(String, String, Option<u32>)> = open
+            .into_iter()
+            .filter(|(_, _, pid)| pid.and_then(live_pid).is_none())
+            .collect();
+        if stale.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let ended_at = chrono::Utc::now().to_rfc3339();
+        let status_json = serde_json::to_string(&crate::models::SessionStatus::Terminated)?;
+        let status_kind = SessionStatusKind::Terminated.as_str();
+
+        let tx = self.conn.unchecked_transaction()?;
+        let mut closed = Vec::with_capacity(stale.len());
+        for (id, name, pid) in stale {
+            tx.execute(
                 "UPDATE sessions SET ended_at = ?, status = ?, status_kind = ?
                  WHERE id = ? AND ended_at IS NULL",
-                params![
-                    chrono::Utc::now().to_rfc3339(),
-                    serde_json::to_string(&crate::models::SessionStatus::Terminated)?,
-                    SessionStatusKind::Terminated.as_str(),
-                    id
-                ],
+                params![ended_at, status_json, status_kind, id],
             )?;
             closed.push((name, pid));
         }
+        tx.commit()?;
         Ok(closed)
     }
 }

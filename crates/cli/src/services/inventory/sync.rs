@@ -6,7 +6,7 @@ use anyhow::Result;
 use chrono::{Duration, Utc};
 use rusqlite::{Transaction, params};
 use serde::Serialize;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// How a sync would change the stored connections for one source.
 #[derive(Debug, Default, Clone)]
@@ -71,6 +71,14 @@ pub fn plan(
     let mut used_names: HashSet<String> = taken_names.clone();
     used_names.extend(existing_for_source.iter().map(|c| c.name.clone()));
 
+    let mut existing_by_ext: HashMap<&str, &Connection> =
+        HashMap::with_capacity(existing_for_source.len());
+    for c in existing_for_source {
+        if let Some(ext_id) = c.external_id.as_deref() {
+            existing_by_ext.entry(ext_id).or_insert(c);
+        }
+    }
+
     let mut matched: HashSet<String> = HashSet::new();
     let mut seen: HashSet<String> = HashSet::new();
 
@@ -81,10 +89,7 @@ pub fn plan(
         }
         matched.insert(host.external_id.clone());
 
-        if let Some(existing) = existing_for_source
-            .iter()
-            .find(|c| c.external_id.as_deref() == Some(host.external_id.as_str()))
-        {
+        if let Some(&existing) = existing_by_ext.get(host.external_id.as_str()) {
             let mut updated = existing.clone();
             updated.host = host.host.clone();
             if let Some(port) = host.port {

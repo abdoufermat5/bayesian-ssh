@@ -1,5 +1,6 @@
 //! `SecretRedactor`: applies the rules in their fixed order.
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use crate::services::ai::types::{RedactRules, Redaction, Redactor};
@@ -24,34 +25,36 @@ pub struct SecretRedactor {
 
 impl SecretRedactor {
     /// `vault_secrets`: exact values to remove (passwords, tokens from the bssh vault).
+    /// Values shorter than six characters are too likely to match ordinary text
+    /// and are skipped; remaining values are sorted longest-first and deduplicated
+    /// once so `redact()` never repeats that work.
     pub fn new(vault_secrets: Vec<String>, rules: &RedactRules) -> Self {
+        let mut prepared: Vec<String> = vault_secrets
+            .into_iter()
+            .map(|secret| secret.trim().to_string())
+            .filter(|secret| secret.chars().count() >= 6 && !secret.contains(MARKER_OPEN))
+            .collect();
+        // Longest first by bytes: a value that contains another is always longer.
+        prepared.sort_unstable_by(|a, b| b.len().cmp(&a.len()).then_with(|| b.cmp(a)));
+        prepared.dedup();
         Self {
-            vault_secrets,
+            vault_secrets: prepared,
             rules: rules.clone(),
         }
     }
 
     /// Replace exact vault values, longest first so a value that contains a
-    /// shorter one is removed whole. Values shorter than six characters are
-    /// too likely to match ordinary text and are skipped.
-    fn redact_vault(&self, text: &str, counts: &mut Counts) -> String {
-        let mut secrets: Vec<&str> = self
-            .vault_secrets
-            .iter()
-            .map(|secret| secret.trim())
-            .filter(|secret| secret.chars().count() >= 6 && !secret.contains(MARKER_OPEN))
-            .collect();
-        // Longest first by bytes: a value that contains another is always longer.
-        secrets.sort_unstable_by(|a, b| b.len().cmp(&a.len()).then_with(|| b.cmp(a)));
-        secrets.dedup();
-
-        let mut out = text.to_string();
-        for secret in secrets {
-            if secret.is_empty() || !out.contains(secret) {
+    /// shorter one is removed whole.
+    fn redact_vault<'a>(&self, text: Cow<'a, str>, counts: &mut Counts) -> Cow<'a, str> {
+        let mut out = text;
+        let mut replacement: Option<String> = None;
+        for secret in &self.vault_secrets {
+            if !out.contains(secret.as_str()) {
                 continue;
             }
-            let hits = out.matches(secret).count();
-            out = out.replace(secret, &marker("vault-secret"));
+            let hits = out.matches(secret.as_str()).count();
+            let rep = replacement.get_or_insert_with(|| marker("vault-secret"));
+            out = Cow::Owned(out.replace(secret.as_str(), rep));
             *counts.entry("vault-secret").or_insert(0) += hits;
         }
         out
@@ -63,7 +66,7 @@ impl Redactor for SecretRedactor {
         let patterns = &*PATTERNS;
         let enabled = self.rules.patterns != "off";
         let mut counts = Counts::new();
-        let mut out = text.to_string();
+        let mut out = Cow::Borrowed(text);
 
         if enabled {
             // Whole blocks first: their bodies must not be picked apart by the
@@ -71,51 +74,46 @@ impl Redactor for SecretRedactor {
             out = apply_pattern(
                 patterns.private_key.as_ref(),
                 "private-key",
-                &out,
+                out,
                 &mut counts,
             );
             out = apply_pattern(
                 patterns.private_key_truncated.as_ref(),
                 "private-key",
-                &out,
+                out,
                 &mut counts,
             );
         }
-        if self.rules.vault_secrets {
-            out = self.redact_vault(&out, &mut counts);
+        if self.rules.vault_secrets && !self.vault_secrets.is_empty() {
+            out = self.redact_vault(out, &mut counts);
         }
         if enabled {
-            out = apply_pattern(patterns.aws_key.as_ref(), "aws-key", &out, &mut counts);
-            out = apply_aws_secret(patterns.aws_secret.as_ref(), &out, &mut counts);
+            out = apply_pattern(patterns.aws_key.as_ref(), "aws-key", out, &mut counts);
+            out = apply_aws_secret(patterns.aws_secret.as_ref(), out, &mut counts);
             out = apply_pattern(
                 patterns.github_token.as_ref(),
                 "github-token",
-                &out,
+                out,
                 &mut counts,
             );
             out = apply_pattern(
                 patterns.gitlab_token.as_ref(),
                 "gitlab-token",
-                &out,
+                out,
                 &mut counts,
             );
             out = apply_pattern(
                 patterns.slack_token.as_ref(),
                 "slack-token",
-                &out,
+                out,
                 &mut counts,
             );
-            out = apply_pattern(
-                patterns.stripe_key.as_ref(),
-                "stripe-key",
-                &out,
-                &mut counts,
-            );
-            out = apply_pattern(patterns.jwt.as_ref(), "jwt", &out, &mut counts);
-            out = apply_bearer(patterns.bearer.as_ref(), &out, &mut counts);
-            out = apply_url_credentials(patterns.url_credentials.as_ref(), &out, &mut counts);
-            out = apply_key_value(patterns.key_value.as_ref(), &out, &mut counts);
-            out = apply_env_secrets(patterns.env_line.as_ref(), &out, &mut counts);
+            out = apply_pattern(patterns.stripe_key.as_ref(), "stripe-key", out, &mut counts);
+            out = apply_pattern(patterns.jwt.as_ref(), "jwt", out, &mut counts);
+            out = apply_bearer(patterns.bearer.as_ref(), out, &mut counts);
+            out = apply_url_credentials(patterns.url_credentials.as_ref(), out, &mut counts);
+            out = apply_key_value(patterns.key_value.as_ref(), out, &mut counts);
+            out = apply_env_secrets(patterns.env_line.as_ref(), out, &mut counts);
         }
 
         let redactions = counts
@@ -125,6 +123,6 @@ impl Redactor for SecretRedactor {
                 count,
             })
             .collect();
-        (out, redactions)
+        (out.into_owned(), redactions)
     }
 }

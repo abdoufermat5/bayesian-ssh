@@ -15,7 +15,10 @@ pub const DEFAULT_COLS: u16 = 80;
 /// `TERM` value forced for xterm.js compatibility (vim/nano/htop rendering).
 pub const TERM_ENV: &str = "xterm-256color";
 /// Size of the chunk read from the PTY master in the read loop.
-pub const READ_CHUNK_SIZE: usize = 8192;
+/// Matched to the 4 KiB Linux kernel PTY read granularity so full kernel
+/// reads coalesce up to [`FLUSH_THRESHOLD_BYTES`] while shorter interactive
+/// bursts still flush immediately.
+pub const READ_CHUNK_SIZE: usize = 4096;
 /// Coalesce PTY output into batches of at least this many bytes before
 /// handing it to the caller. High-throughput programs (`yes`, `make -j`,
 /// `cat bigfile`) would otherwise generate thousands of tiny IPC events per
@@ -128,7 +131,7 @@ pub fn resize(master: &(dyn MasterPty + Send), cols: u16, rows: u16) -> Result<(
 /// the next read instead of being decoded (and corrupted) on its own.
 pub fn read_loop(reader: &mut (dyn Read + Send), mut on_data: impl FnMut(String)) {
     let mut buf = [0u8; READ_CHUNK_SIZE];
-    let mut pending = String::new();
+    let mut pending = String::with_capacity(FLUSH_THRESHOLD_BYTES);
     let mut carry = Utf8Carry::default();
     loop {
         match reader.read(&mut buf) {
@@ -136,7 +139,11 @@ pub fn read_loop(reader: &mut (dyn Read + Send), mut on_data: impl FnMut(String)
                 carry.decode_into(&buf[..n], &mut pending);
                 let partial_read = n < buf.len();
                 if pending.len() >= FLUSH_THRESHOLD_BYTES || (partial_read && !pending.is_empty()) {
-                    on_data(std::mem::take(&mut pending));
+                    let batch = std::mem::replace(
+                        &mut pending,
+                        String::with_capacity(FLUSH_THRESHOLD_BYTES),
+                    );
+                    on_data(batch);
                 }
             }
             // EOF or read error: flush what is left (a dangling partial

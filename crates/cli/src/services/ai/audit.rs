@@ -24,8 +24,9 @@ use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 /// `prev_hash` of the first entry.
 pub const GENESIS_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
@@ -460,6 +461,7 @@ impl LockedLog {
 pub struct LocalAudit {
     config: AppConfig,
     dir: PathBuf,
+    key: OnceLock<SigningKey>,
 }
 
 impl LocalAudit {
@@ -470,6 +472,7 @@ impl LocalAudit {
         Ok(Self {
             config: config.clone(),
             dir,
+            key: OnceLock::new(),
         })
     }
 
@@ -486,7 +489,14 @@ impl LocalAudit {
     }
 
     fn append_locked(&self, f: &mut std::fs::File, event: serde_json::Value) -> Result<u64> {
-        let key = load_or_create_key(&self.dir)?;
+        let key = match self.key.get() {
+            Some(k) => k,
+            None => {
+                let k = load_or_create_key(&self.dir)?;
+                let _ = self.key.set(k);
+                self.key.get().expect("signing key initialized")
+            }
+        };
         let (seq, prev_hash) = match last_line(f)? {
             Some(line) => {
                 let last: RawEntry =
@@ -530,26 +540,80 @@ impl AuditSink for LocalAudit {
     }
 }
 
+/// Fast-path line shape for streaming `read_entries` directly into `AiEvent`
+/// without allocating a `serde_json::Value` tree or cloning.
+#[derive(Deserialize)]
+struct TypedAuditLine {
+    seq: u64,
+    ts: String,
+    event: AiEvent,
+    hash: String,
+    #[serde(default)]
+    pruned: bool,
+}
+
+/// Fallback line shape used only for pruned stubs (`event: null`) or unknown
+/// future `AiEvent` variants, while still rejecting malformed JSON lines.
+#[derive(Deserialize)]
+struct FallbackAuditLine {
+    seq: u64,
+    #[serde(default)]
+    pruned: bool,
+    #[serde(rename = "ts")]
+    _ts: serde::de::IgnoredAny,
+    #[serde(rename = "event")]
+    _event: serde::de::IgnoredAny,
+    #[serde(rename = "prev_hash")]
+    _prev_hash: serde::de::IgnoredAny,
+    #[serde(rename = "hash")]
+    _hash: serde::de::IgnoredAny,
+    #[serde(rename = "sig")]
+    _sig: serde::de::IgnoredAny,
+}
+
 /// All entries in order. Stubs are skipped silently; lines whose event can't be decoded are
 /// skipped with a warning.
 pub fn read_entries(config: &AppConfig) -> Result<Vec<AuditEntry>> {
-    let mut out = Vec::new();
-    for line in read_lines(config)? {
-        let raw = line.entry;
-        if raw.pruned {
-            continue;
+    let Some(f) = lock_log(&events_path(config), LockKind::Shared)? else {
+        return Ok(Vec::new());
+    };
+    let mut reader = BufReader::new(f);
+    let res = (|| -> Result<Vec<AuditEntry>> {
+        let mut out = Vec::new();
+        let mut line_idx = 0usize;
+        for line in (&mut reader).lines() {
+            let line = line.context("read audit log")?;
+            if line.trim().is_empty() {
+                continue;
+            }
+            line_idx += 1;
+            match serde_json::from_str::<TypedAuditLine>(&line) {
+                Ok(parsed) => {
+                    if !parsed.pruned {
+                        out.push(AuditEntry {
+                            seq: parsed.seq,
+                            ts: parsed.ts,
+                            event: parsed.event,
+                            hash: parsed.hash,
+                        });
+                    }
+                }
+                Err(event_err) => {
+                    let fallback: FallbackAuditLine = serde_json::from_str(&line)
+                        .with_context(|| format!("audit line {line_idx} is not valid"))?;
+                    if !fallback.pruned {
+                        tracing::warn!(
+                            "audit entry {} has an unknown event: {event_err}",
+                            fallback.seq
+                        );
+                    }
+                }
+            }
         }
-        match serde_json::from_value::<AiEvent>(raw.event.clone()) {
-            Ok(event) => out.push(AuditEntry {
-                seq: raw.seq,
-                ts: raw.ts,
-                event,
-                hash: raw.hash,
-            }),
-            Err(e) => tracing::warn!("audit entry {} has an unknown event: {e}", raw.seq),
-        }
-    }
-    Ok(out)
+        Ok(out)
+    })();
+    let _ = reader.into_inner().unlock();
+    res
 }
 
 fn bad(entries: u64, seq: u64, msg: &str) -> VerifyReport {

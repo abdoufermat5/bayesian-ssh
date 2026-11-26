@@ -1,8 +1,9 @@
+use super::query::PreparedQuery;
 use crate::config::AppConfig;
 use crate::database::Database;
 use crate::models::Connection;
 use anyhow::Result;
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -182,8 +183,23 @@ impl Database {
         if limit == 0 {
             return Ok(Vec::new());
         }
-        let mut connections = self.list_connections(None, false)?;
-        connections.retain(|c| c.stale_since.is_none());
+        // Fetch non-stale rows without hydrating tags/aliases upfront; we only
+        // need tags/aliases for the top `limit` winners.
+        let connections: Vec<Connection> = {
+            let mut stmt = self.conn.prepare(
+                "SELECT id, name, host, user, port, bastion, bastion_user, use_kerberos, key_path,
+                        created_at, last_used, source_id, external_id, stale_since, forward_agent, pending_change
+                 FROM connections
+                 WHERE stale_since IS NULL
+                 ORDER BY last_used DESC NULLS LAST, name ASC",
+            )?;
+            let mut rows = stmt.query([])?;
+            let mut out = Vec::new();
+            while let Some(row) = rows.next()? {
+                out.push(self.row_to_connection(row)?);
+            }
+            out
+        };
         if connections.is_empty() {
             return Ok(Vec::new());
         }
@@ -197,6 +213,8 @@ impl Database {
             })
             .collect();
 
+        let now = Utc::now();
+        let empty_query = PreparedQuery::new("");
         let cutoff = self.window_cutoff_rfc3339();
         let aggregates = self.session_aggregates(&indexed, Some(ctx), &cutoff);
         let totals = self.global_window_totals(Some(ctx), &cutoff);
@@ -206,12 +224,13 @@ impl Database {
             .map(|(conn, name_lower, host_lower)| {
                 let breakdown = self.calculate_bayesian_score(&ScoreInput {
                     connection: &conn,
-                    query_lower: "",
+                    query: &empty_query,
                     name_lower: &name_lower,
                     host_lower: &host_lower,
                     aggregate: aggregates.get(&conn.id).copied(),
                     ctx: Some(ctx),
                     totals,
+                    now,
                 });
                 let score = breakdown.score();
                 Prediction {
@@ -229,6 +248,21 @@ impl Database {
                 .then_with(|| a.connection.name.cmp(&b.connection.name))
         });
         predictions.truncate(limit);
+
+        let ids: Vec<String> = predictions
+            .iter()
+            .map(|p| p.connection.id.to_string())
+            .collect();
+        let tag_map = self.tags_for_connections(&ids)?;
+        let alias_map = self.aliases_for_connections(&ids)?;
+        for (pred, id) in predictions.iter_mut().zip(&ids) {
+            if let Some(tags) = tag_map.get(id) {
+                pred.connection.tags = tags.clone();
+            }
+            if let Some(aliases) = alias_map.get(id) {
+                pred.connection.aliases = aliases.clone();
+            }
+        }
         Ok(predictions)
     }
 
@@ -250,14 +284,16 @@ impl Database {
         let cutoff = self.window_cutoff_rfc3339();
         let aggregates = self.session_aggregates(&indexed, Some(ctx), &cutoff);
         let totals = self.global_window_totals(Some(ctx), &cutoff);
+        let empty_query = PreparedQuery::new("");
         let breakdown = self.calculate_bayesian_score(&ScoreInput {
             connection,
-            query_lower: "",
+            query: &empty_query,
             name_lower: &name_lower,
             host_lower: &host_lower,
             aggregate: aggregates.get(&connection.id).copied(),
             ctx: Some(ctx),
             totals,
+            now: Utc::now(),
         });
         let score = breakdown.score();
         let rank = all.iter().filter(|p| p.score > score).count() + 1;
@@ -283,20 +319,13 @@ impl Database {
         use std::collections::HashSet;
 
         let mut seen = HashSet::new();
-        connections.retain(|conn| {
-            if seen.contains(&conn.id) {
-                false
-            } else {
-                seen.insert(conn.id);
-                true
-            }
-        });
+        connections.retain(|conn| seen.insert(conn.id));
 
-        let query_lower = query.to_lowercase();
+        let prepared = PreparedQuery::new(query);
+        let now = Utc::now();
 
-        // Precompute per-connection lowercase name AND host once
-        // (not once per comparison).
-        let mut indexed: Vec<(Connection, String, String)> = connections
+        // Precompute per-connection lowercase name AND host once.
+        let indexed: Vec<(Connection, String, String)> = connections
             .drain(..)
             .map(|c| {
                 let name_lower = c.name.to_lowercase();
@@ -310,43 +339,36 @@ impl Database {
         let aggregates = self.session_aggregates(&indexed, ctx, &cutoff);
         let totals = self.global_window_totals(ctx, &cutoff);
 
-        indexed.sort_by(
-            |(a, a_name_lower, a_host_lower), (b, b_name_lower, b_host_lower)| {
-                let score_a = if mode == "bayesian" {
+        // Precompute each candidate's score in O(N) so `sort_by` only compares f64s.
+        let mut scored: Vec<(f64, Connection)> = indexed
+            .into_iter()
+            .map(|(conn, name_lower, host_lower)| {
+                let score = if mode == "bayesian" {
                     self.calculate_bayesian_score(&ScoreInput {
-                        connection: a,
-                        query_lower: &query_lower,
-                        name_lower: a_name_lower,
-                        host_lower: a_host_lower,
-                        aggregate: aggregates.get(&a.id).copied(),
+                        connection: &conn,
+                        query: &prepared,
+                        name_lower: &name_lower,
+                        host_lower: &host_lower,
+                        aggregate: aggregates.get(&conn.id).copied(),
                         ctx,
                         totals,
+                        now,
                     })
                     .score()
                 } else {
-                    self.calculate_relevance_score(a, &query_lower, a_name_lower, a_host_lower)
+                    self.calculate_relevance_score(&conn, &prepared, &name_lower, &host_lower, now)
                 };
-                let score_b = if mode == "bayesian" {
-                    self.calculate_bayesian_score(&ScoreInput {
-                        connection: b,
-                        query_lower: &query_lower,
-                        name_lower: b_name_lower,
-                        host_lower: b_host_lower,
-                        aggregate: aggregates.get(&b.id).copied(),
-                        ctx,
-                        totals,
-                    })
-                    .score()
-                } else {
-                    self.calculate_relevance_score(b, &query_lower, b_name_lower, b_host_lower)
-                };
-                score_b
-                    .partial_cmp(&score_a)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            },
-        );
+                (score, conn)
+            })
+            .collect();
 
-        *connections = indexed.into_iter().map(|(c, _, _)| c).collect();
+        scored.sort_by(|(score_a, _), (score_b, _)| {
+            score_b
+                .partial_cmp(score_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        *connections = scored.into_iter().map(|(_, c)| c).collect();
     }
 
     fn window_cutoff_rfc3339(&self) -> String {
@@ -480,11 +502,11 @@ impl Database {
 
         let likelihood = self.calculate_match_likelihood(
             input.connection,
-            input.query_lower,
+            input.query,
             input.name_lower,
             input.host_lower,
         );
-        let recency = self.calculate_recency_factor(input.connection);
+        let recency = self.calculate_recency_factor(input.connection, input.now);
         let success_rate = if agg.total > 0 {
             agg.successes as f64 / agg.total as f64
         } else {
@@ -534,10 +556,11 @@ impl Database {
     fn calculate_match_likelihood(
         &self,
         connection: &Connection,
-        query_lower: &str,
+        query: &PreparedQuery,
         name_lower: &str,
         host_lower: &str,
     ) -> f64 {
+        let query_lower = query.lower.as_str();
         if query_lower.is_empty() || name_lower == query_lower {
             return 1.0;
         }
@@ -545,7 +568,7 @@ impl Database {
             return 0.9;
         }
 
-        let words: Vec<&str> = name_lower.split(&['-', '_', '.', ' '][..]).collect();
+        let words: Vec<&str> = name_lower.split(['-', '_', '.', ' ']).collect();
         for word in &words {
             if *word == query_lower {
                 return 0.85;
@@ -559,9 +582,15 @@ impl Database {
             return 0.6;
         }
 
-        let normalized_name = name_lower.replace(&['-', '_', '.'][..], "");
-        let normalized_query = query_lower.replace(&['-', '_', '.'][..], "");
-        if normalized_name.contains(&normalized_query) {
+        if name_lower.contains(['-', '_', '.']) {
+            let normalized_name: String = name_lower
+                .chars()
+                .filter(|&c| !matches!(c, '-' | '_' | '.'))
+                .collect();
+            if normalized_name.contains(query.normalized.as_str()) {
+                return 0.5;
+            }
+        } else if name_lower.contains(query.normalized.as_str()) {
             return 0.5;
         }
 
@@ -582,15 +611,15 @@ impl Database {
             }
         }
 
-        if self.matches_enhanced_patterns(query_lower, name_lower) {
+        if self.matches_prepared_patterns(query, name_lower) {
             return 0.2;
         }
         0.1
     }
 
-    fn calculate_recency_factor(&self, connection: &Connection) -> f64 {
+    fn calculate_recency_factor(&self, connection: &Connection, now: DateTime<Utc>) -> f64 {
         if let Some(last_used) = connection.last_used {
-            let hours_since_used = Utc::now().signed_duration_since(last_used).num_hours() as f64;
+            let hours_since_used = now.signed_duration_since(last_used).num_hours() as f64;
             let lambda = 0.005;
             let decay = (-lambda * hours_since_used).exp();
             decay.max(0.1)
@@ -602,10 +631,12 @@ impl Database {
     fn calculate_relevance_score(
         &self,
         connection: &Connection,
-        query_lower: &str,
+        query: &PreparedQuery,
         name_lower: &str,
         host_lower: &str,
+        now: DateTime<Utc>,
     ) -> f64 {
+        let query_lower = query.lower.as_str();
         let mut score = 0.0;
 
         if name_lower == query_lower {
@@ -617,7 +648,7 @@ impl Database {
         if name_lower.contains(query_lower) {
             score += 25.0;
         }
-        if self.matches_enhanced_patterns(query_lower, name_lower) {
+        if self.matches_prepared_patterns(query, name_lower) {
             score += 15.0;
         }
         if host_lower.contains(query_lower) {
@@ -631,7 +662,7 @@ impl Database {
         }
 
         if let Some(last_used) = connection.last_used {
-            let hours_since_used = Utc::now().signed_duration_since(last_used).num_hours();
+            let hours_since_used = now.signed_duration_since(last_used).num_hours();
 
             if hours_since_used < 24 {
                 score += 30.0;
@@ -665,16 +696,17 @@ struct GlobalTotals {
 }
 
 /// Inputs to [`Database::calculate_bayesian_score`]. The lowercase name and
-/// host are precomputed by the caller so the sort in
-/// [`Database::deduplicate_and_rank`] doesn't re-lowercase per comparison.
+/// host are precomputed by the caller so scoring doesn't re-lowercase or
+/// re-read the clock per candidate.
 struct ScoreInput<'a> {
     connection: &'a Connection,
-    query_lower: &'a str,
+    query: &'a PreparedQuery,
     name_lower: &'a str,
     host_lower: &'a str,
     aggregate: Option<SessionAggregate>,
     ctx: Option<&'a RankContext>,
     totals: GlobalTotals,
+    now: DateTime<Utc>,
 }
 
 #[cfg(test)]

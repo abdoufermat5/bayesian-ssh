@@ -165,12 +165,13 @@ impl Database {
                 )
             })
         })?;
-        let rows = rows.collect::<rusqlite::Result<Vec<_>>>()?;
-
-        let mut connections = Vec::with_capacity(rows.len());
-        for mut connection in rows {
-            connection.tags = self.tags_for_connection(&connection.id.to_string())?;
-            connections.push(connection);
+        let mut connections = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+        let ids: Vec<String> = connections.iter().map(|c| c.id.to_string()).collect();
+        let tag_map = self.tags_for_connections(&ids)?;
+        for (connection, conn_id) in connections.iter_mut().zip(&ids) {
+            if let Some(tags) = tag_map.get(conn_id) {
+                connection.tags = tags.clone();
+            }
         }
         Ok(connections)
     }
