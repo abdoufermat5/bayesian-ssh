@@ -105,3 +105,107 @@ fn tcp_connections_are_refused_where_the_kernel_can() {
     let out = jail(&[], &probe);
     assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "refused");
 }
+
+#[test]
+fn rejects_invalid_read_paths() {
+    for bad in ["relative/dir", "./local", "/var/../etc", "/", "//", "/."] {
+        let out = jail(&["--read", bad], "echo should-not-run");
+        assert_eq!(
+            out.status.code(),
+            Some(2),
+            "expected exit 2 for --read {bad:?}, got {:?} (stderr: {})",
+            out.status.code(),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(out.stdout.is_empty(), "command ran for --read {bad:?}");
+    }
+}
+
+#[test]
+fn clears_parent_environment_and_sets_allowlist() {
+    if !landlock_works() {
+        return;
+    }
+    let out = Command::new(env!("CARGO_BIN_EXE_bssh-jail"))
+        .env("BSSH_TEST_SECRET", "super-secret-value")
+        .env("AWS_SECRET_ACCESS_KEY", "fake-aws-secret")
+        .args([
+            "--",
+            "printf '%s|%s|%s|%s|%s' \"$BSSH_TEST_SECRET\" \"$AWS_SECRET_ACCESS_KEY\" \"$PATH\" \"$HOME\" \"$LC_ALL\"",
+        ])
+        .output()
+        .expect("run bssh-jail");
+    assert!(out.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        "||/usr/bin:/bin|/nonexistent|C"
+    );
+}
+
+#[test]
+fn prevents_path_hijacking() {
+    use std::os::unix::fs::PermissionsExt;
+
+    if !landlock_works() {
+        return;
+    }
+    let dir = tempfile::tempdir().expect("tempdir");
+    let fake_sh = dir.path().join("sh");
+    std::fs::write(&fake_sh, "#!/bin/sh\necho HIJACKED_SH\n").unwrap();
+    std::fs::set_permissions(&fake_sh, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let fake_echo = dir.path().join("echo");
+    std::fs::write(&fake_echo, "#!/bin/sh\n/bin/echo HIJACKED_ECHO\n").unwrap();
+    std::fs::set_permissions(&fake_echo, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let hijacked_path = format!("{}:/usr/bin:/bin", dir.path().display());
+    let out = Command::new(env!("CARGO_BIN_EXE_bssh-jail"))
+        .env("PATH", hijacked_path)
+        .args(["--read", dir.path().to_str().unwrap(), "--", "echo ok"])
+        .output()
+        .expect("run bssh-jail");
+    assert!(out.status.success());
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "ok");
+}
+
+#[test]
+fn extra_read_does_not_grant_execute() {
+    use std::os::unix::fs::PermissionsExt;
+
+    if !landlock_works() {
+        return;
+    }
+    let dir = tempfile::tempdir().expect("tempdir");
+    let script = dir.path().join("run.sh");
+    std::fs::write(&script, "#!/bin/sh\necho ran\n").unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let cmd = format!(
+        "cat '{}' >/dev/null && echo readable; '{}' 2>/dev/null && echo executed || echo noexec",
+        script.display(),
+        script.display()
+    );
+    let out = jail(&["--read", dir.path().to_str().unwrap()], &cmd);
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "readable\nnoexec\n");
+}
+
+#[test]
+fn closes_inherited_non_stdio_fds() {
+    if !landlock_works() {
+        return;
+    }
+    let dir = tempfile::tempdir().expect("tempdir");
+    let secret = dir.path().join("secret.txt");
+    std::fs::write(&secret, "leaked-fd-content").unwrap();
+
+    let out = Command::new("/bin/sh")
+        .arg("-c")
+        .arg("exec 3<\"$1\"; exec \"$2\" -- 'cat <&3 2>/dev/null || echo closed'")
+        .arg("--")
+        .arg(&secret)
+        .arg(env!("CARGO_BIN_EXE_bssh-jail"))
+        .output()
+        .expect("run sh -> bssh-jail");
+    assert!(out.status.success());
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "closed");
+}
