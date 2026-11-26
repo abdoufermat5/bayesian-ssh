@@ -122,6 +122,11 @@ pub fn key_wrap_signing_bytes(key: &WrappedKey) -> Vec<u8> {
 
 /// Bytes a device signs to answer an auth challenge:
 /// `AUTH ‖ challenge_id ‖ device_id ‖ challenge_nonce`.
+///
+/// Security note: this v1 layout does not include the server origin/URL.
+/// Clients rely on per-server device keypairs (and per-server `device_id`s)
+/// to prevent cross-server replay; any future protocol v2 that shares device
+/// keypairs across origins should bind the server origin in the signed bytes.
 pub fn auth_signing_bytes(challenge_id: Uuid, device_id: Uuid, nonce: &PublicKey32) -> Vec<u8> {
     let mut b = Vec::with_capacity(domain::AUTH.len() + 16 * 2 + 32);
     b.extend_from_slice(domain::AUTH);
@@ -150,7 +155,8 @@ fn audit_fixed_fields(b: &mut Vec<u8>, event: &AuditEvent) {
 }
 
 fn push_str(b: &mut Vec<u8>, s: &str) {
-    b.extend_from_slice(&(s.len() as u32).to_be_bytes());
+    let len = u32::try_from(s.len()).expect("string length exceeds u32::MAX");
+    b.extend_from_slice(&len.to_be_bytes());
     b.extend_from_slice(s.as_bytes());
 }
 
@@ -263,7 +269,12 @@ pub fn relay_signing_bytes(m: &RelayMessage) -> Vec<u8> {
     let mut b = relay_aad(m);
     b.extend_from_slice(m.nonce.as_bytes());
     b.extend_from_slice(&sha256(&m.ciphertext.0));
-    let mut r = Vec::with_capacity(m.recipients.len() * 92);
+    let cap = m
+        .recipients
+        .len()
+        .checked_mul(92)
+        .expect("relay recipient count overflow");
+    let mut r = Vec::with_capacity(cap);
     for rec in &m.recipients {
         r.extend_from_slice(rec.device_id.as_bytes());
         r.extend_from_slice(rec.ephemeral_public.as_bytes());
@@ -516,5 +527,102 @@ mod tests {
         v.ciphertext = Bytes(b"cx".to_vec());
         assert_ne!(base, relay_signing_bytes(&v));
         assert_ne!(relay_aad(&m), relay_wrap_aad(id(1), id(5)));
+    }
+
+    #[test]
+    fn key_wrap_aad_and_signing_bytes_bind_all_fields() {
+        let aad = key_wrap_aad(id(1), 4, id(2), id(3));
+        assert_eq!(aad.len(), domain::KEY_WRAP.len() + 16 * 3 + 4);
+        assert!(aad.starts_with(domain::KEY_WRAP));
+        assert_ne!(aad, key_wrap_aad(id(9), 4, id(2), id(3)));
+        assert_ne!(aad, key_wrap_aad(id(1), 5, id(2), id(3)));
+        assert_ne!(aad, key_wrap_aad(id(1), 4, id(9), id(3)));
+        assert_ne!(aad, key_wrap_aad(id(1), 4, id(2), id(9)));
+
+        let key = WrappedKey {
+            team_id: id(1),
+            key_version: 4,
+            recipient_device_id: id(2),
+            wrapping_device_id: id(3),
+            ephemeral_public: Fixed([10; 32]),
+            nonce: Fixed([11; 12]),
+            ciphertext: Bytes(b"wrapped-team-key".to_vec()),
+            signature: Fixed::ZERO,
+        };
+        let base = key_wrap_signing_bytes(&key);
+        assert_eq!(base.len(), aad.len() + 32 + 12 + 32);
+        assert!(base.starts_with(&aad));
+
+        let mut other = key.clone();
+        other.ephemeral_public = Fixed([12; 32]);
+        assert_ne!(base, key_wrap_signing_bytes(&other));
+
+        let mut other = key.clone();
+        other.nonce = Fixed([13; 12]);
+        assert_ne!(base, key_wrap_signing_bytes(&other));
+
+        let mut other = key.clone();
+        other.ciphertext = Bytes(b"tampered".to_vec());
+        assert_ne!(base, key_wrap_signing_bytes(&other));
+    }
+
+    #[test]
+    fn auth_signing_bytes_bind_challenge_device_and_nonce() {
+        let nonce = Fixed([0xab; 32]);
+        let base = auth_signing_bytes(id(1), id(2), &nonce);
+        assert_eq!(base.len(), domain::AUTH.len() + 16 + 16 + 32);
+        assert!(base.starts_with(domain::AUTH));
+        assert_ne!(base, auth_signing_bytes(id(9), id(2), &nonce));
+        assert_ne!(base, auth_signing_bytes(id(1), id(9), &nonce));
+        assert_ne!(base, auth_signing_bytes(id(1), id(2), &Fixed([0xcd; 32])));
+    }
+
+    #[test]
+    fn audit_detail_aad_binds_event_and_key_version() {
+        let ev = sample_event();
+        let base = audit_detail_aad(&ev, 2);
+        assert_eq!(base.len(), domain::AUDIT_DETAIL.len() + 16 * 3 + 1 + 4);
+        assert!(base.starts_with(domain::AUDIT_DETAIL));
+        assert_ne!(base, audit_detail_aad(&ev, 3));
+
+        let mut other = ev.clone();
+        other.kind = AuditKind::AiCall;
+        assert_ne!(base, audit_detail_aad(&other, 2));
+
+        let mut other = ev.clone();
+        other.event_id = id(9);
+        assert_ne!(base, audit_detail_aad(&other, 2));
+    }
+
+    #[test]
+    fn policy_signing_bytes_bind_every_field() {
+        let policy = SignedAgentPolicy {
+            agent_device_id: id(2),
+            signer_device_id: id(3),
+            version: 1,
+            signed_at: Utc.timestamp_millis_opt(1_700_000_000_000).unwrap(),
+            name: "deployer".into(),
+            policy_json: r#"{"allow":["status"]}"#.into(),
+            signature: Fixed::ZERO,
+        };
+        let base = policy_signing_bytes(id(1), &policy);
+        assert!(base.starts_with(domain::POLICY));
+        assert_ne!(base, policy_signing_bytes(id(9), &policy));
+
+        let mut other = policy.clone();
+        other.version = 2;
+        assert_ne!(base, policy_signing_bytes(id(1), &other));
+
+        let mut other = policy.clone();
+        other.name = "observer".into();
+        assert_ne!(base, policy_signing_bytes(id(1), &other));
+
+        let mut other = policy.clone();
+        other.policy_json = r#"{"allow":["*"]}"#.into();
+        assert_ne!(base, policy_signing_bytes(id(1), &other));
+
+        let mut other = policy.clone();
+        other.signed_at += chrono::Duration::seconds(1);
+        assert_ne!(base, policy_signing_bytes(id(1), &other));
     }
 }

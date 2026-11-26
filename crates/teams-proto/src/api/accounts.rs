@@ -3,6 +3,7 @@
 use crate::wire::{Fixed, PublicKey32, Signature64};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use uuid::Uuid;
 
 /// A device's public keys. Private keys never leave the device.
@@ -17,7 +18,7 @@ pub struct NewDevice {
 }
 
 /// `POST /v1/accounts` (unauthenticated).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreateAccountRequest {
     pub email: String,
     pub device: NewDevice,
@@ -29,6 +30,23 @@ pub struct CreateAccountRequest {
     /// answered `EmailVerificationRequired`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub email_code: Option<String>,
+}
+
+impl fmt::Debug for CreateAccountRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CreateAccountRequest")
+            .field("email", &self.email)
+            .field("device", &self.device)
+            .field(
+                "invite_token",
+                &self.invite_token.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field(
+                "email_code",
+                &self.email_code.as_ref().map(|_| "[REDACTED]"),
+            )
+            .finish()
+    }
 }
 
 /// `POST /v1/accounts/email-code` (unauthenticated): mail a one-time code to
@@ -113,8 +131,48 @@ pub struct TokenRequest {
 }
 
 /// Opaque bearer token, valid for one hour.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TokenResponse {
     pub access_token: String,
     pub expires_at: DateTime<Utc>,
+}
+
+impl fmt::Debug for TokenResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TokenResponse")
+            .field("access_token", &"[REDACTED]")
+            .field("expires_at", &self.expires_at)
+            .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn debug_redacts_account_secrets() {
+        let req = CreateAccountRequest {
+            email: "alice@example.com".into(),
+            device: NewDevice {
+                name: "laptop".into(),
+                x25519_public: Fixed::ZERO,
+                ed25519_public: Fixed::ZERO,
+            },
+            invite_token: Some("secret-invite-123".into()),
+            email_code: Some("654321".into()),
+        };
+        let dbg = format!("{req:?}");
+        assert!(!dbg.contains("secret-invite-123"));
+        assert!(!dbg.contains("654321"));
+        assert!(dbg.contains("[REDACTED]"));
+
+        let tok = TokenResponse {
+            access_token: "bearer-secret-xyz".into(),
+            expires_at: Utc::now(),
+        };
+        let dbg = format!("{tok:?}");
+        assert!(!dbg.contains("bearer-secret-xyz"));
+        assert!(dbg.contains("[REDACTED]"));
+    }
 }

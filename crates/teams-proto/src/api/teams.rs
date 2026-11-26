@@ -4,6 +4,7 @@ use super::accounts::{DeviceInfo, NewDevice};
 use super::keys::WrappedKey;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -91,7 +92,7 @@ pub struct CreateInviteRequest {
 /// `DELETE /v1/teams/{team_id}/invites/{invite_id}` (admin) revokes a pending
 /// invite: no body, 204, and its seat is free again. An accepted or unknown
 /// invite is `NotFound`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Invite {
     pub invite_id: Uuid,
     pub team_id: Uuid,
@@ -104,11 +105,33 @@ pub struct Invite {
     pub emailed: bool,
 }
 
+impl fmt::Debug for Invite {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Invite")
+            .field("invite_id", &self.invite_id)
+            .field("team_id", &self.team_id)
+            .field("email", &self.email)
+            .field("role", &self.role)
+            .field("expires_at", &self.expires_at)
+            .field("token", &self.token.as_ref().map(|_| "[REDACTED]"))
+            .field("emailed", &self.emailed)
+            .finish()
+    }
+}
+
 /// `POST /v1/invites/accept`. The caller's device joins with no team key
 /// yet; an admin device then wraps the current key to it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AcceptInviteRequest {
     pub token: String,
+}
+
+impl fmt::Debug for AcceptInviteRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AcceptInviteRequest")
+            .field("token", &"[REDACTED]")
+            .finish()
+    }
 }
 
 /// `DELETE /v1/teams/{team_id}/members/{member_id}` (admin) has no body,
@@ -144,4 +167,32 @@ pub struct AgentInfo {
     pub name: String,
     pub device: DeviceInfo,
     pub created_at: DateTime<Utc>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn debug_redacts_invite_tokens() {
+        let inv = Invite {
+            invite_id: Uuid::nil(),
+            team_id: Uuid::nil(),
+            email: "bob@example.com".into(),
+            role: Role::Member,
+            expires_at: Utc::now(),
+            token: Some("invite-secret-999".into()),
+            emailed: false,
+        };
+        let dbg = format!("{inv:?}");
+        assert!(!dbg.contains("invite-secret-999"));
+        assert!(dbg.contains("[REDACTED]"));
+
+        let accept = AcceptInviteRequest {
+            token: "accept-secret-888".into(),
+        };
+        let dbg = format!("{accept:?}");
+        assert!(!dbg.contains("accept-secret-888"));
+        assert!(dbg.contains("[REDACTED]"));
+    }
 }
