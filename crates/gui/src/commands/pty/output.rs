@@ -181,17 +181,15 @@ impl OutputSink {
 
     /// Hand one chunk to the attached channel. No sink means the chunk only
     /// lives in the replay buffer.
-    pub(super) fn send(&self, data: &str) {
+    pub(super) fn send(&self, data: String) {
         // The channel mutex is held across the send so a concurrent `set`/
         // `clear` cannot make us drop the channel that replaced this one.
         let mut channel = self.lock_channel();
         let Some(sink) = channel.as_ref() else {
             return;
         };
-        let chunk = PtyChunk {
-            data: data.to_string(),
-            bytes: data.len(),
-        };
+        let bytes = data.len();
+        let chunk = PtyChunk { data, bytes };
         // Count before sending: an ack for this chunk may arrive while the
         // send is still in flight, and it must not be lost under the counter.
         self.0.flow.record(chunk.bytes);

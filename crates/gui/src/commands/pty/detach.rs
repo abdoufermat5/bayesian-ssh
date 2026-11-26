@@ -10,11 +10,10 @@ use tauri::ipc::Channel;
 
 #[tauri::command]
 pub fn seal_session_ui(state: State<'_, PtyState>, session_id: String) -> Result<(), CommandError> {
-    let sessions = state.lock_sessions();
-    let session = sessions
-        .get(&session_id)
+    let session = state
+        .get_session(&session_id)
         .ok_or_else(|| format!("PTY session '{session_id}' not found"))?;
-    seal_replay_offset(session);
+    seal_replay_offset(&session);
     Ok(())
 }
 
@@ -24,9 +23,8 @@ pub fn detach_pty(
     session_id: String,
     snapshot: Option<String>,
 ) -> Result<(), CommandError> {
-    let sessions = state.lock_sessions();
-    let session = sessions
-        .get(&session_id)
+    let session = state
+        .get_session(&session_id)
         .ok_or_else(|| format!("PTY session '{}' not found", session_id))?;
 
     if session.detached.load(Ordering::SeqCst) {
@@ -37,7 +35,7 @@ pub fn detach_pty(
     session.popout_window.set(None);
     // Nobody listens while detached: output only accrues in the replay buffer,
     // seeded with what the frontend had on screen.
-    let _ = switch_sink_off(session, snapshot);
+    let _ = switch_sink_off(&session, snapshot);
     Ok(())
 }
 
@@ -50,9 +48,8 @@ pub fn attach_pty_output(
     session_id: String,
     output: Channel<PtyChunk>,
 ) -> Result<ReattachSessionInfo, CommandError> {
-    let sessions = state.lock_sessions();
-    let session = sessions
-        .get(&session_id)
+    let session = state
+        .get_session(&session_id)
         .ok_or_else(|| format!("PTY session '{session_id}' not found"))?;
 
     if session.popout_window.get().is_some() {
@@ -62,7 +59,7 @@ pub fn attach_pty_output(
         return Err(format!("PTY session '{session_id}' is detached").into());
     }
 
-    let buffered_output = switch_sink_on(session, output);
+    let buffered_output = switch_sink_on(&session, output);
 
     Ok(ReattachSessionInfo {
         session_id: session_id.clone(),
@@ -79,7 +76,7 @@ pub fn ack_pty(
     session_id: String,
     bytes: usize,
 ) -> Result<(), CommandError> {
-    if let Some(session) = state.lock_sessions().get(&session_id) {
+    if let Some(session) = state.get_session(&session_id) {
         session.sink.ack(bytes);
     }
     Ok(())
@@ -108,9 +105,8 @@ pub fn reattach_pty(
     session_id: String,
     output: Channel<PtyChunk>,
 ) -> Result<ReattachSessionInfo, CommandError> {
-    let sessions = state.lock_sessions();
-    let session = sessions
-        .get(&session_id)
+    let session = state
+        .get_session(&session_id)
         .ok_or_else(|| format!("PTY session '{}' not found", session_id))?;
 
     if !session.detached.load(Ordering::SeqCst) {
@@ -119,7 +115,7 @@ pub fn reattach_pty(
 
     session.popout_window.set(None);
     session.detached.store(false, Ordering::SeqCst);
-    let buffered_output = switch_sink_on(session, output);
+    let buffered_output = switch_sink_on(&session, output);
 
     Ok(ReattachSessionInfo {
         session_id: session_id.clone(),

@@ -52,25 +52,28 @@ pub(super) fn finalize_db_session(
 /// its exit in the history database, then emit `history-updated` so the UI
 /// reloads history only once the end is persisted. Blocks until the child
 /// exits, so callers run it off the main thread.
-pub(super) fn reap_session(session: PtySession, app: &AppHandle) {
-    let PtySession {
-        mut child,
-        db_session_id,
-        input,
-        master,
-        recorder,
-        ..
-    } = session;
+pub(super) fn reap_session(session: Arc<PtySession>, app: &AppHandle) {
     // Release our PTY ends first so the child sees the hangup before we block
     // (closing the input queue stops the writer thread, which drops the writer).
-    drop(input);
-    drop(master);
-    let exit_code = child
+    let _ = session
+        .input
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .take();
+    let _ = session
+        .master
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .take();
+    let exit_code = session
+        .child
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
         .wait()
         .map(|status| status.exit_code() as i32)
         .unwrap_or(-1);
-    if db_session_id.is_some() || recorder.is_some() {
-        finalize_db_session(db_session_id, exit_code, recorder);
+    if session.db_session_id.is_some() || session.recorder.is_some() {
+        finalize_db_session(session.db_session_id, exit_code, session.recorder.clone());
         let _ = app.emit("history-updated", ());
     }
 }
@@ -91,7 +94,7 @@ fn close_pty_inner(
         sessions.remove(&session_id)
     };
 
-    let mut session = session?;
+    let session = session?;
     session.cancelled.store(true, Ordering::SeqCst);
     // Release a reader parked on flow control: the flag it re-checks is
     // set, and clearing the sink notifies it right away instead of after
@@ -105,7 +108,11 @@ fn close_pty_inner(
         let _ = window.close();
     }
 
-    let _ = session.child.kill();
+    let _ = session
+        .child
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .kill();
     let reap_app = app.clone();
     let handle = std::thread::spawn(move || reap_session(session, &reap_app));
 

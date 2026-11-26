@@ -229,6 +229,7 @@ impl AiHub {
                     fx.changed = true;
                 }
                 ServerMsg::Event { event } => {
+                    let mut summary_changed = false;
                     match &event {
                         AiEvent::RunStarted {
                             client,
@@ -239,29 +240,38 @@ impl AiHub {
                             run.client = client.clone();
                             run.policy = policy.clone();
                             run.on_behalf_of = Some(on_behalf_of.clone());
+                            summary_changed = true;
                         }
                         AiEvent::Call { decision, .. } => {
                             run.calls += 1;
                             if matches!(decision, Decision::Deny { .. }) {
                                 run.denied += 1;
                             }
+                            summary_changed = true;
                         }
                         AiEvent::Approval { request_id, .. } => {
+                            let before = run.pending.len();
                             run.pending.retain(|r| &r.request_id != request_id);
+                            if run.pending.len() != before {
+                                summary_changed = true;
+                            }
                         }
                         AiEvent::Paused { reason, .. } => {
                             run.paused = true;
                             run.pause_reason = Some(reason.clone());
+                            summary_changed = true;
                         }
                         AiEvent::Resumed { .. } => {
                             run.paused = false;
                             run.pause_reason = None;
+                            summary_changed = true;
                         }
                         AiEvent::RunEnded { reason, .. } => {
                             run.ended = Some(reason.clone());
                             run.pending.clear();
+                            summary_changed = true;
                         }
-                        _ => {}
+                        AiEvent::Result { .. } | AiEvent::Change { .. } => {}
                     }
                     let stored = StoredEvent {
                         seq: run.next_seq,
@@ -274,7 +284,9 @@ impl AiHub {
                         run.events.pop_front();
                     }
                     fx.events.push((run_id.to_string(), stored));
-                    fx.changed = true;
+                    if summary_changed {
+                        fx.changed = true;
+                    }
                 }
                 ServerMsg::Grants { grants } => {
                     run.grants = grants;

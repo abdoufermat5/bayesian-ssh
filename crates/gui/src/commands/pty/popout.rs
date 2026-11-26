@@ -68,15 +68,14 @@ pub fn open_terminal_window(
     }
 
     let previous_sink = {
-        let sessions = state.lock_sessions();
-        let session = sessions
-            .get(&session_id)
+        let session = state
+            .get_session(&session_id)
             .ok_or_else(|| format!("PTY session '{session_id}' not found"))?;
         // The new window creates its own channel when it claims the session;
         // until then nobody listens, so stop delivering to this window.
         session.popout_window.set(Some(label.clone()));
         session.detached.store(false, Ordering::SeqCst);
-        switch_sink_off(session, snapshot)
+        switch_sink_off(&session, snapshot)
     };
 
     let window_title = format!("{title} — Bayesian SSH");
@@ -95,7 +94,7 @@ pub fn open_terminal_window(
     if let Err(e) = built {
         // No window will ever claim or dock this session: release the popout
         // binding and hand output back to the window that still displays it.
-        if let Some(session) = state.lock_sessions().get(&session_id)
+        if let Some(session) = state.get_session(&session_id)
             && session.popout_window.get().as_deref() == Some(label.as_str())
         {
             session.popout_window.set(None);
@@ -116,9 +115,8 @@ pub fn claim_popout_session(
     window_label: String,
     output: Channel<PtyChunk>,
 ) -> Result<ReattachSessionInfo, CommandError> {
-    let sessions = state.lock_sessions();
-    let session = sessions
-        .get(&session_id)
+    let session = state
+        .get_session(&session_id)
         .ok_or_else(|| format!("PTY session '{session_id}' not found"))?;
 
     match session.popout_window.get() {
@@ -130,7 +128,7 @@ pub fn claim_popout_session(
     }
 
     session.detached.store(false, Ordering::SeqCst);
-    let buffered_output = switch_sink_on(session, output);
+    let buffered_output = switch_sink_on(&session, output);
 
     Ok(ReattachSessionInfo {
         session_id: session_id.clone(),
@@ -168,9 +166,8 @@ pub fn dock_popout_session(
     snapshot: Option<String>,
 ) -> Result<(), CommandError> {
     let info = {
-        let sessions = state.lock_sessions();
-        let session = sessions
-            .get(&session_id)
+        let session = state
+            .get_session(&session_id)
             .ok_or_else(|| format!("PTY session '{session_id}' not found"))?;
 
         if session.popout_window.get().as_deref() != Some(window_label.as_str()) {
@@ -182,7 +179,7 @@ pub fn dock_popout_session(
         // The main window re-attaches with `attach_pty_output` once it sees
         // `session-docked`; until then output only accrues in the replay
         // buffer, seeded with what the pop-out window had on screen.
-        let _ = switch_sink_off(session, snapshot);
+        let _ = switch_sink_off(&session, snapshot);
 
         DockedSessionInfo {
             session_id: session_id.clone(),

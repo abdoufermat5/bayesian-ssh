@@ -2,7 +2,7 @@
 
 use super::lifecycle::reap_session;
 use super::output::{OutputSink, PtyChunk};
-use super::replay::append_to_output_buffer;
+use super::replay::{ReplayBuffer, append_to_output_buffer};
 use crate::commands::CommandError;
 use crate::commands::{MAIN_WINDOW_LABEL, PopoutOwner, PtySession, PtyState, open_db_and_config};
 use bayesian_ssh::models::Session;
@@ -153,7 +153,7 @@ pub fn spawn_pty(
     let cancelled = Arc::new(AtomicBool::new(false));
     let cancelled_clone = Arc::clone(&cancelled);
     let detached = Arc::new(AtomicBool::new(false));
-    let output_buffer = Arc::new(Mutex::new(String::new()));
+    let output_buffer = Arc::new(Mutex::new(ReplayBuffer::new()));
     let output_buffer_clone = Arc::clone(&output_buffer);
     let replay_offset = Arc::new(Mutex::new(0));
     let replay_offset_clone = Arc::clone(&replay_offset);
@@ -167,10 +167,10 @@ pub fn spawn_pty(
     let output_gate = Arc::new(Mutex::new(()));
     let output_gate_clone = Arc::clone(&output_gate);
 
-    let session = PtySession {
-        input,
-        child,
-        master: Arc::new(Mutex::new(spawned.master)),
+    let session = Arc::new(PtySession {
+        input: Mutex::new(Some(input)),
+        child: Mutex::new(child),
+        master: Arc::new(Mutex::new(Some(spawned.master))),
         cancelled,
         db_session_id,
         connection_name: connection.name.clone(),
@@ -181,7 +181,7 @@ pub fn spawn_pty(
         sink,
         popout_window,
         recorder,
-    };
+    });
 
     // Store in global state — the master keeps the PTY fd alive for the
     // session duration. Re-check the id under the lock: commands run
@@ -194,9 +194,12 @@ pub fn spawn_pty(
             }
             Entry::Occupied(_) => {
                 drop(sessions);
-                let mut session = session;
                 session.cancelled.store(true, Ordering::SeqCst);
-                let _ = session.child.kill();
+                let _ = session
+                    .child
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .kill();
                 let app = app.clone();
                 std::thread::spawn(move || reap_session(session, &app));
                 return Err(format!("PTY session '{session_id}' already exists").into());
@@ -227,7 +230,7 @@ pub fn spawn_pty(
                     .lock()
                     .unwrap_or_else(|poisoned| poisoned.into_inner());
                 append_to_output_buffer(&output_buffer_clone, &replay_offset_clone, &str_data);
-                sink_clone.send(&str_data);
+                sink_clone.send(str_data);
             }
 
             // The frontend is behind: park until it acks down to the low-water
@@ -243,7 +246,7 @@ pub fn spawn_pty(
             // its UI on pty-exit and never calls close_pty, so release the
             // PTY, the replay buffer and the child process here. The pointer
             // check guards against removing a newer session reusing the id.
-            let mut finished = {
+            let finished = {
                 let mut sessions = sessions_map
                     .lock()
                     .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -259,9 +262,11 @@ pub fn spawn_pty(
 
             // The read loop ended, so the child has exited or is about to;
             // `reap_session` would wait for it anyway and the status is cached.
-            if let Some(session) = finished.as_mut() {
+            if let Some(session) = finished.as_ref() {
                 let exit_code = session
                     .child
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
                     .wait()
                     .map(|status| status.exit_code() as i32)
                     .unwrap_or(-1);
@@ -300,11 +305,17 @@ pub fn write_pty(
     session_id: String,
     data: String,
 ) -> Result<(), CommandError> {
-    let sessions = state.lock_sessions();
-    let session = sessions
-        .get(&session_id)
+    let session = state
+        .get_session(&session_id)
         .ok_or_else(|| format!("PTY session '{}' not found", session_id))?;
-    session.input.try_send(data).map_err(|e| match e {
+    let input = session
+        .input
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let Some(tx) = input.as_ref() else {
+        return Err(format!("PTY session '{session_id}' is no longer writable").into());
+    };
+    tx.try_send(data).map_err(|e| match e {
         mpsc::TrySendError::Full(_) => {
             CommandError::from(format!("PTY session '{session_id}' input buffer is full"))
         }
@@ -323,15 +334,17 @@ pub fn resize_pty(
     cols: u16,
     rows: u16,
 ) -> Result<(), CommandError> {
-    let sessions = state.lock_sessions();
-    let session = sessions
-        .get(&session_id)
+    let session = state
+        .get_session(&session_id)
         .ok_or_else(|| format!("PTY session '{}' not found", session_id))?;
     let master = session
         .master
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    bayesian_ssh::services::pty::resize(master.as_ref(), cols, rows)?;
+    let Some(master_pty) = master.as_ref() else {
+        return Ok(());
+    };
+    bayesian_ssh::services::pty::resize(master_pty.as_ref(), cols, rows)?;
     drop(master);
     if let Some(rec) = &session.recorder
         && let Ok(mut g) = rec.lock()
@@ -348,19 +361,19 @@ pub fn resize_pty(
 /// is left alone.
 #[tauri::command]
 pub fn redraw_pty(state: State<'_, PtyState>, session_id: String) -> Result<(), CommandError> {
-    let master = {
-        let sessions = state.lock_sessions();
-        let session = sessions
-            .get(&session_id)
-            .ok_or_else(|| format!("PTY session '{session_id}' not found"))?;
-        Arc::clone(&session.master)
-    };
+    let session = state
+        .get_session(&session_id)
+        .ok_or_else(|| format!("PTY session '{session_id}' not found"))?;
+    let master = Arc::clone(&session.master);
 
     let size = {
         let master = master
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        MasterPty::get_size(master.as_ref())?
+        let Some(master_pty) = master.as_ref() else {
+            return Ok(());
+        };
+        MasterPty::get_size(master_pty.as_ref())?
     };
 
     // One row less is a real size change, so the application gets SIGWINCH and
@@ -369,11 +382,13 @@ pub fn redraw_pty(state: State<'_, PtyState>, session_id: String) -> Result<(), 
         let master = master
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        bayesian_ssh::services::pty::resize(
-            master.as_ref(),
-            size.cols,
-            size.rows.saturating_sub(1).max(1),
-        )?;
+        if let Some(master_pty) = master.as_ref() {
+            bayesian_ssh::services::pty::resize(
+                master_pty.as_ref(),
+                size.cols,
+                size.rows.saturating_sub(1).max(1),
+            )?;
+        }
     }
 
     std::thread::spawn(move || {
@@ -381,7 +396,9 @@ pub fn redraw_pty(state: State<'_, PtyState>, session_id: String) -> Result<(), 
         let master = master
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let _ = bayesian_ssh::services::pty::resize(master.as_ref(), size.cols, size.rows);
+        if let Some(master_pty) = master.as_ref() {
+            let _ = bayesian_ssh::services::pty::resize(master_pty.as_ref(), size.cols, size.rows);
+        }
     });
 
     Ok(())

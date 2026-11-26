@@ -2,44 +2,106 @@
 
 use super::output::PtyChunk;
 use crate::commands::{MAX_DETACHED_BUFFER_BYTES, PtySession, REPLAY_TRIM_SLACK_BYTES};
+use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
 
-/// Round a byte index down to the nearest UTF-8 char boundary so `String`
-/// slicing never panics on multi-byte characters.
-pub(super) fn char_boundary_at_or_before(s: &str, mut index: usize) -> usize {
-    if index >= s.len() {
-        return s.len();
+/// Chunked ring buffer for detached PTY replay.
+///
+/// Pushing a chunk and trimming whole chunks from the front are both O(1),
+/// avoiding O(n) memmoves across the 512 KiB replay window on every trim.
+#[derive(Default)]
+pub struct ReplayBuffer {
+    chunks: VecDeque<String>,
+    total_bytes: usize,
+}
+
+impl ReplayBuffer {
+    pub fn new() -> Self {
+        Self::default()
     }
-    while index > 0 && !s.is_char_boundary(index) {
-        index -= 1;
+
+    pub fn len(&self) -> usize {
+        self.total_bytes
     }
-    index
+
+    #[cfg(test)]
+    pub fn is_empty(&self) -> bool {
+        self.total_bytes == 0
+    }
+
+    /// Push a chunk and trim from the front once the buffer exceeds
+    /// `MAX_DETACHED_BUFFER_BYTES + REPLAY_TRIM_SLACK_BYTES`.
+    /// Returns the number of bytes dropped from the front.
+    pub fn push(&mut self, data: &str) -> usize {
+        if data.is_empty() {
+            return 0;
+        }
+        self.total_bytes += data.len();
+        self.chunks.push_back(data.to_string());
+
+        let mut dropped = 0usize;
+        if self.total_bytes > MAX_DETACHED_BUFFER_BYTES + REPLAY_TRIM_SLACK_BYTES {
+            while self.total_bytes > MAX_DETACHED_BUFFER_BYTES {
+                if self.chunks.len() > 1 {
+                    let Some(front) = self.chunks.pop_front() else {
+                        break;
+                    };
+                    let front_len = front.len();
+                    self.total_bytes -= front_len;
+                    dropped += front_len;
+                } else if let Some(front) = self.chunks.front_mut() {
+                    // Single chunk exceeds MAX_DETACHED_BUFFER_BYTES: split at
+                    // a valid UTF-8 char boundary so slicing never panics.
+                    let overflow = front.len() - MAX_DETACHED_BUFFER_BYTES;
+                    let mut cut = overflow;
+                    while cut < front.len() && !front.is_char_boundary(cut) {
+                        cut += 1;
+                    }
+                    front.drain(..cut);
+                    self.total_bytes -= cut;
+                    dropped += cut;
+                    break;
+                } else {
+                    break;
+                }
+            }
+        }
+        dropped
+    }
+
+    /// Replace all buffered content with a single snapshot string.
+    pub fn replace(&mut self, snapshot: String) {
+        self.chunks.clear();
+        self.total_bytes = snapshot.len();
+        if !snapshot.is_empty() {
+            self.chunks.push_back(snapshot);
+        }
+    }
+
+    /// Concatenate all chunks into a contiguous replay string.
+    pub fn flatten(&self) -> String {
+        let mut out = String::with_capacity(self.total_bytes);
+        for chunk in &self.chunks {
+            out.push_str(chunk);
+        }
+        out
+    }
 }
 
 pub(super) fn append_to_output_buffer(
-    buffer: &Arc<Mutex<String>>,
+    buffer: &Arc<Mutex<ReplayBuffer>>,
     replay_offset: &Arc<Mutex<usize>>,
     data: &str,
 ) {
     let Ok(mut buffer) = buffer.lock() else {
         return;
     };
-    buffer.push_str(data);
-    // Trim in REPLAY_TRIM_SLACK_BYTES steps: draining the front of a 512 KiB
-    // string on every chunk once the buffer is full is an O(n) memmove per
-    // output event.
-    if buffer.len() > MAX_DETACHED_BUFFER_BYTES + REPLAY_TRIM_SLACK_BYTES {
-        // `String::drain` panics if the range cuts a multi-byte UTF-8 char —
-        // clamp to a char boundary first. Without this, a session printing
-        // non-ASCII output would panic the reader thread and freeze the
-        // session silently.
-        let overflow = buffer.len() - MAX_DETACHED_BUFFER_BYTES;
-        let cut = char_boundary_at_or_before(&buffer, overflow);
-        buffer.drain(..cut);
-        if let Ok(mut offset) = replay_offset.lock() {
-            *offset = offset.saturating_sub(cut);
-        }
+    let dropped = buffer.push(data);
+    if dropped > 0
+        && let Ok(mut offset) = replay_offset.lock()
+    {
+        *offset = offset.saturating_sub(dropped);
     }
 }
 
@@ -47,7 +109,7 @@ pub(super) fn take_full_replay(session: &PtySession) -> String {
     let buffer = session
         .output_buffer
         .lock()
-        .map(|b| b.clone())
+        .map(|b| b.flatten())
         .unwrap_or_default();
     if let Ok(mut offset) = session.replay_offset.lock() {
         *offset = buffer.len();
@@ -87,7 +149,7 @@ pub(super) fn apply_snapshot(session: &PtySession, snapshot: Option<String>) {
     };
     let capped = truncate_snapshot_tail(snapshot, MAX_DETACHED_BUFFER_BYTES);
     if let Ok(mut buffer) = session.output_buffer.lock() {
-        *buffer = capped;
+        buffer.replace(capped);
     }
     if let Ok(mut offset) = session.replay_offset.lock() {
         *offset = 0;
@@ -143,5 +205,54 @@ mod tests {
         let oversized = "x".repeat(MAX_DETACHED_BUFFER_BYTES + 1024);
         let capped = truncate_snapshot_tail(oversized, MAX_DETACHED_BUFFER_BYTES);
         assert_eq!(capped.len(), MAX_DETACHED_BUFFER_BYTES);
+    }
+
+    #[test]
+    fn replay_buffer_trims_whole_chunks_in_o1_and_updates_offset() {
+        let buffer = Arc::new(Mutex::new(ReplayBuffer::new()));
+        let offset = Arc::new(Mutex::new(100_000usize));
+
+        // Push 4 KiB chunks so the final push crosses MAX + SLACK and triggers a trim.
+        let chunk = "a".repeat(4096);
+        let count = (MAX_DETACHED_BUFFER_BYTES + REPLAY_TRIM_SLACK_BYTES) / 4096 + 1;
+        for _ in 0..count {
+            append_to_output_buffer(&buffer, &offset, &chunk);
+        }
+
+        let guard = buffer.lock().unwrap();
+        assert!(guard.len() <= MAX_DETACHED_BUFFER_BYTES);
+        assert_eq!(guard.flatten().len(), guard.len());
+        assert!(*offset.lock().unwrap() < 100_000);
+    }
+
+    #[test]
+    fn replay_buffer_splits_single_oversized_utf8_chunk_safely() {
+        let mut buf = ReplayBuffer::new();
+        // '€' is 3 bytes; build a single chunk exceeding MAX + SLACK.
+        let repeats = (MAX_DETACHED_BUFFER_BYTES + REPLAY_TRIM_SLACK_BYTES) / 3 + 10;
+        let big = "€".repeat(repeats);
+        let dropped = buf.push(&big);
+
+        assert!(dropped > 0);
+        assert!(buf.len() <= MAX_DETACHED_BUFFER_BYTES);
+        assert_eq!(buf.len() % 3, 0);
+        assert_eq!(buf.flatten().len(), buf.len());
+    }
+
+    #[test]
+    fn replay_buffer_replace_and_flatten() {
+        let mut buf = ReplayBuffer::new();
+        assert!(buf.is_empty());
+        buf.push("hello ");
+        buf.push("world");
+        assert_eq!(buf.flatten(), "hello world");
+
+        buf.replace("snapshot".to_string());
+        assert_eq!(buf.len(), 8);
+        assert_eq!(buf.flatten(), "snapshot");
+
+        buf.replace(String::new());
+        assert!(buf.is_empty());
+        assert_eq!(buf.flatten(), "");
     }
 }

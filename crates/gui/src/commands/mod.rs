@@ -47,25 +47,90 @@ pub use upload::*;
 
 // State for active PTY sessions
 pub struct PtyState {
-    pub sessions: Arc<Mutex<HashMap<String, PtySession>>>,
+    pub sessions: Arc<Mutex<HashMap<String, Arc<PtySession>>>>,
 }
 
 impl PtyState {
     /// Lock the session map, surviving a poisoned mutex (a panic while the
     /// lock was held must not crash the whole GUI — the lock is only ever
     /// held briefly, so recovering the data is always safe).
-    pub fn lock_sessions(&self) -> std::sync::MutexGuard<'_, HashMap<String, PtySession>> {
+    pub fn lock_sessions(&self) -> std::sync::MutexGuard<'_, HashMap<String, Arc<PtySession>>> {
         self.sessions
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
+
+    /// Look up a session and release the global map lock immediately.
+    pub fn get_session(&self, session_id: &str) -> Option<Arc<PtySession>> {
+        self.lock_sessions().get(session_id).cloned()
+    }
 }
+
+#[derive(Clone, PartialEq, Eq)]
+struct FileStamp {
+    modified: Option<std::time::SystemTime>,
+    len: u64,
+}
+
+fn file_stamp(path: &std::path::Path) -> Option<FileStamp> {
+    let meta = std::fs::metadata(path).ok()?;
+    Some(FileStamp {
+        modified: meta.modified().ok(),
+        len: meta.len(),
+    })
+}
+
+struct CachedConfig {
+    config_dir: PathBuf,
+    active_env_stamp: Option<FileStamp>,
+    config_file: PathBuf,
+    config_stamp: FileStamp,
+    config: AppConfig,
+}
+
+static CONFIG_CACHE: Mutex<Option<CachedConfig>> = Mutex::new(None);
 
 /// The active config for connecting: when `config.json` names no ssh-agent
 /// socket, the one the app is using (see [`crate::agent_socket`]) fills in.
 /// Not for configs that are saved back, which would persist that socket.
 pub fn load_config() -> Result<AppConfig, CommandError> {
-    let mut config = AppConfig::load(None)?;
+    let config_dir = dirs::config_dir()
+        .unwrap_or_else(|| PathBuf::from("~/.config"))
+        .join("bayesian-ssh");
+    let active_env_stamp = file_stamp(&config_dir.join("active_env"));
+
+    {
+        let cache = CONFIG_CACHE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(entry) = cache.as_ref()
+            && entry.config_dir == config_dir
+            && entry.active_env_stamp == active_env_stamp
+            && file_stamp(&entry.config_file).as_ref() == Some(&entry.config_stamp)
+        {
+            let mut config = entry.config.clone();
+            fill_agent_socket(&mut config, crate::agent_socket::current());
+            return Ok(config);
+        }
+    }
+
+    let raw = AppConfig::load(None)?;
+    let config_file = raw.config_file();
+    if let Some(config_stamp) = file_stamp(&config_file) {
+        let active_env_stamp = file_stamp(&config_dir.join("active_env"));
+        let mut cache = CONFIG_CACHE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *cache = Some(CachedConfig {
+            config_dir,
+            active_env_stamp,
+            config_file,
+            config_stamp,
+            config: raw.clone(),
+        });
+    }
+
+    let mut config = raw;
     fill_agent_socket(&mut config, crate::agent_socket::current());
     Ok(config)
 }
@@ -77,10 +142,80 @@ fn fill_agent_socket(config: &mut AppConfig, socket: Option<String>) {
     }
 }
 
-pub fn open_db_and_config() -> Result<(Database, AppConfig), CommandError> {
+const DB_POOL_MAX_IDLE: usize = 4;
+
+static DB_POOL: Mutex<Vec<(PathBuf, u32, Database)>> = Mutex::new(Vec::new());
+
+/// RAII handle to a pooled SQLite [`Database`] connection.
+///
+/// Derefs transparently to [`Database`] and returns the connection to the idle
+/// pool on drop so SQLite retains its page cache and prepared statements across
+/// IPC calls.
+pub struct PooledDatabase {
+    path: PathBuf,
+    window_days: u32,
+    db: Option<Database>,
+}
+
+impl std::ops::Deref for PooledDatabase {
+    type Target = Database;
+
+    fn deref(&self) -> &Self::Target {
+        self.db
+            .as_ref()
+            .expect("PooledDatabase holds Database until Drop")
+    }
+}
+
+impl Drop for PooledDatabase {
+    fn drop(&mut self) {
+        let Some(db) = self.db.take() else {
+            return;
+        };
+        let mut pool = DB_POOL
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if pool.len() >= DB_POOL_MAX_IDLE {
+            pool.remove(0);
+        }
+        pool.push((std::mem::take(&mut self.path), self.window_days, db));
+    }
+}
+
+pub fn open_db_and_config() -> Result<(PooledDatabase, AppConfig), CommandError> {
     let config = load_config()?;
+    let path = config.database_path.clone();
+    let window_days = config.prediction.window_days;
+
+    if path.exists() {
+        let mut pool = DB_POOL
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(idx) = pool
+            .iter()
+            .rposition(|(p, w, _)| *p == path && *w == window_days)
+        {
+            let (path, window_days, db) = pool.swap_remove(idx);
+            return Ok((
+                PooledDatabase {
+                    path,
+                    window_days,
+                    db: Some(db),
+                },
+                config,
+            ));
+        }
+    }
+
     let db = Database::new(&config)?;
-    Ok((db, config))
+    Ok((
+        PooledDatabase {
+            path,
+            window_days,
+            db: Some(db),
+        },
+        config,
+    ))
 }
 
 pub const MAX_DETACHED_BUFFER_BYTES: usize = 512 * 1024;
@@ -122,18 +257,21 @@ impl PopoutOwner {
 pub struct PtySession {
     /// Input queue drained by the session's writer thread, so `write_pty`
     /// never blocks the IPC thread on a full PTY and keeps keystroke order.
-    pub input: SyncSender<String>,
-    pub child: Box<dyn Child + Send + Sync>,
+    /// Wrapped in `Mutex<Option<...>>` so `reap_session` can close the channel
+    /// before waiting on the child even when `PtySession` is behind an `Arc`.
+    pub input: Mutex<Option<SyncSender<String>>>,
+    pub child: Mutex<Box<dyn Child + Send + Sync>>,
     /// Keeps the PTY master alive for the session's lifetime. Behind a mutex so
-    /// `redraw_pty` can restore the size from a background thread.
-    pub master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
+    /// `redraw_pty` can restore the size from a background thread and
+    /// `reap_session` can drop the master fd before waiting on the child.
+    pub master: Arc<Mutex<Option<Box<dyn MasterPty + Send>>>>,
     /// Set to true by close_pty so the reader thread suppresses the pty-exit event.
     pub cancelled: Arc<AtomicBool>,
     /// Database session id when session logging is enabled.
     pub db_session_id: Option<Uuid>,
     pub connection_name: String,
     pub detached: Arc<AtomicBool>,
-    pub output_buffer: Arc<Mutex<String>>,
+    pub output_buffer: Arc<Mutex<ReplayBuffer>>,
     pub replay_offset: Arc<Mutex<usize>>,
     /// Serialises the reader thread's "append to the replay buffer + deliver
     /// on the sink" step against commands that swap the sink or read the

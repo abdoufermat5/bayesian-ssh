@@ -554,6 +554,54 @@ fn closed_runs_are_pruned_to_the_newest() {
 }
 
 #[test]
+fn result_and_change_events_do_not_rebroadcast_run_summaries() {
+    let rec = Arc::new(Recorder::default());
+    let hub = AiHub::new(rec.clone());
+    let (tx, _rx) = unbounded_channel();
+    hub.attach(
+        RunHello {
+            run_id: "run-1".into(),
+            client: "c".into(),
+            policy: "default".into(),
+            started_at: "2026-10-24T10:00:00Z".into(),
+        },
+        tx,
+    );
+    let broadcasts_after_attach = rec.runs.lock().unwrap().len();
+    assert_eq!(broadcasts_after_attach, 1);
+
+    hub.on_message(
+        "run-1",
+        ServerMsg::Event {
+            event: AiEvent::Result {
+                run_id: "run-1".into(),
+                call_id: "call-1".into(),
+                exit_code: Some(0),
+                duration_ms: Some(12),
+                output_sha256: "abc".into(),
+                redactions: Vec::new(),
+                jailed: Some(false),
+            },
+        },
+    );
+    hub.on_message(
+        "run-1",
+        ServerMsg::Event {
+            event: AiEvent::Change {
+                run_id: "run-1".into(),
+                change_id: "chg-1".into(),
+                plan_hash: "def".into(),
+                applied: true,
+                undo_point: None,
+            },
+        },
+    );
+
+    assert_eq!(rec.events.lock().unwrap().len(), 2);
+    assert_eq!(rec.runs.lock().unwrap().len(), broadcasts_after_attach);
+}
+
+#[test]
 fn older_connection_closing_does_not_detach_the_newer_one() {
     let hub = AiHub::new(Arc::new(Recorder::default()));
     let hello = || RunHello {

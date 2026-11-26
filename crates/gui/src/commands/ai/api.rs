@@ -1,6 +1,6 @@
 //! The `#[tauri::command]` surface of the AI view.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -10,7 +10,7 @@ use bayesian_ssh::services::ai::install::{Client, InstallOptions, detected_clien
 use bayesian_ssh::services::ai::policy;
 use bayesian_ssh::services::ai::prune::{self, AiStorage, PruneOutcome, PrunePlan, PruneRequest};
 use bayesian_ssh::services::ai::report_doc::{self, ReportFormat};
-use bayesian_ssh::services::ai::types::{AiEvent, Policy, Profile};
+use bayesian_ssh::services::ai::types::{AiEvent, Decision, Policy, Profile};
 use bayesian_ssh::services::ai::{audit, report};
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_opener::OpenerExt;
@@ -431,6 +431,75 @@ fn event_run_id(event: &AiEvent) -> &str {
     }
 }
 
+/// Summarize one run's audit entries into a [`ReportRow`] in a single pass
+/// without materialising full call/denial/change/approval vectors.
+fn summarize_run_entries(run_id: String, entries: Vec<audit::AuditEntry>) -> ReportRow {
+    let mut client = None;
+    let mut on_behalf_of = None;
+    let mut policy = None;
+    let mut started = None;
+    let mut ended = None;
+    let mut end_reason = None;
+    let mut calls = 0usize;
+    let mut denials = 0usize;
+    let mut changes = 0usize;
+    let mut approvals = 0usize;
+    let mut hosts = BTreeSet::new();
+
+    for entry in entries {
+        match entry.event {
+            AiEvent::RunStarted {
+                client: c,
+                on_behalf_of: obo,
+                policy: p,
+                ..
+            } => {
+                client = Some(c);
+                on_behalf_of = Some(obo);
+                policy = Some(p);
+                started = Some(entry.ts);
+            }
+            AiEvent::Call { call, decision } => {
+                calls += 1;
+                if matches!(decision, Decision::Deny { .. }) {
+                    denials += 1;
+                }
+                if let Some(h) = call.host {
+                    hosts.insert(h);
+                }
+            }
+            AiEvent::Approval { .. } => {
+                approvals += 1;
+            }
+            AiEvent::Change { .. } => {
+                changes += 1;
+            }
+            AiEvent::RunEnded { reason, .. } => {
+                ended = Some(entry.ts);
+                end_reason = Some(reason);
+            }
+            AiEvent::Result { .. } | AiEvent::Paused { .. } | AiEvent::Resumed { .. } => {}
+        }
+    }
+
+    ReportRow {
+        summary: report::RunSummary {
+            run_id,
+            client,
+            policy,
+            started,
+            ended,
+            calls,
+            denials,
+            changes,
+            end_reason,
+        },
+        on_behalf_of,
+        hosts: hosts.into_iter().collect(),
+        approvals,
+    }
+}
+
 /// Past runs from the active environment's audit log, newest first.
 #[tauri::command]
 pub async fn ai_reports(limit: Option<usize>) -> Result<Vec<ReportRow>, CommandError> {
@@ -459,24 +528,7 @@ pub async fn ai_reports(limit: Option<usize>) -> Result<Vec<ReportRow>, CommandE
             .into_iter()
             .map(|run_id| {
                 let run_entries = by_run.remove(&run_id).unwrap_or_default();
-                let full = report::build_report(&run_entries, &run_id);
-                let summary = report::RunSummary {
-                    run_id,
-                    client: full.client,
-                    policy: full.policy,
-                    started: full.started,
-                    ended: full.ended,
-                    calls: full.calls.len(),
-                    denials: full.denials.len(),
-                    changes: full.changes.len(),
-                    end_reason: full.end_reason,
-                };
-                ReportRow {
-                    summary,
-                    on_behalf_of: full.on_behalf_of,
-                    hosts: full.hosts,
-                    approvals: full.approvals.len(),
-                }
+                summarize_run_entries(run_id, run_entries)
             })
             .collect())
     })

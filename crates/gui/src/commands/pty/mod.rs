@@ -18,4 +18,5 @@ pub use detach::*;
 pub use lifecycle::*;
 pub use output::OutputSink;
 pub use popout::*;
+pub use replay::ReplayBuffer;
 pub use spawn::*;
