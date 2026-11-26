@@ -67,13 +67,16 @@
     );
   });
 
+  const fallbackId = $props.id();
+  const baseId = $derived(id ?? `custom-select-${fallbackId}`);
+
   const activeOptionId = $derived(
     isOpen && filteredOptions[activeIndex]
-      ? `${id ?? "custom-select"}-option-${activeIndex}`
+      ? `${baseId}-option-${activeIndex}`
       : undefined
   );
 
-  const listboxId = $derived(`${id ?? "custom-select"}-listbox`);
+  const listboxId = $derived(`${baseId}-listbox`);
 
   function updatePosition() {
     if (!triggerRef || typeof window === "undefined") return;
@@ -198,6 +201,8 @@
       event.preventDefault();
       event.stopPropagation();
       closeSelect(true);
+    } else if (event.key === "Tab" && isOpen) {
+      closeSelect(false);
     } else if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       if (isOpen && filteredOptions[activeIndex]) {
@@ -230,6 +235,8 @@
       event.preventDefault();
       event.stopPropagation();
       closeSelect(true);
+    } else if (event.key === "Tab") {
+      closeSelect(false);
     }
   }
 
@@ -297,11 +304,11 @@
       else openSelect(selectedIndex);
     }}
     onkeydown={handleKeydown}
-    aria-label={ariaLabel || label || selectedOption?.label || placeholder}
+    aria-label={ariaLabel || label || undefined}
     aria-expanded={isOpen}
     aria-controls={isOpen ? listboxId : undefined}
     aria-haspopup="listbox"
-    aria-activedescendant={activeOptionId}
+    aria-activedescendant={!searchable ? activeOptionId : undefined}
     {disabled}
   >
     {#if label}
@@ -318,6 +325,7 @@
     </span>
     <ChevronDown
       size={14}
+      aria-hidden="true"
       class="shrink-0 transition-transform duration-fast {disabled ? 'text-disabled-fg' : 'text-muted'} {isOpen ? 'rotate-180' : ''}"
     />
   </button>
@@ -325,10 +333,8 @@
   {#if isOpen}
     <div
       bind:this={popoverRef}
-      id={listboxId}
       style={popoverStyle}
       class="popover flex flex-col overflow-hidden"
-      role="listbox"
     >
       {#if searchable}
         <div class="mb-1 flex shrink-0 items-center gap-1.5 border-b border-border px-2 pb-1.5 pt-1">
@@ -337,6 +343,10 @@
             bind:this={searchInputRef}
             bind:value={searchQuery}
             type="text"
+            role="combobox"
+            aria-expanded="true"
+            aria-controls={listboxId}
+            aria-autocomplete="list"
             placeholder={searchPlaceholder}
             aria-label={searchPlaceholder}
             aria-activedescendant={activeOptionId}
@@ -346,14 +356,21 @@
         </div>
       {/if}
 
-      <div bind:this={optionsListRef} class="min-h-0 flex-1 overflow-y-auto">
+      <div
+        bind:this={optionsListRef}
+        id={listboxId}
+        role="listbox"
+        aria-label={ariaLabel || label || undefined}
+        class="min-h-0 flex-1 overflow-y-auto"
+      >
         {#if filteredOptions.length === 0}
           <div class="px-2 py-2 text-xs text-muted">No matches</div>
         {:else}
           {#each filteredOptions as option, index (option.value)}
             <button
               type="button"
-              id={`${id ?? "custom-select"}-option-${index}`}
+              id={`${baseId}-option-${index}`}
+              tabindex="-1"
               class="menu-item h-auto min-h-8 py-1.5 {activeIndex === index ? 'menu-item-active' : ''} {value === option.value ? 'text-primary' : ''}"
               onmouseenter={() => (activeIndex = index)}
               onclick={() => selectOption(option.value)}
@@ -367,7 +384,7 @@
                 {/if}
               </span>
               {#if value === option.value}
-                <Check size={14} class="shrink-0 text-accent" />
+                <Check size={14} class="shrink-0 text-accent" aria-hidden="true" />
               {/if}
             </button>
           {/each}

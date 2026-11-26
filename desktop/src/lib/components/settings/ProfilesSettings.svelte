@@ -112,6 +112,7 @@
         <div class="setting-control">
           <CustomSelect
             id="settings-profile"
+            ariaLabel="Active profile"
             class="w-48"
             size="md"
             options={profileOptions}
@@ -128,6 +129,8 @@
         </div>
         <div class="setting-control">
           <CustomSelect
+            id="settings-host-ranking"
+            ariaLabel="Host ranking"
             class="w-48"
             size="md"
             options={rankingOptions}

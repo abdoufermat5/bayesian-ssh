@@ -192,12 +192,14 @@
             bind:value={message}
             oninput={parseMessage}
             placeholder="Join the “…” team on Bayesian SSH."
+            aria-invalid={Boolean(message.trim() && inviteBlocker) || undefined}
+            aria-describedby={message.trim() ? "ob-invite-feedback" : undefined}
             data-autofocus
           ></textarea>
           {#if message.trim() && !inviteBlocker}
-            <span class="field-hint">Invite for {email} on {server}.</span>
+            <span id="ob-invite-feedback" class="field-hint" role="status">Invite for {email} on {server}.</span>
           {:else if message.trim()}
-            <span class="field-error">{inviteBlocker}</span>
+            <span id="ob-invite-feedback" class="field-error" role="alert">{inviteBlocker}</span>
           {/if}
         </div>
       {:else if step === 1}
@@ -315,7 +317,7 @@
         Back
       </button>
     {/if}
-    {#if step === 1 && passBlocker}<span class="ml-2 text-xs text-muted">{passBlocker}</span>{/if}
+    {#if step === 1 && passBlocker}<span class="ml-2 text-xs text-muted" role="status">{passBlocker}</span>{/if}
     <span class="ml-auto text-xs tabular-nums text-muted">Step {step + 1} of {STEPS.length}</span>
     <button
       id="ob-invite-primary"
@@ -323,7 +325,7 @@
       class="btn btn-primary"
       disabled={working || busy || (step === 0 && !!inviteBlocker) || (step === 1 && !!passBlocker)}
     >
-      {#if working || busy}<span class="spinner"></span>{/if}
+      {#if working || busy}<span class="spinner" aria-hidden="true"></span>{/if}
       {step === 0 ? "Continue" : step === 1 ? (retryTeamId ? "Try again" : "Join team") : "Open Teams"}
     </button>
   </div>

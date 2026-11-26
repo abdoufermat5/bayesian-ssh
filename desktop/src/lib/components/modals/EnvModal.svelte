@@ -73,12 +73,14 @@
           bind:value={newEnvName}
           class="input"
           class:input-invalid={duplicate}
+          aria-invalid={duplicate || undefined}
+          aria-describedby={duplicate ? "e-name-error" : "e-name-hint"}
           data-autofocus
         />
         {#if duplicate}
-          <span class="field-error">A profile with this name already exists.</span>
+          <span id="e-name-error" class="field-error" role="alert">A profile with this name already exists.</span>
         {:else}
-          <span class="field-hint">Switch profiles from the sidebar profile menu.</span>
+          <span id="e-name-hint" class="field-hint">Switch profiles from the sidebar profile menu.</span>
         {/if}
       </div>
     </div>

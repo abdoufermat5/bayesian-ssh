@@ -179,11 +179,13 @@
 
       <div class="setting-row">
         <div class="setting-row-main">
-          <span class="setting-title">Kind</span>
+          <label class="setting-title" for="source-kind">Kind</label>
           <span class="setting-meta">Where hosts are discovered from.</span>
         </div>
         <div class="setting-control">
           <CustomSelect
+            id="source-kind"
+            ariaLabel="Kind"
             class="w-56"
             size="md"
             options={kindOptions}
@@ -196,59 +198,61 @@
       {#if kind === "ssh-config"}
         <div class="setting-row">
           <div class="setting-row-main">
-            <span class="setting-title">Config file</span>
+            <label class="setting-title" for="source-ssh-config-path">Config file</label>
             <span class="setting-meta">Defaults to ~/.ssh/config.</span>
           </div>
           <div class="setting-control">
-            <input type="text" class="input input-mono w-56" bind:value={path} placeholder="~/.ssh/config" />
+            <input id="source-ssh-config-path" type="text" class="input input-mono w-56" bind:value={path} placeholder="~/.ssh/config" />
           </div>
         </div>
       {:else if kind === "ansible"}
         <div class="setting-row">
           <div class="setting-row-main">
-            <span class="setting-title">Inventory path</span>
+            <label class="setting-title" for="source-ansible-inventory">Inventory path</label>
             <span class="setting-meta">Passed to <code>ansible-inventory -i</code>.</span>
           </div>
           <div class="setting-control">
-            <input type="text" class="input input-mono w-56" bind:value={inventory} placeholder="./inventory.yml" />
+            <input id="source-ansible-inventory" type="text" class="input input-mono w-56" bind:value={inventory} placeholder="./inventory.yml" />
           </div>
         </div>
       {:else if kind === "tailscale"}
-        <div class="setting-row">
-          <div class="setting-row-main">
+        <label class="setting-row cursor-pointer">
+          <span class="setting-row-main">
             <span class="setting-title">Include offline peers</span>
             <span class="setting-meta">Offline devices are skipped by default.</span>
-          </div>
-          <div class="setting-control">
+          </span>
+          <span class="setting-control">
             <input type="checkbox" class="switch" bind:checked={includeOffline} />
-          </div>
-        </div>
+          </span>
+        </label>
       {:else if kind === "aws"}
         <div class="setting-row">
           <div class="setting-row-main">
-            <span class="setting-title">Regions</span>
+            <label class="setting-title" for="source-aws-regions">Regions</label>
             <span class="setting-meta">Comma-separated, e.g. eu-west-1,us-east-1.</span>
           </div>
           <div class="setting-control">
-            <input type="text" class="input w-56" bind:value={regions} placeholder="eu-west-1" />
+            <input id="source-aws-regions" type="text" class="input w-56" bind:value={regions} placeholder="eu-west-1" />
           </div>
         </div>
         <div class="setting-row">
           <div class="setting-row-main">
-            <span class="setting-title">Profile</span>
+            <label class="setting-title" for="source-aws-profile">Profile</label>
             <span class="setting-meta">Optional AWS CLI profile.</span>
           </div>
           <div class="setting-control">
-            <input type="text" class="input w-56" bind:value={profile} placeholder="default" />
+            <input id="source-aws-profile" type="text" class="input w-56" bind:value={profile} placeholder="default" />
           </div>
         </div>
         <div class="setting-row">
           <div class="setting-row-main">
-            <span class="setting-title">Address</span>
+            <label class="setting-title" for="source-aws-address">Address</label>
             <span class="setting-meta">Which address of each instance to connect to.</span>
           </div>
           <div class="setting-control">
             <CustomSelect
+              id="source-aws-address"
+              ariaLabel="Address"
               class="w-56"
               size="md"
               options={awsAddressOptions}
@@ -260,20 +264,22 @@
       {:else if kind === "gcp"}
         <div class="setting-row">
           <div class="setting-row-main">
-            <span class="setting-title">Project</span>
+            <label class="setting-title" for="source-gcp-project">Project</label>
             <span class="setting-meta">GCP project id.</span>
           </div>
           <div class="setting-control">
-            <input type="text" class="input w-56" bind:value={project} placeholder="my-project" />
+            <input id="source-gcp-project" type="text" class="input w-56" bind:value={project} placeholder="my-project" />
           </div>
         </div>
         <div class="setting-row">
           <div class="setting-row-main">
-            <span class="setting-title">Address</span>
+            <label class="setting-title" for="source-gcp-address">Address</label>
             <span class="setting-meta">Which address of each instance to connect to.</span>
           </div>
           <div class="setting-control">
             <CustomSelect
+              id="source-gcp-address"
+              ariaLabel="Address"
               class="w-56"
               size="md"
               options={gcpAddressOptions}
@@ -287,20 +293,20 @@
       {#if kind === "aws" || kind === "gcp"}
         <div class="setting-row">
           <div class="setting-row-main">
-            <span class="setting-title">SSH user</span>
+            <label class="setting-title" for="source-ssh-user">SSH user</label>
             <span class="setting-meta">Falls back to the app default user.</span>
           </div>
           <div class="setting-control">
-            <input type="text" class="input w-56" bind:value={user} placeholder="deploy" />
+            <input id="source-ssh-user" type="text" class="input w-56" bind:value={user} placeholder="deploy" />
           </div>
         </div>
         <div class="setting-row">
           <div class="setting-row-main">
-            <span class="setting-title">Bastion</span>
+            <label class="setting-title" for="source-bastion">Bastion</label>
             <span class="setting-meta">Applied to every host from this source.</span>
           </div>
           <div class="setting-control">
-            <input type="text" class="input w-56" bind:value={bastion} placeholder="bastion.example.com" />
+            <input id="source-bastion" type="text" class="input w-56" bind:value={bastion} placeholder="bastion.example.com" />
           </div>
         </div>
       {/if}

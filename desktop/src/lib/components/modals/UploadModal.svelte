@@ -727,6 +727,7 @@
                 <button
                   type="button"
                   class="chip h-6 px-2 text-muted"
+                  aria-label="Show {hiddenTagCount} more tags"
                   onclick={() => (showAllTags = true)}
                 >
                   +{hiddenTagCount}
@@ -901,8 +902,8 @@
 
         <div class="min-h-0 flex-1 overflow-y-auto p-4">
           {#if jobError}
-            <div class="alert alert-error mb-3">
-              <TriangleAlert size={14} class="mt-0.5 shrink-0" />
+            <div class="alert alert-error mb-3" role="alert">
+              <TriangleAlert size={14} class="mt-0.5 shrink-0" aria-hidden="true" />
               <span>{jobError}</span>
             </div>
           {/if}

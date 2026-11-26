@@ -84,6 +84,7 @@
         <div class="setting-control">
           <CustomSelect
             id="settings-log-level"
+            ariaLabel="Log level"
             class="w-48"
             size="md"
             options={logLevelOptions}

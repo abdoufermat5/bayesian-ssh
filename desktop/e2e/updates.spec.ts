@@ -59,7 +59,7 @@ test.describe("updates", () => {
 
       // Installing first asks for confirmation.
       await page.getByRole("button", { name: "Install and restart" }).click();
-      const dialog = page.getByRole("dialog", { name: "Install update" });
+      const dialog = page.getByRole("alertdialog", { name: "Install update" });
       await expect(dialog).toBeVisible();
       await expect(page.getByRole("heading", { name: `Install Bayesian SSH ${UPDATE_VERSION}?` })).toBeVisible();
       expect(await app.ipcCalls("install_update")).toHaveLength(0);
@@ -92,7 +92,7 @@ test.describe("updates", () => {
       await page.getByRole("button", { name: "Check for updates" }).click();
       await page.getByRole("button", { name: "Install and restart" }).click();
 
-      const dialog = page.getByRole("dialog", { name: "Install update" });
+      const dialog = page.getByRole("alertdialog", { name: "Install update" });
       await expect(dialog).toBeVisible();
       await expect(dialog.getByText("2 sessions")).toBeVisible();
       await expect(dialog.getByText("will be closed.")).toBeVisible();

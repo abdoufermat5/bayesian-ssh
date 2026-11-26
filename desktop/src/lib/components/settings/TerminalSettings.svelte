@@ -41,6 +41,7 @@
         <div class="setting-control">
           <CustomSelect
             id="terminal-font-family"
+            ariaLabel="Font family"
             class="w-48"
             size="md"
             options={fontOptions}
@@ -111,6 +112,7 @@
         <div class="setting-control">
           <CustomSelect
             id="terminal-cursor-style"
+            ariaLabel="Cursor style"
             class="w-48"
             size="md"
             options={cursorOptions}

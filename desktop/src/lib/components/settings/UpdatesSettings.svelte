@@ -144,15 +144,15 @@
             </div>
           {/if}
         {:else if upToDate}
-          <div class="setting-row">
+          <div class="setting-row" role="status">
             <span class="setting-title inline-flex items-center gap-2">
-              <CheckCircle2 size={14} class="text-accent" />
+              <CheckCircle2 size={14} class="text-accent" aria-hidden="true" />
               You're on the latest version.
             </span>
           </div>
         {:else if updateError}
-          <div class="setting-row">
-            <span class="text-xs text-danger">Could not check for updates: {updateError}</span>
+          <div class="setting-row" role="alert">
+            <span class="text-xs text-error">Could not check for updates: {updateError}</span>
           </div>
         {/if}
       {/if}
@@ -161,7 +161,7 @@
 </div>
 
 {#if confirmOpen}
-  <ModalShell open={confirmOpen} title="Install update" onClose={() => (confirmOpen = false)} width="sm">
+  <ModalShell open={confirmOpen} role="alertdialog" title="Install update" onClose={() => (confirmOpen = false)} width="sm">
     <div class="modal-header">
       <h2 class="modal-title">Install Bayesian SSH {update?.version}?</h2>
       <button type="button" class="modal-close" onclick={() => (confirmOpen = false)} aria-label="Close">
