@@ -22,6 +22,9 @@ pub fn get_history(limit: Option<usize>) -> Result<Vec<SessionHistoryEntry>, Com
         .map_err(CommandError::from)
 }
 
+/// Maximum recording file size read into memory (50 MiB).
+const MAX_RECORDING_BYTES: u64 = 50 * 1024 * 1024;
+
 #[tauri::command(async)]
 pub fn read_recording(session_id: String) -> Result<String, CommandError> {
     let (db, config) = open_db_and_config()?;
@@ -39,8 +42,32 @@ pub fn read_recording(session_id: String) -> Result<String, CommandError> {
         return Err("Refusing to read recording outside recordings directory".into());
     }
 
-    std::fs::read_to_string(&canon_file)
-        .map_err(|e| CommandError::from(format!("Failed to read recording: {e}")))
+    let meta = std::fs::metadata(&canon_file)
+        .map_err(|e| CommandError::from(format!("Failed to stat recording: {e}")))?;
+    if meta.len() > MAX_RECORDING_BYTES {
+        return Err(format!(
+            "Recording exceeds the {} MiB size limit.",
+            MAX_RECORDING_BYTES / (1024 * 1024)
+        )
+        .into());
+    }
+
+    use std::io::Read;
+    let file = std::fs::File::open(&canon_file)
+        .map_err(|e| CommandError::from(format!("Failed to read recording: {e}")))?;
+    let mut buf = Vec::new();
+    file.take(MAX_RECORDING_BYTES + 1)
+        .read_to_end(&mut buf)
+        .map_err(|e| CommandError::from(format!("Failed to read recording: {e}")))?;
+    if buf.len() as u64 > MAX_RECORDING_BYTES {
+        return Err(format!(
+            "Recording exceeds the {} MiB size limit.",
+            MAX_RECORDING_BYTES / (1024 * 1024)
+        )
+        .into());
+    }
+    String::from_utf8(buf)
+        .map_err(|e| CommandError::from(format!("Recording is not valid UTF-8: {e}")))
 }
 
 #[tauri::command(async)]

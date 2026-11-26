@@ -1,5 +1,5 @@
 use super::CommandError;
-use super::agent::start_agent;
+use super::agent::start_agent_blocking;
 use super::env::create_environment;
 use super::env::set_active_env;
 use super::import::import_ssh_config;
@@ -127,7 +127,7 @@ pub fn complete_onboarding(payload: OnboardingPayload) -> Result<usize, CommandE
     save_desktop_settings(settings)?;
 
     if payload.auto_start_agent {
-        let _ = start_agent();
+        let _ = start_agent_blocking();
     }
 
     if payload.import_ssh_config {
@@ -139,10 +139,7 @@ pub fn complete_onboarding(payload: OnboardingPayload) -> Result<usize, CommandE
 
 #[tauri::command(async)]
 pub fn load_desktop_settings() -> Result<DesktopSettings, CommandError> {
-    let settings_file = dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("~/.config"))
-        .join("bayesian-ssh")
-        .join("desktop_settings.json");
+    let settings_file = bayesian_config_root().join("desktop_settings.json");
 
     let mut settings = if settings_file.exists() {
         let content = std::fs::read_to_string(&settings_file)?;
@@ -180,9 +177,7 @@ pub fn load_desktop_settings() -> Result<DesktopSettings, CommandError> {
 
 #[tauri::command(async)]
 pub fn save_desktop_settings(settings: DesktopSettings) -> Result<(), CommandError> {
-    let config_dir = dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("~/.config"))
-        .join("bayesian-ssh");
+    let config_dir = bayesian_config_root();
 
     std::fs::create_dir_all(&config_dir)?;
     let settings_file = config_dir.join("desktop_settings.json");

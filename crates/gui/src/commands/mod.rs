@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
-use std::sync::mpsc::Sender;
+use std::sync::mpsc::SyncSender;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
@@ -12,6 +12,7 @@ use bayesian_ssh::database::Database;
 
 pub mod agent;
 pub mod ai;
+pub mod allowed_paths;
 pub mod app;
 pub mod connections;
 pub mod dialogs;
@@ -28,6 +29,7 @@ pub mod teams;
 pub mod upload;
 
 pub use agent::*;
+pub use allowed_paths::AllowedPaths;
 pub use app::*;
 pub use connections::*;
 pub use dialogs::*;
@@ -120,7 +122,7 @@ impl PopoutOwner {
 pub struct PtySession {
     /// Input queue drained by the session's writer thread, so `write_pty`
     /// never blocks the IPC thread on a full PTY and keeps keystroke order.
-    pub input: Sender<String>,
+    pub input: SyncSender<String>,
     pub child: Box<dyn Child + Send + Sync>,
     /// Keeps the PTY master alive for the session's lifetime. Behind a mutex so
     /// `redraw_pty` can restore the size from a background thread.
@@ -395,7 +397,8 @@ pub struct OnboardingPayload {
 
 pub fn bayesian_config_root() -> PathBuf {
     dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("~/.config"))
+        .or_else(|| dirs::home_dir().map(|h| h.join(".config")))
+        .unwrap_or_else(|| PathBuf::from(".config"))
         .join("bayesian-ssh")
 }
 

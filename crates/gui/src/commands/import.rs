@@ -1,8 +1,7 @@
 use super::CommandError;
 use super::open_db_and_config;
-use bayesian_ssh::config::AppConfig;
-use bayesian_ssh::database::Database;
-use bayesian_ssh::models::Connection;
+use bayesian_ssh::models::{Connection, Source, SourceKind};
+use bayesian_ssh::services::inventory::{InventoryProvider, ssh_config::SshConfigProvider};
 use std::path::PathBuf;
 
 #[tauri::command(async)]
@@ -22,100 +21,35 @@ pub fn import_ssh_config(file: Option<String>) -> Result<usize, CommandError> {
         return Err(format!("SSH config file not found: {}", ssh_config_path.display()).into());
     }
 
-    let content = std::fs::read_to_string(&ssh_config_path)?;
+    let source = Source::new(
+        "ssh-config-import".to_string(),
+        SourceKind::SshConfig,
+        serde_json::json!({ "path": ssh_config_path.to_string_lossy() }),
+    );
+    let discovered = SshConfigProvider.fetch(&source)?;
 
     let mut imported_count = 0usize;
-    let mut current_host: Option<String> = None;
-    let mut current_hostname: Option<String> = None;
-    let mut current_user: Option<String> = None;
-    let mut current_port: Option<u16> = None;
-    let mut current_identity_file: Option<String> = None;
-
-    let flush_host = |host: String,
-                      hostname: Option<String>,
-                      user: Option<String>,
-                      port: Option<u16>,
-                      identity: Option<String>,
-                      db: &Database,
-                      cfg: &AppConfig|
-     -> Result<bool, CommandError> {
-        if host.contains('*') || host.contains('?') {
-            return Ok(false);
-        }
-
-        if db.connection(&host)?.is_some() {
-            return Ok(false);
-        }
-
-        let actual_host = hostname.unwrap_or_else(|| host.clone());
-        let mut connection = Connection {
-            key_path: identity,
-            ..Connection::new(
-                host,
-                actual_host,
-                user.unwrap_or_else(|| cfg.default_user.clone()),
-                port.unwrap_or(cfg.default_port),
-            )
-        };
-        // Skip entries the add/edit dialogs would reject (e.g. multi-pattern
-        // "Host a b" lines, or values that ssh would parse as options).
-        if connection.validate().is_err() {
-            return Ok(false);
-        }
-        connection.add_tag("imported".to_string());
-        db.add_connection(&connection)?;
-        Ok(true)
-    };
-
-    for line in content.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
+    for host in discovered {
+        if db.connection(&host.name)?.is_some() {
             continue;
         }
 
-        if let Some(host) = line.strip_prefix("Host ") {
-            if let Some(prev) = current_host.take()
-                && flush_host(
-                    prev,
-                    current_hostname.take(),
-                    current_user.take(),
-                    current_port.take(),
-                    current_identity_file.take(),
-                    &db,
-                    &config,
-                )?
-            {
-                imported_count += 1;
-            }
-            current_host = Some(host.trim().to_string());
-            current_hostname = None;
-            current_user = None;
-            current_port = None;
-            current_identity_file = None;
-        } else if let Some(user) = line.strip_prefix("User ") {
-            current_user = Some(user.trim().to_string());
-        } else if let Some(port) = line.strip_prefix("Port ") {
-            if let Ok(port) = port.trim().parse::<u16>() {
-                current_port = Some(port);
-            }
-        } else if let Some(hostname) = line.strip_prefix("HostName ") {
-            current_hostname = Some(hostname.trim().to_string());
-        } else if let Some(identity_file) = line.strip_prefix("IdentityFile ") {
-            current_identity_file = Some(identity_file.trim().to_string());
+        let mut connection = Connection {
+            key_path: host.key_path,
+            bastion: host.bastion,
+            bastion_user: host.bastion_user,
+            ..Connection::new(
+                host.name,
+                host.host,
+                host.user.unwrap_or_else(|| config.default_user.clone()),
+                host.port.unwrap_or(config.default_port),
+            )
+        };
+        if connection.validate().is_err() {
+            continue;
         }
-    }
-
-    if let Some(host) = current_host
-        && flush_host(
-            host,
-            current_hostname,
-            current_user,
-            current_port,
-            current_identity_file,
-            &db,
-            &config,
-        )?
-    {
+        connection.add_tag("imported".to_string());
+        db.add_connection(&connection)?;
         imported_count += 1;
     }
 

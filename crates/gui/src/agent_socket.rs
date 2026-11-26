@@ -22,10 +22,10 @@ pub fn init_from_env() {
 
 /// The socket in use, if any.
 pub fn current() -> Option<String> {
-    SOCKET.read().expect("agent socket lock poisoned").clone()
+    SOCKET.read().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
 /// Use `socket` from now on; `None` means no agent.
 pub fn set(socket: Option<String>) {
-    *SOCKET.write().expect("agent socket lock poisoned") = socket;
+    *SOCKET.write().unwrap_or_else(|e| e.into_inner()) = socket;
 }

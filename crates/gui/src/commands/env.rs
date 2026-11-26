@@ -1,7 +1,5 @@
-use super::CommandError;
-use super::EnvInfo;
+use super::{CommandError, EnvInfo, bayesian_config_root};
 use bayesian_ssh::config::AppConfig;
-use std::path::PathBuf;
 
 #[tauri::command(async)]
 pub fn get_active_env() -> Result<String, CommandError> {
@@ -11,10 +9,7 @@ pub fn get_active_env() -> Result<String, CommandError> {
 #[tauri::command(async)]
 pub fn set_active_env(name: String) -> Result<(), CommandError> {
     AppConfig::validate_env_name(&name)?;
-    let envs_dir = dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("~/.config"))
-        .join("bayesian-ssh")
-        .join("environments");
+    let envs_dir = bayesian_config_root().join("environments");
 
     let env_dir = envs_dir.join(&name);
     if !env_dir.exists() && name != "default" {
@@ -26,10 +21,7 @@ pub fn set_active_env(name: String) -> Result<(), CommandError> {
 
 #[tauri::command(async)]
 pub fn list_environments() -> Result<Vec<EnvInfo>, CommandError> {
-    let envs_dir = dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("~/.config"))
-        .join("bayesian-ssh")
-        .join("environments");
+    let envs_dir = bayesian_config_root().join("environments");
 
     let active_env = AppConfig::active_env();
     let mut envs = vec![EnvInfo {
@@ -63,10 +55,7 @@ pub fn list_environments() -> Result<Vec<EnvInfo>, CommandError> {
 #[tauri::command(async)]
 pub fn create_environment(name: String) -> Result<(), CommandError> {
     AppConfig::validate_env_name(&name)?;
-    let envs_dir = dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("~/.config"))
-        .join("bayesian-ssh")
-        .join("environments");
+    let envs_dir = bayesian_config_root().join("environments");
 
     let env_dir = envs_dir.join(&name);
     if env_dir.exists() {
@@ -94,10 +83,7 @@ pub fn remove_environment(name: String) -> Result<(), CommandError> {
         return Err("Cannot remove the built-in 'default' environment.".into());
     }
 
-    let envs_dir = dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("~/.config"))
-        .join("bayesian-ssh")
-        .join("environments");
+    let envs_dir = bayesian_config_root().join("environments");
 
     let env_dir = envs_dir.join(&name);
     if !env_dir.exists() {

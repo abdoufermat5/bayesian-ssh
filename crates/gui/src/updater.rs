@@ -21,7 +21,7 @@ use tauri::utils::config::BundleType;
 use tauri::{AppHandle, Manager, Runtime, Url};
 use tauri_plugin_updater::{Config, UpdaterExt};
 
-use crate::commands::{CommandError, PtyState, close_all_ptys};
+use crate::commands::{CommandError, PtyState, close_all_ptys_and_wait};
 
 const ENDPOINT: &str =
     "https://github.com/abdoufermat5/bayesian-ssh/releases/latest/download/latest.json";
@@ -189,7 +189,7 @@ pub async fn install_update(app: AppHandle, version: String) -> Result<(), Comma
         .map_err(|e| e.to_string())?;
     // Same teardown as quitting: children are killed, not left orphaned.
     if let Some(state) = app.try_state::<PtyState>() {
-        let _ = close_all_ptys(app.clone(), state);
+        close_all_ptys_and_wait(app.clone(), &state, Duration::from_secs(2));
     }
     app.restart()
 }

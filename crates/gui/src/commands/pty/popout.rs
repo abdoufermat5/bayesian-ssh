@@ -2,6 +2,7 @@
 
 use super::output::PtyChunk;
 use super::replay::{switch_sink_off, switch_sink_on};
+use super::spawn::validate_session_id;
 use crate::commands::CommandError;
 use crate::commands::{
     DockedSessionInfo, PopoutMainOverlap, PopoutSessionInfo, PtyState, ReattachSessionInfo,
@@ -58,6 +59,7 @@ pub fn open_terminal_window(
     title: String,
     snapshot: Option<String>,
 ) -> Result<(), CommandError> {
+    validate_session_id(&session_id)?;
     let label = format!("terminal-{session_id}");
 
     if let Some(existing) = app.get_webview_window(&label) {

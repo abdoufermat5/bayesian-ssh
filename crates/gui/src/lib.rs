@@ -48,6 +48,7 @@ pub fn run() {
             sessions: Arc::new(Mutex::new(HashMap::new())),
         })
         .manage(UploadState::default())
+        .manage(commands::AllowedPaths::default())
         .manage(commands::TeamsState::default())
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {

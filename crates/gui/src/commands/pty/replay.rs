@@ -65,14 +65,29 @@ pub(super) fn lock_output_gate(session: &PtySession) -> std::sync::MutexGuard<'_
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+/// Keep at most `max_bytes` from the tail of `s`, aligned to a UTF-8 char
+/// boundary so slicing never panics on multi-byte characters.
+fn truncate_snapshot_tail(mut s: String, max_bytes: usize) -> String {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut cut = s.len() - max_bytes;
+    while cut < s.len() && !s.is_char_boundary(cut) {
+        cut += 1;
+    }
+    s.drain(..cut);
+    s
+}
+
 /// Replace the replay buffer with a frontend snapshot: the terminal the user
 /// just left is now the whole history, and later output appends to it.
 pub(super) fn apply_snapshot(session: &PtySession, snapshot: Option<String>) {
     let Some(snapshot) = snapshot else {
         return;
     };
+    let capped = truncate_snapshot_tail(snapshot, MAX_DETACHED_BUFFER_BYTES);
     if let Ok(mut buffer) = session.output_buffer.lock() {
-        *buffer = snapshot;
+        *buffer = capped;
     }
     if let Ok(mut offset) = session.replay_offset.lock() {
         *offset = 0;
@@ -106,5 +121,27 @@ pub(super) fn seal_replay_offset(session: &PtySession) {
         (session.output_buffer.lock(), session.replay_offset.lock())
     {
         *offset = buffer.len();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn snapshot_tail_truncates_at_utf8_char_boundary() {
+        let small = "hello".to_string();
+        assert_eq!(truncate_snapshot_tail(small, 10), "hello");
+
+        // Each '€' is 3 bytes. 5 chars = 15 bytes; capping to 7 bytes must keep
+        // the last 2 full chars (6 bytes) without panicking.
+        let utf8 = "€€€€€".to_string();
+        let capped = truncate_snapshot_tail(utf8, 7);
+        assert_eq!(capped, "€€");
+        assert!(capped.len() <= 7);
+
+        let oversized = "x".repeat(MAX_DETACHED_BUFFER_BYTES + 1024);
+        let capped = truncate_snapshot_tail(oversized, MAX_DETACHED_BUFFER_BYTES);
+        assert_eq!(capped.len(), MAX_DETACHED_BUFFER_BYTES);
     }
 }

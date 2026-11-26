@@ -6,6 +6,8 @@ use bayesian_ssh::config::AppConfig;
 use bayesian_ssh::database::Database;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, State};
 use uuid::Uuid;
 
@@ -78,6 +80,39 @@ pub fn count_active_sessions(state: State<'_, PtyState>) -> Result<usize, Comman
     Ok(state.lock_sessions().len())
 }
 
+fn close_pty_inner(
+    app: &AppHandle,
+    state: &PtyState,
+    session_id: String,
+    close_window: Option<bool>,
+) -> Option<JoinHandle<()>> {
+    let session = {
+        let mut sessions = state.lock_sessions();
+        sessions.remove(&session_id)
+    };
+
+    let mut session = session?;
+    session.cancelled.store(true, Ordering::SeqCst);
+    // Release a reader parked on flow control: the flag it re-checks is
+    // set, and clearing the sink notifies it right away instead of after
+    // the next 250 ms poll.
+    session.sink.clear();
+
+    if close_window.unwrap_or(true)
+        && let Some(label) = session.popout_window.get()
+        && let Some(window) = app.get_webview_window(&label)
+    {
+        let _ = window.close();
+    }
+
+    let _ = session.child.kill();
+    let reap_app = app.clone();
+    let handle = std::thread::spawn(move || reap_session(session, &reap_app));
+
+    let _ = app.emit("session-closed", session_id);
+    Some(handle)
+}
+
 // `Child::kill` waits up to ~200 ms for the child to exit after SIGHUP: keep
 // it off the main/UI thread.
 #[tauri::command(async)]
@@ -87,33 +122,46 @@ pub fn close_pty(
     session_id: String,
     close_window: Option<bool>,
 ) -> Result<(), CommandError> {
-    let session = {
-        let mut sessions = state.lock_sessions();
-        sessions.remove(&session_id)
+    let _ = close_pty_inner(&app, &state, session_id, close_window);
+    Ok(())
+}
+
+/// Close every active PTY session and wait up to `timeout` for their reaper
+/// threads to finish persisting history and reaping children.
+pub fn close_all_ptys_and_wait(app: AppHandle, state: &PtyState, timeout: Duration) -> usize {
+    let session_ids: Vec<String> = {
+        let sessions = state.lock_sessions();
+        sessions.keys().cloned().collect()
     };
 
-    if let Some(mut session) = session {
-        session.cancelled.store(true, Ordering::SeqCst);
-        // Release a reader parked on flow control: the flag it re-checks is
-        // set, and clearing the sink notifies it right away instead of after
-        // the next 250 ms poll.
-        session.sink.clear();
+    let count = session_ids.len();
+    let mut handles: Vec<JoinHandle<()>> = session_ids
+        .into_iter()
+        .filter_map(|session_id| close_pty_inner(&app, state, session_id, None))
+        .collect();
 
-        if close_window.unwrap_or(true)
-            && let Some(label) = session.popout_window.get()
-            && let Some(window) = app.get_webview_window(&label)
-        {
-            let _ = window.close();
+    let deadline = Instant::now() + timeout;
+    while !handles.is_empty() && Instant::now() < deadline {
+        let mut remaining = Vec::with_capacity(handles.len());
+        for handle in handles {
+            if handle.is_finished() {
+                let _ = handle.join();
+            } else {
+                remaining.push(handle);
+            }
         }
-
-        let _ = session.child.kill();
-        let reap_app = app.clone();
-        std::thread::spawn(move || reap_session(session, &reap_app));
-
-        let _ = app.emit("session-closed", session_id);
+        handles = remaining;
+        if !handles.is_empty() {
+            let sleep_for = deadline
+                .saturating_duration_since(Instant::now())
+                .min(Duration::from_millis(10));
+            if !sleep_for.is_zero() {
+                std::thread::sleep(sleep_for);
+            }
+        }
     }
 
-    Ok(())
+    count
 }
 
 #[tauri::command(async)]
@@ -125,7 +173,7 @@ pub fn close_all_ptys(app: AppHandle, state: State<'_, PtyState>) -> Result<usiz
 
     let count = session_ids.len();
     for session_id in session_ids {
-        let _ = close_pty(app.clone(), state.clone(), session_id, None);
+        let _ = close_pty_inner(&app, &state, session_id, None);
     }
 
     Ok(count)

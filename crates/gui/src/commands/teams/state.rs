@@ -97,22 +97,30 @@ impl From<anyhow::Error> for TeamsInitError {
     }
 }
 
-/// Run an `init` attempt on its own thread; its failure keeps the shape the UI
+/// Run an `init` attempt on its own thread and await its result without
+/// blocking a Tokio worker thread; its failure keeps the shape the UI
 /// switches on instead of turning everything into a string.
-pub(super) fn on_init_thread<T: Send + 'static>(
+pub(super) async fn on_init_thread<T: Send + 'static>(
     job: impl FnOnce() -> std::result::Result<T, TeamsInitError> + Send + 'static,
 ) -> std::result::Result<T, TeamsInitError> {
-    std::thread::spawn(job)
-        .join()
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(job());
+    });
+    rx.await
         .map_err(|_| TeamsInitError::failed("the Teams worker crashed"))?
 }
 
-/// Run `job` on a dedicated thread and wait for it.
-pub(super) fn on_teams_thread<T: Send + 'static>(
+/// Run `job` on a dedicated thread and await its result without blocking a
+/// Tokio worker thread.
+pub(super) async fn on_teams_thread<T: Send + 'static>(
     job: impl FnOnce() -> anyhow::Result<T> + Send + 'static,
 ) -> Result<T, CommandError> {
-    std::thread::spawn(job)
-        .join()
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(job());
+    });
+    rx.await
         .map_err(|_| CommandError::from("the Teams worker crashed"))?
         .map_err(command_error)
 }
@@ -129,7 +137,7 @@ pub(super) type SessionFuture<'s, T> =
     std::pin::Pin<Box<dyn Future<Output = anyhow::Result<T>> + 's>>;
 
 /// Open the store and a session over the unlocked keys, then run `op`.
-pub(super) fn with_session<T, F>(keys: Arc<DeviceKeys>, op: F) -> Result<T, CommandError>
+pub(super) async fn with_session<T, F>(keys: Arc<DeviceKeys>, op: F) -> Result<T, CommandError>
 where
     T: Send + 'static,
     F: for<'s> FnOnce(&'s Session<'s>) -> SessionFuture<'s, T> + Send + 'static,
@@ -139,6 +147,7 @@ where
         let session = Session::with_keys(&store, &config, keys)?;
         block_on(op(&session))
     })
+    .await
 }
 
 #[cfg(test)]
@@ -146,15 +155,16 @@ mod tests {
     use super::*;
 
     /// The sync engine's futures aren't `Send`; they must still run.
-    #[test]
-    fn runs_non_send_futures() {
+    #[tokio::test]
+    async fn runs_non_send_futures() {
         let out = on_teams_thread(|| {
             Ok(block_on(async {
                 let local = std::rc::Rc::new(41);
                 tokio::task::yield_now().await;
                 *local + 1
             }))
-        });
+        })
+        .await;
         assert_eq!(out.unwrap(), 42);
     }
 
@@ -162,13 +172,13 @@ mod tests {
     /// worker's runtime there must not panic ("runtime within a runtime").
     #[tokio::test]
     async fn works_from_inside_a_runtime() {
-        let out = on_teams_thread(|| Ok(block_on(async { 7 })));
+        let out = on_teams_thread(|| Ok(block_on(async { 7 }))).await;
         assert_eq!(out.unwrap(), 7);
     }
 
-    #[test]
-    fn worker_errors_become_messages() {
-        let out: Result<(), CommandError> = on_teams_thread(|| Err(anyhow::anyhow!("boom")));
+    #[tokio::test]
+    async fn worker_errors_become_messages() {
+        let out: Result<(), CommandError> = on_teams_thread(|| Err(anyhow::anyhow!("boom"))).await;
         assert_eq!(out.unwrap_err().to_string(), "boom");
     }
 

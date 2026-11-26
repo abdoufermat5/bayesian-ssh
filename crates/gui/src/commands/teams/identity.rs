@@ -66,8 +66,8 @@ pub(super) fn default_device_name() -> String {
         .unwrap_or_else(|| "desktop".to_string())
 }
 
-#[tauri::command(async)]
-pub fn teams_init(
+#[tauri::command]
+pub async fn teams_init(
     state: State<'_, TeamsState>,
     server: String,
     email: String,
@@ -116,15 +116,16 @@ pub fn teams_init(
             _ => TeamsInitError::from(e),
         })?;
         Ok(session::unlock(&store, &passphrase)?)
-    })?;
+    })
+    .await?;
     state.set(Some(keys));
     status(&state).map_err(TeamsInitError::from)
 }
 
 /// Mail a new verification code (expiry included), e.g. when the last one
 /// expired before it was typed.
-#[tauri::command(async)]
-pub fn teams_request_email_code(
+#[tauri::command]
+pub async fn teams_request_email_code(
     server: String,
     email: String,
 ) -> Result<EmailCodeDto, CommandError> {
@@ -134,10 +135,11 @@ pub fn teams_request_email_code(
             expires_in_secs: sent.expires_in_secs,
         })
     })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn teams_unlock(
+#[tauri::command]
+pub async fn teams_unlock(
     state: State<'_, TeamsState>,
     passphrase: String,
 ) -> Result<TeamsStatus, CommandError> {
@@ -145,7 +147,8 @@ pub fn teams_unlock(
     let keys = on_teams_thread(move || {
         let (store, _) = open_store()?;
         session::unlock(&store, &passphrase)
-    })?;
+    })
+    .await?;
     state.set(Some(keys));
     status(&state).map_err(command_error)
 }

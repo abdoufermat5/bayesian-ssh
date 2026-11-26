@@ -90,8 +90,8 @@ pub(super) fn is_org_unsupported(e: &anyhow::Error) -> bool {
 
 /// The organizations this account owns or has a team in. `None` when the
 /// server has no organizations (an older server): the page hides that UI.
-#[tauri::command(async)]
-pub fn teams_orgs(state: State<'_, TeamsState>) -> Result<Option<Vec<OrgDto>>, CommandError> {
+#[tauri::command]
+pub async fn teams_orgs(state: State<'_, TeamsState>) -> Result<Option<Vec<OrgDto>>, CommandError> {
     with_session(state.unlocked()?, move |s| {
         Box::pin(async move {
             match s.list_orgs().await {
@@ -104,25 +104,28 @@ pub fn teams_orgs(state: State<'_, TeamsState>) -> Result<Option<Vec<OrgDto>>, C
             }
         })
     })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn teams_org(state: State<'_, TeamsState>, org: String) -> Result<OrgDto, CommandError> {
+#[tauri::command]
+pub async fn teams_org(state: State<'_, TeamsState>, org: String) -> Result<OrgDto, CommandError> {
     let org_id = parse_org(&org)?;
     with_session(state.unlocked()?, move |s| {
         Box::pin(async move { Ok(org_dto(&s.org_info(org_id).await?, &local_names()?)) })
     })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn teams_org_create(state: State<'_, TeamsState>) -> Result<OrgDto, CommandError> {
+#[tauri::command]
+pub async fn teams_org_create(state: State<'_, TeamsState>) -> Result<OrgDto, CommandError> {
     with_session(state.unlocked()?, move |s| {
         Box::pin(async move { Ok(org_dto(&s.create_org().await?, &local_names()?)) })
     })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn teams_org_add_owner(
+#[tauri::command]
+pub async fn teams_org_add_owner(
     state: State<'_, TeamsState>,
     org: String,
     email: String,
@@ -136,11 +139,12 @@ pub fn teams_org_add_owner(
             ))
         })
     })
+    .await
 }
 
 /// Remove an owner by email. Returns the organization as it is afterwards.
-#[tauri::command(async)]
-pub fn teams_org_remove_owner(
+#[tauri::command]
+pub async fn teams_org_remove_owner(
     state: State<'_, TeamsState>,
     org: String,
     email: String,
@@ -152,10 +156,11 @@ pub fn teams_org_remove_owner(
             Ok(org_dto(&s.org_info(org_id).await?, &local_names()?))
         })
     })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn teams_org_billing(
+#[tauri::command]
+pub async fn teams_org_billing(
     state: State<'_, TeamsState>,
     org: String,
 ) -> Result<bssh_teams_proto::api::BillingInfo, CommandError> {
@@ -163,11 +168,12 @@ pub fn teams_org_billing(
     with_session(state.unlocked()?, move |s| {
         Box::pin(async move { s.org_billing(org_id).await })
     })
+    .await
 }
 
 /// A Stripe Checkout URL for the organization (owner); the page opens it in the browser.
-#[tauri::command(async)]
-pub fn teams_org_billing_checkout(
+#[tauri::command]
+pub async fn teams_org_billing_checkout(
     state: State<'_, TeamsState>,
     org: String,
     seats: Option<u32>,
@@ -192,11 +198,12 @@ pub fn teams_org_billing_checkout(
             s.org_checkout_url(org_id, seats, interval).await
         })
     })
+    .await
 }
 
 /// The Stripe Customer Portal URL of the organization (owner).
-#[tauri::command(async)]
-pub fn teams_org_billing_portal(
+#[tauri::command]
+pub async fn teams_org_billing_portal(
     state: State<'_, TeamsState>,
     org: String,
 ) -> Result<String, CommandError> {
@@ -204,4 +211,5 @@ pub fn teams_org_billing_portal(
     with_session(state.unlocked()?, move |s| {
         Box::pin(async move { s.org_portal_url(org_id).await })
     })
+    .await
 }

@@ -4,10 +4,10 @@
 //! parallel (bounded by `parallel`), streaming per-host progress to the
 //! frontend as `upload-event` and a single terminal `upload-finished`.
 
-use super::CommandError;
+use super::{AllowedPaths, CommandError};
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use bayesian_ssh::models::Connection;
@@ -76,6 +76,7 @@ struct UploadFinishedPayload {
 pub async fn start_upload(
     app: AppHandle,
     state: State<'_, UploadState>,
+    allowed: State<'_, AllowedPaths>,
     connection_ids: Vec<String>,
     local_paths: Vec<String>,
     remote_dir: String,
@@ -93,31 +94,33 @@ pub async fn start_upload(
         return Err("Enter a destination directory.".into());
     }
 
-    let (db, config) = open_db_and_config()?;
-    let all = db.list_connections(None, false)?;
-    let targets: Vec<Connection> = connection_ids
-        .iter()
-        .filter_map(|id| {
-            all.iter()
-                .find(|c| &c.id.to_string() == id || &c.name == id)
-                .cloned()
-        })
-        .collect();
-    if targets.is_empty() {
-        return Err("No valid target connections selected".into());
-    }
-    if let Some(changed) = targets.iter().find(|c| c.pending_change.is_some()) {
-        return Err(bayesian_ssh::services::pending::refusal(changed).into());
-    }
-
     let mut locals = Vec::with_capacity(local_paths.len());
     for path in &local_paths {
-        let path = PathBuf::from(path);
-        if !path.exists() {
-            return Err(format!("Local path not found: {}", path.display()).into());
-        }
-        locals.push(path);
+        let verified = allowed.check_upload_path(Path::new(path))?;
+        locals.push(verified);
     }
+
+    let (config, targets) = tokio::task::spawn_blocking(move || -> Result<_, CommandError> {
+        let (db, config) = open_db_and_config()?;
+        let all = db.list_connections(None, false)?;
+        let targets: Vec<Connection> = connection_ids
+            .iter()
+            .filter_map(|id| {
+                all.iter()
+                    .find(|c| &c.id.to_string() == id || &c.name == id)
+                    .cloned()
+            })
+            .collect();
+        if targets.is_empty() {
+            return Err("No valid target connections selected".into());
+        }
+        if let Some(changed) = targets.iter().find(|c| c.pending_change.is_some()) {
+            return Err(bayesian_ssh::services::pending::refusal(changed).into());
+        }
+        Ok((config, targets))
+    })
+    .await
+    .map_err(|e| CommandError::from(format!("Background task failed: {e}")))??;
 
     // Destination directory without its trailing slash; each entry below is
     // resolved against it.
@@ -140,7 +143,7 @@ pub async fn start_upload(
         }
 
         let mut results = Vec::with_capacity(locals.len());
-        let mut error: Option<String> = None;
+        let mut errors: Vec<String> = Vec::new();
 
         for local in locals {
             let local_label = local.to_string_lossy().to_string();
@@ -190,9 +193,11 @@ pub async fn start_upload(
                     local_path: local_label,
                     hosts,
                 }),
-                Err(e) => error = Some(e.to_string()),
+                Err(e) => errors.push(format!("{local_label}: {e}")),
             }
         }
+
+        let error = (!errors.is_empty()).then(|| errors.join("; "));
 
         let _ = app_task.emit(
             "upload-finished",

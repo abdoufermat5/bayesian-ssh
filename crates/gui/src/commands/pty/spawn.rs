@@ -16,6 +16,22 @@ use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, State};
 use uuid::Uuid;
 
+/// Maximum queued `write_pty` chunks per session before backpressure errors.
+const PTY_INPUT_QUEUE_CAPACITY: usize = 1024;
+
+/// Validate a PTY `session_id` before using it in window labels or URLs.
+pub(super) fn validate_session_id(session_id: &str) -> Result<(), CommandError> {
+    if session_id.is_empty()
+        || session_id.len() > 64
+        || !session_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err("Invalid session id: must be 1-64 ASCII letters, digits, '-' or '_'.".into());
+    }
+    Ok(())
+}
+
 /// Exit status of a session's child, sent just before `pty-exit` so the UI can
 /// tell ssh's own failures (exit 255) from a normal logout.
 #[derive(Clone, Serialize)]
@@ -33,6 +49,7 @@ pub fn spawn_pty(
     connection_name: String,
     output: Channel<PtyChunk>,
 ) -> Result<(), CommandError> {
+    validate_session_id(&session_id)?;
     if state.lock_sessions().contains_key(&session_id) {
         // Overwriting the entry would drop the old PtySession without killing
         // its child, leaking a live ssh process and its reader thread.
@@ -123,7 +140,7 @@ pub fn spawn_pty(
 
     // Writer thread: drains write_pty input in order, so a child that stops
     // reading its terminal can never block the IPC thread.
-    let (input, input_rx) = mpsc::channel::<String>();
+    let (input, input_rx) = mpsc::sync_channel::<String>(PTY_INPUT_QUEUE_CAPACITY);
     std::thread::spawn(move || {
         for data in input_rx {
             if bayesian_ssh::services::pty::write_all(writer.as_mut(), &data).is_err() {
@@ -287,11 +304,13 @@ pub fn write_pty(
     let session = sessions
         .get(&session_id)
         .ok_or_else(|| format!("PTY session '{}' not found", session_id))?;
-    session.input.send(data).map_err(|_| {
-        CommandError::from(format!(
-            "PTY session '{}' is no longer writable",
-            session_id
-        ))
+    session.input.try_send(data).map_err(|e| match e {
+        mpsc::TrySendError::Full(_) => {
+            CommandError::from(format!("PTY session '{session_id}' input buffer is full"))
+        }
+        mpsc::TrySendError::Disconnected(_) => {
+            CommandError::from(format!("PTY session '{session_id}' is no longer writable"))
+        }
     })
 }
 
@@ -366,4 +385,22 @@ pub fn redraw_pty(state: State<'_, PtyState>, session_id: String) -> Result<(), 
     });
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_session_id;
+
+    #[test]
+    fn session_id_validation_accepts_safe_ids_and_rejects_bad_ones() {
+        assert!(validate_session_id("abc-123_XYZ").is_ok());
+        assert!(validate_session_id(&"a".repeat(64)).is_ok());
+
+        assert!(validate_session_id("").is_err());
+        assert!(validate_session_id(&"a".repeat(65)).is_err());
+        assert!(validate_session_id("../escape").is_err());
+        assert!(validate_session_id("id/with/slash").is_err());
+        assert!(validate_session_id("id with space").is_err());
+        assert!(validate_session_id("id?query=1").is_err());
+    }
 }

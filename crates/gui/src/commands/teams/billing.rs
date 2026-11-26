@@ -12,20 +12,21 @@ use super::team::resolve;
 use crate::commands::CommandError;
 use tauri::State;
 
-#[tauri::command(async)]
-pub fn teams_billing(
+#[tauri::command]
+pub async fn teams_billing(
     state: State<'_, TeamsState>,
     team: String,
 ) -> Result<bssh_teams_proto::api::BillingInfo, CommandError> {
     with_session(state.unlocked()?, move |s| {
         Box::pin(async move { s.billing(resolve(&team)?).await })
     })
+    .await
 }
 
 /// A Stripe Checkout URL for the team (admin); the page opens it in the browser.
 /// Without `seats`, the seats in use, at least one above the free plan.
-#[tauri::command(async)]
-pub fn teams_billing_checkout(
+#[tauri::command]
+pub async fn teams_billing_checkout(
     state: State<'_, TeamsState>,
     team: String,
     seats: Option<u32>,
@@ -50,15 +51,17 @@ pub fn teams_billing_checkout(
             s.checkout_url(team_id, seats, interval).await
         })
     })
+    .await
 }
 
 /// The Stripe Customer Portal URL of the team (admin).
-#[tauri::command(async)]
-pub fn teams_billing_portal(
+#[tauri::command]
+pub async fn teams_billing_portal(
     state: State<'_, TeamsState>,
     team: String,
 ) -> Result<String, CommandError> {
     with_session(state.unlocked()?, move |s| {
         Box::pin(async move { s.portal_url(resolve(&team)?).await })
     })
+    .await
 }

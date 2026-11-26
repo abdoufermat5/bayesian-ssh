@@ -1,4 +1,5 @@
 use std::process::Command;
+use std::time::Duration;
 
 use tauri::{
     AppHandle, Emitter, Manager, include_image,
@@ -9,7 +10,7 @@ use tauri::{
 // Tray icons must stay small; use the dedicated 32x32 asset instead of the 512px window icon.
 const TRAY_ICON: tauri::image::Image<'static> = include_image!("icons/32x32.png");
 
-use crate::commands::{CommandError, PtyState, close_all_ptys, open_db_and_config};
+use crate::commands::{CommandError, PtyState, close_all_ptys_and_wait, open_db_and_config};
 
 pub fn build_tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let show_i = MenuItemBuilder::new("Open Bayesian SSH")
@@ -106,14 +107,14 @@ pub fn quit_application(app: &AppHandle) {
             let _ = app.emit("prompt-quit-confirm", ());
             return;
         }
-        let _ = close_all_ptys(app.clone(), state);
+        close_all_ptys_and_wait(app.clone(), &state, Duration::from_secs(2));
     }
     app.exit(0);
 }
 
 pub fn force_quit_application(app: &AppHandle) {
     if let Some(state) = app.try_state::<PtyState>() {
-        let _ = close_all_ptys(app.clone(), state);
+        close_all_ptys_and_wait(app.clone(), &state, Duration::from_secs(2));
     }
     app.exit(0);
 }
@@ -128,6 +129,14 @@ pub fn refresh_tray_menu(app: AppHandle) -> Result<(), CommandError> {
     Ok(())
 }
 
+fn spawn_and_reap(mut cmd: Command) -> std::io::Result<()> {
+    let mut child = cmd.spawn()?;
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
+}
+
 #[tauri::command(async)]
 pub fn send_desktop_notification(title: String, body: String) -> Result<(), CommandError> {
     // Strip control characters that could break the shell/script wrappers below.
@@ -136,12 +145,13 @@ pub fn send_desktop_notification(title: String, body: String) -> Result<(), Comm
 
     #[cfg(target_os = "linux")]
     {
-        let _ = Command::new("notify-send")
-            .arg("-a")
+        let mut cmd = Command::new("notify-send");
+        cmd.arg("-a")
             .arg("Bayesian SSH")
+            .arg("--")
             .arg(&title)
-            .arg(&body)
-            .spawn()?;
+            .arg(&body);
+        spawn_and_reap(cmd)?;
     }
     #[cfg(target_os = "macos")]
     {
@@ -151,7 +161,9 @@ pub fn send_desktop_notification(title: String, body: String) -> Result<(), Comm
             body.replace('\\', "\\\\").replace('"', "\\\""),
             title.replace('\\', "\\\\").replace('"', "\\\"")
         );
-        let _ = Command::new("osascript").arg("-e").arg(&script).spawn();
+        let mut cmd = Command::new("osascript");
+        cmd.arg("-e").arg(&script);
+        let _ = spawn_and_reap(cmd);
     }
     #[cfg(target_os = "windows")]
     {
@@ -168,10 +180,9 @@ pub fn send_desktop_notification(title: String, body: String) -> Result<(), Comm
             body.replace('\'', "''"),
             title.replace('\'', "''")
         );
-        let _ = Command::new("powershell")
-            .arg("-Command")
-            .arg(&script)
-            .spawn();
+        let mut cmd = Command::new("powershell");
+        cmd.arg("-Command").arg(&script);
+        let _ = spawn_and_reap(cmd);
     }
     Ok(())
 }

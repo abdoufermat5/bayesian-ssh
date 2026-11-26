@@ -1,6 +1,6 @@
 //! The `#[tauri::command]` surface of the AI view.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -10,7 +10,7 @@ use bayesian_ssh::services::ai::install::{Client, InstallOptions, detected_clien
 use bayesian_ssh::services::ai::policy;
 use bayesian_ssh::services::ai::prune::{self, AiStorage, PruneOutcome, PrunePlan, PruneRequest};
 use bayesian_ssh::services::ai::report_doc::{self, ReportFormat};
-use bayesian_ssh::services::ai::types::{Policy, Profile};
+use bayesian_ssh::services::ai::types::{AiEvent, Policy, Profile};
 use bayesian_ssh::services::ai::{audit, report};
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_opener::OpenerExt;
@@ -21,7 +21,7 @@ use super::sink::TauriSink;
 use super::types::{
     AiClientInstallResult, AiClientStatus, AiSettingsView, RunSummary, StoredEvent,
 };
-use crate::commands::CommandError;
+use crate::commands::{AllowedPaths, CommandError};
 
 /// Starts the discovery task and manages the hub as Tauri state.
 pub fn start(app: &AppHandle) {
@@ -418,24 +418,70 @@ pub struct ReportRow {
     approvals: usize,
 }
 
+fn event_run_id(event: &AiEvent) -> &str {
+    match event {
+        AiEvent::RunStarted { run_id, .. }
+        | AiEvent::Approval { run_id, .. }
+        | AiEvent::Result { run_id, .. }
+        | AiEvent::Change { run_id, .. }
+        | AiEvent::Paused { run_id, .. }
+        | AiEvent::Resumed { run_id, .. }
+        | AiEvent::RunEnded { run_id, .. } => run_id,
+        AiEvent::Call { call, .. } => &call.run_id,
+    }
+}
+
 /// Past runs from the active environment's audit log, newest first.
-#[tauri::command(async)]
-pub fn ai_reports(limit: Option<usize>) -> Result<Vec<ReportRow>, CommandError> {
-    let config = AppConfig::load(None)?;
-    let runs = report::list_runs(&config, limit.unwrap_or(200))?;
-    let entries = audit::read_entries(&config)?;
-    Ok(runs
-        .into_iter()
-        .map(|summary| {
-            let full = report::build_report(&entries, &summary.run_id);
-            ReportRow {
-                summary,
-                on_behalf_of: full.on_behalf_of,
-                hosts: full.hosts,
-                approvals: full.approvals.len(),
-            }
-        })
-        .collect())
+#[tauri::command]
+pub async fn ai_reports(limit: Option<usize>) -> Result<Vec<ReportRow>, CommandError> {
+    let limit = limit.unwrap_or(200).clamp(1, 500);
+    tokio::task::spawn_blocking(move || -> Result<Vec<ReportRow>, CommandError> {
+        let config = AppConfig::load(None)?;
+        let entries = audit::read_entries(&config)?;
+
+        let mut order: Vec<String> = Vec::new();
+        let mut by_run: HashMap<String, Vec<audit::AuditEntry>> = HashMap::new();
+        for entry in entries {
+            let run_id = event_run_id(&entry.event).to_string();
+            by_run
+                .entry(run_id.clone())
+                .or_insert_with(|| {
+                    order.push(run_id);
+                    Vec::new()
+                })
+                .push(entry);
+        }
+
+        order.reverse();
+        order.truncate(limit);
+
+        Ok(order
+            .into_iter()
+            .map(|run_id| {
+                let run_entries = by_run.remove(&run_id).unwrap_or_default();
+                let full = report::build_report(&run_entries, &run_id);
+                let summary = report::RunSummary {
+                    run_id,
+                    client: full.client,
+                    policy: full.policy,
+                    started: full.started,
+                    ended: full.ended,
+                    calls: full.calls.len(),
+                    denials: full.denials.len(),
+                    changes: full.changes.len(),
+                    end_reason: full.end_reason,
+                };
+                ReportRow {
+                    summary,
+                    on_behalf_of: full.on_behalf_of,
+                    hosts: full.hosts,
+                    approvals: full.approvals.len(),
+                }
+            })
+            .collect())
+    })
+    .await
+    .map_err(|e| CommandError::from(format!("Background task failed: {e}")))?
 }
 
 /// The report of one run, from the audit log and its change records.
@@ -446,18 +492,22 @@ pub fn ai_report(run_id: String) -> Result<report::RunReport, CommandError> {
 }
 
 /// Save a run's report through a save dialog. `None` when the user cancels.
-/// Sync like the other file dialogs (`commands::dialogs`): they run on the main thread.
 #[tauri::command]
-pub fn ai_report_export(
+pub async fn ai_report_export(
     window: tauri::WebviewWindow,
     saved: State<'_, ReportFiles>,
     run_id: String,
     format: String,
 ) -> Result<Option<String>, CommandError> {
     let format: ReportFormat = format.parse()?;
-    let config = AppConfig::load(None)?;
-    let r = report::run_report(&config, &run_id)?;
-    let mut dialog = rfd::FileDialog::new()
+    let r = tokio::task::spawn_blocking(move || -> Result<report::RunReport, CommandError> {
+        let config = AppConfig::load(None)?;
+        Ok(report::run_report(&config, &run_id)?)
+    })
+    .await
+    .map_err(|e| CommandError::from(format!("Background task failed: {e}")))??;
+
+    let mut dialog = rfd::AsyncFileDialog::new()
         .set_title("Save run report")
         .set_file_name(report_doc::file_name(&r, format))
         .add_filter(format.label(), &[format.extension()])
@@ -466,14 +516,23 @@ pub fn ai_report_export(
         dialog = dialog.set_directory(dir);
     }
     let _ = window.minimize();
-    let picked = dialog.save_file();
+    let picked = dialog.save_file().await;
     let _ = window.unminimize();
     let _ = window.set_focus();
-    let Some(path) = picked else {
+    let Some(handle) = picked else {
         return Ok(None);
     };
-    let bytes = report_doc::render(&r, format, chrono::Local::now())?;
-    std::fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+    let path = handle.path().to_path_buf();
+
+    let write_path = path.clone();
+    tokio::task::spawn_blocking(move || -> Result<(), CommandError> {
+        let bytes = report_doc::render(&r, format, chrono::Local::now())?;
+        std::fs::write(&write_path, bytes)
+            .map_err(|e| CommandError::from(format!("{}: {e}", write_path.display())))
+    })
+    .await
+    .map_err(|e| CommandError::from(format!("Background task failed: {e}")))??;
+
     // Only now may the webview ask to open or reveal it.
     saved.allow(&path)?;
     Ok(Some(path.to_string_lossy().into_owned()))
@@ -550,13 +609,22 @@ pub fn ai_prune_plan(req: PruneRequest) -> Result<PrunePlan, CommandError> {
 }
 
 /// Delete, archive or wipe AI audit data. Re-plans under the audit lock.
-#[tauri::command(async)]
-pub fn ai_prune(
+#[tauri::command]
+pub async fn ai_prune(
     saved: State<'_, ReportFiles>,
-    req: PruneRequest,
+    allowed: State<'_, AllowedPaths>,
+    mut req: PruneRequest,
 ) -> Result<PruneOutcome, CommandError> {
-    let config = AppConfig::load(None)?;
-    let outcome = prune::execute(&config, &req)?;
+    if let Some(ref dir) = req.archive_dir {
+        let verified = allowed.check_dir(dir)?;
+        req.archive_dir = Some(verified);
+    }
+    let outcome = tokio::task::spawn_blocking(move || -> Result<PruneOutcome, CommandError> {
+        let config = AppConfig::load(None)?;
+        Ok(prune::execute(&config, &req)?)
+    })
+    .await
+    .map_err(|e| CommandError::from(format!("Background task failed: {e}")))??;
     // Let the dialog's "Show in folder" reveal the archive it just wrote.
     if let Some(dir) = &outcome.archive_dir {
         let _ = saved.allow(&dir.join("manifest.json"));
@@ -567,7 +635,10 @@ pub fn ai_prune(
 /// Pick the folder an archive is written to. `None` when the user cancels.
 /// Sync like the other file dialogs (`commands::dialogs`): they run on the main thread.
 #[tauri::command]
-pub fn ai_pick_archive_dir(window: tauri::WebviewWindow) -> Result<Option<String>, CommandError> {
+pub fn ai_pick_archive_dir(
+    window: tauri::WebviewWindow,
+    allowed: State<'_, AllowedPaths>,
+) -> Result<Option<String>, CommandError> {
     let mut dialog = rfd::FileDialog::new()
         .set_title("Archive folder")
         .set_parent(&window);
@@ -578,6 +649,9 @@ pub fn ai_pick_archive_dir(window: tauri::WebviewWindow) -> Result<Option<String
     let folder = dialog.pick_folder();
     let _ = window.unminimize();
     let _ = window.set_focus();
+    if let Some(ref p) = folder {
+        allowed.allow_dir(p);
+    }
     Ok(folder.map(|p| p.to_string_lossy().to_string()))
 }
 

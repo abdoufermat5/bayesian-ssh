@@ -1,18 +1,15 @@
 //! Discovery of, and sessions on, the run sockets (Unix only).
 
 use super::hub::{AiHub, RunHello};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, SystemTime};
 
 use bayesian_ssh::config::AppConfig;
-use bayesian_ssh::services::ai::ipc::{ClientMsg, ServerMsg};
-
 use bayesian_ssh::services::ai::ai_dir;
-use bayesian_ssh::services::ai::ipc::IPC_VERSION;
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use bayesian_ssh::services::ai::ipc::{ClientMsg, IPC_VERSION, ServerMsg};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::task::JoinHandle;
@@ -22,6 +19,8 @@ const CLIENT_NAME: &str = "bssh-desktop";
 /// How often `<ai_dir>/runs` is listed.
 const SCAN_INTERVAL: Duration = Duration::from_secs(2);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
+/// Maximum size of a single JSONL IPC line accepted from a run socket (1 MiB).
+const MAX_IPC_LINE_BYTES: usize = 1024 * 1024;
 
 enum Slot {
     /// A session task owns the socket.
@@ -39,23 +38,32 @@ pub struct Discovery {
 impl Discovery {
     /// One pass over `<ai_dir>/runs`: connects to sockets without a session.
     pub async fn scan(&mut self, hub: &Arc<AiHub>, runs_dir: &Path) {
-        let mut found = HashSet::new();
-        if let Ok(entries) = std::fs::read_dir(runs_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().is_some_and(|e| e == "sock") {
-                    found.insert(path);
+        let dir = runs_dir.to_path_buf();
+        let found: Vec<(PathBuf, Option<SystemTime>)> = tokio::task::spawn_blocking(move || {
+            let mut out = Vec::new();
+            if let Ok(entries) = std::fs::read_dir(&dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.extension().is_some_and(|e| e == "sock") {
+                        let seen = mtime(&path);
+                        out.push((path, seen));
+                    }
                 }
             }
-        }
+            out
+        })
+        .await
+        .unwrap_or_default();
+
+        let found_set: HashSet<PathBuf> = found.iter().map(|(p, _)| p.clone()).collect();
         self.slots.retain(|path, slot| match slot {
-            Slot::Live(handle) => !handle.is_finished() || found.contains(path),
-            Slot::Dead(_) => found.contains(path),
+            Slot::Live(handle) => !handle.is_finished() || found_set.contains(path),
+            Slot::Dead(_) => found_set.contains(path),
         });
-        for path in found {
+        for (path, seen_mtime) in found {
             match self.slots.get(&path) {
                 Some(Slot::Live(handle)) if !handle.is_finished() => continue,
-                Some(Slot::Dead(seen)) if *seen == mtime(&path) => continue,
+                Some(Slot::Dead(seen)) if *seen == seen_mtime => continue,
                 _ => {}
             }
             let stream = tokio::time::timeout(CONNECT_TIMEOUT, UnixStream::connect(&path)).await;
@@ -68,8 +76,7 @@ impl Discovery {
                 other => {
                     // Left behind by a process that died, or not ours.
                     tracing::debug!(path = %path.display(), "ai socket not reachable: {other:?}");
-                    let seen = mtime(&path);
-                    self.slots.insert(path, Slot::Dead(seen));
+                    self.slots.insert(path, Slot::Dead(seen_mtime));
                 }
             }
         }
@@ -84,6 +91,35 @@ fn encode(msg: &ClientMsg) -> Option<Vec<u8>> {
     let mut line = serde_json::to_vec(msg).ok()?;
     line.push(b'\n');
     Some(line)
+}
+
+enum BoundedLine {
+    Line(String),
+    Eof,
+    TooLong,
+}
+
+async fn read_bounded_line<R: tokio::io::AsyncBufRead + Unpin>(
+    reader: &mut R,
+    max_bytes: usize,
+) -> std::io::Result<BoundedLine> {
+    let mut buf = Vec::new();
+    let n = reader
+        .take((max_bytes + 1) as u64)
+        .read_until(b'\n', &mut buf)
+        .await?;
+    if n == 0 {
+        return Ok(BoundedLine::Eof);
+    }
+    if buf.len() > max_bytes {
+        return Ok(BoundedLine::TooLong);
+    }
+    while matches!(buf.last(), Some(b'\n' | b'\r')) {
+        buf.pop();
+    }
+    let line = String::from_utf8(buf)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    Ok(BoundedLine::Line(line))
 }
 
 /// Speaks the protocol on one connection until it closes.
@@ -106,12 +142,19 @@ async fn session(hub: Arc<AiHub>, stream: UnixStream) {
     let _ = tx.send(ClientMsg::Subscribe);
     let _ = tx.send(ClientMsg::ListPending);
 
-    let mut lines = BufReader::new(read).lines();
+    let mut reader = BufReader::new(read);
     let mut attached: Option<(String, u64)> = None;
     loop {
-        let line = match lines.next_line().await {
-            Ok(Some(line)) => line,
-            Ok(None) => break,
+        let line = match read_bounded_line(&mut reader, MAX_IPC_LINE_BYTES).await {
+            Ok(BoundedLine::Line(line)) => line,
+            Ok(BoundedLine::Eof) => break,
+            Ok(BoundedLine::TooLong) => {
+                tracing::warn!(
+                    max_bytes = MAX_IPC_LINE_BYTES,
+                    "closing ai socket: IPC line exceeded maximum length"
+                );
+                break;
+            }
             Err(e) => {
                 tracing::debug!("ai socket read failed: {e}");
                 break;
@@ -179,13 +222,27 @@ struct RunsDirResolver {
 }
 
 impl RunsDirResolver {
-    fn resolve(&mut self) -> Option<PathBuf> {
-        let env = AppConfig::active_env();
-        if self.env.as_deref() != Some(env.as_str()) || self.dir.is_none() {
-            self.dir = AppConfig::load(None).ok().map(|config| {
-                bayesian_ssh::services::ai::control_client::runs_dir(&ai_dir(&config))
-            });
+    async fn resolve(&mut self) -> Option<PathBuf> {
+        let prev_env = self.env.clone();
+        let has_dir = self.dir.is_some();
+        let resolved = tokio::task::spawn_blocking(move || {
+            let env = AppConfig::active_env();
+            if prev_env.as_deref() != Some(env.as_str()) || !has_dir {
+                let dir = AppConfig::load(None).ok().map(|config| {
+                    bayesian_ssh::services::ai::control_client::runs_dir(&ai_dir(&config))
+                });
+                Some((env, dir))
+            } else {
+                None
+            }
+        })
+        .await
+        .ok()
+        .flatten();
+
+        if let Some((env, dir)) = resolved {
             self.env = Some(env);
+            self.dir = dir;
         }
         self.dir.clone()
     }
@@ -196,7 +253,7 @@ pub async fn discovery_loop(hub: Arc<AiHub>) {
     let mut resolver = RunsDirResolver::default();
     let mut discovery = Discovery::default();
     loop {
-        if let Some(dir) = resolver.resolve() {
+        if let Some(dir) = resolver.resolve().await {
             discovery.scan(&hub, &dir).await;
         }
         tokio::time::sleep(SCAN_INTERVAL).await;

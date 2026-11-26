@@ -15,45 +15,53 @@ fn friendly_db_error(e: impl std::fmt::Display) -> CommandError {
     }
 }
 
-#[tauri::command(async)]
-pub fn get_connections(
+#[tauri::command]
+pub async fn get_connections(
     query: Option<String>,
     tag_filter: Option<String>,
 ) -> Result<Vec<Connection>, CommandError> {
-    let (db, config) = open_db_and_config()?;
+    tokio::task::spawn_blocking(move || {
+        let (db, config) = open_db_and_config()?;
 
-    if let Some(q) = query
-        && !q.trim().is_empty()
-    {
-        return db
-            .search_connections(&q, 100, &config.search_mode)
-            .map_err(friendly_db_error);
-    }
+        if let Some(q) = query
+            && !q.trim().is_empty()
+        {
+            return db
+                .search_connections(&q, 100, &config.search_mode)
+                .map_err(friendly_db_error);
+        }
 
-    db.list_connections(tag_filter.as_deref(), false)
-        .map_err(friendly_db_error)
+        db.list_connections(tag_filter.as_deref(), false)
+            .map_err(friendly_db_error)
+    })
+    .await
+    .map_err(|e| CommandError::from(format!("Background task failed: {e}")))?
 }
 
-#[tauri::command(async)]
-pub fn predict_connections(
+#[tauri::command]
+pub async fn predict_connections(
     limit: Option<usize>,
 ) -> Result<Vec<bayesian_ssh::database::Prediction>, CommandError> {
-    let (db, config) = open_db_and_config()?;
-    let ctx = if config.prediction.enabled {
-        bayesian_ssh::database::RankContext::current_without_cwd(&db)
-    } else {
-        bayesian_ssh::database::RankContext::default()
-    };
-    db.predict(&ctx, limit.unwrap_or(3))
-        .map_err(friendly_db_error)
+    tokio::task::spawn_blocking(move || {
+        let (db, config) = open_db_and_config()?;
+        let ctx = if config.prediction.enabled {
+            bayesian_ssh::database::RankContext::current_without_cwd(&db)
+        } else {
+            bayesian_ssh::database::RankContext::default()
+        };
+        db.predict(&ctx, limit.unwrap_or(3))
+            .map_err(friendly_db_error)
+    })
+    .await
+    .map_err(|e| CommandError::from(format!("Background task failed: {e}")))?
 }
 
-#[tauri::command(async)]
+#[tauri::command]
 #[expect(
     clippy::too_many_arguments,
     reason = "tauri command arguments map 1:1 to frontend invoke fields"
 )]
-pub fn add_connection(
+pub async fn add_connection(
     name: String,
     host: String,
     user: Option<String>,
@@ -65,44 +73,48 @@ pub fn add_connection(
     tags: Vec<String>,
     forward_agent: Option<bool>,
 ) -> Result<(), CommandError> {
-    let (db, config) = open_db_and_config()?;
+    tokio::task::spawn_blocking(move || {
+        let (db, config) = open_db_and_config()?;
 
-    let default_u = config.default_user.clone();
-    let default_p = config.default_port;
-    let default_k = config.use_kerberos_by_default;
+        let default_u = config.default_user.clone();
+        let default_p = config.default_port;
+        let default_k = config.use_kerberos_by_default;
 
-    let user = user.unwrap_or(default_u);
-    validate_connection_fields(
-        &name,
-        &host,
-        &user,
-        bastion.as_deref(),
-        bastion_user.as_deref(),
-        key_path.as_deref(),
-    )?;
+        let user = user.unwrap_or(default_u);
+        validate_connection_fields(
+            &name,
+            &host,
+            &user,
+            bastion.as_deref(),
+            bastion_user.as_deref(),
+            key_path.as_deref(),
+        )?;
 
-    let mut connection = Connection {
-        bastion,
-        bastion_user,
-        use_kerberos: kerberos.unwrap_or(default_k),
-        key_path,
-        ..Connection::new(name, host, user, port.unwrap_or(default_p))
-    };
+        let mut connection = Connection {
+            bastion,
+            bastion_user,
+            use_kerberos: kerberos.unwrap_or(default_k),
+            key_path,
+            ..Connection::new(name, host, user, port.unwrap_or(default_p))
+        };
 
-    connection.forward_agent = forward_agent.unwrap_or(false);
-    for tag in tags {
-        connection.add_tag(tag);
-    }
+        connection.forward_agent = forward_agent.unwrap_or(false);
+        for tag in tags {
+            connection.add_tag(tag);
+        }
 
-    db.add_connection(&connection).map_err(CommandError::from)
+        db.add_connection(&connection).map_err(CommandError::from)
+    })
+    .await
+    .map_err(|e| CommandError::from(format!("Background task failed: {e}")))?
 }
 
-#[tauri::command(async)]
+#[tauri::command]
 #[expect(
     clippy::too_many_arguments,
     reason = "tauri command arguments map 1:1 to frontend invoke fields"
 )]
-pub fn edit_connection(
+pub async fn edit_connection(
     id: String,
     name: String,
     host: String,
@@ -115,74 +127,85 @@ pub fn edit_connection(
     tags: Vec<String>,
     forward_agent: Option<bool>,
 ) -> Result<(), CommandError> {
-    let (db, _config) = open_db_and_config()?;
+    tokio::task::spawn_blocking(move || {
+        let (db, _config) = open_db_and_config()?;
 
-    let uuid = Uuid::parse_str(&id)?;
+        let uuid = Uuid::parse_str(&id)?;
 
-    let existing = db
-        .connection(&id)?
-        .ok_or_else(|| format!("Connection '{}' not found", id))?;
+        let existing = db
+            .connection(&id)?
+            .ok_or_else(|| format!("Connection '{}' not found", id))?;
 
-    if existing.id != uuid {
-        return Err("Connection id mismatch.".into());
-    }
+        if existing.id != uuid {
+            return Err("Connection id mismatch.".into());
+        }
 
-    validate_connection_fields(
-        &name,
-        &host,
-        &user,
-        bastion.as_deref(),
-        bastion_user.as_deref(),
-        key_path.as_deref(),
-    )?;
+        validate_connection_fields(
+            &name,
+            &host,
+            &user,
+            bastion.as_deref(),
+            bastion_user.as_deref(),
+            key_path.as_deref(),
+        )?;
 
-    let mut connection = Connection {
-        id: uuid,
-        name,
-        host,
-        user,
-        port,
-        bastion,
-        bastion_user,
-        use_kerberos: kerberos,
-        key_path,
-        created_at: existing.created_at,
-        last_used: existing.last_used,
-        tags: Vec::new(),
-        aliases: existing.aliases,
-        source_id: existing.source_id,
-        external_id: existing.external_id,
-        stale_since: existing.stale_since,
-        forward_agent: forward_agent.unwrap_or(existing.forward_agent),
-        pending_change: existing.pending_change,
-    };
+        let mut connection = Connection {
+            id: uuid,
+            name,
+            host,
+            user,
+            port,
+            bastion,
+            bastion_user,
+            use_kerberos: kerberos,
+            key_path,
+            created_at: existing.created_at,
+            last_used: existing.last_used,
+            tags: Vec::new(),
+            aliases: existing.aliases,
+            source_id: existing.source_id,
+            external_id: existing.external_id,
+            stale_since: existing.stale_since,
+            forward_agent: forward_agent.unwrap_or(existing.forward_agent),
+            pending_change: existing.pending_change,
+        };
 
-    for tag in tags {
-        connection.add_tag(tag);
-    }
+        for tag in tags {
+            connection.add_tag(tag);
+        }
 
-    db.update_connection(&connection)
-        .map_err(CommandError::from)
+        db.update_connection(&connection)
+            .map_err(CommandError::from)
+    })
+    .await
+    .map_err(|e| CommandError::from(format!("Background task failed: {e}")))?
 }
 
 /// Clear the route change a team sync made to a connection, after the user
 /// has seen it in the confirmation dialog.
-#[tauri::command(async)]
-pub fn confirm_connection_change(id_or_name: String) -> Result<(), CommandError> {
-    let (db, _config) = open_db_and_config()?;
-    let connection = db
-        .connection(&id_or_name)?
-        .ok_or_else(|| format!("Connection '{}' not found", id_or_name))?;
-    db.clear_pending_change(&connection.id)
-        .map_err(CommandError::from)
+#[tauri::command]
+pub async fn confirm_connection_change(id_or_name: String) -> Result<(), CommandError> {
+    tokio::task::spawn_blocking(move || {
+        let (db, _config) = open_db_and_config()?;
+        let connection = db
+            .connection(&id_or_name)?
+            .ok_or_else(|| format!("Connection '{}' not found", id_or_name))?;
+        db.clear_pending_change(&connection.id)
+            .map_err(CommandError::from)
+    })
+    .await
+    .map_err(|e| CommandError::from(format!("Background task failed: {e}")))?
 }
 
-#[tauri::command(async)]
-pub fn remove_connection(id_or_name: String) -> Result<(), CommandError> {
-    let (db, _config) = open_db_and_config()?;
-
-    db.remove_connection(&id_or_name)?;
-    Ok(())
+#[tauri::command]
+pub async fn remove_connection(id_or_name: String) -> Result<(), CommandError> {
+    tokio::task::spawn_blocking(move || {
+        let (db, _config) = open_db_and_config()?;
+        db.remove_connection(&id_or_name)?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| CommandError::from(format!("Background task failed: {e}")))?
 }
 
 #[derive(serde::Serialize, Clone, Debug)]
@@ -206,21 +229,28 @@ pub async fn run_batch_command(
     dry_run: bool,
     timeout_secs: Option<u64>,
 ) -> Result<Vec<BatchExecHostResult>, CommandError> {
-    let (db, config) = open_db_and_config()?;
-    let all_conns = db.list_connections(None, false)?;
-
-    let targets: Vec<Connection> = all_conns
-        .into_iter()
-        .filter(|c| connection_ids.contains(&c.id.to_string()) || connection_ids.contains(&c.name))
-        .collect();
-
-    if targets.is_empty() {
-        return Err("No valid target connections selected".into());
-    }
-
     if command.trim().is_empty() {
         return Err("Command cannot be empty".into());
     }
+
+    let (config, targets) = tokio::task::spawn_blocking(move || -> Result<_, CommandError> {
+        let (db, config) = open_db_and_config()?;
+        let all_conns = db.list_connections(None, false)?;
+
+        let targets: Vec<Connection> = all_conns
+            .into_iter()
+            .filter(|c| {
+                connection_ids.contains(&c.id.to_string()) || connection_ids.contains(&c.name)
+            })
+            .collect();
+
+        if targets.is_empty() {
+            return Err("No valid target connections selected".into());
+        }
+        Ok((config, targets))
+    })
+    .await
+    .map_err(|e| CommandError::from(format!("Background task failed: {e}")))??;
 
     let timeout_duration = std::time::Duration::from_secs(timeout_secs.unwrap_or(10));
 
@@ -350,25 +380,32 @@ pub async fn run_batch_command(
         }
     }
 
-    for res in &results {
-        if let Some(conn) = conn_lookup.get(&res.connection_id) {
-            let now = Utc::now();
-            let started_at = now - chrono::Duration::milliseconds(res.duration_ms as i64);
-            let session = Session {
-                id: Uuid::new_v4(),
-                connection: conn.clone(),
-                transport: Some("batch-command".to_string()),
-                started_at,
-                ended_at: Some(now),
-                status: SessionStatus::Terminated,
-                pid: None,
-                exit_code: Some(res.exit_code),
-                recording_path: None,
-                context: Default::default(),
-            };
-            let _ = db.add_session(&session);
+    let results_for_db = results.clone();
+    let _ = tokio::task::spawn_blocking(move || {
+        let Ok((db, _)) = open_db_and_config() else {
+            return;
+        };
+        for res in &results_for_db {
+            if let Some(conn) = conn_lookup.get(&res.connection_id) {
+                let now = Utc::now();
+                let started_at = now - chrono::Duration::milliseconds(res.duration_ms as i64);
+                let session = Session {
+                    id: Uuid::new_v4(),
+                    connection: conn.clone(),
+                    transport: Some("batch-command".to_string()),
+                    started_at,
+                    ended_at: Some(now),
+                    status: SessionStatus::Terminated,
+                    pid: None,
+                    exit_code: Some(res.exit_code),
+                    recording_path: None,
+                    context: Default::default(),
+                };
+                let _ = db.add_session(&session);
+            }
         }
-    }
+    })
+    .await;
 
     Ok(results)
 }

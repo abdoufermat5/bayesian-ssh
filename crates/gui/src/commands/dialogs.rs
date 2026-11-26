@@ -1,6 +1,12 @@
-use super::CommandError;
+use super::{AllowedPaths, CommandError};
+use std::path::PathBuf;
+use tauri::State;
+
 #[tauri::command]
-pub fn pick_key_file(window: tauri::WebviewWindow) -> Result<Option<String>, CommandError> {
+pub fn pick_key_file(
+    window: tauri::WebviewWindow,
+    allowed: State<'_, AllowedPaths>,
+) -> Result<Option<String>, CommandError> {
     let ssh_dir = dirs::home_dir().map(|h| h.join(".ssh"));
 
     let mut dialog = rfd::FileDialog::new()
@@ -17,6 +23,13 @@ pub fn pick_key_file(window: tauri::WebviewWindow) -> Result<Option<String>, Com
     let file = dialog.pick_file();
     let _ = window.unminimize();
     let _ = window.set_focus();
+
+    if let Some(ref p) = file {
+        allowed.allow_read_file(p);
+        if p.extension().is_none_or(|e| e != "pub") {
+            allowed.allow_read_file(&PathBuf::from(format!("{}.pub", p.display())));
+        }
+    }
 
     Ok(file.map(|p| p.to_string_lossy().to_string()))
 }
@@ -45,7 +58,10 @@ pub fn pick_ssh_config_file(window: tauri::WebviewWindow) -> Result<Option<Strin
 }
 
 #[tauri::command]
-pub fn pick_upload_files(window: tauri::WebviewWindow) -> Result<Vec<String>, CommandError> {
+pub fn pick_upload_files(
+    window: tauri::WebviewWindow,
+    allowed: State<'_, AllowedPaths>,
+) -> Result<Vec<String>, CommandError> {
     let mut dialog = rfd::FileDialog::new()
         .set_title("Select Files to Upload")
         .set_parent(&window);
@@ -59,15 +75,22 @@ pub fn pick_upload_files(window: tauri::WebviewWindow) -> Result<Vec<String>, Co
     let _ = window.unminimize();
     let _ = window.set_focus();
 
+    let files = files.unwrap_or_default();
+    for p in &files {
+        allowed.allow_read_file(p);
+    }
+
     Ok(files
-        .unwrap_or_default()
         .into_iter()
         .map(|p| p.to_string_lossy().to_string())
         .collect())
 }
 
 #[tauri::command]
-pub fn pick_upload_folder(window: tauri::WebviewWindow) -> Result<Option<String>, CommandError> {
+pub fn pick_upload_folder(
+    window: tauri::WebviewWindow,
+    allowed: State<'_, AllowedPaths>,
+) -> Result<Option<String>, CommandError> {
     let mut dialog = rfd::FileDialog::new()
         .set_title("Select Folder to Upload")
         .set_parent(&window);
@@ -81,11 +104,18 @@ pub fn pick_upload_folder(window: tauri::WebviewWindow) -> Result<Option<String>
     let _ = window.unminimize();
     let _ = window.set_focus();
 
+    if let Some(ref p) = folder {
+        allowed.allow_dir(p);
+    }
+
     Ok(folder.map(|p| p.to_string_lossy().to_string()))
 }
 
 #[tauri::command]
-pub fn save_backup_file(window: tauri::WebviewWindow) -> Result<Option<String>, CommandError> {
+pub fn save_backup_file(
+    window: tauri::WebviewWindow,
+    allowed: State<'_, AllowedPaths>,
+) -> Result<Option<String>, CommandError> {
     let mut dialog = rfd::FileDialog::new()
         .set_title("Export Bayesian SSH Backup")
         .set_file_name("bayesian-ssh-backup.json")
@@ -103,11 +133,18 @@ pub fn save_backup_file(window: tauri::WebviewWindow) -> Result<Option<String>, 
     let _ = window.unminimize();
     let _ = window.set_focus();
 
+    if let Some(ref p) = file {
+        allowed.allow_write_file(p);
+    }
+
     Ok(file.map(|p| p.to_string_lossy().to_string()))
 }
 
 #[tauri::command]
-pub fn pick_backup_file(window: tauri::WebviewWindow) -> Result<Option<String>, CommandError> {
+pub fn pick_backup_file(
+    window: tauri::WebviewWindow,
+    allowed: State<'_, AllowedPaths>,
+) -> Result<Option<String>, CommandError> {
     let mut dialog = rfd::FileDialog::new()
         .set_title("Select Bayesian SSH Backup File")
         .add_filter("Backup Files (*.json, *.enc)", &["json", "enc", "bak"])
@@ -123,12 +160,17 @@ pub fn pick_backup_file(window: tauri::WebviewWindow) -> Result<Option<String>, 
     let _ = window.unminimize();
     let _ = window.set_focus();
 
+    if let Some(ref p) = file {
+        allowed.allow_read_file(p);
+    }
+
     Ok(file.map(|p| p.to_string_lossy().to_string()))
 }
 
 #[tauri::command]
 pub fn save_remote_file(
     window: tauri::WebviewWindow,
+    allowed: State<'_, AllowedPaths>,
     default_name: String,
 ) -> Result<Option<String>, CommandError> {
     let file_name = std::path::Path::new(default_name.trim())
@@ -152,6 +194,10 @@ pub fn save_remote_file(
     let file = dialog.save_file();
     let _ = window.unminimize();
     let _ = window.set_focus();
+
+    if let Some(ref p) = file {
+        allowed.allow_write_file(p);
+    }
 
     Ok(file.map(|p| p.to_string_lossy().to_string()))
 }

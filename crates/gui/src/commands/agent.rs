@@ -27,8 +27,7 @@ fn resolve_active_socket() -> Option<String> {
     discovered
 }
 
-#[tauri::command(async)]
-pub fn get_agent_status() -> Result<AgentStatus, CommandError> {
+fn get_agent_status_blocking() -> Result<AgentStatus, CommandError> {
     let socket = resolve_active_socket();
     let active = socket.is_some();
 
@@ -59,8 +58,7 @@ pub fn get_agent_status() -> Result<AgentStatus, CommandError> {
     })
 }
 
-#[tauri::command(async)]
-pub fn start_agent() -> Result<AgentStatus, CommandError> {
+pub(crate) fn start_agent_blocking() -> Result<AgentStatus, CommandError> {
     if let Some(sock) = resolve_active_socket() {
         let test_cmd = Command::new("ssh-add")
             .env("SSH_AUTH_SOCK", &sock)
@@ -69,7 +67,7 @@ pub fn start_agent() -> Result<AgentStatus, CommandError> {
         if let Ok(out) = test_cmd
             && (out.status.code() == Some(0) || out.status.code() == Some(1))
         {
-            return get_agent_status();
+            return get_agent_status_blocking();
         }
     }
 
@@ -102,11 +100,10 @@ pub fn start_agent() -> Result<AgentStatus, CommandError> {
         return Err("Failed to parse ssh-agent environment variables".into());
     }
 
-    get_agent_status()
+    get_agent_status_blocking()
 }
 
-#[tauri::command(async)]
-pub fn add_key_to_agent(key_path: String) -> Result<String, CommandError> {
+fn add_key_to_agent_blocking(key_path: String) -> Result<String, CommandError> {
     let resolved_key = expand_path(&key_path);
 
     if !resolved_key.exists() {
@@ -116,7 +113,7 @@ pub fn add_key_to_agent(key_path: String) -> Result<String, CommandError> {
     let socket = match resolve_active_socket() {
         Some(s) => s,
         None => {
-            let status = start_agent()?;
+            let status = start_agent_blocking()?;
             status
                 .socket_path
                 .ok_or_else(|| "Failed to auto-start SSH agent".to_string())?
@@ -125,6 +122,7 @@ pub fn add_key_to_agent(key_path: String) -> Result<String, CommandError> {
 
     let output = Command::new("ssh-add")
         .env("SSH_AUTH_SOCK", &socket)
+        .arg("--")
         .arg(&resolved_key)
         .output()
         .map_err(|e| CommandError::from(format!("Failed to execute ssh-add: {}", e)))?;
@@ -154,10 +152,11 @@ pub fn add_key_to_agent(key_path: String) -> Result<String, CommandError> {
             || err_msg.contains("refused")
         {
             crate::agent_socket::set(None);
-            if let Ok(new_status) = start_agent()
+            if let Ok(new_status) = start_agent_blocking()
                 && let Some(new_sock) = new_status.socket_path
                 && let Ok(new_output) = Command::new("ssh-add")
                     .env("SSH_AUTH_SOCK", &new_sock)
+                    .arg("--")
                     .arg(&resolved_key)
                     .output()
                 && new_output.status.success()
@@ -180,6 +179,27 @@ pub fn add_key_to_agent(key_path: String) -> Result<String, CommandError> {
     }
 }
 
+#[tauri::command]
+pub async fn get_agent_status() -> Result<AgentStatus, CommandError> {
+    tokio::task::spawn_blocking(get_agent_status_blocking)
+        .await
+        .map_err(|e| CommandError::from(format!("Background task failed: {e}")))?
+}
+
+#[tauri::command]
+pub async fn start_agent() -> Result<AgentStatus, CommandError> {
+    tokio::task::spawn_blocking(start_agent_blocking)
+        .await
+        .map_err(|e| CommandError::from(format!("Background task failed: {e}")))?
+}
+
+#[tauri::command]
+pub async fn add_key_to_agent(key_path: String) -> Result<String, CommandError> {
+    tokio::task::spawn_blocking(move || add_key_to_agent_blocking(key_path))
+        .await
+        .map_err(|e| CommandError::from(format!("Background task failed: {e}")))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,7 +220,8 @@ mod tests {
 
     #[test]
     fn test_add_key_nonexistent_file() {
-        let res = add_key_to_agent("/path/to/definitely_nonexistent_key_12345".to_string());
+        let res =
+            add_key_to_agent_blocking("/path/to/definitely_nonexistent_key_12345".to_string());
         assert!(res.is_err());
         assert!(
             res.unwrap_err()

@@ -29,8 +29,8 @@ pub(super) fn resolve(team: &str) -> anyhow::Result<uuid::Uuid> {
 
 /// Create a team. `org` is an organization id the caller owns; without it the
 /// server picks the oldest organization the caller owns (or makes one).
-#[tauri::command(async)]
-pub fn teams_create(
+#[tauri::command]
+pub async fn teams_create(
     state: State<'_, TeamsState>,
     name: String,
     org: Option<String>,
@@ -43,10 +43,11 @@ pub fn teams_create(
     with_session(state.unlocked()?, move |s| {
         Box::pin(async move { Ok(TeamSyncDto::from(&s.create_team_in(&name, org_id).await?)) })
     })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn teams_sync(
+#[tauri::command]
+pub async fn teams_sync(
     state: State<'_, TeamsState>,
     team: Option<String>,
 ) -> Result<Vec<TeamSyncResult>, CommandError> {
@@ -72,10 +73,11 @@ pub fn teams_sync(
             Ok(out)
         })
     })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn teams_share(
+#[tauri::command]
+pub async fn teams_share(
     state: State<'_, TeamsState>,
     connection: String,
     team: String,
@@ -91,10 +93,11 @@ pub fn teams_share(
             Ok(TeamSyncDto::from(&s.share(team_id, &conn).await?.1))
         })
     })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn teams_unshare(
+#[tauri::command]
+pub async fn teams_unshare(
     state: State<'_, TeamsState>,
     connection: String,
 ) -> Result<TeamSyncDto, CommandError> {
@@ -108,10 +111,11 @@ pub fn teams_unshare(
             Ok(TeamSyncDto::from(&s.unshare(&conn).await?))
         })
     })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn teams_invite(
+#[tauri::command]
+pub async fn teams_invite(
     state: State<'_, TeamsState>,
     team: String,
     email: String,
@@ -134,10 +138,11 @@ pub fn teams_invite(
             })
         })
     })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn teams_join(
+#[tauri::command]
+pub async fn teams_join(
     state: State<'_, TeamsState>,
     token: Option<String>,
     team_id: Option<String>,
@@ -167,10 +172,11 @@ pub fn teams_join(
             })
         })
     })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn teams_pending(
+#[tauri::command]
+pub async fn teams_pending(
     state: State<'_, TeamsState>,
     team: String,
 ) -> Result<Vec<PendingDto>, CommandError> {
@@ -190,10 +196,11 @@ pub fn teams_pending(
                 .collect())
         })
     })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn teams_grant(
+#[tauri::command]
+pub async fn teams_grant(
     state: State<'_, TeamsState>,
     team: String,
     fingerprint: String,
@@ -211,10 +218,11 @@ pub fn teams_grant(
             })
         })
     })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn teams_members(
+#[tauri::command]
+pub async fn teams_members(
     state: State<'_, TeamsState>,
     team: String,
 ) -> Result<Vec<MemberDto>, CommandError> {
@@ -243,11 +251,12 @@ pub fn teams_members(
                 .collect())
         })
     })
+    .await
 }
 
 /// Pending invites (admin); empty for a member.
-#[tauri::command(async)]
-pub fn teams_invites(
+#[tauri::command]
+pub async fn teams_invites(
     state: State<'_, TeamsState>,
     team: String,
 ) -> Result<Vec<PendingInviteDto>, CommandError> {
@@ -268,10 +277,11 @@ pub fn teams_invites(
                 .collect())
         })
     })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn teams_uninvite(
+#[tauri::command]
+pub async fn teams_uninvite(
     state: State<'_, TeamsState>,
     team: String,
     email: String,
@@ -282,10 +292,11 @@ pub fn teams_uninvite(
             Ok(())
         })
     })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn teams_remove(
+#[tauri::command]
+pub async fn teams_remove(
     state: State<'_, TeamsState>,
     team: String,
     email: String,
@@ -296,12 +307,13 @@ pub fn teams_remove(
             Ok(TeamSyncDto::from(&s.remove(team_id, &email).await?))
         })
     })
+    .await
 }
 
 /// What needs a human in each local team. A team that can't be reached is
 /// skipped so one offline server doesn't hide the others.
-#[tauri::command(async)]
-pub fn teams_attention(
+#[tauri::command]
+pub async fn teams_attention(
     state: State<'_, TeamsState>,
 ) -> Result<Vec<TeamAttentionDto>, CommandError> {
     with_session(state.unlocked()?, move |s| {
@@ -325,10 +337,11 @@ pub fn teams_attention(
             Ok(out)
         })
     })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn teams_remove_preview(
+#[tauri::command]
+pub async fn teams_remove_preview(
     state: State<'_, TeamsState>,
     team: String,
     email: String,
@@ -347,10 +360,11 @@ pub fn teams_remove_preview(
             })
         })
     })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn teams_audit(
+#[tauri::command]
+pub async fn teams_audit(
     state: State<'_, TeamsState>,
     team: String,
     host: Option<String>,
@@ -427,4 +441,5 @@ pub fn teams_audit(
             })
         })
     })
+    .await
 }
