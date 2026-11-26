@@ -2,7 +2,7 @@ import type { Terminal } from "@xterm/xterm";
 import { invoke } from "@tauri-apps/api/core";
 import { mount, unmount } from "svelte";
 import PasteConfirm from "$lib/components/terminal/PasteConfirm.svelte";
-import { readClipboardText } from "$lib/utils/terminal-xterm";
+import { readClipboardText } from "$lib/utils/clipboard";
 
 const IS_LINUX =
   typeof navigator !== "undefined" &&

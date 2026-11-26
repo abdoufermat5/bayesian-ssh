@@ -34,7 +34,7 @@
   import { notify } from "$lib/stores/notifications.svelte";
   import { pendingFilesHost, takeFilesHost } from "$lib/stores/filesHost.svelte";
   import { formatBytes } from "$lib/utils/format";
-  import { copyTextWithFallback } from "$lib/utils/terminal-xterm";
+  import { copyTextWithFallback } from "$lib/utils/clipboard";
 
   export interface RemoteFileEntry {
     name: string;
@@ -58,7 +58,55 @@
   let pathInput = $state<string>("");
   let editingPath = $state(false);
   let filterQuery = $state<string>("");
+  let debouncedFilterQuery = $state<string>("");
   let viewMode = $state<"list" | "grid">("list");
+
+  const FILTER_DEBOUNCE_MS = 120;
+  $effect(() => {
+    const raw = filterQuery;
+    if (!raw.trim()) {
+      debouncedFilterQuery = "";
+      return;
+    }
+    const timer = setTimeout(() => {
+      debouncedFilterQuery = raw;
+    }, FILTER_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  });
+
+  // Windowed rendering for large directories (>100 entries) so 1,000+ file folders stay smooth.
+  const WINDOW_THRESHOLD = 100;
+  const LIST_ROW_ESTIMATE_PX = 38;
+  const LIST_OVERSCAN = 16;
+  const GRID_PAGE_SIZE = 120;
+
+  let scrollHost = $state<HTMLDivElement | null>(null);
+  let scrollTop = $state(0);
+  let viewportHeight = $state(600);
+  let gridRenderLimit = $state(GRID_PAGE_SIZE);
+
+  $effect(() => {
+    const el = scrollHost;
+    if (!el) return;
+    viewportHeight = el.clientHeight || 600;
+    const ro = new ResizeObserver(() => {
+      viewportHeight = el.clientHeight || 600;
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  });
+
+  function handleBodyScroll(e: Event) {
+    const el = e.currentTarget as HTMLDivElement;
+    scrollTop = el.scrollTop;
+    if (
+      viewMode === "grid" &&
+      filteredEntries.length > gridRenderLimit &&
+      el.scrollTop + el.clientHeight >= el.scrollHeight - 400
+    ) {
+      gridRenderLimit = Math.min(filteredEntries.length, gridRenderLimit + GRID_PAGE_SIZE);
+    }
+  }
   let showHidden = $state<boolean>(appState.settings.sftp_show_hidden_files !== false);
   let entries = $state.raw<RemoteFileEntry[]>([]);
   let selectedPath = $state<string | null>(null);
@@ -178,15 +226,56 @@
     showHidden || hiddenCount === 0 ? entries : entries.filter((e) => !e.name.startsWith(".")),
   );
 
+  const indexedVisibleEntries = $derived(
+    visibleEntries.map((entry) => ({
+      entry,
+      nameLower: entry.name.toLowerCase(),
+      permsLower: entry.permissions.toLowerCase(),
+    })),
+  );
+
   const filteredEntries = $derived.by(() => {
-    const query = filterQuery.trim().toLowerCase();
+    const query = debouncedFilterQuery.trim().toLowerCase();
     if (!query) return visibleEntries;
-    return visibleEntries.filter(
-      (entry) =>
-        entry.name.toLowerCase().includes(query) ||
-        entry.permissions.toLowerCase().includes(query),
-    );
+    const out: RemoteFileEntry[] = [];
+    for (const item of indexedVisibleEntries) {
+      if (item.nameLower.includes(query) || item.permsLower.includes(query)) {
+        out.push(item.entry);
+      }
+    }
+    return out;
   });
+
+  $effect(() => {
+    // Reset scroll/grid window when directory, filter, or layout changes.
+    void currentPath;
+    void debouncedFilterQuery;
+    void viewMode;
+    gridRenderLimit = GRID_PAGE_SIZE;
+    if (scrollHost) scrollHost.scrollTop = 0;
+    scrollTop = 0;
+  });
+
+  const isWindowedList = $derived(viewMode === "list" && filteredEntries.length > WINDOW_THRESHOLD);
+  const windowStart = $derived(
+    isWindowedList ? Math.max(0, Math.floor(scrollTop / LIST_ROW_ESTIMATE_PX) - LIST_OVERSCAN) : 0,
+  );
+  const windowEnd = $derived(
+    isWindowedList
+      ? Math.min(
+          filteredEntries.length,
+          Math.ceil((scrollTop + viewportHeight) / LIST_ROW_ESTIMATE_PX) + LIST_OVERSCAN,
+        )
+      : filteredEntries.length,
+  );
+  const renderedListEntries = $derived(
+    isWindowedList ? filteredEntries.slice(windowStart, windowEnd) : filteredEntries,
+  );
+  const renderedGridEntries = $derived(
+    filteredEntries.length > WINDOW_THRESHOLD
+      ? filteredEntries.slice(0, gridRenderLimit)
+      : filteredEntries,
+  );
 
   const summary = $derived.by(() => {
     let dirs = 0;
@@ -761,7 +850,7 @@
     </div>
   {/if}
 
-  <div class="view-body">
+  <div class="view-body" bind:this={scrollHost} onscroll={handleBodyScroll}>
     {#if errorMsg}
       <div class="alert alert-error mb-3" role="alert">
         <div class="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -877,7 +966,12 @@
             </tr>
           </thead>
           <tbody>
-            {#each filteredEntries as entry (entry.path)}
+            {#if isWindowedList && windowStart > 0}
+              <tr aria-hidden="true" style="height: {windowStart * LIST_ROW_ESTIMATE_PX}px">
+                <td colspan="5" class="p-0 border-0"></td>
+              </tr>
+            {/if}
+            {#each renderedListEntries as entry (entry.path)}
               {@const Icon = getFileIcon(entry)}
               {@const selected = selectedPath === entry.path}
               <tr
@@ -907,12 +1001,17 @@
                 <td>{@render entryActions(entry)}</td>
               </tr>
             {/each}
+            {#if isWindowedList && windowEnd < filteredEntries.length}
+              <tr aria-hidden="true" style="height: {(filteredEntries.length - windowEnd) * LIST_ROW_ESTIMATE_PX}px">
+                <td colspan="5" class="p-0 border-0"></td>
+              </tr>
+            {/if}
           </tbody>
         </table>
       </div>
     {:else}
       <div class="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
-        {#each filteredEntries as entry (entry.path)}
+        {#each renderedGridEntries as entry (entry.path)}
           {@const Icon = getFileIcon(entry)}
           {@const selected = selectedPath === entry.path}
           <div

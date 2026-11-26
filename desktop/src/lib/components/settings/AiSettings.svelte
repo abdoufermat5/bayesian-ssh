@@ -17,7 +17,7 @@
   import ModalShell from "$lib/components/ui/ModalShell.svelte";
   import AiPolicyModal from "./AiPolicyModal.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
-  import { copyTextWithFallback } from "$lib/utils/terminal-xterm";
+  import { copyTextWithFallback } from "$lib/utils/clipboard";
   import type { AiClientInstallResult, AiClientStatus, AiPolicy, AiSettingsView, AiTier } from "$lib/types";
 
   const TIER_LABEL: Record<AiTier, string> = {

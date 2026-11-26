@@ -19,7 +19,7 @@
   import type { Connection } from "$lib/types";
   import { MOD } from "$lib/shortcuts";
   import { notify } from "$lib/stores/notifications.svelte";
-  import { copyTextWithFallback } from "$lib/utils/terminal-xterm";
+  import { copyTextWithFallback } from "$lib/utils/clipboard";
   import ModalShell from "$lib/components/ui/ModalShell.svelte";
   import CustomSelect from "$lib/components/ui/CustomSelect.svelte";
 

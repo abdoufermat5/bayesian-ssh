@@ -2,19 +2,12 @@ import { tick } from "svelte";
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Terminal } from "@xterm/xterm";
+import type { Terminal } from "@xterm/xterm";
 import type { SearchAddon } from "@xterm/addon-search";
 import type { Connection } from "$lib/types";
 import { ensureKerberosForConnection } from "$lib/stores/kerberos.svelte";
 import { notify } from "$lib/stores/notifications.svelte";
-import {
-  createXtermSession,
-  safeWrite,
-  syncPtySize,
-  waitForTerminalFont,
-  type PtyChunk,
-} from "$lib/utils/terminal-xterm";
-import { snapshotTerminal } from "$lib/utils/terminal-snapshot";
+import type { PtyChunk } from "$lib/utils/terminal-xterm";
 import {
   containsPane,
   insertPane,
@@ -34,7 +27,7 @@ import {
   requestAttentionIfUnfocused,
   setWindowProgress,
   type ProgressState,
-} from "$lib/utils/terminal-signals";
+} from "$lib/utils/window-signals";
 import { buildTerminalOptions } from "$lib/utils/terminal-options";
 import {
   describeConnectFailure,
@@ -107,6 +100,7 @@ export interface TerminalTab {
   /** Live xterm instance (non-reactive lookup; check `ready` in templates). */
   readonly term: Terminal | undefined;
   readonly searchAddon: SearchAddon | undefined;
+  ensureSearchAddon(): Promise<SearchAddon | undefined>;
   remoteTitle: string | null;
   bell: boolean;
   progress: { state: ProgressState; value: number } | null;
@@ -141,6 +135,15 @@ class TabState implements TerminalTab {
 
   get searchAddon(): SearchAddon | undefined {
     return runtimes.get(this.id)?.searchAddon;
+  }
+
+  async ensureSearchAddon(): Promise<SearchAddon | undefined> {
+    const rt = runtimes.get(this.id);
+    if (!rt) return undefined;
+    if (rt.searchAddon) return rt.searchAddon;
+    const addon = await rt.ensureSearchAddon?.();
+    if (addon) rt.searchAddon = addon;
+    return addon;
   }
 }
 
@@ -294,13 +297,13 @@ function deliverPtyOutput(sessionId: string, data: string, bytes: number) {
     rt.recentOutput = (rt.recentOutput + stripTerminalControls(data)).slice(-4000);
   }
 
-  if (rt.session) {
+  if (rt.session && terminalsVisible && shownIds.includes(sessionId)) {
     if (rt.pending.length > 0) flushRuntime(rt);
     rt.session.write(data, bytes);
     return;
   }
 
-  // Terminal still being created: buffer in memory until session mounts.
+  // Terminal still being created or hidden: buffer in memory until visible/mounted.
   rt.pending.push({ data, bytes });
   rt.pendingBytes += bytes;
 
@@ -317,7 +320,10 @@ export function toggleTerminalSearch(tabId?: string) {
   const id = tabId ?? activeTabId;
   if (!id) return;
   const tab = findTab(id);
-  if (tab) tab.showSearch = !tab.showSearch;
+  if (tab) {
+    tab.showSearch = !tab.showSearch;
+    if (tab.showSearch) void tab.ensureSearchAddon();
+  }
 }
 
 export function closeTerminalSearch(tabId?: string) {
@@ -327,13 +333,29 @@ export function closeTerminalSearch(tabId?: string) {
   if (tab) tab.showSearch = false;
 }
 
+type TerminalXtermModule = typeof import("$lib/utils/terminal-xterm");
+let xtermMod: TerminalXtermModule | null = null;
+let xtermModPromise: Promise<TerminalXtermModule> | null = null;
+
+function loadXtermModule(): Promise<TerminalXtermModule> {
+  if (xtermMod) return Promise.resolve(xtermMod);
+  if (!xtermModPromise) {
+    xtermModPromise = import("$lib/utils/terminal-xterm").then((m) => {
+      xtermMod = m;
+      return m;
+    });
+  }
+  return xtermModPromise;
+}
+
 async function openTerminalInstance(
   tabId: string,
   container: HTMLElement,
   options?: { banner?: string; replay?: string },
 ): Promise<Terminal | null> {
   const termOptions = buildTerminalOptions();
-  await waitForTerminalFont(String(termOptions.fontFamily), remeasureFonts);
+  const xterm = await loadXtermModule();
+  await xterm.waitForTerminalFont(String(termOptions.fontFamily), remeasureFonts);
 
   const rt = runtimes.get(tabId);
   // Tab closed while the font was loading.
@@ -345,7 +367,7 @@ async function openTerminalInstance(
 
   const tab = findTab(tabId);
 
-  const session = createXtermSession(container, tabId, {
+  const session = xterm.createXtermSession(container, tabId, {
     terminalOptions: termOptions,
     getConnectionName: () => tab?.name ?? "terminal",
     onOpenSearch: () => {
@@ -388,7 +410,7 @@ async function openTerminalInstance(
   rt.session = session;
   rt.term = session.term;
   rt.fitAddon = session.fitAddon;
-  rt.searchAddon = session.searchAddon;
+  rt.ensureSearchAddon = session.ensureSearchAddon;
 
   const isVisible = shownIds.includes(tabId) && terminalsVisible;
   session.setVisible(isVisible);
@@ -399,16 +421,16 @@ async function openTerminalInstance(
   // output that arrived while this terminal was being created (reattach
   // race), then the banner.
   if (options?.replay) {
-    safeWrite(session.term, options.replay, () => {
+    xterm.safeWrite(session.term, options.replay, () => {
       session.term.scrollToBottom();
       invoke("redraw_pty", { sessionId: tabId }).catch(() => {});
     });
   }
 
-  if (rt.pending.length > 0) flushRuntime(rt);
+  if (rt.pending.length > 0 && isVisible) flushRuntime(rt);
 
   if (options?.banner && !options?.replay) {
-    safeWrite(session.term, `${options.banner}\r\n`, () => {
+    xterm.safeWrite(session.term, `${options.banner}\r\n`, () => {
       session.term.scrollToBottom();
     });
   }
@@ -470,7 +492,7 @@ async function mountReattachedSession(info: ReattachSessionPayload): Promise<voi
   // the new terminal has been fitted.
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
-      syncPtySize(tab.id, term);
+      xtermMod?.syncPtySize(tab.id, term);
       term.scrollToBottom();
       invoke("redraw_pty", { sessionId: tab.id }).catch(() => {});
     });
@@ -559,99 +581,105 @@ export async function initTerminalListeners(onHistoryChanged?: HistoryCallback) 
     try {
       initThemeSyncForTerminals();
 
-      await syncDetachedSessions();
-      await syncPopoutSessions();
-      await syncActiveSessionCount();
+      const [, , , exitStatusUn, exitUn, sessionClosedUn, sessionDockedUn, historyUpdatedUn] =
+        await Promise.all([
+          syncDetachedSessions(),
+          syncPopoutSessions(),
+          syncActiveSessionCount(),
+          listen("pty-exit-status", (event) => {
+            const payload = event.payload as { session_id: string; exit_code: number };
+            exitCodes.set(payload.session_id, payload.exit_code);
+          }),
+          listen("pty-exit", (event) => {
+            const sessionId = event.payload as string;
+            const exitCode = exitCodes.get(sessionId);
+            exitCodes.delete(sessionId);
 
-      unlistenExitStatus = await listen("pty-exit-status", (event) => {
-        const payload = event.payload as { session_id: string; exit_code: number };
-        exitCodes.set(payload.session_id, payload.exit_code);
-      });
+            if (findDetachedSession(sessionId)) {
+              awayGroups.delete(sessionId);
+              removeDetachedSession(sessionId);
+              return;
+            }
 
-      unlistenExit = await listen("pty-exit", (event) => {
-        const sessionId = event.payload as string;
-        const exitCode = exitCodes.get(sessionId);
-        exitCodes.delete(sessionId);
+            if (popoutSessions.some((s) => s.id === sessionId)) {
+              awayGroups.delete(sessionId);
+              removePopoutSession(sessionId);
+              return;
+            }
 
-        if (findDetachedSession(sessionId)) {
-          awayGroups.delete(sessionId);
-          removeDetachedSession(sessionId);
-          return;
-        }
+            const tab = findTab(sessionId);
+            const rt = runtimes.get(sessionId);
+            if (
+              tab &&
+              exitCode === SSH_ERROR_EXIT &&
+              tab.status !== "exited" &&
+              Date.now() - tab.connectStartedAt < CONNECT_WINDOW_MS
+            ) {
+              // ssh gave up while connecting: keep the tab and explain, don't close it.
+              if (rt) {
+                flushRuntime(rt);
+              }
+              failConnect(tab, describeConnectFailure(rt?.recentOutput ?? ""));
+              void syncActiveSessionCount();
+              return;
+            }
+            if (tab) {
+              tab.status = "exited";
+              tab.progress = null;
+              if (tab.id === activeTabId) {
+                void setWindowProgress(0, 0);
+              }
+            }
+            if (rt) {
+              // Flush pending output first so the disconnect notice lands after it.
+              flushRuntime(rt);
+              xtermMod?.safeWrite(rt.term, "\n\x1b[1;33mSession disconnected.\x1b[0m\r\n");
+            }
 
-        if (popoutSessions.some((s) => s.id === sessionId)) {
-          awayGroups.delete(sessionId);
-          removePopoutSession(sessionId);
-          return;
-        }
+            setTimeout(() => {
+              cleanupTabUi(sessionId);
+            }, 800);
+          }),
+          listen("session-closed", async () => {
+            await Promise.all([
+              syncDetachedSessions(),
+              syncPopoutSessions(),
+              syncActiveSessionCount(),
+            ]);
+          }),
+          listen("session-docked", async (event) => {
+            const payload = event.payload as { session_id?: string; sessionId?: string; connection_name?: string; connectionName?: string };
+            const sessionId = payload.session_id ?? payload.sessionId;
+            if (!sessionId) return;
+            const connectionName = payload.connection_name ?? payload.connectionName ?? "Terminal";
+            removePopoutSession(sessionId);
+            createRuntime(sessionId);
+            try {
+              const outputChannel = new Channel<PtyChunk>((chunk) => {
+                deliverPtyOutput(sessionId, chunk.data, chunk.bytes);
+              });
+              const info = await invoke<ReattachSessionPayload>("attach_pty_output", {
+                sessionId,
+                output: outputChannel,
+              });
+              await mountReattachedSession(info);
+              notify(`"${info.connection_name || connectionName}" docked — output restored`, "success");
+            } catch (e: unknown) {
+              disposeRuntime(sessionId);
+              notify(`Failed to dock "${connectionName}": ${String(e)}`, "error");
+            }
+            await syncActiveSessionCount();
+          }),
+          listen("history-updated", () => {
+            void onHistoryUpdated?.();
+          }),
+        ]);
 
-        const tab = findTab(sessionId);
-        const rt = runtimes.get(sessionId);
-        if (
-          tab &&
-          exitCode === SSH_ERROR_EXIT &&
-          tab.status !== "exited" &&
-          Date.now() - tab.connectStartedAt < CONNECT_WINDOW_MS
-        ) {
-          // ssh gave up while connecting: keep the tab and explain, don't close it.
-          if (rt) {
-            flushRuntime(rt);
-          }
-          failConnect(tab, describeConnectFailure(rt?.recentOutput ?? ""));
-          void syncActiveSessionCount();
-          return;
-        }
-        if (tab) {
-          tab.status = "exited";
-          tab.progress = null;
-          if (tab.id === activeTabId) {
-            void setWindowProgress(0, 0);
-          }
-        }
-        if (rt) {
-          // Flush pending output first so the disconnect notice lands after it.
-          flushRuntime(rt);
-          safeWrite(rt.term, "\n\x1b[1;33mSession disconnected.\x1b[0m\r\n");
-        }
-
-        setTimeout(() => {
-          cleanupTabUi(sessionId);
-        }, 800);
-      });
-
-      unlistenSessionClosed = await listen("session-closed", async () => {
-        await syncDetachedSessions();
-        await syncPopoutSessions();
-        await syncActiveSessionCount();
-      });
-
-      unlistenSessionDocked = await listen("session-docked", async (event) => {
-        const payload = event.payload as { session_id?: string; sessionId?: string; connection_name?: string; connectionName?: string };
-        const sessionId = payload.session_id ?? payload.sessionId;
-        if (!sessionId) return;
-        const connectionName = payload.connection_name ?? payload.connectionName ?? "Terminal";
-        removePopoutSession(sessionId);
-        createRuntime(sessionId);
-        try {
-          const outputChannel = new Channel<PtyChunk>((chunk) => {
-            deliverPtyOutput(sessionId, chunk.data, chunk.bytes);
-          });
-          const info = await invoke<ReattachSessionPayload>("attach_pty_output", {
-            sessionId,
-            output: outputChannel,
-          });
-          await mountReattachedSession(info);
-          notify(`"${info.connection_name || connectionName}" docked — output restored`, "success");
-        } catch (e: unknown) {
-          disposeRuntime(sessionId);
-          notify(`Failed to dock "${connectionName}": ${String(e)}`, "error");
-        }
-        await syncActiveSessionCount();
-      });
-
-      unlistenHistoryUpdated = await listen("history-updated", () => {
-        void onHistoryUpdated?.();
-      });
+      unlistenExitStatus = exitStatusUn;
+      unlistenExit = exitUn;
+      unlistenSessionClosed = sessionClosedUn;
+      unlistenSessionDocked = sessionDockedUn;
+      unlistenHistoryUpdated = historyUpdatedUn;
 
       listenersReady = true;
     } catch (err) {
@@ -702,6 +730,12 @@ async function waitForTerminalContainer(tabId: string): Promise<HTMLElement | nu
     const container = document.getElementById(`terminal-${tabId}`);
     if (container) return container;
     await tick();
+  }
+  // If TerminalsView is lazy-loading its chunk on first connect, wait across frames.
+  for (let frame = 0; frame < 90; frame += 1) {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    const container = document.getElementById(`terminal-${tabId}`);
+    if (container) return container;
   }
   return null;
 }
@@ -772,7 +806,7 @@ async function startSession(tab: TabState, conn: Connection): Promise<void> {
     // spawn_pty only means the process started, not that the host answered.
     // Resizes during spawn were sent before the PTY existed.
     const live = runtimes.get(tab.id)?.term;
-    if (live) syncPtySize(tab.id, live);
+    if (live) xtermMod?.syncPtySize(tab.id, live);
     await syncActiveSessionCount();
   } catch (e: unknown) {
     if (!findTab(tab.id)) return;
@@ -949,7 +983,7 @@ export async function detachTab(tabId: string): Promise<void> {
   if (!tab) return;
 
   const rt = runtimes.get(tabId);
-  const snapshot = rt?.term ? snapshotTerminal(rt.term) : null;
+  const snapshot = rt?.term ? (xtermMod?.snapshotTerminal(rt.term) ?? null) : null;
   await sealSessionUi(tabId);
   try {
     await invoke("detach_pty", { sessionId: tabId, snapshot });
@@ -980,7 +1014,7 @@ export async function popOutTab(tabId: string): Promise<void> {
   if (!tab) return;
 
   const rt = runtimes.get(tabId);
-  const snapshot = rt?.term ? snapshotTerminal(rt.term) : null;
+  const snapshot = rt?.term ? (xtermMod?.snapshotTerminal(rt.term) ?? null) : null;
   await sealSessionUi(tabId);
   try {
     await invoke("open_terminal_window", { sessionId: tabId, title: tab.name, snapshot });

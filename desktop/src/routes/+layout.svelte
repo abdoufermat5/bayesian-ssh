@@ -1,5 +1,4 @@
 <script lang="ts">
-  import "@xterm/xterm/css/xterm.css";
   import { page } from "$app/state";
   import "../app.css";
 

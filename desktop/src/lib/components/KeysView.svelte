@@ -6,7 +6,7 @@
   import CustomSelect from "$lib/components/ui/CustomSelect.svelte";
   import ModalShell from "$lib/components/ui/ModalShell.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
-  import { copyTextWithFallback } from "$lib/utils/terminal-xterm";
+  import { copyTextWithFallback } from "$lib/utils/clipboard";
 
   interface Props {
     connections: Connection[];

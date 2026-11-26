@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Check, Copy } from "lucide-svelte";
-  import { copyTextWithFallback } from "$lib/utils/terminal-xterm";
+  import { copyTextWithFallback } from "$lib/utils/clipboard";
   import { notify } from "$lib/stores/notifications.svelte";
   import { chunkFingerprint } from "./teams";
 

@@ -4,7 +4,7 @@
   import { Check, Copy, RefreshCw, ShieldAlert, ShieldCheck, Wrench } from "lucide-svelte";
   import type { AuditFinding, AuditReport } from "$lib/types";
   import { notify } from "$lib/stores/notifications.svelte";
-  import { copyTextWithFallback } from "$lib/utils/terminal-xterm";
+  import { copyTextWithFallback } from "$lib/utils/clipboard";
 
   type Severity = AuditFinding["severity"];
   type Filter = "all" | Severity;

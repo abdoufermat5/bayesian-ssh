@@ -117,7 +117,10 @@ export function startTeamsAttentionPoller() {
   if (running) return;
   running = true;
   void refreshTeamsAttention();
-  statusTimer = window.setInterval(() => void refreshTeamsAttention(), STATUS_INTERVAL_MS);
+  statusTimer = window.setInterval(() => {
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+    void refreshTeamsAttention();
+  }, STATUS_INTERVAL_MS);
   window.addEventListener(TEAMS_CHANGED_EVENT, onTeamsChanged);
 }
 

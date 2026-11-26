@@ -17,7 +17,8 @@ import { isTerminalFocused } from "$lib/utils/terminal-focus";
 import { VIEW_ORDER } from "$lib/shortcuts";
 import { viewEnabled } from "$lib/viewMeta";
 import { showAiReports } from "$lib/stores/ai.svelte";
-import { copyTextWithFallback, setTerminalSmartCopy } from "$lib/utils/terminal-xterm";
+import { copyTextWithFallback } from "$lib/utils/clipboard";
+import { registerSettingsGetter, setTerminalSmartCopy } from "$lib/utils/terminal-options";
 import {
   closeAllTabs,
   connectSSH,
@@ -39,7 +40,6 @@ import {
   getTerminalFontSize,
   updateTerminalFontSize,
 } from "$lib/stores/terminal-appearance.svelte";
-import { registerSettingsGetter } from "$lib/utils/terminal-options";
 import {
   acquireKerberosTicket,
   closeKerberosModal,
@@ -218,29 +218,36 @@ export class AppStateStore {
     }
   }
 
-  loadData = async () => {
+  loadCoreData = async () => {
     try {
-      // Independent reads run concurrently; the agent auto-start decision
-      // needs both settings and the current agent status.
       await Promise.all([
         invoke<EnvInfo[]>("list_environments").then((envs) => (this.environments = envs)),
         this.loadWorkspace(),
         this.loadConnections(),
         this.loadStats(),
-        this.loadHistory(),
         this.loadSettings(),
-        this.loadAgentStatus(),
       ]);
-      if (this.settings.auto_start_agent && !this.agentActive) {
-        await this.triggerStartAgent();
-      }
-      refreshTray();
-      // Idempotent; also re-checks after a profile switch reloads the data.
-      startTeamsAttentionPoller();
-      void refreshTeamsAttention(true);
     } catch (e: unknown) {
       notify(String(e), "error");
     }
+  }
+
+  loadBackgroundData = () => {
+    void this.loadHistory();
+    void this.loadAgentStatus().then(() => {
+      if (this.settings.auto_start_agent && !this.agentActive) {
+        void this.triggerStartAgent();
+      }
+    });
+    refreshTray();
+    // Idempotent; also re-checks after a profile switch reloads the data.
+    startTeamsAttentionPoller();
+    void refreshTeamsAttention(true);
+  }
+
+  loadData = async () => {
+    await this.loadCoreData();
+    this.loadBackgroundData();
   }
 
   loadWorkspace = async () => {

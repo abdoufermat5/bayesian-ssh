@@ -51,8 +51,17 @@
 
   function runSearch(backwards = false) {
     if (!searchQuery) return;
-    if (backwards) tab.searchAddon?.findPrevious(searchQuery);
-    else tab.searchAddon?.findNext(searchQuery);
+    if (tab.searchAddon) {
+      if (backwards) tab.searchAddon.findPrevious(searchQuery);
+      else tab.searchAddon.findNext(searchQuery);
+      return;
+    }
+    const q = searchQuery;
+    void tab.ensureSearchAddon().then((addon) => {
+      if (!addon || searchQuery !== q) return;
+      if (backwards) addon.findPrevious(q);
+      else addon.findNext(q);
+    });
   }
 
   function closeSearch() {

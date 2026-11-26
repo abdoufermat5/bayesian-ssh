@@ -19,7 +19,7 @@
     stopAiRun,
   } from "$lib/stores/ai.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
-  import { copyTextWithFallback } from "$lib/utils/terminal-xterm";
+  import { copyTextWithFallback } from "$lib/utils/clipboard";
   import RunReport from "./ai/RunReport.svelte";
   import CleanupDialog from "./ai/CleanupDialog.svelte";
   import { formatDateTime, formatRelative } from "$lib/utils/timezone";

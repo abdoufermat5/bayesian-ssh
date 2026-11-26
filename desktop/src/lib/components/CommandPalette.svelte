@@ -83,6 +83,8 @@
   type Category = "Suggested" | "Hosts" | "Actions" | "Teams" | "Navigation" | "Settings" | "Themes";
   const CATEGORY_ORDER: Category[] = ["Suggested", "Hosts", "Actions", "Teams", "Navigation", "Settings", "Themes"];
 
+  const MAX_HOST_MATCHES = 50;
+
   interface CommandItem {
     id: string;
     title: string;
@@ -91,6 +93,10 @@
     mono?: boolean;
     /** Extra searchable text that is not displayed (tags, aliases). */
     keywords?: string;
+    /** Precomputed lowercase search haystack (title + subtitle + keywords + category). */
+    searchText: string;
+    /** Attached host for O(1) lookup on Hosts / Suggested rows. */
+    connection?: Connection;
     category: Category;
     icon: typeof Server;
     badge?: string;
@@ -99,6 +105,15 @@
     /** Keyboard shortcut hint, one entry per key cap. */
     keys?: string[];
     action: () => void;
+  }
+
+  function buildSearchText(
+    title: string,
+    category: Category,
+    subtitle?: string,
+    keywords?: string,
+  ): string {
+    return `${title}\u0000${subtitle ?? ""}\u0000${keywords ?? ""}\u0000${category}`.toLowerCase();
   }
 
   interface CommandGroup {
@@ -163,15 +178,19 @@
    */
   function teamVerbs(): CommandItem[] {
     const info = teamsInfo;
-    const base = (id: string, title: string, icon: typeof Server, action: () => void, extra: Partial<CommandItem> = {}): CommandItem => ({
-      id: `teams-${id}`,
-      title,
-      category: "Teams",
-      icon,
-      keywords: "team teams",
-      action: () => run(action),
-      ...extra,
-    });
+    const base = (id: string, title: string, icon: typeof Server, action: () => void, extra: Partial<CommandItem> = {}): CommandItem => {
+      const keywords = extra.keywords ?? "team teams";
+      return {
+        id: `teams-${id}`,
+        title,
+        category: "Teams",
+        icon,
+        keywords,
+        action: () => run(action),
+        ...extra,
+        searchText: buildSearchText(title, "Teams", extra.subtitle, keywords),
+      };
+    };
     // "Go to Teams" is already in Navigation.
     const items: ReturnType<typeof base>[] = [];
     if (!info?.identity) return items;
@@ -208,7 +227,7 @@
     }));
     nav.push({ tab: "settings", label: "Go to Settings", icon: Settings, key: null });
 
-    const actions: CommandItem[] = [
+    const actions: Omit<CommandItem, "searchText">[] = [
       {
         id: "act-new-server",
         title: "New host",
@@ -254,7 +273,7 @@
       },
     ];
 
-    const navItems: CommandItem[] = nav.map((item) => ({
+    const navItems: Omit<CommandItem, "searchText">[] = nav.map((item) => ({
       id: `nav-${item.tab}`,
       title: item.label,
       subtitle:
@@ -283,7 +302,7 @@
 
     const teamItems = teamVerbs();
 
-    const themeItems: CommandItem[] = THEME_OPTIONS.map((t) => ({
+    const themeItems: Omit<CommandItem, "searchText">[] = THEME_OPTIONS.map((t) => ({
       id: `theme-${t.id}`,
       title: `Theme: ${t.label}`,
       keywords: `switch appearance ${t.id}`,
@@ -293,7 +312,7 @@
       action: () => run(() => onSelectTheme(t.id)),
     }));
 
-    const settingsItems: CommandItem[] = SETTINGS_SECTIONS.map((section) => ({
+    const settingsItems: Omit<CommandItem, "searchText">[] = SETTINGS_SECTIONS.map((section) => ({
       id: `settings-${section.id}`,
       title: `Settings: ${section.label}`,
       category: "Settings",
@@ -305,37 +324,55 @@
         }),
     }));
 
-    return [...actions, ...teamItems, ...navItems, ...settingsItems, ...themeItems];
+    const raw: Array<Omit<CommandItem, "searchText"> & { searchText?: string }> = [
+      ...actions,
+      ...teamItems,
+      ...navItems,
+      ...settingsItems,
+      ...themeItems,
+    ];
+    return raw.map((item) => ({
+      ...item,
+      searchText:
+        item.searchText ?? buildSearchText(item.title, item.category, item.subtitle, item.keywords),
+    }));
   });
 
   const hostItems = $derived(
-    connections.map(
-      (conn): CommandItem => ({
+    connections.map((conn): CommandItem => {
+      const subtitle = `${conn.user}@${conn.host}${conn.port !== 22 ? `:${conn.port}` : ""}`;
+      const keywords = conn.tags.join(" ");
+      return {
         id: `host-${conn.id}`,
         title: conn.name,
-        subtitle: `${conn.user}@${conn.host}${conn.port !== 22 ? `:${conn.port}` : ""}`,
+        subtitle,
         mono: true,
-        keywords: conn.tags.join(" "),
+        keywords,
+        searchText: buildSearchText(conn.name, "Hosts", subtitle, keywords),
+        connection: conn,
         category: "Hosts",
         icon: Server,
         badge: conn.use_kerberos ? "krb5" : undefined,
         action: () => run(() => onConnectHost(conn)),
-      }),
-    ),
+      };
+    }),
   );
 
   const suggestedItems = $derived(
-    suggestions.map(
-      (pred): CommandItem => ({
+    suggestions.map((pred): CommandItem => {
+      const subtitle = predictionReason(pred);
+      return {
         id: `suggested-${pred.connection.id}`,
         title: pred.connection.name,
-        subtitle: predictionReason(pred),
+        subtitle,
+        searchText: buildSearchText(pred.connection.name, "Suggested", subtitle),
+        connection: pred.connection,
         category: "Suggested",
         icon: Server,
         badge: pred.connection.use_kerberos ? "krb5" : undefined,
         action: () => run(() => onConnectHost(pred.connection)),
-      }),
-    ),
+      };
+    }),
   );
 
   const groups = $derived.by((): CommandGroup[] => {
@@ -360,13 +397,14 @@
         buckets[item.category].push(item);
       }
     } else {
-      for (const item of [...hostItems, ...staticItems]) {
-        if (
-          item.title.toLowerCase().includes(q) ||
-          item.subtitle?.toLowerCase().includes(q) ||
-          item.keywords?.toLowerCase().includes(q) ||
-          item.category.toLowerCase().includes(q)
-        ) {
+      for (const item of hostItems) {
+        if (item.searchText.includes(q)) {
+          buckets.Hosts.push(item);
+          if (buckets.Hosts.length >= MAX_HOST_MATCHES) break;
+        }
+      }
+      for (const item of staticItems) {
+        if (item.searchText.includes(q)) {
           buckets[item.category].push(item);
         }
       }
@@ -388,8 +426,7 @@
   /** The host under the highlight (a Hosts or Suggested row), if any. */
   const highlightedHost = $derived.by((): Connection | null => {
     const item = flatItems[Math.min(selectedIndex, flatItems.length - 1)];
-    if (!item || (item.category !== "Hosts" && item.category !== "Suggested")) return null;
-    return connections.find((c) => item.id === `host-${c.id}` || item.id === `suggested-${c.id}`) ?? null;
+    return item?.connection ?? null;
   });
 
   const ALT = IS_MAC ? "⌥" : "Alt";

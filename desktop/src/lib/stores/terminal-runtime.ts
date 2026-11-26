@@ -11,6 +11,7 @@ export interface TabRuntime {
   term?: Terminal;
   fitAddon?: FitAddon;
   searchAddon?: SearchAddon;
+  ensureSearchAddon?: () => Promise<SearchAddon | undefined>;
   /** Output received while the tab is hidden or still being created. */
   pending: Array<{ data: string; bytes: number }>;
   pendingBytes: number;

@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Terminal } from "@xterm/xterm";
   import type { TerminalMenuActions } from "$lib/utils/terminal-context-menu";
-  import { copyTextWithFallback } from "$lib/utils/terminal-xterm";
+  import { copyTextWithFallback } from "$lib/utils/clipboard";
   import { TERMINAL_SHORTCUTS } from "$lib/shortcuts";
   import {
     Copy,

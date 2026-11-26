@@ -3,6 +3,19 @@ import { getCurrentXtermTheme } from "$lib/utils/theme";
 
 export type SettingsGetter = () => DesktopSettings | undefined;
 let _settingsGetter: SettingsGetter | null = null;
+let _smartCopy = false;
+
+/**
+ * "Smart copy": Ctrl+C copies while text is selected instead of sending
+ * SIGINT. Off by default so plain Ctrl+C always interrupts the shell.
+ */
+export function setTerminalSmartCopy(enabled: boolean): void {
+  _smartCopy = enabled;
+}
+
+export function getTerminalSmartCopy(): boolean {
+  return _smartCopy;
+}
 
 export function registerSettingsGetter(getter: SettingsGetter) {
   _settingsGetter = getter;

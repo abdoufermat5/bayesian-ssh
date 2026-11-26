@@ -92,3 +92,10 @@ export const TERMINAL_SHORTCUTS: Shortcut[] = [
   { id: "term-zoom-reset", label: "Reset text size", combos: [[...TERM_MOD, "0"]], scope: "terminal" },
   { id: "term-cancel", label: "Cancel a connection in progress", combos: [["Esc"]], scope: "terminal" },
 ];
+
+/** The shortcut that opens the command palette from inside a terminal. */
+export function isTerminalPaletteKey(event: KeyboardEvent): boolean {
+  const key = event.key.toLowerCase();
+  if (IS_MAC) return event.metaKey && !event.shiftKey && !event.altKey && key === "k";
+  return event.ctrlKey && event.shiftKey && !event.altKey && key === "p";
+}

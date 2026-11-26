@@ -1,7 +1,6 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { Clock, Download, FileText, Play, ScrollText, Search, Terminal, X } from "lucide-svelte";
-  import ReplayModal from "$lib/components/modals/ReplayModal.svelte";
   import SourceBadge, {
     loadSourceIndex,
     matchesSource,
@@ -795,13 +794,17 @@
   </div>
 </div>
 
-<ReplayModal
-  open={replayTarget !== null}
-  sessionId={replayTarget?.sessionId ?? null}
-  connectionName={replayTarget?.connectionName ?? ""}
-  startedLabel={replayTarget?.startedLabel ?? ""}
-  onClose={() => (replayTarget = null)}
-/>
+{#if replayTarget !== null}
+  {#await import("$lib/components/modals/ReplayModal.svelte") then { default: ReplayModal }}
+    <ReplayModal
+      open={true}
+      sessionId={replayTarget?.sessionId ?? null}
+      connectionName={replayTarget?.connectionName ?? ""}
+      startedLabel={replayTarget?.startedLabel ?? ""}
+      onClose={() => (replayTarget = null)}
+    />
+  {/await}
+{/if}
 
 <style>
   /* Session rows follow the density setting (--row-height, 32/40/48 px). */

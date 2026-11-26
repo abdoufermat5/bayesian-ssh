@@ -1,39 +1,17 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, type Component } from "svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { listen } from "@tauri-apps/api/event";
+  import { invoke } from "@tauri-apps/api/core";
 
   import TitleBar from "$lib/components/TitleBar.svelte";
   import Sidebar from "$lib/components/Sidebar.svelte";
   import ConnectionsView from "$lib/components/ConnectionsView.svelte";
-  import TerminalsView from "$lib/components/TerminalsView.svelte";
-  import HistoryView from "$lib/components/HistoryView.svelte";
-  import KeysView from "$lib/components/KeysView.svelte";
   import AttentionBanner from "$lib/components/AttentionBanner.svelte";
-  import AuditView from "$lib/components/AuditView.svelte";
-  import TeamsView from "$lib/components/TeamsView.svelte";
-  import SettingsView from "$lib/components/SettingsView.svelte";
-  import SFTPView from "$lib/components/SFTPView.svelte";
-  import ConnectionModal from "$lib/components/modals/ConnectionModal.svelte";
-  import ConnectionChangeModal from "$lib/components/modals/ConnectionChangeModal.svelte";
-  import EnvModal from "$lib/components/modals/EnvModal.svelte";
-  import AgentModal from "$lib/components/modals/AgentModal.svelte";
-  import KerberosModal from "$lib/components/modals/KerberosModal.svelte";
-  import DetachedSessionsModal from "$lib/components/modals/DetachedSessionsModal.svelte";
-  import DeleteConfirm from "$lib/components/modals/DeleteConfirm.svelte";
-  import OnboardingModal from "$lib/components/modals/OnboardingModal.svelte";
-  import ShortcutsModal from "$lib/components/modals/ShortcutsModal.svelte";
-  import AboutModal from "$lib/components/modals/AboutModal.svelte";
-  import BatchExecModal from "$lib/components/modals/BatchExecModal.svelte";
-  import UploadModal from "$lib/components/modals/UploadModal.svelte";
-  import QuitConfirmModal from "$lib/components/modals/QuitConfirmModal.svelte";
   import ApprovalDialog from "$lib/components/modals/ApprovalDialog.svelte";
-  import AiView from "$lib/components/AiView.svelte";
-  import { startAi, stopAiListeners } from "$lib/stores/ai.svelte";
   import AppLoader from "$lib/components/AppLoader.svelte";
-  import CommandPalette from "$lib/components/CommandPalette.svelte";
   import Toast from "$lib/components/Toast.svelte";
-  import { invoke } from "@tauri-apps/api/core";
+  import { startAi, stopAiListeners } from "$lib/stores/ai.svelte";
 
   import { notify } from "$lib/stores/notifications.svelte";
   import {
@@ -48,7 +26,7 @@
     terminateDetachedSession,
     terminatePopoutSession,
   } from "$lib/stores/terminal.svelte";
-  import { isTerminalPaletteKey } from "$lib/utils/terminal-xterm";
+  import { isTerminalPaletteKey } from "$lib/shortcuts";
   import {
     getKerberosState,
     openKerberosModal,
@@ -57,6 +35,53 @@
   } from "$lib/stores/kerberos.svelte";
   import { stopTeamsAttentionPoller } from "$lib/stores/teamsAttention.svelte";
   import { appState } from "$lib/stores/appState.svelte";
+
+  // Cached lazy loaders for secondary views and modals so they stay off the initial
+  // chunk and never flicker/reload when revisited.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type AnyComponent = Component<any>;
+
+  const lazyLoaders = {
+    terminals: () => import("$lib/components/TerminalsView.svelte"),
+    history: () => import("$lib/components/HistoryView.svelte"),
+    keys: () => import("$lib/components/KeysView.svelte"),
+    audit: () => import("$lib/components/AuditView.svelte"),
+    teams: () => import("$lib/components/TeamsView.svelte"),
+    ai: () => import("$lib/components/AiView.svelte"),
+    settings: () => import("$lib/components/SettingsView.svelte"),
+    sftp: () => import("$lib/components/SFTPView.svelte"),
+    onboarding: () => import("$lib/components/modals/OnboardingModal.svelte"),
+    connectionModal: () => import("$lib/components/modals/ConnectionModal.svelte"),
+    connectionChangeModal: () => import("$lib/components/modals/ConnectionChangeModal.svelte"),
+    envModal: () => import("$lib/components/modals/EnvModal.svelte"),
+    agentModal: () => import("$lib/components/modals/AgentModal.svelte"),
+    detachedSessionsModal: () => import("$lib/components/modals/DetachedSessionsModal.svelte"),
+    kerberosModal: () => import("$lib/components/modals/KerberosModal.svelte"),
+    deleteConfirm: () => import("$lib/components/modals/DeleteConfirm.svelte"),
+    shortcutsModal: () => import("$lib/components/modals/ShortcutsModal.svelte"),
+    aboutModal: () => import("$lib/components/modals/AboutModal.svelte"),
+    batchExecModal: () => import("$lib/components/modals/BatchExecModal.svelte"),
+    uploadModal: () => import("$lib/components/modals/UploadModal.svelte"),
+    quitConfirmModal: () => import("$lib/components/modals/QuitConfirmModal.svelte"),
+    commandPalette: () => import("$lib/components/CommandPalette.svelte"),
+  } as const;
+
+  type LazyKey = keyof typeof lazyLoaders;
+
+  let loaded = $state.raw<Partial<Record<LazyKey, AnyComponent>>>({});
+  const inFlight = new Set<LazyKey>();
+
+  function ensureLoaded(key: LazyKey) {
+    if (loaded[key] || inFlight.has(key)) return;
+    inFlight.add(key);
+    void lazyLoaders[key]()
+      .then((mod) => {
+        loaded = { ...loaded, [key]: mod.default as AnyComponent };
+      })
+      .finally(() => {
+        inFlight.delete(key);
+      });
+  }
 
   const terminalState = getTerminalState();
   const pendingPrompt = $derived(terminalState.pendingChange);
@@ -114,6 +139,26 @@
   let showQuitConfirmModal = $state(false);
   let showCommandPalette = $state(false);
 
+  $effect(() => {
+    const tab = appState.activeTab;
+    if (tab !== "connections" && tab !== "terminals") ensureLoaded(tab);
+    if (appState.showTerminalsPanel) ensureLoaded("terminals");
+    if (appState.showOnboarding) ensureLoaded("onboarding");
+    if (appState.showModal) ensureLoaded("connectionModal");
+    if (pendingPrompt) ensureLoaded("connectionChangeModal");
+    if (appState.showEnvModal) ensureLoaded("envModal");
+    if (appState.showAgentModal) ensureLoaded("agentModal");
+    if (appState.showSessionManager) ensureLoaded("detachedSessionsModal");
+    if (kerberosState.showModal && !appState.showOnboarding) ensureLoaded("kerberosModal");
+    if (appState.showDeleteConfirm && appState.deleteTarget) ensureLoaded("deleteConfirm");
+    if (showShortcutsModal) ensureLoaded("shortcutsModal");
+    if (showAboutModal) ensureLoaded("aboutModal");
+    if (showBatchExecModal) ensureLoaded("batchExecModal");
+    if (showUploadModal) ensureLoaded("uploadModal");
+    if (showQuitConfirmModal) ensureLoaded("quitConfirmModal");
+    if (showCommandPalette) ensureLoaded("commandPalette");
+  });
+
   /** Open the upload modal, optionally preselecting a host and destination. */
   function openUploadModal(connectionIds?: string[], remoteDir?: string | null) {
     uploadConnectionIds = connectionIds;
@@ -150,17 +195,19 @@
 
   onMount(() => {
     (async () => {
-      const needsOnboarding = await appState.checkOnboarding();
-      if (!needsOnboarding) {
-        await appState.loadData();
-      }
+      const [needsOnboarding] = await Promise.all([
+        appState.checkOnboarding(),
+        appState.loadCoreData(),
+      ]);
       appState.isInitializing = false;
+      if (!needsOnboarding) {
+        appState.loadBackgroundData();
+      }
     })();
     window.addEventListener("keydown", handleKeydownWithHelp);
 
     initTerminalListeners(async () => {
-      await appState.loadHistory();
-      await appState.loadStats();
+      await Promise.all([appState.loadHistory(), appState.loadStats()]);
     });
 
     void startAi();
@@ -289,13 +336,16 @@
     onOpenAbout={() => (showAboutModal = true)}
     onOpenShortcuts={() => (showShortcutsModal = true)}
   />
-  <OnboardingModal
-    defaultUser={appState.settings.default_user}
-    defaultSshConfigPath={appState.workspace.ssh_config_path || ""}
-    configRoot={appState.workspace.config_root}
-    onBrowseSshConfig={appState.browseSshConfig}
-    onComplete={appState.completeOnboarding}
-  />
+  {#if loaded.onboarding}
+    {@const OnboardingModal = loaded.onboarding}
+    <OnboardingModal
+      defaultUser={appState.settings.default_user}
+      defaultSshConfigPath={appState.workspace.ssh_config_path || ""}
+      configRoot={appState.workspace.config_root}
+      onBrowseSshConfig={appState.browseSshConfig}
+      onComplete={appState.completeOnboarding}
+    />
+  {/if}
 {:else}
 <div class="app-shell">
   <TitleBar
@@ -331,34 +381,55 @@
     <main class="workspace">
       <AttentionBanner onTabChange={appState.handleTabChange} />
       {#if appState.activeTab === "history"}
-        <HistoryView history={appState.history} timezone={appState.settings.timezone} />
+        {#if loaded.history}
+          {@const HistoryView = loaded.history}
+          <HistoryView history={appState.history} timezone={appState.settings.timezone} />
+        {/if}
       {:else if appState.activeTab === "keys"}
-        <KeysView connections={appState.allConnections} />
+        {#if loaded.keys}
+          {@const KeysView = loaded.keys}
+          <KeysView connections={appState.allConnections} />
+        {/if}
       {:else if appState.activeTab === "audit"}
-        <AuditView />
+        {#if loaded.audit}
+          {@const AuditView = loaded.audit}
+          <AuditView />
+        {/if}
       {:else if appState.activeTab === "teams"}
-        <TeamsView connections={appState.allConnections} onConnectionsChanged={() => void appState.loadConnections()} />
+        {#if loaded.teams}
+          {@const TeamsView = loaded.teams}
+          <TeamsView connections={appState.allConnections} onConnectionsChanged={() => void appState.loadConnections()} />
+        {/if}
       {:else if appState.activeTab === "ai"}
-        <AiView timezone={appState.settings.timezone} />
+        {#if loaded.ai}
+          {@const AiView = loaded.ai}
+          <AiView timezone={appState.settings.timezone} />
+        {/if}
       {:else if appState.activeTab === "settings"}
-        <SettingsView
-          bind:settings={appState.settings}
-          bind:workspace={appState.workspace}
-          environments={appState.environments}
-          onSave={appState.saveSettings}
-          onThemeChange={appState.handleThemeChange}
-          onSaveWorkspace={appState.saveWorkspaceConfig}
-          onSwitchEnv={appState.switchEnv}
-          onManageProfiles={() => (appState.showEnvModal = true)}
-          onBrowseSshConfig={appState.browseSshConfig}
-          onImportSshConfig={appState.importSshConfig}
-        />
+        {#if loaded.settings}
+          {@const SettingsView = loaded.settings}
+          <SettingsView
+            bind:settings={appState.settings}
+            bind:workspace={appState.workspace}
+            environments={appState.environments}
+            onSave={appState.saveSettings}
+            onThemeChange={appState.handleThemeChange}
+            onSaveWorkspace={appState.saveWorkspaceConfig}
+            onSwitchEnv={appState.switchEnv}
+            onManageProfiles={() => (appState.showEnvModal = true)}
+            onBrowseSshConfig={appState.browseSshConfig}
+            onImportSshConfig={appState.importSshConfig}
+          />
+        {/if}
       {:else if appState.activeTab === "sftp" && appState.settings.enable_sftp !== false}
-        <SFTPView
-          connections={appState.allConnections}
-          onOpenUpload={(connectionId, remoteDir) =>
-            openUploadModal(connectionId ? [connectionId] : [], remoteDir)}
-        />
+        {#if loaded.sftp}
+          {@const SFTPView = loaded.sftp}
+          <SFTPView
+            connections={appState.allConnections}
+            onOpenUpload={(connectionId: string | null, remoteDir: string) =>
+              openUploadModal(connectionId ? [connectionId] : [], remoteDir)}
+          />
+        {/if}
       {/if}
 
       <!-- Terminals stay mounted while sessions exist so xterm buffers
@@ -370,15 +441,19 @@
           class="view"
           class:hidden={appState.activeTab !== "connections" && appState.activeTab !== "terminals"}
         >
-          <TerminalsView
-            connections={appState.allConnections}
-            homeActive={appState.activeTab === "connections" || terminalState.tabs.length === 0}
-            onGoHome={() => appState.handleTabChange("connections")}
-            onCloseAll={appState.requestCloseAllSessions}
-            onManageSessions={appState.openSessionManager}
-            onConnect={(conn, options) => appState.handleConnect(conn, { newTab: true, ...options })}
-            home={terminalHome}
-          />
+          {#if loaded.terminals}
+            {@const TerminalsView = loaded.terminals}
+            <TerminalsView
+              connections={appState.allConnections}
+              homeActive={appState.activeTab === "connections" || terminalState.tabs.length === 0}
+              onGoHome={() => appState.handleTabChange("connections")}
+              onCloseAll={appState.requestCloseAllSessions}
+              onManageSessions={appState.openSessionManager}
+              onConnect={(conn: import("$lib/types").Connection, options?: { split?: import("$lib/utils/split-layout").SplitSide }) =>
+                appState.handleConnect(conn, { newTab: true, ...options })}
+              home={terminalHome}
+            />
+          {/if}
         </div>
       {:else if appState.activeTab === "connections"}
         {@render connectionsView(false)}
@@ -386,7 +461,8 @@
     </main>
   </div>
 
-  {#if appState.showModal}
+  {#if appState.showModal && loaded.connectionModal}
+    {@const ConnectionModal = loaded.connectionModal}
     <ConnectionModal
       isEditing={appState.isEditing}
       bind:modalName={appState.modalName}
@@ -405,7 +481,8 @@
     />
   {/if}
 
-  {#if pendingPrompt}
+  {#if pendingPrompt && loaded.connectionChangeModal}
+    {@const ConnectionChangeModal = loaded.connectionChangeModal}
     <ConnectionChangeModal
       prompt={pendingPrompt}
       onConfirm={acceptPendingChange}
@@ -413,7 +490,8 @@
     />
   {/if}
 
-  {#if appState.showEnvModal}
+  {#if appState.showEnvModal && loaded.envModal}
+    {@const EnvModal = loaded.envModal}
     <EnvModal
       environments={appState.environments}
       bind:newEnvName={appState.newEnvName}
@@ -423,7 +501,8 @@
     />
   {/if}
 
-  {#if appState.showAgentModal}
+  {#if appState.showAgentModal && loaded.agentModal}
+    {@const AgentModal = loaded.agentModal}
     <AgentModal
       agentSocket={appState.agentSocket}
       agentKeys={appState.agentKeys}
@@ -432,7 +511,8 @@
     />
   {/if}
 
-  {#if appState.showSessionManager}
+  {#if appState.showSessionManager && loaded.detachedSessionsModal}
+    {@const DetachedSessionsModal = loaded.detachedSessionsModal}
     <DetachedSessionsModal
       detachedSessions={terminalState.detachedSessions}
       popoutSessions={terminalState.popoutSessions}
@@ -447,7 +527,8 @@
     />
   {/if}
 
-  {#if kerberosState.showModal && !appState.showOnboarding}
+  {#if kerberosState.showModal && !appState.showOnboarding && loaded.kerberosModal}
+    {@const KerberosModal = loaded.kerberosModal}
     <KerberosModal
       status={kerberosState.status}
       remainingSeconds={kerberosState.liveRemainingSeconds}
@@ -463,7 +544,8 @@
     />
   {/if}
 
-  {#if appState.showDeleteConfirm && appState.deleteTarget}
+  {#if appState.showDeleteConfirm && appState.deleteTarget && loaded.deleteConfirm}
+    {@const DeleteConfirm = loaded.deleteConfirm}
     <DeleteConfirm
       title={appState.deleteTarget.title}
       confirmLabel={appState.deleteTarget.confirmLabel}
@@ -484,30 +566,43 @@
 </div>
 {/if}
 
-<ShortcutsModal show={showShortcutsModal} onClose={() => (showShortcutsModal = false)} />
+{#if showShortcutsModal && loaded.shortcutsModal}
+  {@const ShortcutsModal = loaded.shortcutsModal}
+  <ShortcutsModal show={true} onClose={() => (showShortcutsModal = false)} />
+{/if}
 
-<AboutModal
-  show={showAboutModal}
-  workspace={appState.workspace}
-  activeEnv={appState.activeEnv}
-  onClose={() => (showAboutModal = false)}
-/>
+{#if showAboutModal && loaded.aboutModal}
+  {@const AboutModal = loaded.aboutModal}
+  <AboutModal
+    show={true}
+    workspace={appState.workspace}
+    activeEnv={appState.activeEnv}
+    onClose={() => (showAboutModal = false)}
+  />
+{/if}
 
-<BatchExecModal
-  show={showBatchExecModal}
-  connections={appState.allConnections}
-  onClose={() => (showBatchExecModal = false)}
-/>
+{#if showBatchExecModal && loaded.batchExecModal}
+  {@const BatchExecModal = loaded.batchExecModal}
+  <BatchExecModal
+    show={true}
+    connections={appState.allConnections}
+    onClose={() => (showBatchExecModal = false)}
+  />
+{/if}
 
-<UploadModal
-  show={showUploadModal}
-  connections={appState.allConnections}
-  initialConnectionIds={uploadConnectionIds}
-  initialRemoteDir={uploadRemoteDir}
-  onClose={() => (showUploadModal = false)}
-/>
+{#if showUploadModal && loaded.uploadModal}
+  {@const UploadModal = loaded.uploadModal}
+  <UploadModal
+    show={true}
+    connections={appState.allConnections}
+    initialConnectionIds={uploadConnectionIds}
+    initialRemoteDir={uploadRemoteDir}
+    onClose={() => (showUploadModal = false)}
+  />
+{/if}
 
-{#if showQuitConfirmModal}
+{#if showQuitConfirmModal && loaded.quitConfirmModal}
+  {@const QuitConfirmModal = loaded.quitConfirmModal}
   <QuitConfirmModal
     activeCount={terminalState.count + terminalState.externalSessionCount}
     onCancel={() => (showQuitConfirmModal = false)}
@@ -531,28 +626,31 @@
   />
 {/if}
 
-<CommandPalette
-  open={showCommandPalette}
-  connections={appState.allConnections}
-  activeTab={appState.activeTab}
-  settings={appState.settings}
-  onClose={() => (showCommandPalette = false)}
-  onSelectTab={appState.handleTabChange}
-  onConnectHost={appState.handleConnect}
-  onOpenAddModal={appState.openAddModal}
-  onOpenBatchExec={() => (showBatchExecModal = true)}
-  onOpenUpload={() => openUploadModal(undefined)}
-  onFixPermissions={async () => {
-    try {
-      const fixed = await invoke("fix_security_permissions");
-      notify(`Repaired ${fixed} key permissions`, "success");
-    } catch (e) {
-      notify(`Fix failed: ${e}`, "error");
-    }
-  }}
-  onOpenKeys={() => appState.handleTabChange("keys")}
-  onOpenSessionManager={appState.openSessionManager}
-  onSelectTheme={appState.handleThemeChange}
-  onEditHost={appState.openEditModal}
-  onCopyCommand={appState.copyToClipboard}
-/>
+{#if showCommandPalette && loaded.commandPalette}
+  {@const CommandPalette = loaded.commandPalette}
+  <CommandPalette
+    open={true}
+    connections={appState.allConnections}
+    activeTab={appState.activeTab}
+    settings={appState.settings}
+    onClose={() => (showCommandPalette = false)}
+    onSelectTab={appState.handleTabChange}
+    onConnectHost={appState.handleConnect}
+    onOpenAddModal={appState.openAddModal}
+    onOpenBatchExec={() => (showBatchExecModal = true)}
+    onOpenUpload={() => openUploadModal(undefined)}
+    onFixPermissions={async () => {
+      try {
+        const fixed = await invoke("fix_security_permissions");
+        notify(`Repaired ${fixed} key permissions`, "success");
+      } catch (e) {
+        notify(`Fix failed: ${e}`, "error");
+      }
+    }}
+    onOpenKeys={() => appState.handleTabChange("keys")}
+    onOpenSessionManager={appState.openSessionManager}
+    onSelectTheme={appState.handleThemeChange}
+    onEditHost={appState.openEditModal}
+    onCopyCommand={appState.copyToClipboard}
+  />
+{/if}

@@ -4,7 +4,7 @@
   import ModalShell from "$lib/components/ui/ModalShell.svelte";
   import type { TeamInvite, TeamSummary } from "$lib/types";
   import { notify } from "$lib/stores/notifications.svelte";
-  import { copyTextWithFallback } from "$lib/utils/terminal-xterm";
+  import { copyTextWithFallback } from "$lib/utils/clipboard";
   import { formatUtc, inviteMessage } from "./teams";
 
   let { team, onClose }: { team: TeamSummary; onClose: () => void } = $props();

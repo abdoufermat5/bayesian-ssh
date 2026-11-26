@@ -1,29 +1,33 @@
+import "@xterm/xterm/css/xterm.css";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
-import { SearchAddon } from "@xterm/addon-search";
+import type { SearchAddon } from "@xterm/addon-search";
 import {
   BrowserClipboardProvider,
   ClipboardAddon,
   type ClipboardSelectionType,
   type IClipboardProvider,
 } from "@xterm/addon-clipboard";
-import { WebglAddon } from "@xterm/addon-webgl";
-import { ImageAddon } from "@xterm/addon-image";
+import type { WebglAddon } from "@xterm/addon-webgl";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 
 import { attachOrphanCompositionEndGuard } from "$lib/utils/terminal-composition-guard";
-import { TERMINAL_SHORTCUTS, type Combo } from "$lib/shortcuts";
-import { enableSnapshot } from "$lib/utils/terminal-snapshot";
+import { isTerminalPaletteKey, TERMINAL_SHORTCUTS, type Combo } from "$lib/shortcuts";
+import { enableSnapshot, snapshotTerminal } from "$lib/utils/terminal-snapshot";
 import { attachXtermSignals, type TerminalSignalHandlers } from "$lib/utils/terminal-signals";
 import { attachTerminalContextMenu } from "$lib/utils/terminal-context-menu";
+import { copyTextWithFallback, readClipboardText } from "$lib/utils/clipboard";
+import { getTerminalSmartCopy, setTerminalSmartCopy } from "$lib/utils/terminal-options";
 import {
   attachPasteGuard,
   attachMiddleClickPaste,
   pasteIntoTerminal,
 } from "$lib/utils/terminal-paste";
+
+export { copyTextWithFallback, readClipboardText, isTerminalPaletteKey, setTerminalSmartCopy, snapshotTerminal };
 
 export type PtyChunk = { data: string; bytes: number };
 function writePty(sessionId: string, data: string): void {
@@ -101,11 +105,10 @@ class WriteOnlyClipboardProvider implements IClipboardProvider {
 }
 
 export interface LoadedAddons {
-  searchAddon: SearchAddon;
+  ensureSearchAddon: () => Promise<SearchAddon | undefined>;
   webLinksAddon: WebLinksAddon;
   clipboardAddon: ClipboardAddon;
   unicode11Addon: Unicode11Addon;
-  imageAddon: ImageAddon;
   webglAddon?: WebglAddon;
 }
 
@@ -124,7 +127,8 @@ export function safeWrite(term: Terminal | undefined, data: string, callback?: (
   }
 }
 
-/** Instantiates and loads web-links, search, clipboard, unicode11, image, and GPU acceleration addons onto the terminal. */
+/** Instantiates and loads web-links, clipboard, and unicode11 addons synchronously;
+ *  image and search addons are lazy-loaded so cold terminal open stays fast. */
 export function attachXtermAddons(term: Terminal): LoadedAddons {
   // Only allow http/https links to reach the system browser. Terminal output
   // is untrusted input — `file:`, `smb:` or other schemes must never launch.
@@ -144,17 +148,12 @@ export function attachXtermAddons(term: Terminal): LoadedAddons {
     });
   });
 
-  const searchAddon = new SearchAddon();
   const clipboardAddon = new ClipboardAddon(undefined, new WriteOnlyClipboardProvider());
   const unicode11Addon = new Unicode11Addon();
-  // Cap decoded image memory per terminal (default is 128 MB).
-  const imageAddon = new ImageAddon({ storageLimit: 16 });
 
   term.loadAddon(webLinksAddon);
-  term.loadAddon(searchAddon);
   term.loadAddon(clipboardAddon);
   term.loadAddon(unicode11Addon);
-  term.loadAddon(imageAddon);
 
   try {
     term.unicode.activeVersion = "11";
@@ -162,7 +161,32 @@ export function attachXtermAddons(term: Terminal): LoadedAddons {
     // Non-fatal if Unicode version 11 provider is already active.
   }
 
-  return { searchAddon, webLinksAddon, clipboardAddon, unicode11Addon, imageAddon };
+  // Lazy-load ImageAddon in the background (only needed for inline sixel/iTerm2 images).
+  void import("@xterm/addon-image")
+    .then(({ ImageAddon }) => {
+      if ((term as Terminal & { isDisposed?: boolean }).isDisposed) return;
+      // Cap decoded image memory per terminal (default is 128 MB).
+      term.loadAddon(new ImageAddon({ storageLimit: 16 }));
+    })
+    .catch(() => {});
+
+  // Lazy-load SearchAddon on first search open.
+  let searchAddonPromise: Promise<SearchAddon | undefined> | null = null;
+  const ensureSearchAddon = (): Promise<SearchAddon | undefined> => {
+    if (!searchAddonPromise) {
+      searchAddonPromise = import("@xterm/addon-search")
+        .then(({ SearchAddon }) => {
+          if ((term as Terminal & { isDisposed?: boolean }).isDisposed) return undefined;
+          const addon = new SearchAddon();
+          term.loadAddon(addon);
+          return addon;
+        })
+        .catch(() => undefined);
+    }
+    return searchAddonPromise;
+  };
+
+  return { ensureSearchAddon, webLinksAddon, clipboardAddon, unicode11Addon };
 }
 
 /** Export terminal scrollback buffer as a plain text string. */
@@ -191,68 +215,6 @@ export function downloadTerminalScrollback(term: Terminal, connectionName: strin
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-}
-
-/**
- * Read the system clipboard as text ("" when empty or unreadable).
- *
- * Goes through the backend first: WebKit, the webview on macOS and Linux,
- * gates `navigator.clipboard.readText` behind a paste prompt or refuses it.
- */
-export async function readClipboardText(): Promise<string> {
-  try {
-    const text = await invoke<string | null>("read_clipboard_text");
-    if (text) return text;
-  } catch {
-    // Backend clipboard unavailable — try the web API.
-  }
-  try {
-    return (await navigator.clipboard?.readText?.()) ?? "";
-  } catch {
-    return "";
-  }
-}
-
-/**
- * Copy text to the clipboard through the backend, falling back to the web
- * clipboard API and then to `execCommand` (the only path on some WebKitGTK
- * builds).
- */
-export function copyTextWithFallback(text: string): void {
-  if (!text) return;
-  const legacyFallback = () => {
-    const textarea = document.createElement("textarea");
-    textarea.value = text;
-    textarea.style.position = "fixed";
-    textarea.style.opacity = "0";
-    document.body.appendChild(textarea);
-    textarea.select();
-    try {
-      document.execCommand("copy");
-    } catch (err) {
-      console.error("Failed to copy to clipboard", err);
-    } finally {
-      document.body.removeChild(textarea);
-    }
-  };
-  const webFallback = () => {
-    if (typeof navigator.clipboard?.writeText === "function") {
-      navigator.clipboard.writeText(text).catch(legacyFallback);
-      return;
-    }
-    legacyFallback();
-  };
-  invoke("write_clipboard_text", { text }).catch(webFallback);
-}
-
-let smartCopy = false;
-
-/**
- * "Smart copy": Ctrl+C copies while text is selected instead of sending
- * SIGINT. Off by default so plain Ctrl+C always interrupts the shell.
- */
-export function setTerminalSmartCopy(enabled: boolean): void {
-  smartCopy = enabled;
 }
 
 const IS_MAC = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform || "");
@@ -309,13 +271,6 @@ export function terminalShortcutId(event: KeyboardEvent): string | null {
 export function isXtermEvent(event: Event): boolean {
   const target = event.target;
   return target instanceof HTMLElement && target.classList.contains("xterm-helper-textarea");
-}
-
-/** The shortcut that opens the command palette from inside a terminal. */
-export function isTerminalPaletteKey(event: KeyboardEvent): boolean {
-  const key = event.key.toLowerCase();
-  if (IS_MAC) return event.metaKey && !event.shiftKey && !event.altKey && key === "k";
-  return event.ctrlKey && event.shiftKey && !event.altKey && key === "p";
 }
 
 /**
@@ -394,7 +349,7 @@ export function attachXtermKeyHandler(
       return consume(event, copySelection);
     }
     // Opt-in: plain Ctrl+C copies while text is selected.
-    if (smartCopy && !IS_MAC && event.ctrlKey && !event.shiftKey && noAlt && key === "c" && term.hasSelection()) {
+    if (getTerminalSmartCopy() && !IS_MAC && event.ctrlKey && !event.shiftKey && noAlt && key === "c" && term.hasSelection()) {
       return consume(event, copySelection);
     }
 
@@ -560,7 +515,7 @@ export interface XtermSessionOptions {
 export interface XtermSessionHandle {
   term: Terminal;
   fitAddon: FitAddon;
-  searchAddon: SearchAddon;
+  ensureSearchAddon: () => Promise<SearchAddon | undefined>;
   setVisible: (visible: boolean) => void;
   write: (data: string, bytes: number) => void;
   dispose: () => void;
@@ -580,33 +535,46 @@ export function createXtermSession(
   const fitAddon = new FitAddon();
   term.loadAddon(fitAddon);
 
-  const { searchAddon } = attachXtermAddons(term);
+  const { ensureSearchAddon } = attachXtermAddons(term);
   enableSnapshot(term);
 
   term.open(container);
 
   let disposed = false;
+  let isVisibleNow = false;
   let webglAddon: WebglAddon | undefined;
+  let webglLoading = false;
   let webglFailed = false;
 
   const setVisible = (visible: boolean) => {
     if (disposed) return;
+    isVisibleNow = visible;
     if (visible) {
-      if (!webglAddon && !webglFailed) {
-        try {
-          const addon = new WebglAddon();
-          addon.onContextLoss(() => {
-            addon.dispose();
-            if (webglAddon === addon) {
-              webglAddon = undefined;
+      if (!webglAddon && !webglFailed && !webglLoading) {
+        webglLoading = true;
+        void import("@xterm/addon-webgl")
+          .then(({ WebglAddon }) => {
+            webglLoading = false;
+            if (disposed || !isVisibleNow || webglAddon || webglFailed) return;
+            try {
+              const addon = new WebglAddon();
+              addon.onContextLoss(() => {
+                addon.dispose();
+                if (webglAddon === addon) {
+                  webglAddon = undefined;
+                }
+                webglFailed = true;
+              });
+              term.loadAddon(addon);
+              webglAddon = addon;
+            } catch {
+              webglFailed = true;
             }
+          })
+          .catch(() => {
+            webglLoading = false;
             webglFailed = true;
           });
-          term.loadAddon(addon);
-          webglAddon = addon;
-        } catch {
-          webglFailed = true;
-        }
       }
     } else {
       if (webglAddon) {
@@ -737,7 +705,7 @@ export function createXtermSession(
   return {
     term,
     fitAddon,
-    searchAddon,
+    ensureSearchAddon,
     setVisible,
     write,
     dispose,

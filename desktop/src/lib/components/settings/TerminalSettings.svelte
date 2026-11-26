@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { DesktopSettings } from "$lib/types";
   import CustomSelect from "$lib/components/ui/CustomSelect.svelte";
-  import { setTerminalSmartCopy } from "$lib/utils/terminal-xterm";
+  import { setTerminalSmartCopy } from "$lib/utils/terminal-options";
 
   interface Props {
     settings: DesktopSettings;

@@ -131,13 +131,18 @@
 
   /** Tabs in order, each group's tabs preceded by its chip; collapsed groups show only the chip. */
   const stripItems = $derived.by((): StripItem[] => {
+    const groupCounts = new Map<string, number>();
+    for (const tab of terminalState.tabs) {
+      if (tab.groupId) {
+        groupCounts.set(tab.groupId, (groupCounts.get(tab.groupId) ?? 0) + 1);
+      }
+    }
     const items: StripItem[] = [];
     let current: string | null = null;
     for (const tab of terminalState.tabs) {
       const group = tab.groupId ? groupsById.get(tab.groupId) : undefined;
       if (group && group.id !== current) {
-        const count = terminalState.tabs.filter((t) => t.groupId === group.id).length;
-        items.push({ kind: "group", group, count });
+        items.push({ kind: "group", group, count: groupCounts.get(group.id) ?? 0 });
       }
       current = group?.id ?? null;
       if (!group?.collapsed) items.push({ kind: "tab", tab, group });

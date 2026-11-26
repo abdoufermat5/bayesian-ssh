@@ -124,7 +124,7 @@
   });
 
   $effect(() => {
-    void connections;
+    void appState.allConnections;
     let cancelled = false;
     invoke<Prediction[]>("predict_connections", { limit: 3 })
       .then((list) => {
@@ -144,10 +144,11 @@
   // Only fetched when some host actually comes from an inventory source.
   let sourceIndex = $state.raw<Record<string, SourceInfo>>({});
   const hasSyncedHosts = $derived(connections.some((c) => c.source_id));
+  const hasAnySyncedHosts = $derived(appState.allConnections.some((c) => c.source_id));
 
   $effect(() => {
-    if (!hasSyncedHosts) return;
-    void connections;
+    if (!hasAnySyncedHosts) return;
+    void appState.allConnections;
     let cancelled = false;
     loadSourceIndex().then((index) => {
       if (!cancelled) sourceIndex = index;

@@ -4,7 +4,7 @@
   import type { DesktopSettings, EnvInfo, WorkspaceInfo } from "$lib/types";
   import CustomSelect from "$lib/components/ui/CustomSelect.svelte";
   import { notify } from "$lib/stores/notifications.svelte";
-  import { copyTextWithFallback } from "$lib/utils/terminal-xterm";
+  import { copyTextWithFallback } from "$lib/utils/clipboard";
   import { handleDefaultsSave, handleWorkspaceSave } from "./helpers";
 
   interface Props {
