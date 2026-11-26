@@ -227,12 +227,13 @@ impl RusshTransport {
         let russh_config = Arc::new(client::Config::default());
         let handler =
             ClientHandler::new(self.config.clone(), conn.host.clone(), conn.port).quiet(quiet);
-        let addr = format!("{}:{}", conn.host, conn.port);
-        let connect = client::connect(russh_config, addr.as_str(), handler);
+        let connect = client::connect(russh_config, (conn.host.as_str(), conn.port), handler);
         let res = match connect_timeout {
             Some(t) => tokio::time::timeout(t, connect).await.map_err(|_| {
                 TransportError::Permanent(anyhow!(
-                    "connect to {addr} timed out after {}s",
+                    "connect to {}:{} timed out after {}s",
+                    conn.host,
+                    conn.port,
                     t.as_secs()
                 ))
             })?,

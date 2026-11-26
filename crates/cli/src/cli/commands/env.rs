@@ -25,15 +25,15 @@ pub async fn execute(command: EnvCommands) -> Result<()> {
     Ok(())
 }
 
-fn environments_dir() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("~/.config"))
-        .join("bayesian-ssh")
-        .join("environments")
+fn environments_dir() -> Result<PathBuf> {
+    let base = dirs::config_dir()
+        .or_else(|| dirs::home_dir().map(|h| h.join(".config")))
+        .ok_or_else(|| anyhow::anyhow!("cannot determine user config directory"))?;
+    Ok(base.join("bayesian-ssh").join("environments"))
 }
 
 fn list_environments() -> Result<()> {
-    let envs_dir = environments_dir();
+    let envs_dir = environments_dir()?;
     if !envs_dir.exists() {
         println!("No environments found.");
         return Ok(());
@@ -67,7 +67,7 @@ fn list_environments() -> Result<()> {
 }
 
 fn use_environment(name: &str) -> Result<()> {
-    let env_dir = environments_dir().join(name);
+    let env_dir = environments_dir()?.join(name);
     if !env_dir.exists() {
         anyhow::bail!(
             "Environment '{}' does not exist. Use `bayesian-ssh env create {}` to create it.",
@@ -82,7 +82,7 @@ fn use_environment(name: &str) -> Result<()> {
 }
 
 fn create_environment(name: &str) -> Result<()> {
-    let env_dir = environments_dir().join(name);
+    let env_dir = environments_dir()?.join(name);
     if env_dir.exists() {
         anyhow::bail!("Environment '{}' already exists.", name);
     }
@@ -111,7 +111,7 @@ fn remove_environment(name: &str) -> Result<()> {
         anyhow::bail!("Cannot remove the built-in 'default' environment.");
     }
 
-    let env_dir = environments_dir().join(name);
+    let env_dir = environments_dir()?.join(name);
     if !env_dir.exists() {
         anyhow::bail!("Environment '{}' does not exist.", name);
     }

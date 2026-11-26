@@ -8,6 +8,8 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use std::time::Duration;
 
+const MAX_IDLE_CAP_SECS: f64 = 86_400.0;
+
 pub async fn execute(session: String, speed: f64, idle_cap: f64, config: AppConfig) -> Result<()> {
     if !speed.is_finite() || speed <= 0.0 {
         anyhow::bail!("--speed must be a positive number (got {speed})");
@@ -15,6 +17,7 @@ pub async fn execute(session: String, speed: f64, idle_cap: f64, config: AppConf
     if !idle_cap.is_finite() || idle_cap < 0.0 {
         anyhow::bail!("--idle-cap must be a non-negative number (got {idle_cap})");
     }
+    let idle_cap = idle_cap.min(MAX_IDLE_CAP_SECS);
 
     let db = Database::new(&config)?;
     let (_, raw_path) = db
@@ -65,11 +68,16 @@ pub async fn execute(session: String, speed: f64, idle_cap: f64, config: AppConf
         if kind != "o" {
             continue;
         }
+        if !time.is_finite() {
+            continue;
+        }
         let raw_gap = (time - prev_time).max(0.0);
         prev_time = time.max(prev_time);
         let delay = (raw_gap / speed).min(idle_cap);
-        if delay > 0.0 {
-            tokio::time::sleep(Duration::from_secs_f64(delay)).await;
+        if delay > 0.0
+            && let Ok(dur) = Duration::try_from_secs_f64(delay)
+        {
+            tokio::time::sleep(dur).await;
         }
         stdout.write_all(data.as_bytes())?;
         stdout.flush()?;

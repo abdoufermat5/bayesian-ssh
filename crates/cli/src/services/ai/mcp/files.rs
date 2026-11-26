@@ -119,38 +119,24 @@ impl SftpFiles {
             .open_sftp_limited(conn, &opts)
             .await
             .map_err(|e| anyhow!("sftp: {e}"))?;
-        let st = sftp
-            .stat(path)
+        let st = tokio::time::timeout(READ_TIMEOUT, sftp.stat(path))
             .await
+            .map_err(|_| anyhow!("stat {path}: timed out"))?
             .map_err(|e| anyhow!("stat {path}: {e}"))?;
         if st.is_dir {
             return Err(anyhow!("{path} is a directory"));
         }
-        let want = offset.saturating_add(max_bytes as u64);
-        let (tx, mut rx) = mpsc::channel::<Vec<u8>>(8);
-        let reader = sftp.read_all(path, tx);
-        let collector = async move {
-            let mut buf: Vec<u8> = Vec::new();
-            while let Some(chunk) = rx.recv().await {
-                buf.extend_from_slice(&chunk);
-                if buf.len() as u64 >= want {
-                    break;
-                }
-            }
-            buf
+        let data = if max_bytes == 0 || offset >= st.size {
+            Vec::new()
+        } else {
+            let to_read = st.size.saturating_sub(offset).min(max_bytes as u64) as usize;
+            tokio::time::timeout(READ_TIMEOUT, sftp.read_range(path, offset, to_read))
+                .await
+                .map_err(|_| anyhow!("read {path}: timed out"))?
+                .map_err(|e| anyhow!("read {path}: {e}"))?
         };
-        let (res, buf) = tokio::join!(reader, collector);
-        // The reader fails when we stop listening after the range is full: that is fine.
-        if let Err(e) = res
-            && (buf.len() as u64) < want
-            && (buf.len() as u64) < st.size
-        {
-            return Err(anyhow!("read {path}: {e}"));
-        }
-        let start = (offset as usize).min(buf.len());
-        let end = (start + max_bytes).min(buf.len());
         Ok(FileRead {
-            data: buf[start..end].to_vec(),
+            data,
             size: st.size,
             mode: Some(st.mode & 0o7777),
         })
@@ -191,11 +177,13 @@ impl SftpFiles {
             bail!("{path} is a directory");
         }
 
-        // `dd` reads the window; base64 keeps binary data intact through a PTY, whose
-        // line discipline would otherwise rewrite bytes.
+        // `tail`/`head` reads the window; base64 keeps binary data intact through a PTY,
+        // whose line discipline would otherwise rewrite bytes.
         let expect = (size.saturating_sub(offset)).min(max_bytes as u64) as usize;
         let b64_cap = expect.div_ceil(3) * 4 + 4096;
-        let cmd = format!("dd if={quoted} bs=1 skip={offset} count={expect} 2>/dev/null | base64");
+        let start_byte = offset.saturating_add(1);
+        let cmd =
+            format!("tail -c +{start_byte} -- {quoted} 2>/dev/null | head -c {expect} | base64");
         let out = self.exec(conn, &cmd, READ_TIMEOUT, b64_cap).await?;
         if out.timed_out {
             bail!("read {path}: timed out");
@@ -245,24 +233,7 @@ impl SftpFiles {
                 data.len()
             );
         }
-        let quoted = sh_quote(path);
-        let mode = mode.unwrap_or(0o644);
-        let encoded = base64::engine::general_purpose::STANDARD.encode(data);
-        // A PTY handles 4 KiB lines; keep the heredoc well inside that.
-        let mut payload = String::with_capacity(encoded.len() + encoded.len() / 512 + 2);
-        for line in encoded.as_bytes().chunks(1024) {
-            payload.push_str(std::str::from_utf8(line).unwrap_or_default());
-            payload.push('\n');
-        }
-        // Same result as an SFTP write: the file replaced atomically, `mode` applied, and
-        // the previous owner kept when this user may set it.
-        let cmd = format!(
-            "t={quoted}.bssh-$$.tmp; umask 077; base64 -d > \"$t\" <<'BSSH_PAYLOAD'\n{payload}BSSH_PAYLOAD\n\
-             chmod {mode:o} -- \"$t\"; \
-             [ -e {quoted} ] && chown --reference={quoted} \"$t\" 2>/dev/null; \
-             mv -f -- \"$t\" {quoted}; _bssh_w=$?; \
-             [ $_bssh_w -eq 0 ] || rm -f -- \"$t\"; (exit $_bssh_w)"
-        );
+        let cmd = build_write_exec_cmd(path, data, mode);
         let out = self.exec(conn, &cmd, WRITE_TIMEOUT, 8192).await?;
         if out.timed_out {
             bail!("write {path}: timed out");
@@ -314,11 +285,38 @@ impl FileAccess for SftpFiles {
                 }
             }
         };
-        let writer = sftp.write_all(path, 0, rx, mode.unwrap_or(0o644), None);
-        let (res, ()) = tokio::join!(writer, feeder);
+        let writer = sftp.write_all(path, 0, rx, mode.unwrap_or(0o644) & 0o7777, None);
+        let (res, ()) = tokio::time::timeout(WRITE_TIMEOUT, async { tokio::join!(writer, feeder) })
+            .await
+            .map_err(|_| anyhow!("write {path}: timed out"))?;
         res.map_err(|e| anyhow!("write {path}: {e}"))?;
         Ok(())
     }
+}
+
+/// Build the POSIX shell script that atomically replaces `path` with `data`.
+fn build_write_exec_cmd(path: &str, data: &[u8], mode: Option<u32>) -> String {
+    let quoted = sh_quote(path);
+    let mode = mode.unwrap_or(0o644) & 0o7777;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(data);
+    // A PTY handles 4 KiB lines; keep the heredoc well inside that.
+    let mut payload = String::with_capacity(encoded.len() + encoded.len() / 512 + 2);
+    for line in encoded.as_bytes().chunks(1024) {
+        payload.push_str(std::str::from_utf8(line).unwrap_or_default());
+        payload.push('\n');
+    }
+    // Same result as an SFTP write: unique temp file in the target directory,
+    // `mode` applied, previous owner kept when permitted, atomic rename, and
+    // cleanup on any failure in the chain.
+    format!(
+        "umask 077; t=$(mktemp \"$(dirname -- {quoted})/.bssh.XXXXXX\") || exit 1; \
+         base64 -d > \"$t\" <<'BSSH_PAYLOAD' && \
+         chmod {mode:o} -- \"$t\" && \
+         ( [ ! -e {quoted} ] || chown --reference={quoted} -- \"$t\" 2>/dev/null || true ) && \
+         mv -f -- \"$t\" {quoted}\n\
+         {payload}BSSH_PAYLOAD\n\
+         _bssh_w=$?; [ $_bssh_w -eq 0 ] || rm -f -- \"$t\"; (exit $_bssh_w)"
+    )
 }
 
 /// POSIX single-quote a path for a remote `sh`.
@@ -360,5 +358,23 @@ mod tests {
         );
         assert_eq!(sh_quote("/a'b"), "'/a'\"'\"'b'");
         assert_eq!(sh_quote(""), "''");
+    }
+
+    #[test]
+    fn write_exec_script_uses_mktemp_masks_mode_and_chains_cleanup() {
+        let cmd = build_write_exec_cmd("/etc/my app/conf", b"hello", Some(0o100640));
+        assert!(
+            cmd.contains(
+                "t=$(mktemp \"$(dirname -- '/etc/my app/conf')/.bssh.XXXXXX\") || exit 1;"
+            ),
+            "{cmd}"
+        );
+        assert!(cmd.contains("chmod 640 -- \"$t\" &&"), "{cmd}");
+        assert!(cmd.contains("mv -f -- \"$t\" '/etc/my app/conf'"), "{cmd}");
+        assert!(
+            cmd.contains("[ $_bssh_w -eq 0 ] || rm -f -- \"$t\""),
+            "{cmd}"
+        );
+        assert!(!cmd.contains(".bssh-$$.tmp"), "{cmd}");
     }
 }

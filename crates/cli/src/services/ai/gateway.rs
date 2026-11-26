@@ -73,13 +73,16 @@ pub fn parse_ttl(s: &str) -> Result<Duration> {
     let n: u64 = num
         .parse()
         .map_err(|_| anyhow!("invalid duration '{s}' (use 30s, 15m, 1h, 2d)"))?;
-    let secs = match unit {
-        "s" => n,
-        "m" => n * 60,
-        "h" => n * 3600,
-        "d" => n * 86_400,
+    let mult: u64 = match unit {
+        "s" => 1,
+        "m" => 60,
+        "h" => 3600,
+        "d" => 86_400,
         _ => bail!("invalid duration '{s}' (use 30s, 15m, 1h, 2d)"),
     };
+    let secs = n
+        .checked_mul(mult)
+        .ok_or_else(|| anyhow!("duration '{s}' overflows"))?;
     let d = Duration::from_secs(secs);
     if d.is_zero() || d > MAX_TTL {
         bail!("a token lives from 1 second to 24 hours");
@@ -180,7 +183,9 @@ impl TokenVerifier {
         if now >= claims.exp {
             return Err(TokenError::Expired);
         }
-        if claims.iat > now + 60 || claims.exp - claims.iat > MAX_TTL.as_secs() as i64 {
+        if claims.iat > now.saturating_add(60)
+            || claims.exp.saturating_sub(claims.iat) > MAX_TTL.as_secs() as i64
+        {
             return Err(TokenError::NotYetValid);
         }
         Ok(claims)
@@ -600,7 +605,18 @@ mod tests {
         assert_eq!(parse_ttl("15m").unwrap(), Duration::from_secs(900));
         assert_eq!(parse_ttl("1h").unwrap(), Duration::from_secs(3600));
         assert_eq!(parse_ttl("1d").unwrap(), Duration::from_secs(86_400));
-        for bad in ["", "h", "0s", "2d", "10", "1w", "-5m"] {
+        for bad in [
+            "",
+            "h",
+            "0s",
+            "2d",
+            "10",
+            "1w",
+            "-5m",
+            "18446744073709551615m",
+            "18446744073709551615h",
+            "18446744073709551615d",
+        ] {
             assert!(parse_ttl(bad).is_err(), "{bad}");
         }
         let c = cred();

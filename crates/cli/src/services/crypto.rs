@@ -28,7 +28,7 @@ use anyhow::{Result, anyhow, bail};
 use argon2::Algorithm::Argon2id;
 use argon2::{Params, Version};
 use rand::RngCore;
-use zeroize::Zeroize;
+use zeroize::Zeroizing;
 
 const MAGIC: &[u8; 4] = b"BSSH";
 const VERSION_V2: u8 = 0x02;
@@ -42,7 +42,7 @@ const ARGON2_MEM_KIB: u32 = 64 * 1024;
 const ARGON2_TIME_COST: u32 = 3;
 const ARGON2_PARALLELISM: u32 = 1;
 
-fn derive_key_argon2(passphrase: &str, salt: &[u8]) -> Result<[u8; KEY_LEN]> {
+fn derive_key_argon2(passphrase: &str, salt: &[u8]) -> Result<Zeroizing<[u8; KEY_LEN]>> {
     let params = Params::new(
         ARGON2_MEM_KIB,
         ARGON2_TIME_COST,
@@ -51,9 +51,9 @@ fn derive_key_argon2(passphrase: &str, salt: &[u8]) -> Result<[u8; KEY_LEN]> {
     )
     .map_err(|e| anyhow!("invalid Argon2 parameters: {e}"))?;
     let argon = argon2::Argon2::new(Argon2id, Version::V0x13, params);
-    let mut key = [0u8; KEY_LEN];
+    let mut key = Zeroizing::new([0u8; KEY_LEN]);
     argon
-        .hash_password_into(passphrase.as_bytes(), salt, &mut key)
+        .hash_password_into(passphrase.as_bytes(), salt, &mut *key)
         .map_err(|e| anyhow!("Argon2id key derivation failed: {e}"))?;
     Ok(key)
 }
@@ -73,8 +73,8 @@ pub fn encrypt_data(data: &[u8], passphrase: &str) -> Result<Vec<u8>> {
     rand::rngs::OsRng.fill_bytes(&mut salt);
     rand::rngs::OsRng.fill_bytes(&mut nonce);
 
-    let mut key_bytes = derive_key_argon2(passphrase, &salt)?;
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key_bytes));
+    let key_bytes = derive_key_argon2(passphrase, &salt)?;
+    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&*key_bytes));
     let aad = aad(VERSION_V2);
     let ct = cipher
         .encrypt(
@@ -85,7 +85,6 @@ pub fn encrypt_data(data: &[u8], passphrase: &str) -> Result<Vec<u8>> {
             },
         )
         .map_err(|e| anyhow!("AES-GCM encryption failed: {e}"))?;
-    key_bytes.zeroize();
 
     let mut out = Vec::with_capacity(MAGIC.len() + 1 + SALT_LEN + NONCE_LEN + ct.len());
     out.extend_from_slice(MAGIC);
@@ -125,10 +124,10 @@ fn decrypt_v2(encrypted: &[u8], passphrase: &str) -> Result<Vec<u8>> {
     let nonce = &encrypted[offset + SALT_LEN..offset + SALT_LEN + NONCE_LEN];
     let ciphertext = &encrypted[offset + SALT_LEN + NONCE_LEN..];
 
-    let mut key_bytes = derive_key_argon2(passphrase, salt)?;
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key_bytes));
+    let key_bytes = derive_key_argon2(passphrase, salt)?;
+    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&*key_bytes));
     let aad = aad(VERSION_V2);
-    let pt = cipher
+    cipher
         .decrypt(
             Nonce::from_slice(nonce),
             Payload {
@@ -136,9 +135,7 @@ fn decrypt_v2(encrypted: &[u8], passphrase: &str) -> Result<Vec<u8>> {
                 aad: &aad,
             },
         )
-        .map_err(|_| anyhow!("Decryption failed: invalid passphrase or corrupted file"));
-    key_bytes.zeroize();
-    pt
+        .map_err(|_| anyhow!("Decryption failed: invalid passphrase or corrupted file"))
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -150,6 +147,7 @@ mod v1_legacy {
     use anyhow::{Result, bail};
     use hmac::Mac;
     use sha2::{Digest, Sha256};
+    use zeroize::Zeroizing;
     type HmacSha256 = hmac::Hmac<Sha256>;
 
     const SALT_LEN: usize = 16;
@@ -158,10 +156,17 @@ mod v1_legacy {
     pub const PBKDF2_ROUNDS: u32 = 600_000;
     pub const LEGACY_PBKDF2_ROUNDS: u32 = 10_000;
 
-    pub fn derive_keys(passphrase: &str, salt: &[u8], rounds: u32) -> (Vec<u8>, Vec<u8>) {
-        let mut derived = vec![0u8; 64];
+    pub fn derive_keys(
+        passphrase: &str,
+        salt: &[u8],
+        rounds: u32,
+    ) -> (Zeroizing<Vec<u8>>, Zeroizing<Vec<u8>>) {
+        let mut derived = Zeroizing::new(vec![0u8; 64]);
         pbkdf2_sha256(passphrase.as_bytes(), salt, rounds, &mut derived);
-        (derived[0..32].to_vec(), derived[32..64].to_vec())
+        (
+            Zeroizing::new(derived[0..32].to_vec()),
+            Zeroizing::new(derived[32..64].to_vec()),
+        )
     }
 
     fn pbkdf2_sha256(password: &[u8], salt: &[u8], rounds: u32, out: &mut [u8]) {

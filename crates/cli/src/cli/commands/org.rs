@@ -2,7 +2,9 @@
 //! no name on the server, so it is labelled by its owners' emails and `<org>`
 //! arguments accept an id prefix or one of its team names.
 
-use crate::cli::commands::teams::{Passphrase, open_in_browser, passphrase, print_billing};
+use crate::cli::commands::teams::{
+    Passphrase, open_in_browser, passphrase, print_billing, validate_browser_url,
+};
 use crate::cli::{OrgCommands, OrgOwnerCommands};
 use crate::config::AppConfig;
 use crate::services::teams::TeamsStore;
@@ -126,6 +128,7 @@ async fn run(command: OrgCommands, store: &TeamsStore, config: &AppConfig) -> Re
                     };
                     s.org_checkout_url(org_id, seats, interval).await?
                 };
+                validate_browser_url(&url)?;
                 println!("Opening the billing page for organization {label} in your browser:");
                 println!("  {url}");
                 open_in_browser(&url);

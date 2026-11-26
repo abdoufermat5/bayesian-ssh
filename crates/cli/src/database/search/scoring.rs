@@ -373,54 +373,62 @@ impl Database {
             .iter()
             .map(|(c, _, _)| c.id.to_string())
             .collect();
-        let placeholders = vec!["?"; ids.len()].join(",");
-        let sql = format!(
-            "SELECT connection_id,
-                    COUNT(*) AS total,
-                    COALESCE(SUM(CASE WHEN exit_code = 0 OR exit_code IS NULL THEN 1 ELSE 0 END), 0) AS successes,
-                    COALESCE(SUM(CASE WHEN started_at >= ? THEN 1 ELSE 0 END), 0) AS total_w,
-                    COALESCE(SUM(CASE WHEN started_at >= ? AND git_root = ? THEN 1 ELSE 0 END), 0) AS repo_hits,
-                    COALESCE(SUM(CASE WHEN started_at >= ? AND local_hour IN (?, ?, ?) THEN 1 ELSE 0 END), 0) AS hour_hits,
-                    COALESCE(SUM(CASE WHEN started_at >= ? AND prev_connection_id = ? THEN 1 ELSE 0 END), 0) AS after_prev_hits
-             FROM sessions
-             WHERE connection_id IN ({placeholders})
-             GROUP BY connection_id"
-        );
-
         let git_root: Option<&str> = ctx.and_then(|c| c.git_root.as_deref());
         let [h0, h1, h2] = neighbour_hours(ctx.and_then(|c| c.hour));
         let prev_id: Option<String> =
             ctx.and_then(|c| c.prev_connection_id.map(|id| id.to_string()));
 
-        let mut sql_params: Vec<&dyn rusqlite::ToSql> = vec![
-            &cutoff, &cutoff, &git_root, &cutoff, &h0, &h1, &h2, &cutoff, &prev_id,
-        ];
-        for id in &ids {
-            sql_params.push(id as &dyn rusqlite::ToSql);
-        }
+        for chunk in ids.chunks(500) {
+            let placeholders = vec!["?"; chunk.len()].join(",");
+            let sql = format!(
+                "SELECT connection_id,
+                        COUNT(*) AS total,
+                        COALESCE(SUM(CASE WHEN exit_code = 0 OR exit_code IS NULL THEN 1 ELSE 0 END), 0) AS successes,
+                        COALESCE(SUM(CASE WHEN started_at >= ? THEN 1 ELSE 0 END), 0) AS total_w,
+                        COALESCE(SUM(CASE WHEN started_at >= ? AND git_root = ? THEN 1 ELSE 0 END), 0) AS repo_hits,
+                        COALESCE(SUM(CASE WHEN started_at >= ? AND local_hour IN (?, ?, ?) THEN 1 ELSE 0 END), 0) AS hour_hits,
+                        COALESCE(SUM(CASE WHEN started_at >= ? AND prev_connection_id = ? THEN 1 ELSE 0 END), 0) AS after_prev_hits
+                 FROM sessions
+                 WHERE connection_id IN ({placeholders})
+                 GROUP BY connection_id"
+            );
 
-        let mut stmt = match self.conn.prepare(&sql) {
-            Ok(s) => s,
-            Err(_) => return out,
-        };
-        let mut rows = match stmt.query(rusqlite::params_from_iter(sql_params.iter())) {
-            Ok(r) => r,
-            Err(_) => return out,
-        };
-        while let Ok(Some(row)) = rows.next() {
-            let conn_id_str: String = row.get(0).unwrap_or_default();
-            if let Ok(conn_id) = Uuid::parse_str(&conn_id_str) {
-                out.insert(
-                    conn_id,
-                    SessionAggregate {
-                        total: row.get(1).unwrap_or(0),
-                        successes: row.get(2).unwrap_or(0),
-                        total_w: row.get(3).unwrap_or(0),
-                        repo_hits: row.get(4).unwrap_or(0),
-                        hour_hits: row.get(5).unwrap_or(0),
-                        after_prev_hits: row.get(6).unwrap_or(0),
-                    },
-                );
+            let mut sql_params: Vec<&dyn rusqlite::ToSql> = vec![
+                &cutoff, &cutoff, &git_root, &cutoff, &h0, &h1, &h2, &cutoff, &prev_id,
+            ];
+            for id in chunk {
+                sql_params.push(id as &dyn rusqlite::ToSql);
+            }
+
+            let mut stmt = match self.conn.prepare(&sql) {
+                Ok(s) => s,
+                Err(e) => {
+                    tracing::warn!("Failed to prepare session_aggregates query: {e}");
+                    return out;
+                }
+            };
+            let mut rows = match stmt.query(rusqlite::params_from_iter(sql_params.iter())) {
+                Ok(r) => r,
+                Err(e) => {
+                    tracing::warn!("Failed to query session_aggregates: {e}");
+                    return out;
+                }
+            };
+            while let Ok(Some(row)) = rows.next() {
+                let conn_id_str: String = row.get(0).unwrap_or_default();
+                if let Ok(conn_id) = Uuid::parse_str(&conn_id_str) {
+                    out.insert(
+                        conn_id,
+                        SessionAggregate {
+                            total: row.get(1).unwrap_or(0),
+                            successes: row.get(2).unwrap_or(0),
+                            total_w: row.get(3).unwrap_or(0),
+                            repo_hits: row.get(4).unwrap_or(0),
+                            hour_hits: row.get(5).unwrap_or(0),
+                            after_prev_hits: row.get(6).unwrap_or(0),
+                        },
+                    );
+                }
             }
         }
         out

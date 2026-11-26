@@ -42,28 +42,40 @@ username=$(echo "$remoteuser" | awk '{print $2}')
 exec sshAGENT_FLAG -T -KBASTION_PORT "$username"@BASTION_PLACEHOLDER $sshcmdline -- $remoteuser $remoteport --host "$host" --osh scp --scp-cmd "$scpcmd"
 "#;
 
+fn bssh_data_dir() -> Result<PathBuf> {
+    let base = dirs::data_dir()
+        .or_else(|| dirs::home_dir().map(|h| h.join(".local").join("share")))
+        .ok_or_else(|| anyhow::anyhow!("cannot determine user data directory"))?;
+    Ok(base.join("bayesian-ssh"))
+}
+
 /// Ensure the bastion SCP wrapper script exists and return its path.
 ///
 /// The script is written once to `~/.local/share/bayesian-ssh/scp-wrapper.sh`.
 /// It is safe to overwrite on every call so updates propagate automatically.
 pub fn ensure_scp_wrapper() -> Result<PathBuf> {
-    let data_dir = dirs::data_dir()
-        .unwrap_or_else(|| PathBuf::from("~/.local/share"))
-        .join("bayesian-ssh");
+    use std::io::Write;
+
+    let data_dir = bssh_data_dir()?;
     std::fs::create_dir_all(&data_dir)
         .with_context(|| format!("create data dir {}", data_dir.display()))?;
 
     let wrapper = data_dir.join("scp-wrapper.sh");
 
-    std::fs::write(&wrapper, SCP_WRAPPER_TEMPLATE)
+    let mut tmp = tempfile::NamedTempFile::new_in(&data_dir)
+        .with_context(|| format!("create temp scp wrapper in {}", data_dir.display()))?;
+    tmp.write_all(SCP_WRAPPER_TEMPLATE.as_bytes())
         .with_context(|| format!("write scp wrapper to {}", wrapper.display()))?;
 
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o755))
+        std::fs::set_permissions(tmp.path(), std::fs::Permissions::from_mode(0o755))
             .with_context(|| format!("chmod +x {}", wrapper.display()))?;
     }
+
+    tmp.persist(&wrapper)
+        .with_context(|| format!("persist scp wrapper to {}", wrapper.display()))?;
 
     Ok(wrapper)
 }
@@ -88,19 +100,18 @@ fn render_bastion_wrapper(template: &str, conn: &Connection) -> String {
         .replace("BASTION_PORT", &port_flag)
 }
 
-/// Create a connection-specific wrapper by substituting the bastion hostname,
-/// its port (when the stored value carries one) and whether the agent may be
-/// forwarded.
+/// Create a unique connection-specific wrapper by substituting the bastion
+/// hostname, its port (when the stored value carries one) and whether the agent
+/// may be forwarded.
 ///
-/// Returns the path to the generated script.
-fn create_bastion_wrapper(conn: &Connection) -> Result<PathBuf> {
+/// Returns a [`tempfile::TempPath`] that removes the script when dropped.
+fn create_bastion_wrapper(conn: &Connection) -> Result<tempfile::TempPath> {
+    use std::io::Write;
+
     let bastion = conn.bastion.as_deref().unwrap_or_default();
-    let data_dir = dirs::data_dir()
-        .unwrap_or_else(|| PathBuf::from("~/.local/share"))
-        .join("bayesian-ssh");
+    let data_dir = bssh_data_dir()?;
     std::fs::create_dir_all(&data_dir)?;
 
-    // Use a sanitised bastion name in the filename to avoid collisions.
     let safe_name: String = bastion
         .chars()
         .map(|c| {
@@ -111,21 +122,25 @@ fn create_bastion_wrapper(conn: &Connection) -> Result<PathBuf> {
             }
         })
         .collect();
-    let wrapper_path = data_dir.join(format!("scp-wrapper-{safe_name}.sh"));
 
     let template = ensure_scp_wrapper()?;
     let script = std::fs::read_to_string(&template)?;
     let script = render_bastion_wrapper(&script, conn);
 
-    std::fs::write(&wrapper_path, script)?;
+    let mut tmp = tempfile::Builder::new()
+        .prefix(&format!("scp-wrapper-{safe_name}-"))
+        .suffix(".sh")
+        .tempfile_in(&data_dir)?;
+    tmp.write_all(script.as_bytes())?;
 
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&wrapper_path, std::fs::Permissions::from_mode(0o755))?;
+        std::fs::set_permissions(tmp.path(), std::fs::Permissions::from_mode(0o755))?;
     }
 
-    Ok(wrapper_path)
+    // Close the write fd before `scp` executes the wrapper (avoids ETXTBSY).
+    Ok(tmp.into_temp_path())
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -143,7 +158,8 @@ pub async fn scp_upload(
     recursive: bool,
     agent: Option<&Path>,
 ) -> Result<()> {
-    let mut argv = build_scp_argv(conn, local, remote_path, recursive, Direction::Upload)?;
+    let (mut argv, _wrapper_guard) =
+        build_scp_argv(conn, local, remote_path, recursive, Direction::Upload)?;
     // The caller owns the terminal (progress bars): silence scp's own meter
     // and capture its diagnostics instead of letting them scribble over it.
     quiet_scp_argv(&mut argv);
@@ -158,7 +174,8 @@ pub async fn scp_download(
     recursive: bool,
     agent: Option<&Path>,
 ) -> Result<()> {
-    let argv = build_scp_argv(conn, local, remote_path, recursive, Direction::Download)?;
+    let (argv, _wrapper_guard) =
+        build_scp_argv(conn, local, remote_path, recursive, Direction::Download)?;
     run_scp(&argv, false, agent).await
 }
 
@@ -178,8 +195,9 @@ fn build_scp_argv(
     remote_path: &str,
     recursive: bool,
     direction: Direction,
-) -> Result<Vec<String>> {
+) -> Result<(Vec<String>, Option<tempfile::TempPath>)> {
     let mut argv: Vec<String> = vec!["scp".into()];
+    let mut wrapper_guard = None;
 
     // Use legacy SCP protocol (required for the wrapper).
     argv.push("-O".into());
@@ -196,6 +214,7 @@ fn build_scp_argv(
         info!("using SCP bastion wrapper: {}", wrapper.display());
         argv.push("-S".into());
         argv.push(wrapper.to_string_lossy().into_owned());
+        wrapper_guard = Some(wrapper);
 
         // `--`: a local path or user beginning with `-` must not become an option.
         argv.push("--".into());
@@ -261,7 +280,7 @@ fn build_scp_argv(
     }
 
     debug!("scp argv: {:?}", argv);
-    Ok(argv)
+    Ok((argv, wrapper_guard))
 }
 
 /// Add `-q` (no progress meter, no ssh chatter) right after the program name.
@@ -349,7 +368,7 @@ mod tests {
 
     #[test]
     fn direct_upload_argv() {
-        let argv = build_scp_argv(
+        let (argv, _guard) = build_scp_argv(
             &conn(false, None),
             Path::new("/tmp/file.txt"),
             "/remote/file.txt",
@@ -371,7 +390,7 @@ mod tests {
 
     #[test]
     fn bastion_kerberos_upload_uses_wrapper() {
-        let argv = build_scp_argv(
+        let (argv, _guard) = build_scp_argv(
             &conn(true, Some("bastion.example")),
             Path::new("/tmp/file.txt"),
             "/remote/file.txt",
@@ -416,7 +435,7 @@ mod tests {
 
     #[test]
     fn jump_host_upload_uses_proxy_jump() {
-        let argv = build_scp_argv(
+        let (argv, _guard) = build_scp_argv(
             &conn(false, Some("jump.example")),
             Path::new("/tmp/file.txt"),
             "/remote/file.txt",
@@ -431,7 +450,7 @@ mod tests {
 
     #[test]
     fn recursive_flag_added() {
-        let argv = build_scp_argv(
+        let (argv, _guard) = build_scp_argv(
             &conn(false, None),
             Path::new("/tmp/dir"),
             "/remote/dir",

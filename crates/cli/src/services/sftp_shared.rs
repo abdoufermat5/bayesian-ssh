@@ -198,6 +198,15 @@ fn run_interactive_ls(
 
     let mut stdin = child.stdin.take().ok_or("no stdin pipe")?;
     let mut stdout_pipe = child.stdout.take().ok_or("no stdout pipe")?;
+    let mut stderr_pipe = child.stderr.take().ok_or("no stderr pipe")?;
+    let deadline = std::time::Instant::now() + OP_TIMEOUT;
+
+    // Drain stderr concurrently so a full stderr pipe buffer can never deadlock the child.
+    let stderr_handle = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stderr_pipe.read_to_end(&mut buf);
+        buf
+    });
 
     // ── Phase 1: drain initial noise (banner, MOTD, prompt) ──────────────────
     // Read in a background thread and relay chunks over a channel.
@@ -225,7 +234,7 @@ fn run_interactive_ls(
     let mut drained: Vec<u8> = Vec::new();
     while let Ok(chunk) = rx.recv_timeout(silence_timeout) {
         drained.extend_from_slice(&chunk);
-        if start.elapsed() > drain_timeout {
+        if start.elapsed() > drain_timeout || std::time::Instant::now() >= deadline {
             break;
         }
     }
@@ -234,23 +243,60 @@ fn run_interactive_ls(
     if let Err(e) = stdin.write_all(payload.as_bytes()) {
         let _ = child.kill();
         let _ = child.wait();
+        let _ = drain_handle.join();
+        let _ = stderr_handle.join();
         return Err(format!("Failed to write to SSH stdin: {e}"));
     }
     drop(stdin);
 
     // ── Phase 3: collect remaining output and extract between markers ─────────
-    // Joining waits for EOF; afterwards the sender is dropped, so draining the
-    // channel yields exactly the output produced after the drain window.
-    drain_handle.join().map_err(|_| "drain thread panicked")?;
     let mut raw_stdout = drained;
-    raw_stdout.extend(rx.into_iter().flatten());
-
-    let mut raw_stderr = Vec::new();
-    if let Some(mut stderr) = child.stderr.take() {
-        let _ = stderr.read_to_end(&mut raw_stderr);
+    loop {
+        let Some(remaining) = deadline.checked_duration_since(std::time::Instant::now()) else {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = drain_handle.join();
+            let _ = stderr_handle.join();
+            return Err("Remote directory listing timed out.".to_string());
+        };
+        match rx.recv_timeout(remaining) {
+            Ok(chunk) => raw_stdout.extend_from_slice(&chunk),
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = drain_handle.join();
+                let _ = stderr_handle.join();
+                return Err("Remote directory listing timed out.".to_string());
+            }
+        }
     }
 
-    let status = child.wait().map_err(|e| format!("Wait failed: {e}"))?;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {
+                if std::time::Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    let _ = drain_handle.join();
+                    let _ = stderr_handle.join();
+                    return Err("Remote directory listing timed out.".to_string());
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            Err(e) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = drain_handle.join();
+                let _ = stderr_handle.join();
+                return Err(format!("Wait failed: {e}"));
+            }
+        }
+    };
+
+    drain_handle.join().map_err(|_| "drain thread panicked")?;
+    let raw_stderr = stderr_handle.join().map_err(|_| "stderr thread panicked")?;
 
     // Extract lines between markers
     let raw = String::from_utf8_lossy(&raw_stdout);
@@ -512,37 +558,92 @@ async fn run_subprocess_op(
 ///
 /// `config` is the caller's: its `auth.agent_socket`, when set, is the ssh-agent
 /// the listing's `ssh` uses.
+fn run_command_with_timeout(cmd: &mut Command, timeout: Duration) -> Result<Output, String> {
+    use std::io::Read;
+    use std::process::Stdio;
+
+    let mut child = cmd
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("SSH command failed: {e}"))?;
+
+    let mut stdout_pipe = child.stdout.take().ok_or("no stdout pipe")?;
+    let mut stderr_pipe = child.stderr.take().ok_or("no stderr pipe")?;
+    let stdout_handle = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stdout_pipe.read_to_end(&mut buf);
+        buf
+    });
+    let stderr_handle = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stderr_pipe.read_to_end(&mut buf);
+        buf
+    });
+
+    let deadline = std::time::Instant::now() + timeout;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {
+                if std::time::Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    let _ = stdout_handle.join();
+                    let _ = stderr_handle.join();
+                    return Err("Remote directory listing timed out.".to_string());
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            Err(e) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = stdout_handle.join();
+                let _ = stderr_handle.join();
+                return Err(format!("Wait failed: {e}"));
+            }
+        }
+    };
+
+    let stdout = stdout_handle.join().map_err(|_| "stdout thread panicked")?;
+    let stderr = stderr_handle.join().map_err(|_| "stderr thread panicked")?;
+    Ok(Output {
+        status,
+        stdout,
+        stderr,
+    })
+}
+
 pub fn list_remote_directory(
     config: &AppConfig,
     connection_name: &str,
     remote_path: &str,
 ) -> Result<Vec<RemoteFileEntry>, String> {
+    let path = if remote_path.is_empty() {
+        "."
+    } else {
+        validate_remote_path(remote_path, true)?
+    };
     let conn = resolve_connection(config, connection_name)?;
 
-    let path = if remote_path.trim().is_empty() {
-        ".".to_string()
-    } else {
-        remote_path.trim().to_string()
-    };
-
     let (argv, is_interactive) =
-        build_ls_argv(&conn, &path, &config.transport.strict_host_key_checking);
+        build_ls_argv(&conn, path, &config.transport.strict_host_key_checking);
 
     let agent = config.auth.agent_socket.as_deref();
     let output = if is_interactive {
-        run_interactive_ls(&argv, &path, agent)?
+        run_interactive_ls(&argv, path, agent)?
     } else {
         let (cmd_name, args) = argv.split_first().ok_or("empty argv")?;
         let mut cmd = Command::new(cmd_name);
         if let Some(sock) = agent {
             cmd.env(SSH_AUTH_SOCK, sock);
         }
-        cmd.args(args)
-            .output()
-            .map_err(|e| format!("SSH command failed: {e}"))?
+        cmd.args(args);
+        run_command_with_timeout(&mut cmd, OP_TIMEOUT)?
     };
 
-    parse_sftp_output(&output, &path)
+    parse_sftp_output(&output, path)
 }
 
 /// Download a single remote file to `local_path`, returning bytes written.

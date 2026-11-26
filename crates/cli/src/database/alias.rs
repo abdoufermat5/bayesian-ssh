@@ -48,21 +48,21 @@ impl Database {
         if connection_ids.is_empty() {
             return Ok(map);
         }
-        let placeholders = vec!["?"; connection_ids.len()].join(",");
-        let sql = format!(
-            "SELECT connection_id, alias FROM aliases WHERE connection_id IN ({})",
-            placeholders
-        );
-        let mut stmt = self.conn.prepare(&sql)?;
-        let sql_params: Vec<&dyn rusqlite::ToSql> = connection_ids
-            .iter()
-            .map(|id| id as &dyn rusqlite::ToSql)
-            .collect();
-        let mut rows = stmt.query(rusqlite::params_from_iter(sql_params.iter()))?;
-        while let Some(row) = rows.next()? {
-            let conn_id: String = row.get(0)?;
-            let alias: String = row.get(1)?;
-            map.entry(conn_id).or_insert_with(Vec::new).push(alias);
+        for chunk in connection_ids.chunks(500) {
+            let placeholders = vec!["?"; chunk.len()].join(",");
+            let sql = format!(
+                "SELECT connection_id, alias FROM aliases WHERE connection_id IN ({})",
+                placeholders
+            );
+            let mut stmt = self.conn.prepare(&sql)?;
+            let sql_params: Vec<&dyn rusqlite::ToSql> =
+                chunk.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+            let mut rows = stmt.query(rusqlite::params_from_iter(sql_params.iter()))?;
+            while let Some(row) = rows.next()? {
+                let conn_id: String = row.get(0)?;
+                let alias: String = row.get(1)?;
+                map.entry(conn_id).or_insert_with(Vec::new).push(alias);
+            }
         }
         Ok(map)
     }

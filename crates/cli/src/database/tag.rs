@@ -78,22 +78,22 @@ impl Database {
         if connection_ids.is_empty() {
             return Ok(map);
         }
-        let placeholders = vec!["?"; connection_ids.len()].join(",");
-        let sql = format!(
-            "SELECT connection_id, tag FROM connection_tags
-             WHERE connection_id IN ({}) ORDER BY connection_id, tag",
-            placeholders
-        );
-        let mut stmt = self.conn.prepare(&sql)?;
-        let params: Vec<&dyn rusqlite::ToSql> = connection_ids
-            .iter()
-            .map(|id| id as &dyn rusqlite::ToSql)
-            .collect();
-        let mut rows = stmt.query(rusqlite::params_from_iter(params.iter()))?;
-        while let Some(row) = rows.next()? {
-            let conn_id: String = row.get(0)?;
-            let tag: String = row.get(1)?;
-            map.entry(conn_id).or_default().push(tag);
+        for chunk in connection_ids.chunks(500) {
+            let placeholders = vec!["?"; chunk.len()].join(",");
+            let sql = format!(
+                "SELECT connection_id, tag FROM connection_tags
+                 WHERE connection_id IN ({}) ORDER BY connection_id, tag",
+                placeholders
+            );
+            let mut stmt = self.conn.prepare(&sql)?;
+            let params: Vec<&dyn rusqlite::ToSql> =
+                chunk.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+            let mut rows = stmt.query(rusqlite::params_from_iter(params.iter()))?;
+            while let Some(row) = rows.next()? {
+                let conn_id: String = row.get(0)?;
+                let tag: String = row.get(1)?;
+                map.entry(conn_id).or_default().push(tag);
+            }
         }
         Ok(map)
     }

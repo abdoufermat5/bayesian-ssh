@@ -287,10 +287,12 @@ fn sync_dir(dir: &Path) {
 
 /// Write `<dir>/<name>` through a 0600 temp file in `dir`: fsync, rename, fsync the directory.
 fn write_atomic(dir: &Path, name: &str, bytes: &[u8]) -> Result<()> {
-    let tmp = dir.join(format!(".{name}.tmp-{}", std::process::id()));
+    static TMP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = TMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp = dir.join(format!(".{name}.tmp-{}-{seq}", std::process::id()));
     let res = (|| -> Result<()> {
         let mut o = std::fs::OpenOptions::new();
-        o.write(true).create(true).truncate(true);
+        o.write(true).create_new(true);
         #[cfg(unix)]
         std::os::unix::fs::OpenOptionsExt::mode(&mut o, 0o600);
         let mut f = o

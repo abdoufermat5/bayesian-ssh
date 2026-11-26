@@ -228,6 +228,13 @@ pub trait SftpSession: Send + Sync {
         path: &str,
         sink: mpsc::Sender<Vec<u8>>,
     ) -> Result<u64, TransportError>;
+    /// Read up to `max_bytes` starting at `offset` (seeks directly when supported).
+    async fn read_range(
+        &self,
+        path: &str,
+        offset: u64,
+        max_bytes: usize,
+    ) -> Result<Vec<u8>, TransportError>;
     /// Stream-based write. `offset` supports resume; pass 0 for fresh write.
     /// `on_chunk` is called for every chunk just written to the remote;
     /// implementations must not block inside the callback.

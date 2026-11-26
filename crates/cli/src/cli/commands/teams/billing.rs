@@ -55,6 +55,7 @@ pub(super) async fn execute(
                 s.checkout_url(team_id, seats, request.interval).await?
             }
         };
+        validate_browser_url(&url)?;
         println!(
             "Opening the billing page for '{}' in your browser:",
             source.name
@@ -152,20 +153,78 @@ pub(crate) fn print_billing(label: &str, info: &BillingInfo, hint: &str) {
     }
 }
 
+/// Validates that `url` is a well-formed `https://` URL with a host and no
+/// control characters or whitespace before it is handed to the OS browser launcher.
+pub(crate) fn validate_browser_url(url: &str) -> Result<reqwest::Url> {
+    if url.chars().any(|c| c.is_control() || c.is_whitespace()) {
+        anyhow::bail!("refusing to open URL containing control characters or whitespace");
+    }
+    let parsed = reqwest::Url::parse(url)
+        .map_err(|e| anyhow::anyhow!("refusing to open invalid billing URL: {e}"))?;
+    if parsed.scheme() != "https" || !parsed.has_host() {
+        anyhow::bail!("refusing to open non-HTTPS billing URL");
+    }
+    Ok(parsed)
+}
+
 /// Opens a URL in the default browser; the URL is printed first, so this may fail quietly.
 pub(crate) fn open_in_browser(url: &str) {
+    let Ok(parsed) = validate_browser_url(url) else {
+        return;
+    };
+    let safe_url = parsed.as_str();
     let mut cmd = if cfg!(target_os = "macos") {
-        std::process::Command::new("open")
+        let mut c = std::process::Command::new("open");
+        c.arg("--").arg(safe_url);
+        c
     } else if cfg!(target_os = "windows") {
-        let mut c = std::process::Command::new("cmd");
-        c.args(["/C", "start", ""]);
+        // Avoid `cmd /C start` which interprets shell metacharacters (&|^%<>!").
+        let mut c = std::process::Command::new("rundll32.exe");
+        c.args(["url.dll,FileProtocolHandler", safe_url]);
         c
     } else {
-        std::process::Command::new("xdg-open")
+        let mut c = std::process::Command::new("xdg-open");
+        c.arg("--").arg(safe_url);
+        c
     };
     let _ = cmd
-        .arg(url)
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_browser_url;
+
+    #[test]
+    fn accepts_valid_https_urls() {
+        assert!(
+            validate_browser_url("https://checkout.stripe.com/c/pay/cs_test_123?a=1#frag").is_ok()
+        );
+        assert!(validate_browser_url("https://billing.example.com/portal").is_ok());
+    }
+
+    #[test]
+    fn rejects_non_https_and_malformed_urls() {
+        for bad in [
+            "",
+            "http://example.com/billing",
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "https://",
+            "-o",
+            "--help",
+            "https://example.com/a b",
+            "https://example.com/a\nb",
+            "https://example.com/a\rb",
+            "https://example.com/\x00",
+            "https://example.com/\t",
+        ] {
+            assert!(
+                validate_browser_url(bad).is_err(),
+                "expected Err for {bad:?}"
+            );
+        }
+    }
 }

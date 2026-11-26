@@ -402,6 +402,7 @@ pub fn desktop_notify(title: &str, body: &str) {
             std::process::Command::new("notify-send")
                 .arg("-a")
                 .arg("Bayesian SSH")
+                .arg("--")
                 .arg(&title)
                 .arg(&body)
                 .stdin(std::process::Stdio::null())

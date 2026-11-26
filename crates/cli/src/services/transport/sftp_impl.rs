@@ -143,6 +143,41 @@ impl SftpSession for RusshSftpSession {
         Ok(total)
     }
 
+    async fn read_range(
+        &self,
+        path: &str,
+        offset: u64,
+        max_bytes: usize,
+    ) -> Result<Vec<u8>, TransportError> {
+        if max_bytes == 0 {
+            return Ok(Vec::new());
+        }
+        let mut file = self.inner.open(path).await.map_err(sftp_err)?;
+        if offset > 0 {
+            file.seek(std::io::SeekFrom::Start(offset))
+                .await
+                .map_err(|e| TransportError::Permanent(anyhow!("SFTP seek: {e}")))?;
+        }
+        let mut out = Vec::with_capacity(max_bytes.min(64 * 1024));
+        let mut buf = vec![0u8; 32 * 1024];
+        while out.len() < max_bytes {
+            let remaining = max_bytes - out.len();
+            let to_read = remaining.min(buf.len());
+            let n = file
+                .read(&mut buf[..to_read])
+                .await
+                .map_err(|e| TransportError::Permanent(anyhow!("SFTP read: {e}")))?;
+            if n == 0 {
+                break;
+            }
+            out.extend_from_slice(&buf[..n]);
+        }
+        file.shutdown()
+            .await
+            .map_err(|e| TransportError::Permanent(anyhow!("SFTP close: {e}")))?;
+        Ok(out)
+    }
+
     async fn write_all(
         &self,
         path: &str,

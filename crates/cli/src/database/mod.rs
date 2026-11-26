@@ -77,6 +77,7 @@ impl Database {
     fn open(config: &AppConfig) -> Result<Self> {
         let conn = SqliteConnection::open(&config.database_path)?;
         conn.busy_timeout(BUSY_TIMEOUT)?;
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         Ok(Database {
             conn,
             window_days: config.prediction.window_days,
@@ -84,6 +85,8 @@ impl Database {
     }
 
     fn init(&self) -> Result<()> {
+        self.conn
+            .execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")?;
         // Use a single transaction for the full migration so the schema is
         // always either fully applied or fully rolled back. IMMEDIATE takes
         // the write lock up front so two processes opening the database

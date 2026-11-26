@@ -125,12 +125,14 @@ fn generate_ssh_config(connections: &[Connection]) -> String {
 
         if let Some(bastion) = &conn.bastion {
             let bastion_user = conn.bastion_user.as_deref().unwrap_or(&conn.user);
-            // Quote for the shell that evaluates ProxyCommand — unquoted
-            // user-controlled values would be a command-injection vector.
+            // Strip control characters, double `%` so OpenSSH does not expand
+            // tokens inside ProxyCommand, and shell-quote the operands after `--`.
+            let safe_proxy_arg =
+                |s: &str| -> String { clean(s).replace('%', "%%").replace('\'', "'\"'\"'") };
             config.push_str(&format!(
-                "    ProxyCommand ssh -W %h:%p '{}'@'{}'\n",
-                bastion_user.replace('\'', "'\"'\"'"),
-                bastion.replace('\'', "'\"'\"'")
+                "    ProxyCommand ssh -W %h:%p -- '{}'@'{}'\n",
+                safe_proxy_arg(bastion_user),
+                safe_proxy_arg(bastion),
             ));
         }
 
@@ -181,5 +183,24 @@ mod tests {
         with_agent.forward_agent = true;
         let config = generate_ssh_config(&[with_agent]);
         assert!(config.contains("    ForwardAgent yes\n"), "{config}");
+    }
+
+    #[test]
+    fn ssh_config_sanitizes_proxy_command_bastion_fields() {
+        let mut conn = Connection::new("web".into(), "web.internal".into(), "alice".into(), 22);
+        conn.bastion = Some("jump.example\nLocalCommand evil%h".into());
+        conn.bastion_user = Some("-oProxyCommand=id\r%r".into());
+
+        let config = generate_ssh_config(&[conn]);
+        assert!(
+            !config.contains("\nLocalCommand"),
+            "newline injection must be stripped: {config}"
+        );
+        assert!(
+            config.contains(
+                "    ProxyCommand ssh -W %h:%p -- '-oProxyCommand=id%%r'@'jump.exampleLocalCommand evil%%h'\n"
+            ),
+            "{config}"
+        );
     }
 }

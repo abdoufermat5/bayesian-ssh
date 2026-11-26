@@ -5,6 +5,10 @@ use crate::config::AppConfig;
 use crate::models::Connection;
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
+use std::time::{Duration, Instant};
+
+const SSH_CONFIG_CACHE_MAX_ENTRIES: usize = 256;
+const SSH_CONFIG_CACHE_TTL: Duration = Duration::from_secs(30);
 
 /// Kind of transport that should be used for a given connection.
 ///
@@ -17,7 +21,17 @@ pub enum TransportKind {
     Subprocess,
 }
 
+fn needs_subprocess_without_ssh_config(conn: &Connection, cfg: &AppConfig) -> bool {
+    cfg.transport.force_subprocess
+        || conn.use_kerberos
+        || conn.forward_agent
+        || conn.bastion.is_some()
+}
+
 pub fn pick_kind(conn: &Connection, cfg: &AppConfig) -> TransportKind {
+    if needs_subprocess_without_ssh_config(conn, cfg) {
+        return TransportKind::Subprocess;
+    }
     pick_kind_with(conn, cfg, ssh_config_uses_proxy(&conn.host))
 }
 
@@ -30,12 +44,7 @@ pub(crate) fn pick_kind_with(
 ) -> TransportKind {
     // The built-in transport cannot forward the ssh-agent, and it reads neither
     // `bastion` nor `~/.ssh/config`: any of those means the system ssh must connect.
-    if cfg.transport.force_subprocess
-        || conn.use_kerberos
-        || conn.forward_agent
-        || conn.bastion.is_some()
-        || ssh_config_has_proxy
-    {
+    if needs_subprocess_without_ssh_config(conn, cfg) || ssh_config_has_proxy {
         TransportKind::Subprocess
     } else {
         TransportKind::Native
@@ -46,12 +55,14 @@ pub(crate) fn pick_kind_with(
 ///
 /// The built-in transport dials `host:port` itself and ignores `~/.ssh/config`, so a host
 /// that is only reachable through a configured jump would time out. `ssh -G` only prints
-/// configuration: it opens nothing. Answers are cached per host for the life of the process.
+/// configuration: it opens nothing. Answers are cached per host with a bounded TTL cache.
 fn ssh_config_uses_proxy(host: &str) -> bool {
-    static CACHE: LazyLock<Mutex<HashMap<String, bool>>> =
+    static CACHE: LazyLock<Mutex<HashMap<String, (bool, Instant)>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
+    let now = Instant::now();
     if let Ok(map) = CACHE.lock()
-        && let Some(found) = map.get(host)
+        && let Some((found, ts)) = map.get(host)
+        && now.duration_since(*ts) < SSH_CONFIG_CACHE_TTL
     {
         return *found;
     }
@@ -67,7 +78,18 @@ fn ssh_config_uses_proxy(host: &str) -> bool {
         .filter(|out| out.status.success())
         .is_some_and(|out| ssh_g_output_uses_proxy(&String::from_utf8_lossy(&out.stdout)));
     if let Ok(mut map) = CACHE.lock() {
-        map.insert(host.to_string(), found);
+        let insert_now = Instant::now();
+        map.retain(|_, (_, ts)| insert_now.duration_since(*ts) < SSH_CONFIG_CACHE_TTL);
+        if map.len() >= SSH_CONFIG_CACHE_MAX_ENTRIES
+            && !map.contains_key(host)
+            && let Some(oldest_key) = map
+                .iter()
+                .min_by_key(|(_, (_, ts))| *ts)
+                .map(|(k, _)| k.clone())
+        {
+            map.remove(&oldest_key);
+        }
+        map.insert(host.to_string(), (found, insert_now));
     }
     found
 }
@@ -98,7 +120,15 @@ where
         Box<dyn std::future::Future<Output = Result<T, TransportError>> + Send + 'a>,
     >,
 {
-    let kind = pick_kind(conn, cfg);
+    let kind = if needs_subprocess_without_ssh_config(conn, cfg) {
+        TransportKind::Subprocess
+    } else {
+        let host = conn.host.clone();
+        let has_proxy = tokio::task::spawn_blocking(move || ssh_config_uses_proxy(&host))
+            .await
+            .unwrap_or(false);
+        pick_kind_with(conn, cfg, has_proxy)
+    };
     match kind {
         TransportKind::Native => {
             let native = RusshTransport::new(cfg.clone());
