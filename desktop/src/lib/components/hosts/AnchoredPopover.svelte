@@ -43,9 +43,15 @@
       e.stopPropagation();
       onClose();
       anchor.focus();
-    } else if (e.key === "Tab") {
+    } else if (e.key === "Tab" && role === "menu") {
       onClose();
     }
+  }
+
+  function onFocusOut(e: FocusEvent) {
+    const next = e.relatedTarget as Node | null;
+    if (next && (element?.contains(next) || anchor.contains(next))) return;
+    onClose();
   }
 
   function onScroll(e: Event) {
@@ -64,6 +70,7 @@
   aria-label={label}
   tabindex="-1"
   onkeydown={onKeydown}
+  onfocusout={onFocusOut}
 >
   {@render children()}
 </div>

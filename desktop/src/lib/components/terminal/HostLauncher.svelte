@@ -105,9 +105,14 @@
     </p>
   {/if}
   <div class="search-box h-8">
-    <Search size={14} class="shrink-0" />
+    <Search size={14} class="shrink-0" aria-hidden="true" />
     <input
       type="text"
+      role="combobox"
+      aria-expanded="true"
+      aria-controls="host-launcher-listbox"
+      aria-autocomplete="list"
+      aria-activedescendant={results[index] ? `host-launcher-opt-${results[index].id}` : undefined}
       placeholder="Connect to host…"
       aria-label="Filter hosts"
       bind:value={query}
@@ -116,10 +121,12 @@
       use:focusOnMount
     />
   </div>
-  <div class="flex max-h-72 flex-col overflow-y-auto" role="listbox" aria-label="Hosts">
+  <div id="host-launcher-listbox" class="flex max-h-72 flex-col overflow-y-auto" role="listbox" aria-label="Hosts">
     {#each results as conn, i (conn.id)}
       <button
         type="button"
+        id="host-launcher-opt-{conn.id}"
+        tabindex="-1"
         class="menu-item h-auto flex-col items-start gap-0 py-1.5 {i === index ? 'menu-item-active' : ''}"
         role="option"
         aria-selected={i === index}

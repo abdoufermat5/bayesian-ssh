@@ -92,7 +92,7 @@
       Remove from group
     </button>
   {/if}
-  <div class="menu-separator"></div>
+  <div class="menu-separator" role="separator"></div>
   {#if tab.id === activeId}
     <button type="button" class="menu-item" role="menuitem" onclick={() => splitNew("right")}>
       <Columns2 size={14} />
@@ -118,7 +118,7 @@
       Remove from split
     </button>
   {/if}
-  <div class="menu-separator"></div>
+  <div class="menu-separator" role="separator"></div>
   <button type="button" class="menu-item" role="menuitem" disabled={index <= 0} onclick={() => run(() => shift(-1))}>
     <ArrowLeft size={14} />
     Move left
@@ -133,7 +133,7 @@
     <ArrowRight size={14} />
     Move right
   </button>
-  <div class="menu-separator"></div>
+  <div class="menu-separator" role="separator"></div>
   <button type="button" class="menu-item" role="menuitem" onclick={() => run(() => popOutTab(tab.id))}>
     <AppWindow size={14} />
     Open in new window

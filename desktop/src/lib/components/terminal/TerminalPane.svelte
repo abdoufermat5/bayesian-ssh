@@ -99,8 +99,8 @@
   onpointerdowncapture={activate}
 >
   {#if tab.showSearch}
-    <div class="popover absolute right-4 top-2 z-10 flex items-center gap-0.5">
-      <Search size={14} class="ml-1.5 shrink-0 text-muted" />
+    <div class="popover absolute right-4 top-2 z-10 flex items-center gap-0.5 focus-within:border-border-focus focus-within:ring-2 focus-within:ring-accent/30">
+      <Search size={14} class="ml-1.5 shrink-0 text-muted" aria-hidden="true" />
       <input
         type="text"
         placeholder="Find in scrollback"
@@ -149,6 +149,7 @@
     {#if rect}
       <div class="flex h-6 shrink-0 items-center gap-1.5 px-1 text-xs {active ? 'text-primary' : 'text-muted'}">
         <span class="status-dot status-dot-sm {statusDot(tab.status)}" aria-hidden="true"></span>
+        <span class="sr-only">{tab.status}</span>
         <span class="min-w-0 flex-1 truncate font-medium">{tab.remoteTitle?.trim() || tab.name}</span>
         <button
           type="button"

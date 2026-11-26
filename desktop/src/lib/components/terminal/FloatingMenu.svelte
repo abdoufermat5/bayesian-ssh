@@ -25,12 +25,19 @@
 
   $effect(() => {
     if (!menuEl) return;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const rect = menuEl.getBoundingClientRect();
     const pad = 6;
     const left = Math.max(pad, Math.min(x, window.innerWidth - rect.width - pad));
     const top = Math.max(pad, Math.min(y, window.innerHeight - rect.height - pad));
     style = `position: fixed; top: ${top}px; left: ${left}px; visibility: visible;`;
     requestAnimationFrame(() => items()[0]?.focus());
+    return () => {
+      const active = document.activeElement;
+      if (previousFocus?.isConnected && (!active || active === document.body || menuEl?.contains(active))) {
+        previousFocus.focus();
+      }
+    };
   });
 
   function onKeydown(e: KeyboardEvent) {
@@ -38,6 +45,12 @@
       e.preventDefault();
       e.stopPropagation();
       onClose();
+      return;
+    }
+    if (
+      (e.key === "Home" || e.key === "End") &&
+      (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)
+    ) {
       return;
     }
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Home" && e.key !== "End") return;

@@ -374,7 +374,7 @@
           <span class="ml-2 text-sm text-muted">Loading recording…</span>
         </div>
       {:else if error}
-        <div class="alert alert-error">
+        <div class="alert alert-error" role="alert">
           <div class="alert-title">Could not load recording</div>
           <p class="m-0 text-xs">{error}</p>
         </div>
@@ -418,22 +418,43 @@
             <span class="font-mono text-xs tabular-nums text-secondary">
               {formatClock(currentTime)}
             </span>
-            <button
-              type="button"
-              class="relative h-2 flex-1 cursor-pointer overflow-hidden rounded-sm bg-surface-input"
+            <div
+              role="slider"
+              tabindex="0"
+              class="flex h-6 flex-1 cursor-pointer items-center rounded-sm"
               aria-label="Playback progress"
+              aria-valuemin={0}
+              aria-valuemax={Math.round(cast?.duration ?? 0)}
+              aria-valuenow={Math.round(currentTime)}
+              aria-valuetext={`${formatClock(currentTime)} of ${formatClock(cast?.duration ?? 0)}`}
               onclick={(e) => {
                 if (!cast || cast.duration <= 0) return;
                 const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
                 const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
                 seekTo(ratio * cast.duration);
               }}
+              onkeydown={(e) => {
+                if (!cast || cast.duration <= 0) return;
+                const step = e.shiftKey ? 15 : 5;
+                let target: number | null = null;
+                if (e.key === "ArrowRight" || e.key === "ArrowUp") target = Math.min(cast.duration, currentTime + step);
+                else if (e.key === "ArrowLeft" || e.key === "ArrowDown") target = Math.max(0, currentTime - step);
+                else if (e.key === "PageUp") target = Math.min(cast.duration, currentTime + 30);
+                else if (e.key === "PageDown") target = Math.max(0, currentTime - 30);
+                else if (e.key === "Home") target = 0;
+                else if (e.key === "End") target = cast.duration;
+                if (target === null) return;
+                e.preventDefault();
+                seekTo(target);
+              }}
             >
-              <span
-                class="block h-full bg-accent"
-                style="width: {(progressRatio * 100).toFixed(1)}%"
-              ></span>
-            </button>
+              <span class="relative block h-2 w-full overflow-hidden rounded-sm bg-surface-input">
+                <span
+                  class="block h-full bg-accent"
+                  style="width: {(progressRatio * 100).toFixed(1)}%"
+                ></span>
+              </span>
+            </div>
             <span class="font-mono text-xs tabular-nums text-muted">
               {formatClock(cast?.duration ?? 0)}
             </span>

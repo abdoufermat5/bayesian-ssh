@@ -44,6 +44,7 @@
     if (e.key in KEY_STEPS) ratio = divider.ratio + KEY_STEPS[e.key];
     else if (e.key === "Home") ratio = 0;
     else if (e.key === "End") ratio = 1;
+    else if (e.key === "Enter" || e.key === "0") ratio = 0.5;
     if (ratio === null) return;
     e.preventDefault();
     resizeSplit(divider.splitId, clampRatio(ratio));
@@ -68,7 +69,7 @@
     aria-valuemin={10}
     aria-valuemax={90}
     aria-valuenow={Math.round(divider.ratio * 100)}
-    title="Drag to resize, double-click to even out"
+    title="Drag to resize, double-click or press Enter to even out"
     onpointerdown={(e) => startResize(e, divider)}
     onkeydown={(e) => keyResize(e, divider)}
     ondblclick={() => resizeSplit(divider.splitId, 0.5)}

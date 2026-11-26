@@ -666,8 +666,8 @@
       tabindex="-1"
       onkeydown={handleKeydown}
     >
-      <div class="flex h-13 shrink-0 items-center gap-3 border-b border-border px-4">
-        <Search size={16} class="shrink-0 text-muted" />
+      <div class="flex h-13 shrink-0 items-center gap-3 border-b border-border px-4 focus-within:border-border-focus focus-within:ring-2 focus-within:ring-inset focus-within:ring-border-focus/40">
+        <Search size={16} class="shrink-0 text-muted" aria-hidden="true" />
         <input
           bind:this={inputElement}
           type="text"
@@ -676,6 +676,7 @@
           placeholder="Search hosts, actions and views"
           aria-label="Search commands"
           role="combobox"
+          aria-autocomplete="list"
           aria-expanded="true"
           aria-controls="command-palette-list"
           aria-activedescendant={flatItems[selectedIndex] ? `cmd-${flatItems[selectedIndex].id}` : undefined}
@@ -754,6 +755,10 @@
             <p class="m-0 text-xs text-muted">Try a host name, address, tag or action.</p>
           </div>
         {/each}
+      </div>
+
+      <div class="sr-only" aria-live="polite" aria-atomic="true">
+        {flatItems.length} {flatItems.length === 1 ? "result" : "results"}
       </div>
 
       <div class="flex h-10 shrink-0 items-center gap-3 border-t border-border px-3 text-xs text-muted">
